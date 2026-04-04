@@ -96,8 +96,8 @@ cd gamma
 ./.venv/bin/python -m gamma.run_voice_mode --mode turn-based --seconds 5
 ```
 
-## Notes for publishing
-This repo is intended to exclude local/private or heavyweight assets such as:
+## Repository hygiene
+The repo excludes local or heavyweight assets such as:
 - `.env`
 - `.venv/`
 - `data/`

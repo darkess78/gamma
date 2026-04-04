@@ -1,0 +1,24 @@
+[llm]
+provider = "openai"
+model = "gpt-primary"
+role = "primary_brain"
+
+[codex]
+enabled = false
+provider = "openai"
+model = "codex-helper"
+role = "coding_helper"
+
+[stt]
+provider = "faster-whisper"
+model = "base.en"
+
+[tts]
+provider = "placeholder"
+voice = "default"
+
+[local_workers]
+enabled = false
+summary_model = ""
+tagging_model = ""
+retrieval_model = ""

@@ -1,0 +1,90 @@
+from __future__ import annotations
+
+import json
+import tomllib
+from pathlib import Path
+
+from ..config import settings
+from ..memory.service import MemoryService
+
+try:
+    import yaml
+except ImportError:  # optional dependency for YAML persona/scenario files
+    yaml = None
+
+
+PERSONA_DIR = Path(__file__).resolve().parent
+CONFIG_DIR = settings.project_root / "config"
+
+
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8").strip()
+
+
+def _read_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _read_toml(path: Path) -> dict:
+    return tomllib.loads(path.read_text(encoding="utf-8"))
+
+
+def build_system_prompt(
+    memory_service: MemoryService | None = None,
+    user_text: str | None = None,
+    session_id: str | None = None,
+) -> str:
+    core = _read_text(PERSONA_DIR / "core.md")
+    boundaries = _read_text(PERSONA_DIR / "boundaries.md")
+    style = _read_json(PERSONA_DIR / "style.json")
+    relationship = _read_json(PERSONA_DIR / "relationship_state.json")
+    persona_config = _read_toml(CONFIG_DIR / "persona.toml") if (CONFIG_DIR / "persona.toml").exists() else {}
+    # Load additional YAML persona definitions if present
+    yaml_path = CONFIG_DIR / "persona.yaml"
+    if yaml_path.exists() and yaml is not None:
+        try:
+            persona_yaml = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+        except Exception:
+            persona_yaml = None
+        if persona_yaml:
+            persona_config["yaml"] = persona_yaml
+    # Load scenario definitions
+    scenario_path = CONFIG_DIR / "scenario.yaml"
+    if scenario_path.exists() and yaml is not None:
+        try:
+            scenario_yaml = yaml.safe_load(scenario_path.read_text(encoding="utf-8"))
+        except Exception:
+            scenario_yaml = None
+        if scenario_yaml:
+            persona_config["scenario"] = scenario_yaml
+    memory_config = _read_toml(CONFIG_DIR / "memory.toml") if (CONFIG_DIR / "memory.toml").exists() else {}
+
+    memory_lines: list[str] = []
+    if memory_service and settings.memory_enabled and memory_config.get("enabled", True):
+        if memory_config.get("profile_enabled", True):
+            profile_facts = memory_service.get_profile_facts(limit=settings.memory_top_k)
+            if profile_facts:
+                memory_lines.append("## Stored Profile Facts")
+                for fact in profile_facts:
+                    memory_lines.append(f"- [{fact.category}] {fact.fact_text}")
+
+        if user_text and memory_config.get("episodic_enabled", True):
+            memories = memory_service.search_memories(user_text, session_id=session_id, limit=settings.memory_top_k)
+            if memories:
+                memory_lines.append("## Relevant Episodic Memories")
+                for memory in memories:
+                    tags = f" tags={memory.tags}" if memory.tags else ""
+                    memory_lines.append(f"- {memory.summary}{tags}")
+
+    memory_block = "\n".join(memory_lines).strip() or "No stored memory injected for this turn."
+
+    return "\n\n".join([
+        "# Core Persona\n" + core,
+        "# Boundaries\n" + boundaries,
+        "# Style\n" + json.dumps(style, indent=2, sort_keys=True),
+        "# Relationship State\n" + json.dumps(relationship, indent=2, sort_keys=True),
+        "# Persona Config\n" + json.dumps(persona_config, indent=2, sort_keys=True),
+        "# Memory Config\n" + json.dumps(memory_config, indent=2, sort_keys=True),
+        "# Runtime Memory\n" + memory_block,
+        "# Response Rules\nUse stored memory when it is relevant and explicitly admit uncertainty when none exists. Do not say you lack memory if the Runtime Memory section contains relevant facts.",
+    ])

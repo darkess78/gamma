@@ -1,0 +1,34 @@
+# Local environment
+.env
+.venv/
+.python-version
+
+# Python build/cache artifacts
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local runtime state / generated outputs
+*.db
+data/
+*.wav
+*.mp3
+*.flac.json
+*.wav.json
+
+# Large/private local assets
+imagegen/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo

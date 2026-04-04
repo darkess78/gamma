@@ -40,6 +40,14 @@ Current persona target: **Shana**.
 - voice roundtrip testing
 - turn-based voice controller scaffold
 
+## Platform notes
+- Core backend code is path-portable and should run on Linux, macOS, or Windows with the right Python dependencies.
+- The local LLM path assumes an Ollama-compatible endpoint, defaulting to `http://127.0.0.1:11434`.
+- The mic voice loop is still environment-dependent:
+  - Linux uses `arecord` for capture and tries `aplay` / `ffplay` / `play` for playback.
+  - Windows now uses a PowerShell-based fallback path for microphone capture and playback.
+  - If mic capture is flaky on a machine, the most reliable portable path is still the file-based STT / voice roundtrip flow.
+
 ## Project layout
 - `gamma/main.py` — FastAPI app entrypoint
 - `gamma/api/routes.py` — API routes
@@ -52,11 +60,22 @@ Current persona target: **Shana**.
 
 ## Quick start
 
+### Linux / macOS
+
 ```bash
 cd gamma
 cp .env.example .env
 python -m venv .venv
 ./.venv/bin/pip install -e .
+```
+
+### Windows (PowerShell)
+
+```powershell
+cd gamma
+copy .env.example .env
+py -3 -m venv .venv
+.\.venv\Scripts\python -m pip install -e .
 ```
 
 Then edit `.env` for the provider setup you want.
@@ -73,12 +92,23 @@ RIKO_MEMORY_WRITE_MODE=selective
 
 ## Run the API
 
+### Linux / macOS
+
 ```bash
 cd gamma
 ./.venv/bin/uvicorn gamma.main:app --reload
 ```
 
+### Windows (PowerShell)
+
+```powershell
+cd gamma
+.\.venv\Scripts\uvicorn gamma.main:app --reload
+```
+
 ## Test the conversation endpoint
+
+### curl
 
 ```bash
 curl -X POST http://127.0.0.1:8000/v1/conversation/respond \
@@ -86,7 +116,17 @@ curl -X POST http://127.0.0.1:8000/v1/conversation/respond \
   -d '{"user_text":"Remember that I like jasmine tea.","session_id":"demo","synthesize_speech":false}'
 ```
 
+### Windows PowerShell
+
+```powershell
+Invoke-RestMethod -Method POST -Uri http://127.0.0.1:8000/v1/conversation/respond `
+  -ContentType 'application/json' `
+  -Body '{"user_text":"Remember that I like jasmine tea.","session_id":"demo","synthesize_speech":false}'
+```
+
 ## Voice / STT / TTS test commands
+
+### Linux / macOS
 
 ```bash
 cd gamma
@@ -94,6 +134,16 @@ cd gamma
 ./.venv/bin/python -m gamma.run_voice_roundtrip test_audio/jfk.flac --skip-tts
 ./.venv/bin/python -m gamma.run_tts_test "Gamma TTS smoke test"
 ./.venv/bin/python -m gamma.run_voice_mode --mode turn-based --seconds 5
+```
+
+### Windows (PowerShell)
+
+```powershell
+cd gamma
+.\.venv\Scripts\python -m gamma.run_stt_test test_audio\jfk.flac
+.\.venv\Scripts\python -m gamma.run_voice_roundtrip test_audio\jfk.flac --skip-tts
+.\.venv\Scripts\python -m gamma.run_tts_test "Gamma TTS smoke test"
+.\.venv\Scripts\python -m gamma.run_voice_mode --mode turn-based --seconds 5
 ```
 
 ## Repository hygiene

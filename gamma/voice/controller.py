@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from dataclasses import asdict, dataclass, field
@@ -94,7 +95,12 @@ class VoiceTurnResult:
         return json.dumps(asdict(self), ensure_ascii=False)
 
 
-class ArecordCaptureBackend:
+class AudioCaptureBackend:
+    def capture_once(self, *, seconds: int, sample_rate: int, device: str | None = None) -> Path:
+        raise NotImplementedError
+
+
+class ArecordCaptureBackend(AudioCaptureBackend):
     def __init__(self, binary: str = "arecord") -> None:
         self._binary = binary
 
@@ -127,18 +133,90 @@ class ArecordCaptureBackend:
         return path
 
 
-class AudioPlayback:
-    def __init__(self, binary: str = "aplay") -> None:
+class PowerShellCaptureBackend(AudioCaptureBackend):
+    def __init__(self, binary: str = "powershell") -> None:
         self._binary = binary
 
+    def capture_once(self, *, seconds: int, sample_rate: int, device: str | None = None) -> Path:
+        del device  # not yet supported in the simple Windows capture path
+        powershell = shutil.which(self._binary) or shutil.which("pwsh")
+        if not powershell:
+            raise MissingBinaryError("required binary not found: powershell or pwsh")
+
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        capture_path = settings.audio_output_dir / f"mic-input-{stamp}.wav"
+        ps_path = str(capture_path).replace("'", "''")
+        script = f"""
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Windows.Extensions
+$path = '{ps_path}'
+$durationMs = {max(1, seconds) * 1000}
+$sampleRate = {sample_rate}
+$channels = 1
+$bitsPerSample = 16
+$format = [System.Windows.Media.AudioFormat]::Pcm
+$capture = New-Object System.Windows.Media.CaptureSource
+$settings = New-Object System.Windows.Media.AudioCaptureDeviceSettings
+$settings.AudioFrameSize = [System.TimeSpan]::FromMilliseconds(100)
+$capture.AudioCaptureDevice = [System.Windows.Media.CaptureDeviceConfiguration]::GetDefaultAudioCaptureDevice()
+if ($null -eq $capture.AudioCaptureDevice) {{ throw 'No default audio capture device found.' }}
+$writer = New-Object System.Windows.Media.WaveMediaStreamSource($capture, $sampleRate, $channels)
+$file = [System.IO.File]::Create($path)
+$writer.Open($file)
+$capture.Start()
+Start-Sleep -Milliseconds $durationMs
+$capture.Stop()
+$writer.Close()
+$file.Close()
+""".strip()
+        try:
+            subprocess.run([powershell, "-NoProfile", "-Command", script], check=True)
+        except subprocess.CalledProcessError as exc:
+            raise MissingBinaryError(
+                "Windows microphone capture failed. Gamma currently expects PowerShell with .NET audio support; "
+                "if that is not available, use the file-based STT/voice roundtrip path instead."
+            ) from exc
+        return capture_path
+
+
+class AudioPlayback:
     def play(self, audio_path: str | None) -> bool:
         if not audio_path:
             return False
-        aplay = shutil.which(self._binary)
-        if not aplay:
-            print(f"[warn] {self._binary} not found; synthesized audio saved at {audio_path}")
+        player = self._pick_player()
+        if player is None:
+            print(f"[warn] no supported audio playback command found; synthesized audio saved at {audio_path}")
             return False
-        subprocess.run([aplay, audio_path], check=False)
+        return player(audio_path)
+
+    def _pick_player(self):
+        if os.name == "nt":
+            powershell = shutil.which("powershell") or shutil.which("pwsh")
+            if powershell:
+                return lambda audio_path: self._play_with_powershell(powershell, audio_path)
+            return None
+
+        for binary in ("aplay", "ffplay", "play"):
+            path = shutil.which(binary)
+            if path:
+                return lambda audio_path, binary=path: self._play_with_binary(binary, audio_path)
+        return None
+
+    def _play_with_binary(self, binary: str, audio_path: str) -> bool:
+        command = [binary, audio_path]
+        if Path(binary).name == "ffplay":
+            command = [binary, "-nodisp", "-autoexit", "-loglevel", "error", audio_path]
+        subprocess.run(command, check=False)
+        return True
+
+    def _play_with_powershell(self, powershell: str, audio_path: str) -> bool:
+        ps_path = str(audio_path).replace("'", "''")
+        script = (
+            "Add-Type -AssemblyName System; "
+            f"$player = New-Object System.Media.SoundPlayer '{ps_path}'; "
+            "$player.PlaySync();"
+        )
+        subprocess.run([powershell, "-NoProfile", "-Command", script], check=False)
         return True
 
 
@@ -148,13 +226,18 @@ class VoiceModeController:
         *,
         stt: STTService | None = None,
         conversation: ConversationService | None = None,
-        capture_backend: ArecordCaptureBackend | None = None,
+        capture_backend: AudioCaptureBackend | None = None,
         playback: AudioPlayback | None = None,
     ) -> None:
         self._stt = stt or STTService()
         self._conversation = conversation or ConversationService()
-        self._capture = capture_backend or ArecordCaptureBackend()
+        self._capture = capture_backend or self._default_capture_backend()
         self._playback = playback or AudioPlayback()
+
+    def _default_capture_backend(self) -> AudioCaptureBackend:
+        if os.name == "nt":
+            return PowerShellCaptureBackend()
+        return ArecordCaptureBackend()
 
     def run_turn(self, config: VoiceLoopConfig) -> VoiceTurnResult:
         policy = self.policy_for(config.mode)
@@ -215,6 +298,8 @@ class VoiceModeController:
         print(f"gamma voice controller. mode={config.mode} | {policy.description}")
         if config.mode != VoiceMode.TURN_BASED:
             print("[info] non-turn modes are scaffolded now and currently execute through the validated turn-based audio path.")
+        if os.name == "nt":
+            print("[info] Windows mic capture uses a PowerShell-based fallback path for now.")
         print("press Enter to record, or type 'quit' to stop.")
         while True:
             prompt = config.input_prompt or "voice> "

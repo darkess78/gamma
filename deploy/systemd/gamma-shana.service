@@ -1,0 +1,15 @@
+[Unit]
+Description=Gamma Shana API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/gamma
+EnvironmentFile=%h/gamma/.env
+ExecStart=%h/gamma/.venv/bin/python -m uvicorn gamma.main:app --host 0.0.0.0 --port 8000 --no-access-log
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

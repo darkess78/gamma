@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tomllib
 from pathlib import Path
 
@@ -62,19 +63,40 @@ def build_system_prompt(
     memory_lines: list[str] = []
     if memory_service and settings.memory_enabled and memory_config.get("enabled", True):
         if memory_config.get("profile_enabled", True):
-            profile_facts = memory_service.get_profile_facts(limit=settings.memory_top_k)
+            profile_facts = memory_service.get_profile_facts(limit=settings.memory_top_k, subject_type="primary_user")
             if profile_facts:
-                memory_lines.append("## Stored Profile Facts")
+                memory_lines.append("## Stored Facts About The User")
                 for fact in profile_facts:
                     memory_lines.append(f"- [{fact.category}] {fact.fact_text}")
 
+            mentioned_people = _extract_named_people(user_text or "")
+            if mentioned_people:
+                for person_name in mentioned_people[:2]:
+                    person_facts = memory_service.get_profile_facts(
+                        limit=3,
+                        subject_type="other_person",
+                        subject_name=person_name,
+                    )
+                    if person_facts:
+                        memory_lines.append(f"## Stored Facts About {person_name}")
+                        for fact in person_facts:
+                            relationship = f" relationship={fact.relationship_to_user}" if fact.relationship_to_user else ""
+                            memory_lines.append(f"- [{fact.category}]{relationship} {fact.fact_text}")
+
         if user_text and memory_config.get("episodic_enabled", True):
-            memories = memory_service.search_memories(user_text, session_id=session_id, limit=settings.memory_top_k)
+            memories = memory_service.search_memories(
+                user_text,
+                session_id=session_id,
+                limit=settings.memory_top_k,
+            )
             if memories:
                 memory_lines.append("## Relevant Episodic Memories")
                 for memory in memories:
                     tags = f" tags={memory.tags}" if memory.tags else ""
-                    memory_lines.append(f"- {memory.summary}{tags}")
+                    subject = ""
+                    if memory.subject_type == "other_person" and memory.subject_name:
+                        subject = f" subject={memory.subject_name}"
+                    memory_lines.append(f"- {memory.summary}{tags}{subject}")
 
     memory_block = "\n".join(memory_lines).strip() or "No stored memory injected for this turn."
 
@@ -88,3 +110,16 @@ def build_system_prompt(
         "# Runtime Memory\n" + memory_block,
         "# Response Rules\nUse stored memory when it is relevant and explicitly admit uncertainty when none exists. Do not say you lack memory if the Runtime Memory section contains relevant facts.",
     ])
+
+
+def _extract_named_people(text: str) -> list[str]:
+    if not text:
+        return []
+    matches = re.findall(r"\b(?:friend|brother|sister|partner|wife|husband|girlfriend|boyfriend|coworker|coworkers?|manager|mom|mother|dad|father)\s+([A-Z][a-z]+)\b", text)
+    seen: set[str] = set()
+    names: list[str] = []
+    for match in matches:
+        if match not in seen:
+            seen.add(match)
+            names.append(match)
+    return names

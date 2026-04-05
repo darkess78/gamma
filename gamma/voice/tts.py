@@ -12,8 +12,6 @@ from pathlib import Path
 from struct import pack
 from typing import Any
 
-from openai import OpenAI
-
 from ..config import settings
 from ..errors import ConfigurationError, ExternalServiceError
 
@@ -41,10 +39,23 @@ class TTSService:
             self._backend: TTSBackend = OpenAITTSBackend()
         elif provider in {"gpt-sovits", "gpt_sovits", "gptsovits"}:
             self._backend = GPTSoVITSTTSBackend()
+        elif provider == "local":
+            if settings.gpt_sovits_endpoint:
+                self._backend = GPTSoVITSTTSBackend()
+            else:
+                raise ConfigurationError(
+                    "SHANA_TTS_PROVIDER=local requires SHANA_GPT_SOVITS_ENDPOINT to point at a local GPT-SoVITS server. "
+                    "Use SHANA_TTS_PROVIDER=stub for local placeholder audio or SHANA_TTS_PROVIDER=openai for hosted TTS."
+                )
         elif provider == "stub":
             self._backend = StubTTSBackend()
+        elif provider == "ollama":
+            raise ConfigurationError(
+                "SHANA_TTS_PROVIDER=ollama is not supported. "
+                "Use SHANA_TTS_PROVIDER=local with GPT-SoVITS, SHANA_TTS_PROVIDER=stub, or SHANA_TTS_PROVIDER=openai."
+            )
         else:
-            raise ConfigurationError(f"Unsupported RIKO_TTS_PROVIDER: {settings.tts_provider}")
+            raise ConfigurationError(f"Unsupported SHANA_TTS_PROVIDER: {settings.tts_provider}")
 
     def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
         return self._backend.synthesize(text=text, emotion=emotion)
@@ -68,7 +79,11 @@ class OpenAITTSBackend(BaseFileTTSBackend):
     def __init__(self) -> None:
         api_key = settings.openai_api_key or os.getenv("OPENAI_API_KEY")
         if not api_key:
-            raise ConfigurationError("OPENAI_API_KEY is required for RIKO_TTS_PROVIDER=openai.")
+            raise ConfigurationError("OPENAI_API_KEY is required for SHANA_TTS_PROVIDER=openai.")
+        try:
+            from openai import OpenAI
+        except Exception as exc:
+            raise ConfigurationError("The OpenAI SDK is required for SHANA_TTS_PROVIDER=openai.") from exc
         self._client = OpenAI(api_key=api_key)
 
     def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
@@ -103,12 +118,12 @@ class GPTSoVITSTTSBackend(BaseFileTTSBackend):
 
     def __init__(self) -> None:
         if not settings.gpt_sovits_endpoint:
-            raise ConfigurationError("RIKO_GPT_SOVITS_ENDPOINT is required for RIKO_TTS_PROVIDER=gpt-sovits.")
+            raise ConfigurationError("SHANA_GPT_SOVITS_ENDPOINT is required for SHANA_TTS_PROVIDER=gpt-sovits.")
 
     def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
         fmt = settings.tts_format.lower()
         if fmt != "wav":
-            raise ConfigurationError("GPT-SoVITS backend currently expects RIKO_TTS_FORMAT=wav.")
+            raise ConfigurationError("GPT-SoVITS backend currently expects SHANA_TTS_FORMAT=wav.")
 
         payload: dict[str, Any] = {
             "text": text,

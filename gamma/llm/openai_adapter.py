@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import os
 
-from openai import OpenAI
-
 from ..config import settings
 from ..errors import ConfigurationError, ExternalServiceError
 from .base import LLMAdapter, LLMReply
@@ -14,6 +12,10 @@ class OpenAIAdapter(LLMAdapter):
         api_key = settings.openai_api_key or os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise ConfigurationError("OPENAI_API_KEY is not configured.")
+        try:
+            from openai import OpenAI
+        except Exception as exc:
+            raise ConfigurationError("The OpenAI SDK is required for SHANA_LLM_PROVIDER=openai.") from exc
         self._client = OpenAI(api_key=api_key)
 
     def generate_reply(self, system_prompt: str, user_text: str) -> LLMReply:

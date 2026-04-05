@@ -1,6 +1,6 @@
 [llm]
-provider = "openai"
-model = "gpt-primary"
+provider = "local"
+model = "gpt-oss:20b"
 role = "primary_brain"
 
 [codex]
@@ -14,7 +14,7 @@ provider = "faster-whisper"
 model = "base.en"
 
 [tts]
-provider = "placeholder"
+provider = "stub"
 voice = "default"
 
 [local_workers]

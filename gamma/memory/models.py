@@ -8,6 +8,9 @@ class ProfileFact(SQLModel, table=True):
     category: str
     fact_text: str
     confidence: float = 0.8
+    subject_type: str = Field(default="primary_user", index=True)
+    subject_name: str | None = Field(default=None, index=True)
+    relationship_to_user: str | None = None
 
 
 class EpisodicMemory(SQLModel, table=True):
@@ -16,3 +19,6 @@ class EpisodicMemory(SQLModel, table=True):
     summary: str
     importance: float = 0.5
     tags: str = ""
+    subject_type: str = Field(default="primary_user", index=True)
+    subject_name: str | None = Field(default=None, index=True)
+    relationship_to_user: str | None = None

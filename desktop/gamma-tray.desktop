@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Gamma Tray
+Comment=Launch the Gamma tray controller
+Exec=sh -lc 'cd "%k/../" >/dev/null 2>&1 || exit 1; ./scripts/start_gamma_tray_linux.sh'
+Terminal=false
+Categories=Utility;

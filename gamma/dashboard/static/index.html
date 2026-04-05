@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shana Control</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div class="hero-copy">
+        <h1>Shana Control Dashboard</h1>
+        <div class="lead">Independent monitor for the Shana backend, local providers, memory state, and machine resources.</div>
+      </div>
+      <div class="hero-side">
+        <div class="view-toggle">
+          <span>Readable</span>
+          <label class="switch">
+            <input id="viewModeSwitch" type="checkbox" onchange="toggleViewMode()">
+            <span class="slider"></span>
+          </label>
+          <span>JSON</span>
+        </div>
+        <div class="stamp" id="stamp">Loading...</div>
+      </div>
+    </div>
+    <div class="toolbar">
+      <div class="toolbar-group">
+        <button class="secondary" onclick="action('/api/shana/start')">Start Shana</button>
+        <button onclick="action('/api/shana/restart')">Restart Shana</button>
+        <button class="danger" onclick="action('/api/shana/stop')">Stop Shana</button>
+      </div>
+      <div class="toolbar-group toolbar-group-right">
+        <button class="ghost" onclick="action('/api/dashboard/stop', { redirectUrl: null })">Stop Dashboard</button>
+        <button class="ghost danger-outline" onclick="action('/api/all/stop', { redirectUrl: null })">Stop All</button>
+        <button class="ghost" onclick="loadStatus()">Refresh</button>
+      </div>
+    </div>
+    <div class="grid">
+      <section class="panel">
+        <h2>Shana Process</h2>
+        <div class="metrics">
+          <div class="metric"><div class="label">Running</div><div class="value" id="running">...</div></div>
+          <div class="metric"><div class="label">PID</div><div class="value" id="pid">...</div></div>
+          <div class="metric"><div class="label">CPU</div><div class="value" id="procCpu">...</div></div>
+          <div class="metric"><div class="label">RSS</div><div class="value" id="procMem">...</div></div>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Machine</h2>
+        <div class="metrics">
+          <div class="metric"><div class="label">CPU</div><div class="value" id="hostCpu">...</div></div>
+          <div class="metric"><div class="label">RAM</div><div class="value" id="hostRam">...</div></div>
+          <div class="metric"><div class="label">Disk</div><div class="value" id="hostDisk">...</div></div>
+          <div class="metric"><div class="label">GPU</div><div class="value" id="hostGpu">...</div></div>
+        </div>
+        <div class="render" id="machineMeta"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Backend Health</h2>
+        </div>
+        <div class="render" id="backendHealth"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Providers</h2>
+        </div>
+        <div class="render" id="providers"></div>
+      </section>
+      <section class="panel wide">
+        <div class="panel-head">
+          <h2>Provider Controls</h2>
+        </div>
+        <div class="provider-actions">
+          <div class="action-group">
+            <div class="action-title">LLM</div>
+            <div class="action-buttons">
+              <button class="ghost" onclick="action('/api/providers/llm/test')">Test LLM</button>
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">STT</div>
+            <div class="action-buttons">
+              <button class="ghost" onclick="action('/api/providers/stt/test')">Test STT</button>
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">TTS</div>
+            <div class="action-buttons">
+              <button class="secondary" onclick="action('/api/providers/tts/start')">Start TTS</button>
+              <button class="ghost danger-outline" onclick="action('/api/providers/tts/stop')">Stop TTS</button>
+              <button class="ghost" onclick="action('/api/providers/tts/test')">Test TTS</button>
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">All</div>
+            <div class="action-buttons">
+              <button onclick="action('/api/providers/voice/test')">Full Voice Loop</button>
+            </div>
+          </div>
+        </div>
+        <div class="render" id="providerActions"></div>
+      </section>
+      <section class="panel wide">
+        <div class="panel-head">
+          <h2>Browser Voice</h2>
+        </div>
+        <div class="provider-actions">
+          <div class="action-group">
+            <div class="action-title">Live Session</div>
+            <div class="action-buttons">
+              <button class="secondary" id="liveVoiceButton" onclick="toggleLiveVoice()">Start Live</button>
+              <button class="ghost danger-outline" onclick="stopLiveVoice()">Stop Live</button>
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">Capture</div>
+            <div class="action-buttons">
+              <button class="secondary" id="recordButton" onclick="toggleVoiceRecording()">Start Recording</button>
+              <button class="ghost" onclick="sendRecordedVoice()">Send Last Clip</button>
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">Session</div>
+            <div class="action-buttons">
+              <input class="text-input" id="voiceSessionId" placeholder="optional session id">
+              <label class="checkbox-row"><input id="voiceSynthesizeSpeech" type="checkbox" checked> Return audio</label>
+              <label class="checkbox-row"><input id="liveBargeInEnabled" type="checkbox" checked> Barge-in</label>
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">Tuning</div>
+            <div class="action-buttons action-stack">
+              <label class="range-row">Speech threshold <input id="liveSpeechThreshold" type="range" min="8" max="40" step="1" value="18"><span id="liveSpeechThresholdValue">0.018</span></label>
+              <label class="range-row">Silence ms <input id="liveSilenceMs" type="range" min="400" max="1800" step="50" value="900"><span id="liveSilenceMsValue">900</span></label>
+            </div>
+          </div>
+        </div>
+        <canvas id="liveVoiceMeter" class="voice-meter" width="900" height="88"></canvas>
+        <div class="render" id="liveVoiceMeta">No active live turn.</div>
+        <div class="render" id="liveVoiceStatus">Live voice session is idle.</div>
+        <div class="render" id="liveVoiceHistory">No live turns yet.</div>
+        <div class="render" id="voiceRoundtripStatus">No browser voice roundtrip has run yet.</div>
+        <audio id="voicePlayback" controls preload="none"></audio>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Memory Stats</h2>
+        </div>
+        <div class="render" id="memoryStats"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Known People</h2>
+        </div>
+        <div class="render" id="knownPeople"></div>
+      </section>
+      <section class="panel wide">
+        <div class="panel-head">
+          <h2>Recent Timings</h2>
+        </div>
+        <div class="render" id="recentTimings"></div>
+      </section>
+      <section class="panel wide">
+        <h2>Shana Stdout</h2>
+        <pre id="stdoutLog"></pre>
+      </section>
+      <section class="panel wide">
+        <h2>Shana Stderr</h2>
+        <pre id="stderrLog"></pre>
+      </section>
+    </div>
+  </div>
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>

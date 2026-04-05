@@ -30,6 +30,11 @@ data/
 
 # Large/private local assets
 imagegen/
+assistant_build_order.md
+just-rayen-rico-transcript-research.md
+riko_clone_plan.md
+riko_clone_project_spec.md
+riko_phase1_checklist.md
 
 # OS/editor noise
 .DS_Store

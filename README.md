@@ -6,6 +6,7 @@ Current persona target: **Shana**.
 
 ## What it includes
 - FastAPI backend with a conversation endpoint
+- image-aware conversation endpoint for multimodal vision
 - persona prompt assembly from editable files and config
 - selective SQLite-backed memory
 - pluggable LLM backends
@@ -70,6 +71,17 @@ SHANA_STT_PROVIDER=local
 SHANA_TTS_PROVIDER=stub
 ```
 
+For local vision with Ollama, use a multimodal model and enable it explicitly:
+
+```env
+SHANA_LLM_PROVIDER=ollama
+SHANA_LOCAL_LLM_MODEL=llama3.2-vision
+SHANA_LOCAL_LLM_SUPPORTS_VISION=true
+SHANA_LOCAL_LLM_VISION_MODEL=llama3.2-vision
+```
+
+Gamma now probes Ollama model capabilities through `POST /api/show` and expects the selected local vision model to report the `vision` capability.
+
 ## OpenAI model guide
 
 OpenAI models are configured independently in this repo:
@@ -123,6 +135,8 @@ OpenAI's current model catalog and audio guides:
 
 ## What works today
 - `POST /v1/conversation/respond`
+- `POST /v1/conversation/respond-with-image`
+- `POST /v1/vision/analyze`
 - `GET /v1/memory/stats`
 - persona prompt construction
 - profile + episodic memory persistence
@@ -366,6 +380,43 @@ curl -X POST http://127.0.0.1:8000/v1/conversation/respond \
   -H 'Content-Type: application/json' \
   -d '{"user_text":"Remember that I like jasmine tea.","session_id":"demo","synthesize_speech":false}'
 ```
+
+Test the image-aware conversation endpoint:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/conversation/respond-with-image \
+  -F "user_text=What is happening in this image?" \
+  -F "session_id=vision-demo" \
+  -F "synthesize_speech=false" \
+  -F "image_file=@test_image.png"
+```
+
+Notes:
+- image understanding currently requires `SHANA_LLM_PROVIDER=openai`
+- supported upload types are `image/jpeg`, `image/png`, `image/webp`, and `image/gif`
+- uploads are cached under `data/images/`
+- local vision is also supported when `SHANA_LLM_PROVIDER=local` or `ollama`, `SHANA_LOCAL_LLM_SUPPORTS_VISION=true`, and the configured Ollama model accepts images
+
+Structured vision analysis endpoint:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/vision/analyze \
+  -F "user_text=Read the screen and tell me the important parts." \
+  -F "image_file=@test_image.png"
+```
+
+The structured response includes:
+- image type classification
+- scene summary
+- OCR-style visible text extraction
+- key text blocks for screenshots and documents
+- interface elements for UI-heavy images
+- document structure hints for headings/lists/tables
+- likely user actions inferred from the screen or document
+- notable objects
+- spatial notes
+- suggested follow-up questions
+- overall confidence
 
 ## Voice / STT / TTS test commands
 

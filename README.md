@@ -146,6 +146,14 @@ OpenAI's current model catalog and audio guides:
 - voice roundtrip testing
 - turn-based voice controller scaffold
 
+## Platform notes
+- Core backend code is path-portable and should run on Linux, macOS, or Windows with the right Python dependencies.
+- The local LLM path assumes an Ollama-compatible endpoint, defaulting to `http://127.0.0.1:11434`.
+- The mic voice loop is still environment-dependent:
+  - Linux uses `arecord` for capture and tries `aplay` / `ffplay` / `play` for playback.
+  - Windows now uses a PowerShell-based fallback path for microphone capture and playback.
+  - If mic capture is flaky on a machine, the most reliable portable path is still the file-based STT / voice roundtrip flow.
+
 ## Project layout
 - `gamma/main.py` - FastAPI app entrypoint
 - `gamma/api/routes.py` - API routes
@@ -158,7 +166,11 @@ OpenAI's current model catalog and audio guides:
 
 ## Quick start
 
+<<<<<<< HEAD
 From Bash or WSL:
+=======
+### Linux / macOS
+>>>>>>> 39b8b22cba6d0a06adfad04104ad275be3874a82
 
 ```bash
 python3 -m venv .venv
@@ -166,6 +178,7 @@ source .venv/bin/activate
 python -m pip install -e .
 ```
 
+<<<<<<< HEAD
 From Windows PowerShell:
 
 ```powershell
@@ -192,6 +205,18 @@ Order of precedence:
 7. hard-coded defaults in code
 
 `config/models.toml` supplies provider/model defaults, `config/memory.toml` supplies memory defaults, and `config/persona.toml` plus the persona YAML files feed prompt construction. Create `config/app.toml` if you want file-based local overrides without putting them in `.env`.
+=======
+### Windows (PowerShell)
+
+```powershell
+cd gamma
+copy .env.example .env
+py -3 -m venv .venv
+.\.venv\Scripts\python -m pip install -e .
+```
+
+Then edit `.env` for the provider setup you want.
+>>>>>>> 39b8b22cba6d0a06adfad04104ad275be3874a82
 
 ## Example environment
 
@@ -228,10 +253,13 @@ SHANA_TTS_VOICE=alloy
 
 ## Run the API
 
+### Linux / macOS
+
 ```bash
 python -m uvicorn gamma.main:app --reload
 ```
 
+<<<<<<< HEAD
 ## Dashboard and Background Services
 
 Gamma now has two service layers:
@@ -373,7 +401,18 @@ Notes:
 - `/health` remains open for simple service checks
 - the dashboard automatically uses this token for its internal Shana status probe when configured in the same `.env`
 
+=======
+### Windows (PowerShell)
+
+```powershell
+cd gamma
+.\.venv\Scripts\uvicorn gamma.main:app --reload
+```
+
+>>>>>>> 39b8b22cba6d0a06adfad04104ad275be3874a82
 ## Test the conversation endpoint
+
+### curl
 
 ```bash
 curl -X POST http://127.0.0.1:8000/v1/conversation/respond \
@@ -381,6 +420,7 @@ curl -X POST http://127.0.0.1:8000/v1/conversation/respond \
   -d '{"user_text":"Remember that I like jasmine tea.","session_id":"demo","synthesize_speech":false}'
 ```
 
+<<<<<<< HEAD
 Test the image-aware conversation endpoint:
 
 ```bash
@@ -418,7 +458,19 @@ The structured response includes:
 - suggested follow-up questions
 - overall confidence
 
+=======
+### Windows PowerShell
+
+```powershell
+Invoke-RestMethod -Method POST -Uri http://127.0.0.1:8000/v1/conversation/respond `
+  -ContentType 'application/json' `
+  -Body '{"user_text":"Remember that I like jasmine tea.","session_id":"demo","synthesize_speech":false}'
+```
+
+>>>>>>> 39b8b22cba6d0a06adfad04104ad275be3874a82
 ## Voice / STT / TTS test commands
+
+### Linux / macOS
 
 ```bash
 python -m gamma.run_stt_test test_audio/jfk.flac
@@ -431,6 +483,7 @@ python -m gamma.run_voice_mode --mode always-listening --seconds 5
 python -m gamma.run_voice_mode --mode always-listening --silence-stop 1.2 --max-seconds 20 --speech-threshold 0.015
 ```
 
+<<<<<<< HEAD
 Use `--no-tts` for the first microphone validation pass so you only test recording, transcription, and text response generation. `turn-based` waits for Enter before every capture. `always-listening` now starts automatically, waits for speech, and ends each utterance after trailing silence instead of using a fixed capture window. You can tune it with:
 - `--silence-stop` for how much trailing silence ends an utterance
 - `--max-seconds` for the longest single utterance
@@ -475,6 +528,17 @@ Operator wording:
 - `discarded` means an old turn finished after interruption and its result was ignored
 
 The current implementation is still phrase-based, not true streaming word-by-word transcription. On Windows, the mic controller records through `sounddevice` and plays WAV replies through `winsound`. On Linux it still prefers `arecord`/`aplay`, with `sounddevice` as a fallback when those binaries are unavailable.
+=======
+### Windows (PowerShell)
+
+```powershell
+cd gamma
+.\.venv\Scripts\python -m gamma.run_stt_test test_audio\jfk.flac
+.\.venv\Scripts\python -m gamma.run_voice_roundtrip test_audio\jfk.flac --skip-tts
+.\.venv\Scripts\python -m gamma.run_tts_test "Gamma TTS smoke test"
+.\.venv\Scripts\python -m gamma.run_voice_mode --mode turn-based --seconds 5
+```
+>>>>>>> 39b8b22cba6d0a06adfad04104ad275be3874a82
 
 ## Repository hygiene
 

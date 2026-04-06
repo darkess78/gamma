@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import settings
+from ..llm.ollama_probe import probe_ollama_model_capabilities
 from ..memory.service import MemoryService
 
 
@@ -28,6 +29,9 @@ class SystemStatusService:
                     "provider": settings.llm_provider,
                     "model": settings.llm_model,
                     "endpoint": settings.local_llm_endpoint if settings.llm_provider in {"local", "ollama"} else None,
+                    "vision_enabled": settings.local_llm_supports_vision if settings.llm_provider in {"local", "ollama"} else False,
+                    "vision_model": self._local_vision_model_name() if settings.llm_provider in {"local", "ollama"} else None,
+                    "vision_capability": self._check_local_llm_vision_capability() if settings.llm_provider in {"local", "ollama"} else {"ok": False, "detail": "not-local"},
                     "health": self._check_ollama_health() if settings.llm_provider in {"local", "ollama"} else {"ok": True, "detail": "not-local"},
                 },
                 "stt": {
@@ -69,6 +73,22 @@ class SystemStatusService:
             }
         except Exception as exc:
             return {"ok": False, "detail": str(exc)}
+
+    def _check_local_llm_vision_capability(self) -> dict[str, Any]:
+        if not settings.local_llm_supports_vision:
+            return {"ok": False, "detail": "vision-disabled-in-config"}
+        model_name = self._local_vision_model_name()
+        return probe_ollama_model_capabilities(
+            endpoint=settings.local_llm_endpoint,
+            model=model_name,
+            timeout_seconds=5,
+        )
+
+    def _local_vision_model_name(self) -> str:
+        configured = (settings.local_llm_vision_model or "").strip()
+        if configured:
+            return configured
+        return settings.local_llm_model
 
     def _check_gpt_sovits_health(self) -> dict[str, Any]:
         if not settings.gpt_sovits_endpoint:

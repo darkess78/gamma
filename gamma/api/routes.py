@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse
 from ..conversation.service import ConversationService
 from ..errors import ConfigurationError, ConversationError, ExternalServiceError, GammaError
 from ..schemas.conversation import ConversationRequest
-from ..schemas.response import AssistantResponse
+from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..schemas.voice import LiveVoiceJobResponse, VoiceRoundtripResponse, VoiceTranscriptionResponse
 from ..system.status import SystemStatusService
 from ..voice.live_jobs import LiveVoiceJobManager
@@ -100,6 +100,60 @@ def conversation_respond(request: ConversationRequest) -> AssistantResponse:
             user_text=request.user_text,
             session_id=request.session_id,
             synthesize_speech=request.synthesize_speech,
+        )
+    except ConversationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ConfigurationError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except ExternalServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except GammaError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/v1/conversation/respond-with-image", response_model=AssistantResponse)
+async def conversation_respond_with_image(
+    user_text: str = Form(...),
+    image_file: UploadFile = File(...),
+    vision_mode: str | None = Form(default="auto"),
+    session_id: str | None = Form(default=None),
+    synthesize_speech: bool = Form(default=False),
+) -> AssistantResponse:
+    try:
+        image_bytes = await image_file.read()
+        return conversation_service.respond_with_image(
+            user_text=user_text,
+            image_bytes=image_bytes,
+            image_media_type=image_file.content_type or "",
+            image_filename=image_file.filename,
+            vision_mode=vision_mode,
+            session_id=session_id,
+            synthesize_speech=synthesize_speech,
+        )
+    except ConversationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ConfigurationError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except ExternalServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except GammaError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/v1/vision/analyze", response_model=VisionAnalysis)
+async def vision_analyze(
+    user_text: str = Form(...),
+    image_file: UploadFile = File(...),
+    vision_mode: str | None = Form(default="auto"),
+) -> VisionAnalysis:
+    try:
+        image_bytes = await image_file.read()
+        return conversation_service.analyze_image(
+            user_text=user_text,
+            image_bytes=image_bytes,
+            image_media_type=image_file.content_type or "",
+            image_filename=image_file.filename,
+            vision_mode=vision_mode,
         )
     except ConversationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

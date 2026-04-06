@@ -84,6 +84,14 @@ class Settings:
         _setting("SHANA_AUDIO_OUTPUT_DIR", _config_value(APP_CONFIG, "audio_output_dir", default="./data/audio")),
         default=PROJECT_ROOT / "data" / "audio",
     )
+    image_input_dir: Path = _as_path(
+        _setting("SHANA_IMAGE_INPUT_DIR", _config_value(APP_CONFIG, "image_input_dir", default="./data/images")),
+        default=PROJECT_ROOT / "data" / "images",
+    )
+    vision_max_image_bytes: int = _as_int(
+        _setting("SHANA_VISION_MAX_IMAGE_BYTES", _config_value(APP_CONFIG, "vision_max_image_bytes", default=8_000_000)),
+        default=8_000_000,
+    )
     default_language: str = str(
         _setting("SHANA_DEFAULT_LANGUAGE", _config_value(APP_CONFIG, "default_language", default="en"))
     )
@@ -150,6 +158,17 @@ class Settings:
     )
     local_llm_model: str = str(
         _setting("SHANA_LOCAL_LLM_MODEL", _config_value(APP_CONFIG, "local_llm_model", default="gpt-oss:20b"))
+    )
+    local_llm_supports_vision: bool = _as_bool(
+        _setting(
+            "SHANA_LOCAL_LLM_SUPPORTS_VISION",
+            _config_value(APP_CONFIG, "local_llm_supports_vision", default=False),
+        ),
+        default=False,
+    )
+    local_llm_vision_model: str | None = _setting(
+        "SHANA_LOCAL_LLM_VISION_MODEL",
+        _config_value(APP_CONFIG, "local_llm_vision_model", default=""),
     )
     local_llm_timeout_seconds: int = _as_int(
         _setting(
@@ -220,3 +239,4 @@ class Settings:
 settings = Settings()
 settings.data_dir.mkdir(parents=True, exist_ok=True)
 settings.audio_output_dir.mkdir(parents=True, exist_ok=True)
+settings.image_input_dir.mkdir(parents=True, exist_ok=True)

@@ -31,6 +31,39 @@ class ToolExecutionResult(BaseModel):
     metadata: dict = Field(default_factory=dict)
 
 
+class VisionObject(BaseModel):
+    name: str
+    description: str | None = None
+    confidence: float = 0.0
+
+
+class VisionTextBlock(BaseModel):
+    label: str
+    text: str
+    block_type: str = "text"
+
+
+class VisionInterfaceElement(BaseModel):
+    name: str
+    element_type: str = "unknown"
+    role: str | None = None
+    state: str | None = None
+
+
+class VisionAnalysis(BaseModel):
+    image_type: str = "unknown"
+    summary: str
+    visible_text: str | None = None
+    objects: list[VisionObject] = Field(default_factory=list)
+    key_text_blocks: list[VisionTextBlock] = Field(default_factory=list)
+    interface_elements: list[VisionInterfaceElement] = Field(default_factory=list)
+    document_structure: list[str] = Field(default_factory=list)
+    likely_actions: list[str] = Field(default_factory=list)
+    spatial_notes: list[str] = Field(default_factory=list)
+    suggested_follow_ups: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
+
+
 class AssistantResponse(BaseModel):
     spoken_text: str
     emotion: EmotionTag = "neutral"
@@ -39,5 +72,6 @@ class AssistantResponse(BaseModel):
     tool_calls: list[ToolCall] = Field(default_factory=list)
     tool_results: list[ToolExecutionResult] = Field(default_factory=list)
     memory_candidates: list[MemoryCandidate] = Field(default_factory=list)
+    vision: VisionAnalysis | None = None
     audio_path: str | None = None
     audio_content_type: str | None = None

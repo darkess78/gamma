@@ -9,8 +9,9 @@ from ..errors import ConversationError, GammaError
 from ..llm.factory import build_llm_adapter
 from ..memory.service import MemoryService
 from ..persona.loader import build_system_prompt
-from ..schemas.response import AssistantResponse, EmotionTag, MemoryCandidate, ToolCall, ToolExecutionResult
+from ..schemas.response import AssistantResponse, EmotionTag, MemoryCandidate, ToolCall, ToolExecutionResult, VisionAnalysis
 from ..tools.registry import ToolRegistry
+from ..vision.service import VisionImage, VisionService
 from ..voice.tts import TTSService
 
 
@@ -23,12 +24,82 @@ class ConversationService:
         self._llm = None
         self._tts = None
         self._tools = ToolRegistry()
+        self._vision = VisionService()
 
     def respond(
         self,
         user_text: str,
         session_id: str | None = None,
         synthesize_speech: bool = False,
+    ) -> AssistantResponse:
+        return self._respond(
+            user_text=user_text,
+            session_id=session_id,
+            synthesize_speech=synthesize_speech,
+        )
+
+    def respond_with_image(
+        self,
+        *,
+        user_text: str,
+        image_bytes: bytes,
+        image_media_type: str,
+        image_filename: str | None = None,
+        vision_mode: str | None = None,
+        session_id: str | None = None,
+        synthesize_speech: bool = False,
+    ) -> AssistantResponse:
+        image = self._vision.prepare_image(
+            image_bytes=image_bytes,
+            media_type=image_media_type,
+            filename=image_filename,
+        )
+        vision_analysis = self._vision.analyze_image(
+            llm_adapter=self._llm_adapter(),
+            image=image,
+            user_text=user_text,
+            mode=vision_mode,
+        )
+        return self._respond(
+            user_text=user_text,
+            session_id=session_id,
+            synthesize_speech=synthesize_speech,
+            image=image,
+            vision_analysis=vision_analysis,
+        )
+
+    def analyze_image(
+        self,
+        *,
+        user_text: str,
+        image_bytes: bytes,
+        image_media_type: str,
+        image_filename: str | None = None,
+        vision_mode: str | None = None,
+    ) -> VisionAnalysis:
+        image = self._vision.prepare_image(
+            image_bytes=image_bytes,
+            media_type=image_media_type,
+            filename=image_filename,
+        )
+        return self._vision.analyze_image(
+            llm_adapter=self._llm_adapter(),
+            image=image,
+            user_text=user_text,
+            mode=vision_mode,
+        )
+
+    def memory_stats(self) -> dict[str, str | int]:
+        return self._memory.stats()
+
+    def _respond(
+        self,
+        *,
+        user_text: str,
+        session_id: str | None,
+        synthesize_speech: bool,
+        image: VisionImage | None = None,
+        vision_analysis: VisionAnalysis | None = None,
     ) -> AssistantResponse:
         stripped = user_text.strip()
         if not stripped:
@@ -43,7 +114,15 @@ class ConversationService:
                 session_id=session_id,
             )
             llm_started = time.perf_counter()
-            draft_reply = self._llm_adapter().generate_reply(system_prompt=system_prompt, user_text=stripped)
+            draft_reply = self._llm_adapter().generate_reply(
+                system_prompt=system_prompt,
+                user_text=self._build_user_input_text(
+                    user_text=stripped,
+                    image=image,
+                    vision_analysis=vision_analysis,
+                ),
+                image_inputs=[image.to_llm_input()] if image is not None else None,
+            )
             timing["draft_reply_ms"] = round((time.perf_counter() - llm_started) * 1000, 1)
             inferred_tool_calls = self._infer_tool_calls(stripped)
             metadata_started = time.perf_counter()
@@ -63,9 +142,14 @@ class ConversationService:
                     finalizer_started = time.perf_counter()
                     final_reply_text = self._finalize_reply_with_tools(
                         system_prompt=system_prompt,
-                        user_text=stripped,
+                        user_text=self._build_user_input_text(
+                            user_text=stripped,
+                            image=image,
+                            vision_analysis=vision_analysis,
+                        ),
                         draft_reply=draft_reply.text,
                         tool_results=tool_results,
+                        image=image,
                     )
                     timing["finalizer_ms"] = round((time.perf_counter() - finalizer_started) * 1000, 1)
             else:
@@ -86,6 +170,7 @@ class ConversationService:
                 tool_calls=planned_tool_calls,
                 tool_results=tool_results,
                 memory_candidates=memory_candidates,
+                vision=vision_analysis,
             )
             if synthesize_speech:
                 tts_started = time.perf_counter()
@@ -108,9 +193,6 @@ class ConversationService:
             raise
         except Exception as exc:
             raise ConversationError(f"Conversation pipeline failed: {exc}") from exc
-
-    def memory_stats(self) -> dict[str, str | int]:
-        return self._memory.stats()
 
     def _llm_adapter(self):
         if self._llm is None:
@@ -284,6 +366,7 @@ class ConversationService:
         user_text: str,
         draft_reply: str,
         tool_results: list[ToolExecutionResult],
+        image: VisionImage | None = None,
     ) -> str:
         tool_summary = []
         for result in tool_results:
@@ -312,9 +395,62 @@ class ConversationService:
             + "\n".join(tool_summary)
         )
         try:
-            return self._llm_adapter().generate_reply(system_prompt=finalizer_prompt, user_text=finalizer_input).text
+            return self._llm_adapter().generate_reply(
+                system_prompt=finalizer_prompt,
+                user_text=finalizer_input,
+                image_inputs=[image.to_llm_input()] if image is not None else None,
+            ).text
         except Exception:
             return draft_reply
+
+    def _build_user_input_text(
+        self,
+        *,
+        user_text: str,
+        image: VisionImage | None,
+        vision_analysis: VisionAnalysis | None = None,
+    ) -> str:
+        if image is None:
+            return user_text
+        image_note = "The user attached an image."
+        if image.filename:
+            image_note = f"The user attached an image named {image.filename}."
+        if image.stored_path:
+            image_note += f" Stored at {image.stored_path}."
+        if vision_analysis is None:
+            return f"{user_text}\n\n{image_note}\nUse the image directly when answering."
+        analysis_lines = [
+            f"Image type: {vision_analysis.image_type}.",
+            f"Scene summary: {vision_analysis.summary}",
+        ]
+        if vision_analysis.visible_text:
+            analysis_lines.append(f"Visible text:\n{vision_analysis.visible_text}")
+        if vision_analysis.key_text_blocks:
+            block_summary = "; ".join(
+                f"{block.label}: {block.text[:120]}" for block in vision_analysis.key_text_blocks[:4]
+            )
+            analysis_lines.append(f"Key text blocks: {block_summary}")
+        if vision_analysis.interface_elements:
+            ui_summary = ", ".join(
+                f"{item.name} ({item.element_type})" for item in vision_analysis.interface_elements[:6]
+            )
+            analysis_lines.append(f"Interface elements: {ui_summary}.")
+        if vision_analysis.document_structure:
+            analysis_lines.append("Document structure: " + " ".join(vision_analysis.document_structure))
+        if vision_analysis.likely_actions:
+            analysis_lines.append("Likely actions: " + " ".join(vision_analysis.likely_actions))
+        if vision_analysis.objects:
+            object_summary = ", ".join(obj.name for obj in vision_analysis.objects[:6])
+            analysis_lines.append(f"Detected notable objects: {object_summary}.")
+        if vision_analysis.spatial_notes:
+            analysis_lines.append("Spatial notes: " + " ".join(vision_analysis.spatial_notes))
+        analysis_lines.append(f"Vision confidence: {vision_analysis.confidence:.2f}.")
+        return (
+            f"{user_text}\n\n{image_note}\n"
+            "Here is structured vision context for the same image:\n"
+            + "\n".join(analysis_lines)
+            + "\nAnswer the user using both the image and this structured context."
+        )
 
     def _render_direct_tool_reply(self, *, user_text: str, tool_results: list[ToolExecutionResult]) -> str | None:
         if not tool_results or any(not result.ok for result in tool_results):
@@ -341,8 +477,14 @@ class ConversationService:
         tts = metadata.get("tts", {}) if isinstance(metadata, dict) else {}
         llm_health = "healthy" if llm.get("health", {}).get("ok") else "down"
         tts_health = "healthy" if tts.get("health", {}).get("ok") else "down"
+        vision_capability = llm.get("vision_capability", {}) if isinstance(llm, dict) else {}
+        vision_enabled = bool(llm.get("vision_enabled")) if isinstance(llm, dict) else False
+        vision_status = "disabled"
+        if vision_enabled:
+            vision_status = "ready" if vision_capability.get("supports_vision") else "not supported by model"
         return (
             f"LLM: {llm.get('provider', 'n/a')} ({llm.get('model', 'n/a')}) is {llm_health}. "
+            f"LLM vision: {vision_status}. "
             f"STT: {stt.get('provider', 'n/a')} ({stt.get('model', 'n/a')}) on {stt.get('device', 'n/a')}. "
             f"TTS: {tts.get('provider', 'n/a')} ({tts.get('model', 'n/a')}) is {tts_health}."
         )

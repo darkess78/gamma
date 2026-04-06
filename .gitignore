@@ -31,6 +31,7 @@ data/
 # Large/private local assets
 imagegen/
 research/
+.claude/
 
 # OS/editor noise
 .DS_Store

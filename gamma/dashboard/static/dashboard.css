@@ -330,6 +330,48 @@ pre {
   font: inherit;
 }
 
+.text-area {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.45;
+}
+
+.compact-render {
+  max-height: 160px;
+  padding: 12px 14px;
+}
+
+.vision-preview-shell {
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)),
+    var(--panel-2);
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.vision-preview {
+  display: block;
+  width: 100%;
+  max-height: 300px;
+  object-fit: contain;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.vision-history {
+  max-height: 420px;
+}
+
 .checkbox-row {
   display: inline-flex;
   align-items: center;
@@ -354,7 +396,10 @@ pre {
 #liveVoiceMeta,
 #liveVoiceStatus,
 #liveVoiceHistory,
-#voiceRoundtripStatus {
+#voiceRoundtripStatus,
+#visionStatus,
+#visionResult,
+#visionHistory {
   margin-top: 14px;
 }
 

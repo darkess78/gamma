@@ -16,6 +16,9 @@
   var liveTurnStartedAt = 0;
   var liveHistory = [];
   var liveJobMeta = null;
+  var selectedVisionFile = null;
+  var selectedVisionPreviewUrl = null;
+  var visionHistory = [];
   var LIVE_TARGET_SAMPLE_RATE = 16000;
   var LIVE_SPEECH_THRESHOLD = 0.018;
   var LIVE_SILENCE_MS = 900;
@@ -62,6 +65,23 @@
 
   function updateStamp(text) {
     document.getElementById('stamp').textContent = text;
+  }
+
+  function loadVisionHistory() {
+    try {
+      var raw = localStorage.getItem('gammaVisionHistory');
+      visionHistory = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(visionHistory)) visionHistory = [];
+    } catch (error) {
+      visionHistory = [];
+    }
+  }
+
+  function saveVisionHistory() {
+    try {
+      localStorage.setItem('gammaVisionHistory', JSON.stringify(visionHistory.slice(0, 8)));
+    } catch (error) {
+    }
   }
 
   function setViewMode(mode) {
@@ -333,6 +353,128 @@
       lines.push('- ' + (person.name || 'Unnamed') + rel);
     }
     return lines.join('\n');
+  }
+
+  function humanVisionAnalysis(vision) {
+    if (!vision) {
+      return 'No vision analysis available.';
+    }
+    var lines = [
+      'Image type: ' + (vision.image_type || 'unknown'),
+      'Summary: ' + (vision.summary || 'n/a'),
+      'Confidence: ' + (typeof vision.confidence === 'number' ? vision.confidence.toFixed(2) : 'n/a')
+    ];
+    if (vision.visible_text) {
+      lines.push('');
+      lines.push('Visible text:');
+      lines.push(vision.visible_text);
+    }
+    if (vision.key_text_blocks && vision.key_text_blocks.length) {
+      lines.push('');
+      lines.push('Key text blocks:');
+      for (var b = 0; b < vision.key_text_blocks.length; b += 1) {
+        var block = vision.key_text_blocks[b];
+        lines.push('- ' + (block.label || block.block_type || 'text') + ': ' + block.text);
+      }
+    }
+    if (vision.interface_elements && vision.interface_elements.length) {
+      lines.push('');
+      lines.push('Interface elements:');
+      for (var e = 0; e < vision.interface_elements.length; e += 1) {
+        var element = vision.interface_elements[e];
+        var details = [element.element_type || 'unknown'];
+        if (element.role) details.push(element.role);
+        if (element.state) details.push(element.state);
+        lines.push('- ' + element.name + ' [' + details.join(' | ') + ']');
+      }
+    }
+    if (vision.document_structure && vision.document_structure.length) {
+      lines.push('');
+      lines.push('Document structure:');
+      for (var d = 0; d < vision.document_structure.length; d += 1) {
+        lines.push('- ' + vision.document_structure[d]);
+      }
+    }
+    if (vision.likely_actions && vision.likely_actions.length) {
+      lines.push('');
+      lines.push('Likely actions:');
+      for (var a = 0; a < vision.likely_actions.length; a += 1) {
+        lines.push('- ' + vision.likely_actions[a]);
+      }
+    }
+    if (vision.objects && vision.objects.length) {
+      lines.push('');
+      lines.push('Objects:');
+      for (var i = 0; i < vision.objects.length; i += 1) {
+        var object = vision.objects[i];
+        lines.push('- ' + object.name + (object.description ? ': ' + object.description : '') + ' [' + (typeof object.confidence === 'number' ? object.confidence.toFixed(2) : 'n/a') + ']');
+      }
+    }
+    if (vision.spatial_notes && vision.spatial_notes.length) {
+      lines.push('');
+      lines.push('Spatial notes:');
+      for (var j = 0; j < vision.spatial_notes.length; j += 1) {
+        lines.push('- ' + vision.spatial_notes[j]);
+      }
+    }
+    if (vision.suggested_follow_ups && vision.suggested_follow_ups.length) {
+      lines.push('');
+      lines.push('Suggested follow-ups:');
+      for (var k = 0; k < vision.suggested_follow_ups.length; k += 1) {
+        lines.push('- ' + vision.suggested_follow_ups[k]);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  function humanVisionReply(payload) {
+    if (!payload) {
+      return 'No Gamma vision reply available.';
+    }
+    var lines = [
+      'Reply: ' + (payload.spoken_text || 'n/a'),
+      'Emotion: ' + (payload.emotion || 'neutral')
+    ];
+    if (payload.vision) {
+      lines.push('');
+      lines.push(humanVisionAnalysis(payload.vision));
+    }
+    if (payload.audio_path) {
+      lines.push('');
+      lines.push('Audio artifact: ' + payload.audio_path);
+    }
+    return lines.join('\n');
+  }
+
+  function humanVisionHistory() {
+    if (!visionHistory.length) {
+      return 'No recent vision history.';
+    }
+    var lines = [];
+    for (var i = 0; i < visionHistory.length; i += 1) {
+      var item = visionHistory[i];
+      lines.push('[' + (item.timestamp || 'n/a') + '] ' + (item.kind || 'vision'));
+      lines.push('File: ' + (item.file_name || 'n/a'));
+      lines.push('Mode: ' + (item.vision_mode || 'auto'));
+      lines.push('Prompt: ' + (item.user_text || 'n/a'));
+      if (item.summary) lines.push('Summary: ' + item.summary);
+      if (item.reply_text) lines.push('Reply: ' + item.reply_text);
+      lines.push('');
+    }
+    return lines.join('\n').trim();
+  }
+
+  function renderVisionHistory() {
+    renderBlock('visionHistory', visionHistory, humanVisionHistory());
+  }
+
+  function pushVisionHistory(entry) {
+    visionHistory.unshift(entry);
+    if (visionHistory.length > 8) {
+      visionHistory = visionHistory.slice(0, 8);
+    }
+    saveVisionHistory();
+    renderVisionHistory();
   }
 
   function humanMachineMeta(machine) {
@@ -802,6 +944,89 @@
     }
   }
 
+  function updateVisionImageMeta() {
+    var target = document.getElementById('visionImageMeta');
+    var preview = document.getElementById('visionImagePreview');
+    if (!selectedVisionFile) {
+      target.textContent = 'No image selected.';
+      preview.hidden = true;
+      preview.removeAttribute('src');
+      return;
+    }
+    target.textContent = 'Selected: ' + selectedVisionFile.name + '\nType: ' + (selectedVisionFile.type || 'unknown') + '\nSize: ' + fmtBytes(selectedVisionFile.size);
+    preview.hidden = !selectedVisionPreviewUrl;
+    if (selectedVisionPreviewUrl) {
+      preview.src = selectedVisionPreviewUrl;
+    }
+  }
+
+  function buildVisionFormData() {
+    if (!selectedVisionFile) {
+      throw new Error('Choose an image first.');
+    }
+    var formData = new FormData();
+    formData.append('image_file', selectedVisionFile, selectedVisionFile.name);
+    formData.append('user_text', document.getElementById('visionPrompt').value.trim() || 'Tell me what is important in this image.');
+    formData.append('vision_mode', document.getElementById('visionMode').value || 'auto');
+    return formData;
+  }
+
+  async function analyzeVisionImage() {
+    try {
+      var formData = buildVisionFormData();
+      var prompt = document.getElementById('visionPrompt').value.trim() || 'Tell me what is important in this image.';
+      var mode = document.getElementById('visionMode').value || 'auto';
+      document.getElementById('visionStatus').textContent = 'Analyzing image...';
+      var response = await fetch('/api/vision/analyze', { method: 'POST', body: formData });
+      var payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || ('HTTP ' + response.status));
+      }
+      renderBlock('visionResult', payload, humanVisionAnalysis(payload));
+      document.getElementById('visionStatus').textContent = 'Vision analysis complete.';
+      pushVisionHistory({
+        timestamp: new Date().toLocaleString(),
+        kind: 'analyze',
+        file_name: selectedVisionFile ? selectedVisionFile.name : 'n/a',
+        vision_mode: mode,
+        user_text: prompt,
+        summary: payload.summary || null
+      });
+    } catch (error) {
+      document.getElementById('visionStatus').textContent = 'Vision analysis failed.\n' + String(error);
+    }
+  }
+
+  async function askGammaAboutImage() {
+    try {
+      var formData = buildVisionFormData();
+      var prompt = document.getElementById('visionPrompt').value.trim() || 'Tell me what is important in this image.';
+      var mode = document.getElementById('visionMode').value || 'auto';
+      var sessionId = document.getElementById('visionSessionId').value.trim();
+      if (sessionId) formData.append('session_id', sessionId);
+      formData.append('synthesize_speech', document.getElementById('visionSynthesizeSpeech').checked ? 'true' : 'false');
+      document.getElementById('visionStatus').textContent = 'Sending image to Gamma...';
+      var response = await fetch('/api/vision/respond', { method: 'POST', body: formData });
+      var payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || ('HTTP ' + response.status));
+      }
+      renderBlock('visionResult', payload, humanVisionReply(payload));
+      document.getElementById('visionStatus').textContent = 'Gamma vision reply ready.';
+      pushVisionHistory({
+        timestamp: new Date().toLocaleString(),
+        kind: 'ask',
+        file_name: selectedVisionFile ? selectedVisionFile.name : 'n/a',
+        vision_mode: mode,
+        user_text: prompt,
+        summary: payload.vision && payload.vision.summary ? payload.vision.summary : null,
+        reply_text: payload.spoken_text || null
+      });
+    } catch (error) {
+      document.getElementById('visionStatus').textContent = 'Gamma vision request failed.\n' + String(error);
+    }
+  }
+
   window.onerror = function (message, source, lineno, colno, error) {
     postClientLog('window_error', {
       message: String(message),
@@ -825,6 +1050,8 @@
   window.sendRecordedVoice = sendRecordedVoice;
   window.toggleLiveVoice = toggleLiveVoice;
   window.stopLiveVoice = stopLiveVoice;
+  window.analyzeVisionImage = analyzeVisionImage;
+  window.askGammaAboutImage = askGammaAboutImage;
 
   postClientLog('script_boot', { viewMode: viewMode });
   setViewMode(viewMode);
@@ -838,6 +1065,20 @@
   renderLiveMeta(null);
   renderLiveHistory();
   drawLiveMeter(0);
+  document.getElementById('visionImageFile').addEventListener('change', function (event) {
+    if (selectedVisionPreviewUrl) {
+      URL.revokeObjectURL(selectedVisionPreviewUrl);
+      selectedVisionPreviewUrl = null;
+    }
+    selectedVisionFile = event.target.files && event.target.files[0] ? event.target.files[0] : null;
+    if (selectedVisionFile) {
+      selectedVisionPreviewUrl = URL.createObjectURL(selectedVisionFile);
+    }
+    updateVisionImageMeta();
+  });
+  loadVisionHistory();
+  updateVisionImageMeta();
+  renderVisionHistory();
   loadStatus();
   setInterval(loadStatus, 15000);
 }());

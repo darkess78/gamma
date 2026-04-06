@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .service import DashboardService
 from .auth import auth_config, dashboard_auth_ready, is_authenticated, session_cookie_value, verify_login, websocket_is_authenticated
+from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..schemas.voice import VoiceRoundtripResponse
 from ..voice.live import LiveVoiceSession
 from ..voice.roundtrip import VoiceRoundtripService
@@ -229,6 +230,48 @@ async def dashboard_voice_roundtrip(
         session_id=session_id,
         synthesize_speech=synthesize_speech,
     )
+
+
+@app.post("/api/vision/analyze", response_model=VisionAnalysis)
+async def dashboard_vision_analyze(
+    image_file: UploadFile = File(...),
+    user_text: str = Form(...),
+    vision_mode: str | None = Form(default="auto"),
+) -> VisionAnalysis:
+    try:
+        image_bytes = await image_file.read()
+        return service.analyze_remote_image(
+            image_bytes=image_bytes,
+            filename=image_file.filename or "dashboard-image",
+            content_type=image_file.content_type or "application/octet-stream",
+            user_text=user_text,
+            vision_mode=vision_mode,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/vision/respond", response_model=AssistantResponse)
+async def dashboard_vision_respond(
+    image_file: UploadFile = File(...),
+    user_text: str = Form(...),
+    vision_mode: str | None = Form(default="auto"),
+    session_id: str | None = Form(default=None),
+    synthesize_speech: bool = Form(default=False),
+) -> AssistantResponse:
+    try:
+        image_bytes = await image_file.read()
+        return service.respond_remote_image(
+            image_bytes=image_bytes,
+            filename=image_file.filename or "dashboard-image",
+            content_type=image_file.content_type or "application/octet-stream",
+            user_text=user_text,
+            vision_mode=vision_mode,
+            session_id=session_id,
+            synthesize_speech=synthesize_speech,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.websocket("/api/voice/live")

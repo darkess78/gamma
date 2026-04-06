@@ -145,6 +145,52 @@
         <div class="render" id="voiceRoundtripStatus">No browser voice roundtrip has run yet.</div>
         <audio id="voicePlayback" controls preload="none"></audio>
       </section>
+      <section class="panel wide">
+        <div class="panel-head">
+          <h2>Vision</h2>
+        </div>
+        <div class="provider-actions">
+          <div class="action-group">
+            <div class="action-title">Image</div>
+            <div class="action-buttons action-stack">
+              <input class="text-input" id="visionImageFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+              <div class="render compact-render" id="visionImageMeta">No image selected.</div>
+              <div class="vision-preview-shell">
+                <img id="visionImagePreview" class="vision-preview" alt="Vision preview" hidden>
+              </div>
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">Prompt</div>
+            <div class="action-buttons action-stack">
+              <textarea class="text-area" id="visionPrompt" placeholder="Ask Gamma what to look for in the image.">Tell me what is important in this image.</textarea>
+              <input class="text-input" id="visionSessionId" placeholder="optional session id for ask-gamma mode">
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">Mode</div>
+            <div class="action-buttons action-stack">
+              <select class="text-input" id="visionMode">
+                <option value="auto">Auto</option>
+                <option value="screen">Screen</option>
+                <option value="document">Document</option>
+                <option value="photo">Photo</option>
+              </select>
+              <label class="checkbox-row"><input id="visionSynthesizeSpeech" type="checkbox"> Return audio on ask</label>
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">Actions</div>
+            <div class="action-buttons action-stack">
+              <button class="secondary" onclick="analyzeVisionImage()">Analyze Image</button>
+              <button onclick="askGammaAboutImage()">Ask Gamma</button>
+            </div>
+          </div>
+        </div>
+        <div class="render" id="visionStatus">No vision request has run yet.</div>
+        <div class="render" id="visionResult">No vision result yet.</div>
+        <div class="render vision-history" id="visionHistory">No recent vision history.</div>
+      </section>
       <section class="panel">
         <div class="panel-head">
           <h2>Memory Stats</h2>

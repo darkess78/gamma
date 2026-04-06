@@ -19,6 +19,7 @@ import psutil
 
 from ..config import settings
 from ..memory.service import MemoryService
+from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..supervisor.manager import ProcessManager
 from ..system.status import SystemStatusService
 
@@ -255,6 +256,50 @@ class DashboardService:
             raise RuntimeError("remote voice roundtrip returned a non-object payload")
         return payload
 
+    def analyze_remote_image(
+        self,
+        *,
+        image_bytes: bytes,
+        filename: str,
+        content_type: str,
+        user_text: str,
+        vision_mode: str | None,
+    ) -> VisionAnalysis:
+        payload = self._post_remote_image(
+            path="/v1/vision/analyze",
+            image_bytes=image_bytes,
+            filename=filename,
+            content_type=content_type,
+            user_text=user_text,
+            vision_mode=vision_mode,
+            session_id=None,
+            synthesize_speech=None,
+        )
+        return VisionAnalysis.model_validate(payload)
+
+    def respond_remote_image(
+        self,
+        *,
+        image_bytes: bytes,
+        filename: str,
+        content_type: str,
+        user_text: str,
+        vision_mode: str | None,
+        session_id: str | None,
+        synthesize_speech: bool,
+    ) -> AssistantResponse:
+        payload = self._post_remote_image(
+            path="/v1/conversation/respond-with-image",
+            image_bytes=image_bytes,
+            filename=filename,
+            content_type=content_type,
+            user_text=user_text,
+            vision_mode=vision_mode,
+            session_id=session_id,
+            synthesize_speech=synthesize_speech,
+        )
+        return AssistantResponse.model_validate(payload)
+
     def _schedule_stop(self, service_name: str, delay_seconds: float = 0.35) -> None:
         timer = threading.Timer(delay_seconds, lambda: self._process_manager.stop(service_name))
         timer.daemon = True
@@ -314,6 +359,93 @@ class DashboardService:
             f"{reason}\r\n"
             f"--{boundary}--\r\n"
         ).encode("utf-8")
+
+    def _post_remote_image(
+        self,
+        *,
+        path: str,
+        image_bytes: bytes,
+        filename: str,
+        content_type: str,
+        user_text: str,
+        vision_mode: str | None,
+        session_id: str | None,
+        synthesize_speech: bool | None,
+    ) -> dict[str, Any]:
+        boundary = f"gamma-image-{uuid.uuid4().hex}"
+        body = self._build_image_multipart_body(
+            boundary=boundary,
+            image_bytes=image_bytes,
+            filename=filename,
+            content_type=content_type,
+            user_text=user_text,
+            vision_mode=vision_mode,
+            session_id=session_id,
+            synthesize_speech=synthesize_speech,
+        )
+        headers = {
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            **self._api_headers(),
+        }
+        request = urllib.request.Request(
+            settings.shana_base_url + path,
+            data=body,
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=180) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"remote image request failed: http-{exc.code} {detail}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"remote image request failed: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise RuntimeError("remote image request returned a non-object payload")
+        return payload
+
+    def _build_image_multipart_body(
+        self,
+        *,
+        boundary: str,
+        image_bytes: bytes,
+        filename: str,
+        content_type: str,
+        user_text: str,
+        vision_mode: str | None,
+        session_id: str | None,
+        synthesize_speech: bool | None,
+    ) -> bytes:
+        parts: list[bytes] = []
+
+        def add_field(name: str, value: str) -> None:
+            parts.append(
+                (
+                    f"--{boundary}\r\n"
+                    f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                    f"{value}\r\n"
+                ).encode("utf-8")
+            )
+
+        add_field("user_text", user_text)
+        if vision_mode:
+            add_field("vision_mode", vision_mode)
+        if session_id:
+            add_field("session_id", session_id)
+        if synthesize_speech is not None:
+            add_field("synthesize_speech", "true" if synthesize_speech else "false")
+        parts.append(
+            (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="image_file"; filename="{filename}"\r\n'
+                f"Content-Type: {content_type}\r\n\r\n"
+            ).encode("utf-8")
+            + image_bytes
+            + b"\r\n"
+        )
+        parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+        return b"".join(parts)
 
     def _run_provider_action(
         self,

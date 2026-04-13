@@ -260,9 +260,65 @@
     lines.push('STT: ' + (stt.provider || 'n/a') + ' (' + (stt.model || 'n/a') + ') on ' + (stt.device || 'n/a'));
     lines.push('');
     lines.push('TTS: ' + (tts.provider || 'n/a') + ' (' + (tts.model || 'n/a') + ')');
+    if (tts.selected_provider) lines.push('TTS selected: ' + tts.selected_provider);
+    if (tts.restart_required) lines.push('TTS restart required: yes');
     if (tts.endpoint) lines.push('TTS endpoint: ' + tts.endpoint);
+    if (typeof tts.rvc_enabled !== 'undefined') lines.push('RVC post-process: ' + (tts.rvc_enabled ? 'enabled' : 'disabled'));
+    if (tts.rvc_model_name) lines.push('RVC model: ' + tts.rvc_model_name);
+    if (typeof tts.rvc_formant !== 'undefined' && tts.rvc_formant !== null) lines.push('RVC formant: ' + tts.rvc_formant);
     if (tts.health) lines.push('TTS health: ' + (tts.health.ok ? 'ok' : (tts.health.detail || 'down')));
     return lines.join('\n');
+  }
+
+  function updateTtsControlState(tts) {
+    var provider = ((tts && (tts.selected_provider || tts.provider)) || '').toLowerCase();
+    var startButton = document.getElementById('ttsStartButton');
+    var stopButton = document.getElementById('ttsStopButton');
+    var testButton = document.getElementById('ttsTestButton');
+    var note = document.getElementById('ttsControlNote');
+    var select = document.getElementById('ttsProviderSelect');
+    if (!startButton || !stopButton || !testButton || !note) return;
+    if (select && provider) {
+      select.value = provider;
+    }
+
+    startButton.hidden = true;
+    stopButton.hidden = true;
+    startButton.disabled = false;
+    stopButton.disabled = false;
+    testButton.disabled = false;
+    startButton.textContent = 'Start TTS';
+    stopButton.textContent = 'Stop TTS';
+    note.textContent = '';
+
+    if (provider === 'local' || provider === 'gpt-sovits' || provider === 'gpt_sovits') {
+      startButton.hidden = false;
+      stopButton.hidden = false;
+      startButton.textContent = 'Start GPT-SoVITS';
+      stopButton.textContent = 'Stop GPT-SoVITS';
+      if (tts.restart_required) {
+        note.textContent = 'Restart Shana to use the selected TTS provider for conversations.';
+      }
+      return;
+    }
+
+    startButton.disabled = true;
+    stopButton.disabled = true;
+    if (provider === 'piper') {
+      if (tts.restart_required) {
+        note.textContent = 'Restart Shana to use the selected TTS provider for conversations.';
+      } else if (tts.rvc_enabled) {
+        note.textContent = 'RVC post-process is enabled for the running Piper stack.';
+      }
+    } else if (provider === 'openai') {
+      if (tts.restart_required) {
+        note.textContent = 'Restart Shana to use the selected TTS provider for conversations.';
+      }
+    } else if (provider === 'stub') {
+      if (tts.restart_required) {
+        note.textContent = 'Restart Shana to use the selected TTS provider for conversations.';
+      }
+    }
   }
 
   function humanProviderAction(action) {
@@ -519,6 +575,7 @@
     }, humanBackendHealth(data, health));
 
     renderBlock('providers', data.providers || systemStatus.providers || {}, humanProviders(data.providers || systemStatus.providers || {}));
+    updateTtsControlState((data.providers || systemStatus.providers || {}).tts || {});
 
     renderBlock(
       'providerActions',
@@ -576,6 +633,26 @@
       postClientLog('action_exception', { path: path, error: String(error) });
       updateStamp('Action failed');
       document.getElementById('backendHealth').textContent = 'Dashboard action failed.\n' + String(error);
+    }
+  }
+
+  async function selectTtsProvider() {
+    var select = document.getElementById('ttsProviderSelect');
+    if (!select) return;
+    try {
+      var response = await fetch('/api/providers/tts/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: select.value })
+      });
+      var payload = await response.json();
+      if (!response.ok) {
+        alert(pretty(payload));
+        return;
+      }
+      await loadStatus();
+    } catch (error) {
+      alert(String(error));
     }
   }
 

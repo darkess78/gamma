@@ -209,6 +209,18 @@ def test_tts() -> dict:
     return service.test_tts()
 
 
+@app.post("/api/providers/tts/select")
+async def select_tts_provider(request: Request) -> dict:
+    payload = await request.json()
+    provider = str(payload.get("provider", "")).strip()
+    if not provider:
+        raise HTTPException(status_code=400, detail="provider is required")
+    try:
+        return service.set_tts_provider(provider)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/providers/llm/test")
 def test_llm() -> dict:
     return service.test_llm()

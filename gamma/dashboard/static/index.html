@@ -86,14 +86,21 @@
               <button class="ghost" onclick="action('/api/providers/stt/test')">Test STT</button>
             </div>
           </div>
-          <div class="action-group">
-            <div class="action-title">TTS</div>
-            <div class="action-buttons">
-              <button class="secondary" onclick="action('/api/providers/tts/start')">Start TTS</button>
-              <button class="ghost danger-outline" onclick="action('/api/providers/tts/stop')">Stop TTS</button>
-              <button class="ghost" onclick="action('/api/providers/tts/test')">Test TTS</button>
+            <div class="action-group">
+              <div class="action-title">TTS</div>
+              <div class="action-buttons">
+                <select id="ttsProviderSelect" class="text-input" onchange="selectTtsProvider()">
+                  <option value="piper">Piper</option>
+                  <option value="local">GPT-SoVITS</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="stub">Stub</option>
+                </select>
+                <button id="ttsStartButton" class="secondary" onclick="action('/api/providers/tts/start')" hidden>Start TTS</button>
+                <button id="ttsStopButton" class="ghost danger-outline" onclick="action('/api/providers/tts/stop')" hidden>Stop TTS</button>
+                <button id="ttsTestButton" class="ghost" onclick="action('/api/providers/tts/test')">Test TTS</button>
+              </div>
+              <div id="ttsControlNote" class="panel-meta"></div>
             </div>
-          </div>
           <div class="action-group">
             <div class="action-title">All</div>
             <div class="action-buttons">

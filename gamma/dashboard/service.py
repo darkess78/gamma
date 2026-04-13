@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -37,6 +38,10 @@ class DashboardService:
 
     def build_status(self) -> dict[str, Any]:
         local_status = self._system_status.build_status()
+        selected_tts_provider = self.selected_tts_provider()
+        local_status["providers"]["tts"]["selected_provider"] = selected_tts_provider
+        local_status["providers"]["tts"]["restart_required"] = selected_tts_provider != settings.tts_provider
+        local_status["providers"]["tts"]["available_providers"] = ["piper", "local", "openai", "stub"]
         shana_process = self._process_manager.find_process("shana")
         system_status = self._probe_json(settings.shana_base_url + "/v1/system/status")
         api_health = {
@@ -109,6 +114,47 @@ class DashboardService:
             success_detail="GPT-SoVITS stop requested.",
         )
 
+    def selected_tts_provider(self) -> str:
+        app_toml = settings.project_root / "config" / "app.toml"
+        if app_toml.exists():
+            match = re.search(r'(?m)^\s*tts_provider\s*=\s*"([^"]+)"\s*$', app_toml.read_text(encoding="utf-8"))
+            if match:
+                return match.group(1).strip()
+        return settings.tts_provider
+
+    def set_tts_provider(self, provider: str) -> dict[str, Any]:
+        normalized = provider.strip().lower()
+        allowed = {"piper", "local", "openai", "stub"}
+        if normalized not in allowed:
+            raise ValueError(f"unsupported tts provider: {provider}")
+        app_toml = settings.project_root / "config" / "app.toml"
+        existing = app_toml.read_text(encoding="utf-8") if app_toml.exists() else ""
+        if re.search(r'(?m)^\s*tts_provider\s*=\s*"([^"]+)"\s*$', existing):
+            updated = re.sub(
+                r'(?m)^\s*tts_provider\s*=\s*"([^"]+)"\s*$',
+                f'tts_provider = "{normalized}"',
+                existing,
+                count=1,
+            )
+        else:
+            updated = existing.rstrip()
+            if updated:
+                updated += "\n"
+            updated += f'tts_provider = "{normalized}"\n'
+        app_toml.write_text(updated, encoding="utf-8")
+        self._latest_provider_action = {
+            "action": "tts_provider_select",
+            "status": "ok",
+            "detail": f"TTS provider set to {normalized}. Restart Shana to use it for conversation responses.",
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "provider": normalized,
+        }
+        return {
+            "ok": True,
+            "provider": normalized,
+            "detail": "TTS provider saved. Restart Shana to use it for normal conversations.",
+        }
+
     def test_stt(self) -> dict[str, Any]:
         sample = self._sample_audio_path()
         return self._run_provider_action(
@@ -118,9 +164,11 @@ class DashboardService:
         )
 
     def test_tts(self) -> dict[str, Any]:
+        selected_provider = self.selected_tts_provider()
         return self._run_provider_action(
             "tts_test",
             self._python_module_command("gamma.run_tts_test", "Dashboard TTS smoke test."),
+            env_overrides={"SHANA_TTS_PROVIDER": selected_provider},
             success_detail="TTS smoke test completed.",
         )
 
@@ -453,6 +501,7 @@ class DashboardService:
         command: list[str],
         *,
         timeout: int = 60,
+        env_overrides: dict[str, str] | None = None,
         success_detail: str,
     ) -> dict[str, Any]:
         payload = {
@@ -462,7 +511,7 @@ class DashboardService:
         }
         started_at = time.perf_counter()
         try:
-            completed = self._run_command(command, timeout=timeout)
+            completed = self._run_command(command, timeout=timeout, env_overrides=env_overrides)
             payload.update(
                 {
                     "status": "ok",
@@ -504,7 +553,13 @@ class DashboardService:
         payload["duration_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
         return payload
 
-    def _run_command(self, command: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]:
+    def _run_command(
+        self,
+        command: list[str],
+        *,
+        timeout: int,
+        env_overrides: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         run_kwargs: dict[str, Any] = {
             "cwd": settings.project_root,
             "capture_output": True,
@@ -512,6 +567,10 @@ class DashboardService:
             "timeout": timeout,
             "check": True,
         }
+        if env_overrides:
+            env = os.environ.copy()
+            env.update(env_overrides)
+            run_kwargs["env"] = env
         if os.name == "nt":
             run_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         return subprocess.run(command, **run_kwargs)

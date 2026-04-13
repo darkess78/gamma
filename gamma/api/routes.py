@@ -89,8 +89,6 @@ def system_status() -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except GammaError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except GammaError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/v1/conversation/respond", response_model=AssistantResponse)
@@ -100,6 +98,8 @@ def conversation_respond(request: ConversationRequest) -> AssistantResponse:
             user_text=request.user_text,
             session_id=request.session_id,
             synthesize_speech=request.synthesize_speech,
+            speaker_ctx=request.speaker,
+            fast_mode=request.fast_mode,
         )
     except ConversationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

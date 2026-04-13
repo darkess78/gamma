@@ -28,9 +28,11 @@ Current persona target: **Shana**.
 
 ### TTS
 - `stub` - local placeholder WAV output for end-to-end testing
+- `piper` - local offline TTS for stable low-latency speech
 - `local` / `gpt-sovits` - local HTTP-backed TTS via GPT-SoVITS
 - `openai` - hosted TTS via the OpenAI SDK
 - `gpt-sovits` - HTTP-backed custom voice integration target
+- optional RVC post-process can be layered on top of Piper for slower converted-voice tests
 
 ## Provider matrix
 
@@ -40,12 +42,13 @@ You can choose providers independently for each subsystem:
 | --- | --- | --- |
 | LLM | `openai` | `local` or `ollama` |
 | STT | `openai` | `local` or `faster-whisper` |
-| TTS | `openai` | `local` or `gpt-sovits` |
+| TTS | `openai` | `piper`, `local`, or `gpt-sovits` |
 
 `local` does not mean the same backend everywhere:
 - LLM `local` = Ollama-compatible chat model
 - STT `local` = `faster-whisper`
 - TTS `local` = GPT-SoVITS
+- TTS `piper` = local offline ONNX voice synthesis
 
 Examples:
 
@@ -57,11 +60,13 @@ SHANA_TTS_PROVIDER=openai
 ```
 
 ```env
-# OpenAI LLM + local STT + local TTS
+# OpenAI LLM + local STT + Piper TTS
 SHANA_LLM_PROVIDER=openai
 SHANA_STT_PROVIDER=local
-SHANA_TTS_PROVIDER=local
-SHANA_GPT_SOVITS_ENDPOINT=http://127.0.0.1:9880/tts
+SHANA_TTS_PROVIDER=piper
+SHANA_PIPER_EXE=piper
+SHANA_PIPER_MODEL_PATH=./data/piper/en_US-lessac-medium.onnx
+SHANA_PIPER_CONFIG_PATH=./data/piper/en_US-lessac-medium.onnx.json
 ```
 
 ```env
@@ -70,6 +75,47 @@ SHANA_LLM_PROVIDER=ollama
 SHANA_STT_PROVIDER=local
 SHANA_TTS_PROVIDER=stub
 ```
+
+For low-latency local speech, prefer Piper as the default TTS path and keep RVC disabled during normal conversation. If you want a slower converted voice test, use:
+
+```bash
+python -m gamma.run_tts_test_henya "test phrase"
+```
+
+Smoke-test output modes:
+
+```bash
+python -m gamma.run_tts_test "test phrase"
+python -m gamma.run_tts_test --compact "test phrase"
+python -m gamma.run_tts_test --json "test phrase"
+python -m gamma.run_tts_test_henya --compact "test phrase"
+```
+
+RVC layering:
+- RVC is an optional post-process on top of generated WAV output; it is not a standalone TTS provider
+- the intended local low-latency stack is `Piper -> optional RVC`
+- keep `SHANA_RVC_ENABLED=false` for normal realtime conversation
+- use `python -m gamma.run_tts_test_henya ...` when you want the slower Henya-converted path
+- Gamma now auto-discovers an RVC checkout in common sibling locations such as `../RVC/Retrieval-based-Voice-Conversion-WebUI-main`
+- Gamma also auto-discovers the RVC Python interpreter from an adjacent `.venv` when present
+- `SHANA_RVC_MODEL_NAME` is still required; `SHANA_RVC_INDEX_PATH` is optional when Gamma can find a matching `.index`
+- current Henya helper defaults:
+  - model: `HenyaTheGeniusV2.pth`
+  - f0 method: `rmvpe`
+  - pitch: `12`
+  - formant: `0.15`
+  - index rate: `0.15`
+  - rms mix rate: `0.2`
+  - protect: `0.33`
+- the offline Gamma integration uses the RVC file-conversion path, not the realtime GUI. That means only a subset of realtime GUI controls are available in Gamma.
+- for Linux RVC bootstrapping, use `./scripts/install_rvc_linux.sh` after cloning the RVC repo into one of the expected locations
+
+Dashboard behavior:
+- the TTS dropdown persists the selected provider to `config/app.toml`
+- `Test TTS` uses the selected provider immediately
+- normal Shana conversation responses still use the provider loaded by the running Shana process, so restart Shana after changing the dropdown if you want conversations to switch too
+- dashboard TTS start/stop controls only apply to GPT-SoVITS
+- the Providers panel shows whether RVC post-process is enabled for the running stack and which RVC model is selected
 
 For local vision with Ollama, use a multimodal model and enable it explicitly:
 
@@ -301,7 +347,8 @@ Notes:
 - the tray app must be launched from the user’s actual desktop session to appear in the system tray
 - on Linux, `pystray` tray support depends on the desktop environment / system tray implementation
 - local STT is in-process with Shana and does not run as a separate background service today
-- local TTS is a managed GPT-SoVITS sidecar when `SHANA_TTS_PROVIDER=local`, so starting or stopping Shana starts or stops that sidecar too
+- Piper TTS runs in-process when `SHANA_TTS_PROVIDER=piper`; there is no separate TTS daemon to start or stop
+- local TTS is a managed GPT-SoVITS sidecar only when `SHANA_TTS_PROVIDER=local`, so starting or stopping Shana starts or stops that sidecar too
 - Ollama remains external; Gamma health-checks it but does not manage its lifecycle yet
 
 Linux GPT-SoVITS helpers:
@@ -339,6 +386,20 @@ One-shot Linux host setup:
 chmod +x scripts/install_gamma_linux.sh
 ./scripts/install_gamma_linux.sh
 ```
+
+Optional Linux RVC setup:
+
+```bash
+chmod +x scripts/install_rvc_linux.sh
+./scripts/install_rvc_linux.sh
+```
+
+The Linux RVC installer:
+- searches common checkout locations such as `../RVC/Retrieval-based-Voice-Conversion-WebUI-main`
+- creates or reuses an adjacent `.venv`
+- installs the RVC requirements file, preferring `requirements-py311.txt`
+- applies Gamma's offline CLI patch so `SHANA_RVC_FORMANT` works in the file-conversion path
+- accepts `RVC_ROOT`, `RVC_VENV_DIR`, and `PYTHON_BIN` overrides when your layout is different
 
 For service management, the repo now uses the same Python supervisor on both Windows and Linux:
 - `python scripts/open_gamma.py`
@@ -493,7 +554,8 @@ Use `--no-tts` for the first microphone validation pass so you only test recordi
 Dashboard/service-control notes:
 - `Start Shana` and `Stop Shana` control the assistant API plus the local GPT-SoVITS sidecar together
 - `Test STT` validates the in-process STT path; there is no separate STT daemon to start or stop
-- `Start TTS` and `Stop TTS` are for managing GPT-SoVITS independently when needed
+- `Start TTS` and `Stop TTS` only apply to GPT-SoVITS
+- when the active provider is Piper, OpenAI, or stub, the dashboard disables TTS start/stop and leaves `Test TTS` available
 
 ## Live Browser Voice
 

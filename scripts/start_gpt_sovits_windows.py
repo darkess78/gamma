@@ -40,6 +40,9 @@ def main() -> int:
 
     stdout_log.write_text("", encoding="utf-8")
     stderr_log.write_text("", encoding="utf-8")
+    env = os.environ.copy()
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    env.setdefault("PYTHONUTF8", "1")
     with stdout_log.open("ab") as stdout_handle, stderr_log.open("ab") as stderr_handle:
         subprocess.Popen(
             [
@@ -53,6 +56,7 @@ def main() -> int:
                 "GPT_SoVITS/configs/tts_infer.yaml",
             ],
             cwd=package_root,
+            env=env,
             stdout=stdout_handle,
             stderr=stderr_handle,
             creationflags=(

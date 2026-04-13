@@ -131,6 +131,8 @@ Packaging notes:
 - the executable is built from `packaging/tts_dataset_gui.spec`
 - `ffmpeg` and `ffprobe` are still external runtime requirements
 - the build currently produces a folder-based app, not a single-file exe, to avoid extra startup and packaging friction
+- only launch `dist/GammaTTSDataPrep/GammaTTSDataPrep.exe`
+- do not launch `build/tts_dataset_gui/tts_dataset_gui/GammaTTSDataPrep.exe`; that is a PyInstaller intermediate artifact and will fail because it does not carry the final `_internal` runtime folder
 
 Staging behavior:
 - copies into a local directory before any processing

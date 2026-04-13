@@ -11,6 +11,7 @@ def main() -> int:
     spec_path = repo_root / "packaging" / "tts_dataset_gui.spec"
     dist_dir = repo_root / "dist"
     build_dir = repo_root / "build" / "tts_dataset_gui"
+    intermediate_exe_path = build_dir / "tts_dataset_gui" / "GammaTTSDataPrep.exe"
 
     if not spec_path.exists():
         raise SystemExit(f"PyInstaller spec not found: {spec_path}")
@@ -45,7 +46,14 @@ def main() -> int:
     if not exe_path.exists():
         raise SystemExit(f"Build completed but expected executable was not found: {exe_path}")
 
+    # PyInstaller also drops a bootloader exe into the workpath. That file is
+    # not a runnable distribution because it depends on sibling build artifacts
+    # that are only present in the final dist folder.
+    if intermediate_exe_path.exists():
+        intermediate_exe_path.unlink()
+
     print(f"Built executable: {exe_path}")
+    print(f"Removed intermediate build executable: {intermediate_exe_path}")
     print("ffmpeg and ffprobe must still be installed separately and available on PATH.")
     return 0
 

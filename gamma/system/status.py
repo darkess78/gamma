@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -9,6 +10,12 @@ from typing import Any
 from ..config import settings
 from ..llm.ollama_probe import probe_ollama_model_capabilities
 from ..memory.service import MemoryService
+from ..voice.rvc_support import (
+    discover_rvc_project_root,
+    discover_rvc_python,
+    resolve_rvc_index_path,
+    resolve_rvc_model_path,
+)
 
 
 class SystemStatusService:
@@ -43,8 +50,13 @@ class SystemStatusService:
                     "provider": settings.tts_provider,
                     "model": settings.tts_model,
                     "voice": settings.tts_voice,
+                    "piper_executable": settings.piper_executable if settings.tts_provider == "piper" else None,
+                    "piper_model_path": settings.piper_model_path if settings.tts_provider == "piper" else None,
+                    "rvc_enabled": settings.rvc_enabled,
+                    "rvc_model_name": settings.rvc_model_name if settings.rvc_enabled else None,
+                    "rvc_formant": settings.rvc_formant if settings.rvc_enabled else None,
                     "endpoint": settings.gpt_sovits_endpoint,
-                    "health": self._check_gpt_sovits_health() if settings.tts_provider in {"local", "gpt-sovits", "gpt_sovits"} else {"ok": True, "detail": "not-local"},
+                    "health": self._check_tts_health(),
                 },
             },
             "memory": {
@@ -102,6 +114,69 @@ class SystemStatusService:
             return {"ok": False, "detail": f"http-{exc.code}"}
         except Exception as exc:
             return {"ok": False, "detail": str(exc)}
+
+    def _check_tts_health(self) -> dict[str, Any]:
+        provider = settings.tts_provider.strip().lower()
+        if provider == "piper":
+            piper = self._check_piper_health()
+            if not settings.rvc_enabled:
+                return piper
+            if not piper.get("ok"):
+                return piper
+            rvc = self._check_rvc_health()
+            return rvc if not rvc.get("ok") else {"ok": True, "detail": "ready"}
+        if provider in {"local", "gpt-sovits", "gpt_sovits"}:
+            return self._check_gpt_sovits_health()
+        return {"ok": True, "detail": "not-local"}
+
+    def _check_piper_health(self) -> dict[str, Any]:
+        executable = (settings.piper_executable or "").strip()
+        model_path = (settings.piper_model_path or "").strip()
+        if not executable:
+            return {"ok": False, "detail": "no-piper-executable-configured"}
+        if not shutil.which(executable):
+            return {"ok": False, "detail": f"piper-not-found: {executable}"}
+        if not model_path:
+            return {"ok": False, "detail": "no-piper-model-configured"}
+        model = Path(model_path).expanduser()
+        if not model.is_absolute():
+            model = settings.project_root / model
+        if not model.exists():
+            return {"ok": False, "detail": f"missing-piper-model: {model}"}
+        config_path = (settings.piper_config_path or "").strip()
+        if config_path:
+            config = Path(config_path).expanduser()
+            if not config.is_absolute():
+                config = settings.project_root / config
+            if not config.exists():
+                return {"ok": False, "detail": f"missing-piper-config: {config}"}
+        return {"ok": True, "detail": "ready"}
+
+    def _check_rvc_health(self) -> dict[str, Any]:
+        rvc_root = discover_rvc_project_root(settings.rvc_project_root)
+        if rvc_root is None:
+            return {"ok": False, "detail": "missing-rvc-project-root"}
+        infer_cli = rvc_root / "tools" / "infer_cli.py"
+        if not infer_cli.exists():
+            return {"ok": False, "detail": f"missing-rvc-infer-cli: {infer_cli}"}
+        rvc_python = discover_rvc_python(settings.rvc_python, rvc_root)
+        if rvc_python is None:
+            return {"ok": False, "detail": "missing-rvc-python"}
+        if not (settings.rvc_model_name or "").strip():
+            return {"ok": False, "detail": "no-rvc-model-name-configured"}
+        try:
+            model_path = resolve_rvc_model_path(rvc_root, settings.rvc_model_name)
+            index_path = resolve_rvc_index_path(rvc_root, settings.rvc_index_path, model_path.name)
+        except Exception as exc:
+            return {"ok": False, "detail": str(exc)}
+        return {
+            "ok": True,
+            "detail": "ready",
+            "python": str(rvc_python),
+            "project_root": str(rvc_root),
+            "model": str(model_path),
+            "index": str(index_path),
+        }
 
     def _recent_artifacts(self, limit: int = 12) -> list[dict[str, Any]]:
         artifacts: list[dict[str, Any]] = []

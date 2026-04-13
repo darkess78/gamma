@@ -209,6 +209,72 @@ class Settings:
         )
     )
     tts_format: str = str(_setting("SHANA_TTS_FORMAT", _config_value(APP_CONFIG, "tts_format", default="wav")))
+    piper_executable: str = str(
+        _setting("SHANA_PIPER_EXE", _config_value(APP_CONFIG, "piper_executable", default="piper"))
+    )
+    piper_model_path: str | None = _setting(
+        "SHANA_PIPER_MODEL_PATH",
+        _config_value(APP_CONFIG, "piper_model_path", default=""),
+    )
+    piper_config_path: str | None = _setting(
+        "SHANA_PIPER_CONFIG_PATH",
+        _config_value(APP_CONFIG, "piper_config_path", default=""),
+    )
+    piper_speaker_id: str | None = _setting(
+        "SHANA_PIPER_SPEAKER_ID",
+        _config_value(APP_CONFIG, "piper_speaker_id", default=""),
+    )
+    rvc_enabled: bool = _as_bool(
+        _setting("SHANA_RVC_ENABLED", _config_value(APP_CONFIG, "rvc_enabled", default=False)),
+        default=False,
+    )
+    rvc_python: str | None = _setting(
+        "SHANA_RVC_PYTHON",
+        _config_value(APP_CONFIG, "rvc_python", default=""),
+    )
+    rvc_project_root: str | None = _setting(
+        "SHANA_RVC_PROJECT_ROOT",
+        _config_value(APP_CONFIG, "rvc_project_root", default=""),
+    )
+    rvc_model_name: str | None = _setting(
+        "SHANA_RVC_MODEL_NAME",
+        _config_value(APP_CONFIG, "rvc_model_name", default=""),
+    )
+    rvc_index_path: str | None = _setting(
+        "SHANA_RVC_INDEX_PATH",
+        _config_value(APP_CONFIG, "rvc_index_path", default=""),
+    )
+    rvc_pitch: int = _as_int(
+        _setting("SHANA_RVC_PITCH", _config_value(APP_CONFIG, "rvc_pitch", default=0)),
+        default=0,
+    )
+    rvc_formant: float = float(
+        _setting("SHANA_RVC_FORMANT", _config_value(APP_CONFIG, "rvc_formant", default=0.0))
+    )
+    rvc_f0_method: str = str(
+        _setting("SHANA_RVC_F0_METHOD", _config_value(APP_CONFIG, "rvc_f0_method", default="fcpe"))
+    )
+    rvc_index_rate: float = float(
+        _setting("SHANA_RVC_INDEX_RATE", _config_value(APP_CONFIG, "rvc_index_rate", default=0.0))
+    )
+    rvc_filter_radius: int = _as_int(
+        _setting("SHANA_RVC_FILTER_RADIUS", _config_value(APP_CONFIG, "rvc_filter_radius", default=3)),
+        default=3,
+    )
+    rvc_rms_mix_rate: float = float(
+        _setting("SHANA_RVC_RMS_MIX_RATE", _config_value(APP_CONFIG, "rvc_rms_mix_rate", default=0.0))
+    )
+    rvc_protect: float = float(
+        _setting("SHANA_RVC_PROTECT", _config_value(APP_CONFIG, "rvc_protect", default=0.33))
+    )
+    rvc_resample_sr: int = _as_int(
+        _setting("SHANA_RVC_RESAMPLE_SR", _config_value(APP_CONFIG, "rvc_resample_sr", default=0)),
+        default=0,
+    )
+    rvc_device: str | None = _setting(
+        "SHANA_RVC_DEVICE",
+        _config_value(APP_CONFIG, "rvc_device", default=""),
+    )
     gpt_sovits_endpoint: str | None = _setting("SHANA_GPT_SOVITS_ENDPOINT")
     gpt_sovits_reference_audio: str | None = _setting("SHANA_GPT_SOVITS_REFERENCE_AUDIO")
     gpt_sovits_prompt_text: str | None = _setting("SHANA_GPT_SOVITS_PROMPT_TEXT")

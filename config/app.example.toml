@@ -12,6 +12,27 @@ stt_model = "base.en"
 stt_device = "cpu"
 stt_compute_type = "int8"
 tts_provider = "stub"
+piper_executable = "piper"
+piper_model_path = ""
+piper_config_path = ""
+piper_speaker_id = ""
+rvc_enabled = false
+# Optional when the RVC checkout lives in an expected location.
+rvc_python = ""
+rvc_project_root = ""
+# Required when RVC is enabled.
+rvc_model_name = ""
+# Optional when Gamma can find a matching .index under the RVC checkout.
+rvc_index_path = ""
+rvc_pitch = 0
+rvc_formant = 0.0
+rvc_f0_method = "fcpe"
+rvc_index_rate = 0.0
+rvc_filter_radius = 3
+rvc_rms_mix_rate = 0.0
+rvc_protect = 0.33
+rvc_resample_sr = 0
+rvc_device = ""
 openai_api_key = ""
 local_llm_endpoint = "http://127.0.0.1:11434"
 local_llm_model = "gpt-oss:20b"

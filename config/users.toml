@@ -1,0 +1,34 @@
+# Speaker identity profiles
+#
+# trust levels:
+#   owner        - full access, personal memory, established relationship
+#   trusted      - friendly, own stored facts, limited tools
+#   guest        - polite but impersonal, no memory persistence
+#   public       - minimal engagement, no memory, no tools
+#
+# platform_ids: map platform names to their identifier for this person
+#   discord      - Discord user ID (integer as string)
+#   game         - comma-separated list of known in-game usernames
+#
+# If no speaker context is provided (e.g. local solo use), owner is assumed.
+
+[owner]
+name = "darkess78"
+trust = "owner"
+notes = "The primary user. Apply the established relationship and full memory access."
+
+[owner.platform_ids]
+discord = ""          # fill in your Discord user ID
+game = "darkess78"    # comma-separated game usernames
+
+# --- Trusted guests ---
+# Copy this block and adjust for each person you want to recognize.
+
+# [guests.example]
+# name = "Alice"
+# trust = "trusted"
+# notes = "Close friend. Be friendly, remember what they share, but maintain appropriate distance."
+#
+# [guests.example.platform_ids]
+# discord = ""        # Alice's Discord user ID
+# game = ""           # Alice's game username(s)

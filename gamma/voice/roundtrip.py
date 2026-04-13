@@ -40,6 +40,7 @@ class VoiceRoundtripService:
                 transcript,
                 session_id=session_id,
                 synthesize_speech=synthesize_speech,
+                fast_mode=True,
             )
             timing["conversation_ms"] = round((time.perf_counter() - conversation_started) * 1000, 1)
             timing["total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)

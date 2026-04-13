@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
+from ..config import settings
 from ..memory.service import MemoryService
 from ..schemas.response import MemoryCandidate
 from ..system.status import SystemStatusService
 from .base import Tool, ToolResult
+
+
+_CORE_MEMORIES_PATH = settings.data_dir / "core_memories.md"
 
 
 class MemoryStatsTool(Tool):
@@ -180,3 +185,38 @@ class SaveMemoryTool(Tool):
             if lowered.startswith(("i am ", "i'm ", "my ", "remember this: i ", "remember that i ")):
                 return "profile"
         return normalized
+
+
+class SaveCoreMemoryTool(Tool):
+    """Append a permanent fact to data/core_memories.md.
+
+    Only callable when the speaker is the owner — enforced in the conversation
+    service before this tool is ever invoked.
+    """
+
+    name = "save_core_memory"
+    description = "Permanently store a core fact that persists across all sessions. Owner-only."
+
+    def run(self, fact: str, **kwargs) -> ToolResult:
+        _ = kwargs
+        fact_clean = " ".join(str(fact).strip().split())
+        if not fact_clean:
+            return ToolResult(ok=False, output="No fact provided.", metadata={"saved": 0})
+
+        _CORE_MEMORIES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        if not _CORE_MEMORIES_PATH.exists():
+            _CORE_MEMORIES_PATH.write_text("# Core Memories\n\n", encoding="utf-8")
+
+        existing = _CORE_MEMORIES_PATH.read_text(encoding="utf-8")
+        # Avoid exact duplicates
+        if f"- {fact_clean}" in existing:
+            return ToolResult(ok=True, output="Already stored.", metadata={"saved": 0, "duplicate": True})
+
+        with _CORE_MEMORIES_PATH.open("a", encoding="utf-8") as fh:
+            fh.write(f"- {fact_clean}\n")
+
+        return ToolResult(
+            ok=True,
+            output=f"Stored: {fact_clean}",
+            metadata={"saved": 1, "fact": fact_clean},
+        )

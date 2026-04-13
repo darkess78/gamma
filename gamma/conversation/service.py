@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import json
 import time
+import threading
 from datetime import datetime, timezone
 
 from ..config import settings
 from ..errors import ConversationError, GammaError
+from ..identity.profile import SpeakerProfile
+from ..identity.resolver import IdentityResolver
 from ..llm.factory import build_llm_adapter
 from ..memory.service import MemoryService
 from ..persona.loader import build_system_prompt
+from ..schemas.conversation import SpeakerContext
 from ..schemas.response import AssistantResponse, EmotionTag, MemoryCandidate, ToolCall, ToolExecutionResult, VisionAnalysis
 from ..tools.registry import ToolRegistry
 from ..vision.service import VisionImage, VisionService
@@ -25,17 +29,22 @@ class ConversationService:
         self._tts = None
         self._tools = ToolRegistry()
         self._vision = VisionService()
+        self._identity = IdentityResolver()
 
     def respond(
         self,
         user_text: str,
         session_id: str | None = None,
         synthesize_speech: bool = False,
+        speaker_ctx: SpeakerContext | None = None,
+        fast_mode: bool = False,
     ) -> AssistantResponse:
         return self._respond(
             user_text=user_text,
             session_id=session_id,
             synthesize_speech=synthesize_speech,
+            speaker=self._identity.resolve(speaker_ctx),
+            fast_mode=fast_mode,
         )
 
     def respond_with_image(
@@ -48,6 +57,7 @@ class ConversationService:
         vision_mode: str | None = None,
         session_id: str | None = None,
         synthesize_speech: bool = False,
+        speaker_ctx: SpeakerContext | None = None,
     ) -> AssistantResponse:
         image = self._vision.prepare_image(
             image_bytes=image_bytes,
@@ -66,6 +76,7 @@ class ConversationService:
             synthesize_speech=synthesize_speech,
             image=image,
             vision_analysis=vision_analysis,
+            speaker=self._identity.resolve(speaker_ctx),
         )
 
     def analyze_image(
@@ -98,6 +109,8 @@ class ConversationService:
         user_text: str,
         session_id: str | None,
         synthesize_speech: bool,
+        speaker: SpeakerProfile | None = None,
+        fast_mode: bool = False,
         image: VisionImage | None = None,
         vision_analysis: VisionAnalysis | None = None,
     ) -> AssistantResponse:
@@ -112,6 +125,7 @@ class ConversationService:
                 memory_service=self._memory,
                 user_text=stripped,
                 session_id=session_id,
+                speaker=speaker,
             )
             llm_started = time.perf_counter()
             draft_reply = self._llm_adapter().generate_reply(
@@ -124,17 +138,19 @@ class ConversationService:
                 image_inputs=[image.to_llm_input()] if image is not None else None,
             )
             timing["draft_reply_ms"] = round((time.perf_counter() - llm_started) * 1000, 1)
-            inferred_tool_calls = self._infer_tool_calls(stripped)
-            metadata_started = time.perf_counter()
-            extracted = self._extract_turn_metadata(user_text=stripped, reply_text=draft_reply.text) if self._needs_metadata_pass(stripped, inferred_tool_calls) else self._default_metadata()
-            timing["metadata_ms"] = round((time.perf_counter() - metadata_started) * 1000, 1)
-            planned_tool_calls = self._merge_tool_calls(extracted["tool_calls"], inferred_tool_calls)
+
+            tools_ok = speaker is None or speaker.tools_allowed
+            memory_write_ok = speaker is None or speaker.memory_write_allowed
+
+            # Inferred tool calls always run synchronously — they can change spoken text.
+            inferred_tool_calls = self._infer_tool_calls(stripped, speaker=speaker) if tools_ok else []
             tool_started = time.perf_counter()
-            tool_results = self._execute_tool_calls(planned_tool_calls)
+            inferred_results = self._execute_tool_calls(inferred_tool_calls)
             timing["tool_exec_ms"] = round((time.perf_counter() - tool_started) * 1000, 1)
+
             final_reply_text = draft_reply.text
-            if tool_results:
-                direct_reply = self._render_direct_tool_reply(user_text=stripped, tool_results=tool_results)
+            if inferred_results:
+                direct_reply = self._render_direct_tool_reply(user_text=stripped, tool_results=inferred_results)
                 if direct_reply is not None:
                     final_reply_text = direct_reply
                     timing["finalizer_ms"] = 0.0
@@ -148,18 +164,102 @@ class ConversationService:
                             vision_analysis=vision_analysis,
                         ),
                         draft_reply=draft_reply.text,
-                        tool_results=tool_results,
+                        tool_results=inferred_results,
                         image=image,
                     )
                     timing["finalizer_ms"] = round((time.perf_counter() - finalizer_started) * 1000, 1)
             else:
                 timing["finalizer_ms"] = 0.0
-            memory_candidates = extracted["memory_candidates"] or self._build_memory_candidates(
-                user_text=stripped,
-                reply_text=final_reply_text,
+
+            if fast_mode:
+                # Fast path: skip the metadata LLM call entirely.
+                # Return immediately with default emotion/motions.
+                # Memory saving and metadata extraction run in a background thread.
+                timing["metadata_ms"] = 0.0
+                timing["memory_persist_ms"] = 0.0
+                timing["total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
+
+                response = AssistantResponse(
+                    spoken_text=final_reply_text,
+                    emotion="neutral",
+                    internal_summary=None,
+                    motions=[],
+                    tool_calls=inferred_tool_calls,
+                    tool_results=inferred_results,
+                    memory_candidates=[],
+                    vision=vision_analysis,
+                )
+                if synthesize_speech:
+                    tts_started = time.perf_counter()
+                    tts_result = self._tts_service().synthesize(final_reply_text, emotion="neutral")
+                    response.audio_path = tts_result.audio_path
+                    response.audio_content_type = tts_result.content_type
+                    timing["tts_ms"] = round((time.perf_counter() - tts_started) * 1000, 1)
+                else:
+                    timing["tts_ms"] = 0.0
+
+                timing["total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
+                self._append_timing_log(
+                    user_text=stripped,
+                    session_id=session_id,
+                    response=response,
+                    saved_count=0,
+                    timing=timing,
+                )
+
+                if memory_write_ok:
+                    threading.Thread(
+                        target=self._background_memory_save,
+                        args=(stripped, final_reply_text, session_id),
+                        daemon=True,
+                    ).start()
+
+                return response
+
+            # Standard path: full metadata extraction + synchronous memory save.
+            metadata_started = time.perf_counter()
+            extracted = (
+                self._extract_turn_metadata(user_text=stripped, reply_text=draft_reply.text, speaker=speaker)
+                if self._needs_metadata_pass(stripped, inferred_tool_calls)
+                else self._default_metadata()
+            )
+            timing["metadata_ms"] = round((time.perf_counter() - metadata_started) * 1000, 1)
+
+            # Merge any additional tool calls the LLM suggested via metadata
+            extra_tool_calls = self._merge_tool_calls(extracted["tool_calls"], []) if tools_ok else []
+            extra_results = self._execute_tool_calls(extra_tool_calls)
+            if extra_results:
+                direct_reply = self._render_direct_tool_reply(user_text=stripped, tool_results=extra_results)
+                if direct_reply is not None:
+                    final_reply_text = direct_reply
+                else:
+                    finalizer_started = time.perf_counter()
+                    final_reply_text = self._finalize_reply_with_tools(
+                        system_prompt=system_prompt,
+                        user_text=self._build_user_input_text(
+                            user_text=stripped,
+                            image=image,
+                            vision_analysis=vision_analysis,
+                        ),
+                        draft_reply=final_reply_text,
+                        tool_results=extra_results,
+                        image=image,
+                    )
+                    timing["finalizer_ms"] = round((time.perf_counter() - finalizer_started) * 1000, 1)
+
+            all_tool_calls = inferred_tool_calls + extra_tool_calls
+            all_tool_results = inferred_results + extra_results
+
+            memory_candidates = (
+                (extracted["memory_candidates"] or self._build_memory_candidates(
+                    user_text=stripped,
+                    reply_text=final_reply_text,
+                ))
+                if memory_write_ok
+                else []
             )
             memory_started = time.perf_counter()
-            saved_count = self._memory.persist_candidates(memory_candidates, session_id=session_id)
+            saved_count = self._memory.persist_candidates(memory_candidates, session_id=session_id) if memory_write_ok else 0
             timing["memory_persist_ms"] = round((time.perf_counter() - memory_started) * 1000, 1)
 
             response = AssistantResponse(
@@ -167,8 +267,8 @@ class ConversationService:
                 emotion=extracted["emotion"],
                 internal_summary=extracted["internal_summary"],
                 motions=extracted["motions"],
-                tool_calls=planned_tool_calls,
-                tool_results=tool_results,
+                tool_calls=all_tool_calls,
+                tool_results=all_tool_results,
                 memory_candidates=memory_candidates,
                 vision=vision_analysis,
             )
@@ -194,6 +294,15 @@ class ConversationService:
         except Exception as exc:
             raise ConversationError(f"Conversation pipeline failed: {exc}") from exc
 
+    def _background_memory_save(self, user_text: str, reply_text: str, session_id: str | None) -> None:
+        """Persist memory candidates in a background thread (fast_mode only)."""
+        try:
+            candidates = self._build_memory_candidates(user_text=user_text, reply_text=reply_text)
+            if candidates:
+                self._memory.persist_candidates(candidates, session_id=session_id)
+        except Exception:
+            pass  # background thread — never propagate
+
     def _llm_adapter(self):
         if self._llm is None:
             self._llm = build_llm_adapter()
@@ -204,8 +313,14 @@ class ConversationService:
             self._tts = TTSService()
         return self._tts
 
-    def _extract_turn_metadata(self, user_text: str, reply_text: str) -> dict:
-        tool_help = "\n".join(f"- {item}" for item in self._tools.tool_summaries())
+    def _extract_turn_metadata(self, user_text: str, reply_text: str, speaker: SpeakerProfile | None = None) -> dict:
+        # save_core_memory is owner-only — hide it from the tool list for everyone else
+        visible_tools = self._tools.tool_summaries()
+        if speaker is None or speaker.is_owner:
+            pass  # all tools visible
+        else:
+            visible_tools = [t for t in visible_tools if not t.startswith("save_core_memory")]
+        tool_help = "\n".join(f"- {item}" for item in visible_tools)
         extraction_prompt = (
             "You are a strict JSON metadata extractor for an assistant conversation.\n"
             "Return only one JSON object with these keys:\n"
@@ -312,9 +427,10 @@ class ConversationService:
                 )
         return results
 
-    def _infer_tool_calls(self, user_text: str) -> list[ToolCall]:
+    def _infer_tool_calls(self, user_text: str, speaker: SpeakerProfile | None = None) -> list[ToolCall]:
         lowered = user_text.lower()
         inferred: list[ToolCall] = []
+        is_owner = speaker is None or speaker.is_owner
 
         if any(term in lowered for term in ["provider", "providers", "ollama", "gpt-sovits", "gpt sovits", "stt", "tts", "llm"]):
             if any(term in lowered for term in ["status", "using", "use", "configured", "running", "right now", "current"]):
@@ -344,6 +460,12 @@ class ConversationService:
                     },
                 )
             )
+
+        # Core memory — owner only. Trigger: "remember: <fact>"
+        if is_owner and lowered.startswith("remember:"):
+            fact = user_text[len("remember:"):].strip()
+            if fact:
+                inferred.append(ToolCall(tool="save_core_memory", args={"fact": fact}))
 
         return inferred[:3]
 
@@ -469,6 +591,8 @@ class ConversationService:
                 return self._format_recent_artifacts_reply(result.output)
             if result.tool == "save_memory":
                 return self._format_save_memory_reply(result.metadata)
+            if result.tool == "save_core_memory":
+                return self._format_save_core_memory_reply(result.metadata)
         return None
 
     def _format_provider_status_reply(self, metadata: dict) -> str:
@@ -540,6 +664,16 @@ class ConversationService:
         if saved > 0:
             return "Noted. I'll keep that in mind."
         return "I already had that stored."
+
+    def _format_save_core_memory_reply(self, metadata: dict) -> str:
+        if not isinstance(metadata, dict):
+            return "Stored."
+        if metadata.get("duplicate"):
+            return "I already have that."
+        fact = metadata.get("fact", "")
+        if fact:
+            return f"Stored permanently: {fact}"
+        return "Stored."
 
     def _build_memory_candidates(self, user_text: str, reply_text: str) -> list[MemoryCandidate]:
         candidates: list[MemoryCandidate] = []

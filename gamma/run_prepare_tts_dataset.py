@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
@@ -199,6 +201,20 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         type=int,
         default=0,
         help="If non-zero, only process this many input files.",
+    )
+    parser.add_argument(
+        "--vocals-only",
+        action="store_true",
+        help=(
+            "Run Demucs vocal separation before transcription and clip extraction. "
+            "Requires the 'demucs' package to be installed. "
+            "Strips music, SFX, and background noise so Whisper and the extracted clips contain vocals only."
+        ),
+    )
+    parser.add_argument(
+        "--demucs-model",
+        default="htdemucs",
+        help="Demucs model to use for vocal separation (default: htdemucs).",
     )
     return parser.parse_args(argv)
 
@@ -422,6 +438,73 @@ def extract_working_audio(
     raise RuntimeError(f"ffmpeg audio extraction failed for {source_path}: {completed.stderr.strip() or completed.stdout.strip()}")
 
 
+def _extract_audio_hq(
+    ffmpeg_bin: str,
+    source_path: Path,
+    target_path: Path,
+    audio_stream_index: int,
+) -> None:
+    """Extract full-quality audio (44.1 kHz stereo WAV) suitable for Demucs vocal separation."""
+    raise_if_cancelled()
+    command = [
+        ffmpeg_bin,
+        "-y",
+        "-i",
+        str(source_path),
+        "-map",
+        f"0:{audio_stream_index}",
+        "-vn",
+        "-ac",
+        "2",
+        "-ar",
+        "44100",
+        str(target_path),
+    ]
+    completed = _run_hidden_subprocess(command)
+    if completed.returncode == 0:
+        return
+    raise RuntimeError(
+        f"ffmpeg HQ audio extraction failed for {source_path}: "
+        f"{completed.stderr.strip() or completed.stdout.strip()}"
+    )
+
+
+def _separate_vocals(
+    hq_audio_path: Path,
+    demucs_out_dir: Path,
+    demucs_model: str,
+) -> Path:
+    """Run Demucs vocal separation via Python API and return the path to vocals.wav."""
+    raise_if_cancelled()
+    try:
+        from demucs.separate import main as demucs_main  # type: ignore[import]
+    except ImportError:
+        raise RuntimeError(
+            "Demucs is not installed. Install it with: pip install demucs"
+        )
+    _sink = io.StringIO()
+    try:
+        with redirect_stdout(_sink), redirect_stderr(_sink):
+            demucs_main([
+                "--two-stems=vocals",
+                "--name", demucs_model,
+                "--out", str(demucs_out_dir),
+                str(hq_audio_path),
+            ])
+    except SystemExit as exc:
+        code = exc.code
+        if code not in (None, 0):
+            raise RuntimeError(
+                f"Demucs separation failed for {hq_audio_path.name} (exit code {code}):\n{_sink.getvalue().strip()}"
+            )
+    vocals_path = demucs_out_dir / demucs_model / hq_audio_path.stem / "vocals.wav"
+    if not vocals_path.exists():
+        raise RuntimeError(
+            f"Demucs completed but vocals.wav not found at expected path: {vocals_path}"
+        )
+    return vocals_path
+
+
 def process_file(
     model: WhisperModel,
     ffmpeg_bin: str,
@@ -439,77 +522,97 @@ def process_file(
     print(f"    using audio stream index {selected_stream_index} for {source_path.name}")
 
     language = None if args.language == "auto" else args.language
+    vocals_only = getattr(args, "vocals_only", False)
+    demucs_model = getattr(args, "demucs_model", "htdemucs")
+
     with tempfile.TemporaryDirectory(prefix="gamma-tts-dataset-") as temp_dir:
-        working_audio_path = Path(temp_dir) / f"{episode_id}.wav"
-        extract_working_audio(ffmpeg_bin, source_path, working_audio_path, selected_stream_index)
+        temp_path = Path(temp_dir)
+
+        if vocals_only:
+            hq_audio_path = temp_path / f"{episode_id}_hq.wav"
+            print(f"    extracting HQ audio for Demucs ({source_path.name})...")
+            _extract_audio_hq(ffmpeg_bin, source_path, hq_audio_path, selected_stream_index)
+            demucs_out_dir = temp_path / "demucs_out"
+            demucs_out_dir.mkdir()
+            print(f"    running Demucs ({demucs_model}) vocal separation — this may take a while...")
+            vocals_path = _separate_vocals(hq_audio_path, demucs_out_dir, demucs_model)
+            print(f"    vocal separation complete, transcribing vocals...")
+            transcription_source = vocals_path
+            clip_source = vocals_path
+        else:
+            working_audio_path = temp_path / f"{episode_id}.wav"
+            extract_working_audio(ffmpeg_bin, source_path, working_audio_path, selected_stream_index)
+            transcription_source = working_audio_path
+            clip_source = source_path
+
         segments, info = model.transcribe(
-            str(working_audio_path),
+            str(transcription_source),
             language=language,
             vad_filter=True,
             beam_size=args.beam_size,
             condition_on_previous_text=False,
         )
-    raise_if_cancelled()
-    merged_segments = merge_transcript_segments(segments, gap_threshold=args.merge_gap_seconds)
-    effective_language = info.language or args.language
-    print(f"    transcript language={effective_language} merged_segments={len(merged_segments)}")
-
-    candidates: list[SegmentCandidate] = []
-    rejected_short = 0
-    rejected_long = 0
-    rejected_text = 0
-    rejected_no_speech = 0
-    for index, segment in enumerate(merged_segments, start=1):
         raise_if_cancelled()
-        start_seconds = float(segment["start"])
-        end_seconds = float(segment["end"])
-        duration_seconds = max(end_seconds - start_seconds, 0.0)
-        text = str(segment["text"]).strip()
-        no_speech_prob = _to_optional_float(segment["no_speech_prob"])
+        merged_segments = merge_transcript_segments(segments, gap_threshold=args.merge_gap_seconds)
+        effective_language = info.language or args.language
+        print(f"    transcript language={effective_language} merged_segments={len(merged_segments)}")
 
-        if duration_seconds < args.min_seconds:
-            rejected_short += 1
-            continue
-        if duration_seconds > args.max_seconds:
-            rejected_long += 1
-            continue
-        if len(text) < args.min_chars:
-            rejected_text += 1
-            continue
-        if no_speech_prob is not None and no_speech_prob > args.max_no_speech_prob:
-            rejected_no_speech += 1
-            continue
+        candidates: list[SegmentCandidate] = []
+        rejected_short = 0
+        rejected_long = 0
+        rejected_text = 0
+        rejected_no_speech = 0
+        for index, segment in enumerate(merged_segments, start=1):
+            raise_if_cancelled()
+            start_seconds = float(segment["start"])
+            end_seconds = float(segment["end"])
+            duration_seconds = max(end_seconds - start_seconds, 0.0)
+            text = str(segment["text"]).strip()
+            no_speech_prob = _to_optional_float(segment["no_speech_prob"])
 
-        clip_id = f"{episode_id}_{index:04d}"
-        clip_path = clips_dir / f"{clip_id}.wav"
-        extract_clip(ffmpeg_bin, source_path, clip_path, start_seconds, end_seconds)
-        print(
-            "    candidate speech "
-            f"{clip_id} start={start_seconds:.2f}s end={end_seconds:.2f}s "
-            f"dur={duration_seconds:.2f}s no_speech={no_speech_prob if no_speech_prob is not None else 'n/a'} "
-            f"text={text[:80]!r}"
-        )
-        candidates.append(
-            SegmentCandidate(
-                source_path=source_path,
-                clip_path=clip_path,
-                episode_id=episode_id,
-                clip_id=clip_id,
-                start_seconds=start_seconds,
-                end_seconds=end_seconds,
-                duration_seconds=duration_seconds,
-                text=text,
-                language=effective_language,
-                avg_logprob=_to_optional_float(segment["avg_logprob"]),
-                no_speech_prob=no_speech_prob,
-                compression_ratio=_to_optional_float(segment["compression_ratio"]),
+            if duration_seconds < args.min_seconds:
+                rejected_short += 1
+                continue
+            if duration_seconds > args.max_seconds:
+                rejected_long += 1
+                continue
+            if len(text) < args.min_chars:
+                rejected_text += 1
+                continue
+            if no_speech_prob is not None and no_speech_prob > args.max_no_speech_prob:
+                rejected_no_speech += 1
+                continue
+
+            clip_id = f"{episode_id}_{index:04d}"
+            clip_path = clips_dir / f"{clip_id}.wav"
+            extract_clip(ffmpeg_bin, clip_source, clip_path, start_seconds, end_seconds)
+            print(
+                "    candidate speech "
+                f"{clip_id} start={start_seconds:.2f}s end={end_seconds:.2f}s "
+                f"dur={duration_seconds:.2f}s no_speech={no_speech_prob if no_speech_prob is not None else 'n/a'} "
+                f"text={text[:80]!r}"
             )
+            candidates.append(
+                SegmentCandidate(
+                    source_path=source_path,
+                    clip_path=clip_path,
+                    episode_id=episode_id,
+                    clip_id=clip_id,
+                    start_seconds=start_seconds,
+                    end_seconds=end_seconds,
+                    duration_seconds=duration_seconds,
+                    text=text,
+                    language=effective_language,
+                    avg_logprob=_to_optional_float(segment["avg_logprob"]),
+                    no_speech_prob=no_speech_prob,
+                    compression_ratio=_to_optional_float(segment["compression_ratio"]),
+                )
+            )
+        print(
+            "    file summary "
+            f"accepted={len(candidates)} rejected_short={rejected_short} rejected_long={rejected_long} "
+            f"rejected_text={rejected_text} rejected_no_speech={rejected_no_speech}"
         )
-    print(
-        "    file summary "
-        f"accepted={len(candidates)} rejected_short={rejected_short} rejected_long={rejected_long} "
-        f"rejected_text={rejected_text} rejected_no_speech={rejected_no_speech}"
-    )
     return candidates
 
 

@@ -173,6 +173,7 @@ class TTSDataPrepApp:
         self.limit_files_var = tk.StringVar(value="0")
         self.max_seconds_var = tk.StringVar(value="12.0")
         self.overwrite_var = tk.BooleanVar(value=False)
+        self.vocals_only_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="Idle. The extractor finds candidate speech, not confirmed Shana lines.")
         self.review_filter_var = tk.StringVar(value="All")
         self.review_status_var = tk.StringVar(value="No manifest loaded.")
@@ -311,7 +312,9 @@ class TTSDataPrepApp:
         max_seconds_entry = ttk.Entry(form, textvariable=self.max_seconds_var)
         max_seconds_entry.grid(row=9, column=1, sticky="ew", padx=8, pady=6)
         overwrite_check = ttk.Checkbutton(form, text="Overwrite staged files", variable=self.overwrite_var)
-        overwrite_check.grid(row=10, column=1, sticky="w", padx=8, pady=(6, 12))
+        overwrite_check.grid(row=10, column=1, sticky="w", padx=8, pady=(6, 4))
+        vocals_only_check = ttk.Checkbutton(form, text="Separate Vocals (Demucs)", variable=self.vocals_only_var)
+        vocals_only_check.grid(row=11, column=1, sticky="w", padx=8, pady=(0, 12))
 
         actions = ttk.Frame(parent, style="Card.TFrame")
         actions.grid(row=1, column=0, sticky="nsew")
@@ -357,6 +360,7 @@ class TTSDataPrepApp:
         self._attach_tooltip(max_seconds_label, "Maximum accepted candidate clip length before the prep step rejects it as too long.")
         self._attach_tooltip(max_seconds_entry, "Maximum accepted candidate clip length before the prep step rejects it as too long. Raise this if useful lines are getting discarded.")
         self._attach_tooltip(overwrite_check, "Copy staged files again even if the destination already exists and looks unchanged.")
+        self._attach_tooltip(vocals_only_check, "Run Demucs vocal separation before transcription. Strips music, SFX, and ambience so clips contain vocals only. Requires the 'demucs' package. Significantly slower — one pass per episode.")
         self._attach_tooltip(stage_only_button, "Copy media from the source folder into local staging without running transcription or clip extraction.")
         self._attach_tooltip(stage_prepare_button, "Copy media into staging, then run transcription and candidate clip extraction in one pass.")
         self._attach_tooltip(load_manifest_button, "Load the current dataset manifest into the review queue so you can inspect and label clips.")
@@ -410,7 +414,10 @@ class TTSDataPrepApp:
         self.review_tree.column("score", width=90, anchor="center")
         self.review_tree.column("dupe", width=120, anchor="center")
         self.review_tree.column("label", width=120, anchor="center")
-        self.review_tree.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        tree_scrollbar = ttk.Scrollbar(tree_card, orient="vertical", command=self.review_tree.yview)
+        self.review_tree.configure(yscrollcommand=tree_scrollbar.set)
+        self.review_tree.grid(row=0, column=0, sticky="nsew", padx=(12, 0), pady=12)
+        tree_scrollbar.grid(row=0, column=1, sticky="ns", padx=(0, 12), pady=12)
         self.review_tree.bind("<<TreeviewSelect>>", self._on_review_select)
         self.review_tree.tag_configure("quality_ok", foreground=self.TEXT)
         self.review_tree.tag_configure("quality_warn", foreground=self.WARN)
@@ -601,7 +608,10 @@ class TTSDataPrepApp:
             padx=10,
             pady=10,
         )
-        self.log_text.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 10))
+        log_scrollbar = ttk.Scrollbar(panel, orient="vertical", command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=log_scrollbar.set)
+        self.log_text.grid(row=1, column=0, sticky="nsew", padx=(14, 0), pady=(0, 10))
+        log_scrollbar.grid(row=1, column=1, sticky="ns", padx=(0, 14), pady=(0, 10))
         self.log_text.tag_configure("system", foreground=self.MUTED)
         self.log_text.tag_configure("success", foreground=self.SUCCESS)
         self.log_text.tag_configure("warn", foreground=self.WARN)
@@ -781,6 +791,8 @@ class TTSDataPrepApp:
                 args.extend(["--exclude-pattern", pattern])
             if limit_files > 0:
                 args.extend(["--limit-files", str(limit_files)])
+            if self.vocals_only_var.get():
+                args.append("--vocals-only")
         return args
 
     def _run_stage_only(self) -> None:
@@ -1194,13 +1206,82 @@ class TTSDataPrepApp:
             self._set_label(order[next_index])
         return "break"
 
+    def _signature_for_clip_id(self, clip_id: str) -> np.ndarray | None:
+        """Compute a signature for a clip_id whose WAV may exist outside the current manifest."""
+        cached = self.signature_cache.get(clip_id)
+        if cached is not None:
+            return cached
+        # Reconstruct path: clips/{episode_id}/{clip_id}.wav
+        # episode_id is clip_id with the trailing _NNNN index stripped.
+        episode_id = clip_id[:-5] if len(clip_id) > 5 and clip_id[-5] == "_" and clip_id[-4:].isdigit() else clip_id
+        dataset_dir = self._resolve_data_path(self.dataset_var.get().strip())
+        clip_path = dataset_dir / "clips" / episode_id / f"{clip_id}.wav"
+        if not clip_path.exists():
+            return None
+        try:
+            signature = self._compute_clip_signature(clip_path)
+            self.signature_cache[clip_id] = signature
+            return signature
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _orphan_seed_vectors(self) -> tuple[list[np.ndarray], list[np.ndarray]]:
+        """Return signature vectors for labeled clips that exist on disk but are not in the current manifest."""
+        manifest_ids = {record.clip_id for record in self.records}
+        shana_vecs: list[np.ndarray] = []
+        not_shana_vecs: list[np.ndarray] = []
+        for clip_id, entry in self.labels.items():
+            if clip_id in manifest_ids:
+                continue
+            label = entry.get("label", "")
+            if label not in ("Shana", "Shana-light-noise", "Shana-heavy-noise", "Not Shana"):
+                continue
+            sig = self._signature_for_clip_id(clip_id)
+            if sig is None:
+                continue
+            if label.startswith("Shana"):
+                shana_vecs.append(sig)
+            else:
+                not_shana_vecs.append(sig)
+        return shana_vecs, not_shana_vecs
+
+    def _seed_archive_path(self) -> Path:
+        dataset_dir = self._resolve_data_path(self.dataset_var.get().strip())
+        return dataset_dir / "shana_seed_archive.json"
+
+    def _load_seed_archive(self) -> tuple[list[np.ndarray], list[np.ndarray]]:
+        path = self._seed_archive_path()
+        if not path.exists():
+            return [], []
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            shana = [np.array(v, dtype=np.float32) for v in data.get("shana", [])]
+            not_shana = [np.array(v, dtype=np.float32) for v in data.get("not_shana", [])]
+            return shana, not_shana
+        except Exception:  # noqa: BLE001
+            return [], []
+
+    def _save_seed_archive(self, shana_vecs: list[np.ndarray], not_shana_vecs: list[np.ndarray]) -> None:
+        path = self._seed_archive_path()
+        try:
+            data = {
+                "shana": [v.tolist() for v in shana_vecs],
+                "not_shana": [v.tolist() for v in not_shana_vecs],
+            }
+            path.write_text(json.dumps(data), encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+
     def _rank_similarity(self) -> None:
-        shana_records = [record for record in self.records if self.labels.get(record.clip_id, {}).get("label") == "Shana"]
-        if not shana_records:
+        shana_records = [record for record in self.records if self.labels.get(record.clip_id, {}).get("label", "").startswith("Shana")]
+        archive_shana, archive_not_shana = self._load_seed_archive()
+        orphan_shana, orphan_not_shana = self._orphan_seed_vectors()
+
+        if not shana_records and not archive_shana and not orphan_shana:
             messagebox.showwarning("No Seeds", "Mark a few confirmed Shana clips first, then run ranking.")
             return
 
-        seed_vectors: list[np.ndarray] = []
+        seed_vectors: list[np.ndarray] = list(archive_shana) + orphan_shana
         failures = 0
         for record in shana_records:
             signature = self._signature_for_record(record)
@@ -1218,10 +1299,10 @@ class TTSDataPrepApp:
             messagebox.showwarning("Invalid Seeds", "The current Shana seed clips produced an empty similarity centroid.")
             return
 
-        # Build anti-centroid from "Not Shana" clips (confirmed different speaker, clean speech).
+        # Build anti-centroid from "Not Shana" clips plus archive.
         # Reject clips are excluded — they may be noise/overlap rather than a real speaker voice.
         not_shana_records = [record for record in self.records if self.labels.get(record.clip_id, {}).get("label") == "Not Shana"]
-        anti_vectors: list[np.ndarray] = []
+        anti_vectors: list[np.ndarray] = list(archive_not_shana) + orphan_not_shana
         for record in not_shana_records:
             signature = self._signature_for_record(record)
             if signature is not None:
@@ -1254,7 +1335,22 @@ class TTSDataPrepApp:
 
         self.similarity_scores = scores
         self._refresh_review_tree()
-        mode = f"{len(seed_vectors)} Shana seeds + {len(anti_vectors)} Not-Shana anti-seeds" if anti_vectors else f"{len(seed_vectors)} Shana seeds only"
+
+        # Persist signatures so future runs can use them as seeds even after re-extraction.
+        self._save_seed_archive(seed_vectors, anti_vectors)
+
+        extra_notes: list[str] = []
+        if archive_shana or archive_not_shana:
+            extra_notes.append(f"{len(archive_shana)}+{len(archive_not_shana)} archived")
+        if orphan_shana or orphan_not_shana:
+            extra_notes.append(f"{len(orphan_shana)}+{len(orphan_not_shana)} from prior runs on disk")
+        extra = f" ({', '.join(extra_notes)})" if extra_notes else ""
+        total_anti = len(not_shana_records) + len(archive_not_shana) + len(orphan_not_shana)
+        mode = (
+            f"{len(seed_vectors)} Shana seeds + {total_anti} Not-Shana anti-seeds{extra}"
+            if total_anti
+            else f"{len(seed_vectors)} Shana seeds only{extra}"
+        )
         self.status_var.set(
             f"Ranking updated ({mode}). Higher scores are more likely Shana. This is heuristic triage, not true speaker identification."
         )
@@ -1592,6 +1688,8 @@ class TTSDataPrepApp:
             args += ["--exclude-pattern", pattern]
         if limit_files > 0:
             args += ["--limit-files", str(limit_files)]
+        if self.vocals_only_var.get():
+            args.append("--vocals-only")
         self._launch_worker(prepare_main, args, "Extracting candidate speech from staged files.")
 
     def _waveform_samples(self, clip_path: Path, num_samples: int) -> list[float]:

@@ -95,7 +95,7 @@ gamma/                          # Python package root
     tts.py                      # TTS (GPT-SoVITS)
 
   # --- TTS DATASET PREP (active development) ---
-  run_tts_dataset_gui.py        # Main GUI app (~1700 lines) — Tkinter desktop app
+  run_tts_dataset_gui.py        # Main GUI app (~1800 lines) — Tkinter desktop app
   run_prepare_tts_dataset.py    # CLI extraction pipeline (faster-whisper + ffmpeg)
   run_stage_and_prepare_tts_dataset.py  # Stage-from-share + optional prepare wrapper
 
@@ -167,6 +167,7 @@ GammaTTSDataPrep\
     labels.json                      # Manual review labels
     segments.csv
     REVIEW.md
+    shana_seed_archive.json        # Persisted similarity seed vectors (survives manifest re-extraction)
     clips\
       <episode_id>\
         <clip_id>.wav                # Extracted mono 16kHz WAV clips
@@ -223,6 +224,7 @@ GammaTTSDataPrep\
 - **Limit Files** — cap how many files to process (0 = all)
 - **Max Seconds** — maximum extracted clip length (default 12.0s)
 - **Overwrite** — force re-copy even if staged file looks unchanged
+- **Separate Vocals (Demucs)** — run Demucs vocal separation before transcription; strips music, SFX, and ambience so clips contain vocals only. Requires the `demucs` package. Significantly slower (one pass per episode). Uses the `htdemucs` model by default (CLI flag `--demucs-model` to override).
 
 **Action buttons:**
 - **Stage Only** — copy files without extracting
@@ -233,7 +235,7 @@ GammaTTSDataPrep\
 
 ### Review Tab
 - **Filter** — show All / Unlabeled / specific label
-- **Rank Likely Shana** — score all clips using `cosine(clip, shana_centroid) - cosine(clip, not_shana_centroid)`. Uses confirmed `Shana` clips as positive seeds and `Not Shana` clips as anti-seeds. Sorts queue by score descending.
+- **Rank Likely Shana** — score all clips using `cosine(clip, shana_centroid) - cosine(clip, not_shana_centroid)`. Uses all `Shana*`-labeled clips (Shana, Shana-light-noise, Shana-heavy-noise) as positive seeds and `Not Shana` clips as anti-seeds. Persists seed vectors to `shana_seed_archive.json` so rankings survive manifest re-extraction. Also pulls in "orphan" seeds — clips labeled in prior manifest runs that are still on disk. Sorts queue by score descending.
 - **Find Duplicates** — SHA-256 exact match + near-duplicate cosine detection
 - **Auto-Advance** — after labeling, automatically move to next clip (default on)
 - **Auto-Play** — replay clip automatically when navigating to it (default off)
@@ -287,9 +289,10 @@ Signatures are L2-normalized and compared with cosine similarity.
 score = cosine(clip, shana_centroid) - cosine(clip, not_shana_centroid)
 ```
 
-- `shana_centroid` = mean of signatures from all `Shana`-labeled clips
-- `not_shana_centroid` = mean of signatures from all `Not Shana`-labeled clips
-- If no `Not Shana` clips exist, falls back to plain `cosine(clip, shana_centroid)`
+- `shana_centroid` = mean of signatures from all `Shana*`-labeled clips (Shana, Shana-light-noise, Shana-heavy-noise) in the current manifest, plus vectors from `shana_seed_archive.json` and any orphan clips on disk
+- `not_shana_centroid` = mean from `Not Shana` clips plus archive/orphan not-shana vectors
+- If no anti-seeds exist, falls back to plain `cosine(clip, shana_centroid)`
+- After ranking, the full set of used seed vectors is saved back to `shana_seed_archive.json`
 
 **Important limitations:**
 - 12-dim spectral features are too crude for reliable speaker identification
@@ -307,6 +310,7 @@ score = cosine(clip, shana_centroid) - cosine(clip, not_shana_centroid)
 - **ffmpeg / ffprobe / ffplay** — must be on PATH; used for clip extraction (hidden-window subprocess on Windows), audio stream selection, and playback
 - **numpy** — used for signature computation and waveform drawing
 - **tkinter** — dark-mode Tkinter GUI with ttk.clam theme
+- **demucs** *(optional)* — vocal separation via `--vocals-only` flag. Requires `pip install demucs` (pulls in `torchaudio`, `soundfile`). Not bundled by default but the PyInstaller spec includes it when present.
 - **PyInstaller 6.x** — builds `dist/GammaTTSDataPrep/GammaTTSDataPrep.exe` (folder-based, not single-file)
 - All ffmpeg/ffprobe subprocesses use `CREATE_NO_WINDOW` on Windows
 - App data lives in `%LOCALAPPDATA%\GammaTTSDataPrep` — rebuilding the exe does not wipe data
@@ -331,6 +335,11 @@ py -3.12 -m gamma.run_tts_dataset_gui
 Run extraction CLI directly:
 ```bash
 py -3.12 -m gamma.run_prepare_tts_dataset "C:\path\to\staged\episodes" --out-dir "C:\path\to\dataset" --language ja --audio-stream-lang jpn
+
+# With Demucs vocal separation (strips music/SFX before transcription — much slower):
+py -3.12 -m gamma.run_prepare_tts_dataset "C:\path\to\staged\episodes" --out-dir "C:\path\to\dataset" --language ja --audio-stream-lang jpn --vocals-only
+# Use a different Demucs model:
+py -3.12 -m gamma.run_prepare_tts_dataset ... --vocals-only --demucs-model htdemucs_ft
 ```
 
 ---
@@ -349,14 +358,12 @@ py -3.12 -m gamma.run_prepare_tts_dataset "C:\path\to\staged\episodes" --out-dir
 
 ## Recently Implemented (Current Session)
 
-All of the following were added in the most recent development session and are included in the current exe:
+All of the following were added in the most recent development session (not yet built into exe):
 
-1. **Waveform canvas** — 56px canvas in review detail panel; draws amplitude bars; real-time playback cursor
-2. **Auto-Play on select** — optional checkbox (default off); replays clip when navigating to it
-3. **Bulk label operations** — "Label Selected" and "Label Visible" buttons with combobox; treeview supports multi-select (Shift/Ctrl+click)
-4. **Quality hints** — treeview rows colored by `no_speech_prob` and `avg_logprob`
-5. **Prepare Staged button** — re-run extraction on staged files without re-copying
-6. **Anti-seed discriminative scoring** — `Not Shana` clips now used as anti-seeds in similarity ranking: `score = shana_sim - not_shana_sim`
+1. **Demucs vocal separation** — new `--vocals-only` / `--demucs-model` CLI flags and matching "Separate Vocals (Demucs)" checkbox in the Pipeline tab. When enabled: extracts HQ stereo audio, runs Demucs to isolate the vocals track, then transcribes and extracts clips from the clean vocals WAV. Significantly slower but produces cleaner clips with less music/SFX contamination. Requires `pip install demucs`.
+2. **Seed archive persistence** — similarity ranking now saves used seed vectors to `shana_seed_archive.json` in the dataset dir. On subsequent runs, archived seeds are merged with current manifest seeds, so a re-extraction doesn't lose accumulated seed knowledge. Also detects "orphan" seeds — clips labeled in prior manifest runs that still exist on disk even if not in the current manifest.
+3. **All Shana* labels as positive seeds** — ranking now treats `Shana`, `Shana-light-noise`, and `Shana-heavy-noise` clips as positive seeds (previously only `Shana`).
+4. **Treeview and log scrollbars** — review treeview and log text widget now have explicit vertical scrollbars.
 
 ---
 

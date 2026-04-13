@@ -18,7 +18,7 @@ The broader Gamma assistant (FastAPI backend, voice pipeline, dashboard, tray) i
 
 | File | Purpose |
 |---|---|
-| `gamma/run_tts_dataset_gui.py` | Main GUI app (~1700 lines) — all review, playback, export, pipeline controls |
+| `gamma/run_tts_dataset_gui.py` | Main GUI app (~1800 lines) — all review, playback, export, pipeline controls |
 | `gamma/run_prepare_tts_dataset.py` | CLI extraction: faster-whisper → ffmpeg → manifest.jsonl |
 | `gamma/run_stage_and_prepare_tts_dataset.py` | Stage-from-share + optional prepare |
 | `scripts/build_tts_dataset_gui_exe.py` | PyInstaller build script |
@@ -37,6 +37,7 @@ The broader Gamma assistant (FastAPI backend, voice pipeline, dashboard, tray) i
 | Dataset output | `...\shana_dataset\` |
 | Clips | `...\shana_dataset\clips\<episode_id>\<clip_id>.wav` |
 | Labels | `...\shana_dataset\labels.json` |
+| Seed archive | `...\shana_dataset\shana_seed_archive.json` |
 | Manifest | `...\shana_dataset\manifest.jsonl` |
 | Exports | `...\shana_dataset\exports\shana_clean\`, `shana_light_noise\`, `shana_heavy_noise\` |
 | Source anime (share) | `\\10.78.78.250\Media\Anime\Shakugan no Shana\Shakugan no Shana` |
@@ -64,12 +65,10 @@ Only `Shana` and `Shana-light-noise` should go into base GPT-SoVITS training.
 
 ## What Was Recently Added
 
-1. Waveform canvas in review panel (real-time playback cursor)
-2. Auto-Play on clip select toggle
-3. Bulk label: "Label Selected" + "Label Visible" with multi-select tree
-4. Quality row coloring by `no_speech_prob` / `avg_logprob`
-5. "Prepare Staged" button — re-extract without re-staging
-6. Anti-seed ranking: `score = cosine(clip, shana_centroid) - cosine(clip, not_shana_centroid)`
+1. **Demucs vocal separation** — `--vocals-only` CLI flag + "Separate Vocals (Demucs)" Pipeline tab checkbox. Strips music/SFX before transcription for cleaner clips. Requires `pip install demucs`. Much slower (one Demucs pass per episode).
+2. **Seed archive** — similarity ranking saves seed vectors to `shana_seed_archive.json`; future runs merge archived + current + orphan-on-disk seeds so label knowledge survives manifest re-extractions.
+3. **All Shana\* labels as positive seeds** — Shana-light-noise and Shana-heavy-noise clips now count as seeds (previously only Shana).
+4. **Treeview + log scrollbars** — review tree and log panel now have explicit vertical scrollbars.
 
 ---
 

@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 
 repo_root = Path(SPECPATH).resolve().parent
@@ -17,9 +17,30 @@ hiddenimports = [
     "tkinter.ttk",
     "tkinter.filedialog",
     "tkinter.messagebox",
+    "demucs",
+    "demucs.separate",
+    "demucs.pretrained",
+    "demucs.apply",
+    "demucs.audio",
+    *collect_submodules("demucs"),
+    "numpy.core.multiarray",
+    "numpy.core._multiarray_umath",
+    "numpy.core._multiarray_tests",
+    *collect_submodules("numpy"),
+    *collect_submodules("torchaudio"),
+    "soundfile",
+    "soundfile._soundfile",
+    "cffi",
+    "_soundfile",
+    *collect_submodules("soundfile"),
 ]
 
-datas = collect_data_files("faster_whisper")
+datas = (
+    collect_data_files("faster_whisper")
+    + collect_data_files("demucs")
+    + collect_data_files("torchaudio")
+    + collect_data_files("soundfile")
+)
 
 
 a = Analysis(

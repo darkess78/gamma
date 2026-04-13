@@ -6,6 +6,7 @@ from .builtin import (
     MemoryStatsTool,
     ProviderStatusTool,
     RecentArtifactsTool,
+    SaveCoreMemoryTool,
     SaveMemoryTool,
     SearchMemoryTool,
 )
@@ -36,5 +37,6 @@ class ToolRegistry:
             RecentArtifactsTool(),
             SearchMemoryTool(),
             SaveMemoryTool(),
+            SaveCoreMemoryTool(),
         ):
             self.register(tool)

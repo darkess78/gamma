@@ -1,0 +1,31 @@
+[profiles.piper_lessac]
+label = "Piper Lessac"
+provider = "piper"
+description = "Clean local fallback voice using Piper."
+piper_model_path = "./data/piper/en_US-lessac-medium.onnx"
+piper_config_path = "./data/piper/en_US-lessac-medium.onnx.json"
+rvc_enabled = false
+
+[profiles.henya_rvc]
+label = "Henya RVC"
+provider = "piper"
+description = "Piper speech converted through the Henya RVC model."
+piper_model_path = "./data/piper/en_US-lessac-medium.onnx"
+piper_config_path = "./data/piper/en_US-lessac-medium.onnx.json"
+rvc_enabled = true
+rvc_model_name = "HenyaTheGeniusV2.pth"
+rvc_pitch = 12
+rvc_formant = 0.15
+rvc_f0_method = "rmvpe"
+rvc_index_rate = 0.15
+rvc_filter_radius = 3
+rvc_rms_mix_rate = 0.2
+rvc_protect = 0.33
+rvc_resample_sr = 0
+
+[profiles.gpt_sovits_custom]
+label = "GPT-SoVITS Custom"
+provider = "local"
+description = "Custom cloned voice through a local GPT-SoVITS server."
+gpt_sovits_prompt_lang = "en"
+gpt_sovits_text_lang = "en"

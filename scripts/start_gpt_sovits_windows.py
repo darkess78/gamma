@@ -26,11 +26,13 @@ def _is_listening(port: int) -> bool:
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     package_root = _package_root(repo_root)
-    python_exe = package_root / "runtime" / "python.exe"
+    python_exe = package_root / "runtime" / "pythonw.exe"
     stdout_log = package_root / "api-9881.out.log"
     stderr_log = package_root / "api-9881.err.log"
     port = int(os.getenv("GPT_SOVITS_PORT", "9881"))
 
+    if not python_exe.exists():
+        python_exe = package_root / "runtime" / "python.exe"
     if not python_exe.exists():
         raise SystemExit(f"GPT-SoVITS runtime not found at {python_exe}")
 

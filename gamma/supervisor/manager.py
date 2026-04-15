@@ -105,23 +105,28 @@ class ProcessManager:
         }
 
     def stop(self, name: str) -> dict[str, Any]:
-        process = self.find_process(name)
-        if not process:
+        processes = self.find_processes(name)
+        if not processes:
             self.clear_pid_file(name)
             payload = {"ok": True, "detail": "not-running", "url": self.service(name).url}
             if name == "shana":
                 payload["dependencies"] = self._stop_shana_dependencies()
             return payload
 
-        try:
-            process.terminate()
-            process.wait(timeout=10)
-        except psutil.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=5)
+        stopped_pids: list[int] = []
+        for process in processes:
+            try:
+                process.terminate()
+                process.wait(timeout=10)
+            except psutil.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+            except psutil.Error:
+                continue
+            stopped_pids.append(process.pid)
 
         self.clear_pid_file(name)
-        payload = {"ok": True, "detail": "stopped", "url": self.service(name).url}
+        payload = {"ok": True, "detail": "stopped", "url": self.service(name).url, "pids": stopped_pids}
         if name == "shana":
             payload["dependencies"] = self._stop_shana_dependencies()
         return payload
@@ -142,12 +147,17 @@ class ProcessManager:
         }
 
     def find_process(self, name: str) -> psutil.Process | None:
+        processes = self.find_processes(name)
+        return processes[0] if processes else None
+
+    def find_processes(self, name: str) -> list[psutil.Process]:
+        matches: dict[int, psutil.Process] = {}
         pid = self.read_pid_file(name)
         if pid is not None:
             try:
                 process = psutil.Process(pid)
                 if self.looks_like_service(process, name):
-                    return process
+                    matches[process.pid] = process
             except psutil.Error:
                 self.clear_pid_file(name)
 
@@ -157,10 +167,24 @@ class ProcessManager:
                 cmdline = " ".join(process.cmdline()).lower()
                 if "uvicorn" in cmdline and target in cmdline:
                     self.pid_file(name).write_text(str(process.pid), encoding="utf-8")
-                    return process
+                    matches[process.pid] = process
             except psutil.Error:
                 continue
-        return None
+
+        service = self.service(name)
+        for conn in psutil.net_connections(kind="inet"):
+            if conn.status != psutil.CONN_LISTEN or not conn.laddr:
+                continue
+            if conn.laddr.port != service.port or conn.pid is None:
+                continue
+            try:
+                process = psutil.Process(conn.pid)
+            except psutil.Error:
+                continue
+            if self.looks_like_service(process, name):
+                matches[process.pid] = process
+
+        return sorted(matches.values(), key=lambda process: process.pid)
 
     def looks_like_service(self, process: psutil.Process, name: str) -> bool:
         cmdline = " ".join(process.cmdline()).lower()
@@ -311,6 +335,10 @@ class ProcessManager:
         }
         if os.name == "nt":
             kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            si.wShowWindow = 0  # SW_HIDE
+            kwargs["startupinfo"] = si
         return subprocess.run(command, **kwargs)
 
     def _is_local_url(self, value: str | None) -> bool:

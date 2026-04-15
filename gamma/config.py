@@ -24,6 +24,9 @@ def _read_toml(path: Path) -> dict[str, Any]:
 APP_CONFIG = _read_toml(CONFIG_DIR / "app.toml")
 if not APP_CONFIG:
     APP_CONFIG = _read_toml(CONFIG_DIR / "app.example.toml")
+VOICES_CONFIG = _read_toml(CONFIG_DIR / "voices.toml")
+if not VOICES_CONFIG:
+    VOICES_CONFIG = _read_toml(CONFIG_DIR / "voices.example.toml")
 MODELS_CONFIG = _read_toml(CONFIG_DIR / "models.toml")
 MEMORY_CONFIG = _read_toml(CONFIG_DIR / "memory.toml")
 
@@ -200,6 +203,10 @@ class Settings:
             "SHANA_TTS_PROVIDER",
             _config_value(MODELS_CONFIG, "tts", "provider", default=_config_value(APP_CONFIG, "tts_provider", default="stub")),
         )
+    )
+    tts_profile: str | None = _setting(
+        "SHANA_TTS_PROFILE",
+        _config_value(APP_CONFIG, "tts_profile", default=""),
     )
     tts_model: str = str(_setting("SHANA_TTS_MODEL", _config_value(APP_CONFIG, "tts_model", default="gpt-4o-mini-tts")))
     tts_voice: str = str(

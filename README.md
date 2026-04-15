@@ -33,6 +33,7 @@ Current persona target: **Shana**.
 - `openai` - hosted TTS via the OpenAI SDK
 - `gpt-sovits` - HTTP-backed custom voice integration target
 - optional RVC post-process can be layered on top of Piper for slower converted-voice tests
+- named voice profiles can be defined in `config/voices.toml` and selected from the dashboard
 
 ## Provider matrix
 
@@ -109,8 +110,10 @@ RVC layering:
   - protect: `0.33`
 - the offline Gamma integration uses the RVC file-conversion path, not the realtime GUI. That means only a subset of realtime GUI controls are available in Gamma.
 - for Linux RVC bootstrapping, use `./scripts/install_rvc_linux.sh` after cloning the RVC repo into one of the expected locations
+- named TTS voice profiles live in `config/voices.toml` and fall back to `config/voices.example.toml`
 
 Dashboard behavior:
+- the TTS profile dropdown lets you choose a named voice profile, not just a raw provider
 - the TTS dropdown persists the selected provider to `config/app.toml`
 - `Test TTS` uses the selected provider immediately
 - normal Shana conversation responses still use the provider loaded by the running Shana process, so restart Shana after changing the dropdown if you want conversations to switch too
@@ -601,6 +604,47 @@ cd gamma
 .\.venv\Scripts\python -m gamma.run_voice_mode --mode turn-based --seconds 5
 ```
 >>>>>>> 39b8b22cba6d0a06adfad04104ad275be3874a82
+
+## GammaTTSDataPrep
+
+A standalone GUI tool for preparing TTS training datasets from anime source media.
+
+**Entry point:** `gamma/run_tts_dataset_gui.py`
+**Spec:** `packaging/tts_dataset_gui.spec`
+**Build script:** `packaging/build.bat`
+**Built exe:** `dist/GammaTTSDataPrep/GammaTTSDataPrep.exe`
+
+### Building the exe
+
+Windows — double-click `packaging/build.bat` or run it from a terminal:
+
+```bat
+packaging\build.bat
+```
+
+Linux / macOS:
+
+```bash
+chmod +x packaging/build.sh
+packaging/build.sh
+```
+
+Both scripts run PyInstaller against the spec using the repo `.venv` and print the output path when done. The full distribution lands in `dist/GammaTTSDataPrep/`.
+
+- Windows: run `dist/GammaTTSDataPrep/GammaTTSDataPrep.exe`
+- Linux: run `dist/GammaTTSDataPrep/GammaTTSDataPrep`
+
+### Features
+
+**Pipeline tab** — stage source media locally, run faster-whisper segmentation, and extract candidate speech clips into a reviewable dataset.
+
+**Review tab** — listen to extracted clips, label them (Shana / Not Shana / Reject / noise tiers), rank by speaker similarity, find duplicates, trim clips, and export labeled subsets for training.
+
+**Transcribe tab** — paste or browse to any media file (MKV, MP4, WAV, MP3, etc.) and get a full Whisper transcript without going through the full dataset pipeline. Supports multi-track containers (picks the right audio stream via language tag), optional timestamps, and copy/save of the result.
+
+### Dependencies
+
+Requires `ffmpeg` and `ffprobe` on `PATH` for video file handling. The `demucs` package is optional — only needed if you enable the **Separate Vocals** option in the Pipeline tab.
 
 ## Repository hygiene
 

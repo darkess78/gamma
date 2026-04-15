@@ -16,6 +16,7 @@ from ..voice.rvc_support import (
     resolve_rvc_index_path,
     resolve_rvc_model_path,
 )
+from ..voice.voice_profiles import list_voice_profiles, resolve_tts_config
 
 
 class SystemStatusService:
@@ -23,6 +24,7 @@ class SystemStatusService:
         self._memory = MemoryService()
 
     def build_status(self) -> dict[str, Any]:
+        tts_cfg = resolve_tts_config()
         return {
             "app": {
                 "name": settings.app_name,
@@ -47,16 +49,19 @@ class SystemStatusService:
                     "device": settings.stt_device,
                 },
                 "tts": {
-                    "provider": settings.tts_provider,
-                    "model": settings.tts_model,
-                    "voice": settings.tts_voice,
-                    "piper_executable": settings.piper_executable if settings.tts_provider == "piper" else None,
-                    "piper_model_path": settings.piper_model_path if settings.tts_provider == "piper" else None,
-                    "rvc_enabled": settings.rvc_enabled,
-                    "rvc_model_name": settings.rvc_model_name if settings.rvc_enabled else None,
-                    "rvc_formant": settings.rvc_formant if settings.rvc_enabled else None,
-                    "endpoint": settings.gpt_sovits_endpoint,
-                    "health": self._check_tts_health(),
+                    "provider": tts_cfg.provider,
+                    "model": tts_cfg.tts_model,
+                    "voice": tts_cfg.tts_voice,
+                    "profile_id": tts_cfg.profile_id,
+                    "profile_label": tts_cfg.profile_label,
+                    "available_profiles": [profile.as_payload() for profile in list_voice_profiles()],
+                    "piper_executable": tts_cfg.piper_executable if tts_cfg.provider == "piper" else None,
+                    "piper_model_path": tts_cfg.piper_model_path if tts_cfg.provider == "piper" else None,
+                    "rvc_enabled": tts_cfg.rvc_enabled,
+                    "rvc_model_name": tts_cfg.rvc_model_name if tts_cfg.rvc_enabled else None,
+                    "rvc_formant": tts_cfg.rvc_formant if tts_cfg.rvc_enabled else None,
+                    "endpoint": tts_cfg.gpt_sovits_endpoint,
+                    "health": self._check_tts_health(tts_cfg),
                 },
             },
             "memory": {
@@ -102,10 +107,10 @@ class SystemStatusService:
             return configured
         return settings.local_llm_model
 
-    def _check_gpt_sovits_health(self) -> dict[str, Any]:
-        if not settings.gpt_sovits_endpoint:
+    def _check_gpt_sovits_health(self, tts_cfg: Any) -> dict[str, Any]:
+        if not tts_cfg.gpt_sovits_endpoint:
             return {"ok": False, "detail": "no-endpoint-configured"}
-        base_url = settings.gpt_sovits_endpoint.rsplit("/tts", 1)[0]
+        base_url = tts_cfg.gpt_sovits_endpoint.rsplit("/tts", 1)[0]
         try:
             with urllib.request.urlopen(base_url + "/docs", timeout=5) as response:
                 ok = 200 <= response.status < 400
@@ -115,23 +120,23 @@ class SystemStatusService:
         except Exception as exc:
             return {"ok": False, "detail": str(exc)}
 
-    def _check_tts_health(self) -> dict[str, Any]:
-        provider = settings.tts_provider.strip().lower()
+    def _check_tts_health(self, tts_cfg: Any) -> dict[str, Any]:
+        provider = tts_cfg.provider.strip().lower()
         if provider == "piper":
-            piper = self._check_piper_health()
-            if not settings.rvc_enabled:
+            piper = self._check_piper_health(tts_cfg)
+            if not tts_cfg.rvc_enabled:
                 return piper
             if not piper.get("ok"):
                 return piper
-            rvc = self._check_rvc_health()
+            rvc = self._check_rvc_health(tts_cfg)
             return rvc if not rvc.get("ok") else {"ok": True, "detail": "ready"}
         if provider in {"local", "gpt-sovits", "gpt_sovits"}:
-            return self._check_gpt_sovits_health()
+            return self._check_gpt_sovits_health(tts_cfg)
         return {"ok": True, "detail": "not-local"}
 
-    def _check_piper_health(self) -> dict[str, Any]:
-        executable = (settings.piper_executable or "").strip()
-        model_path = (settings.piper_model_path or "").strip()
+    def _check_piper_health(self, tts_cfg: Any) -> dict[str, Any]:
+        executable = (tts_cfg.piper_executable or "").strip()
+        model_path = (tts_cfg.piper_model_path or "").strip()
         if not executable:
             return {"ok": False, "detail": "no-piper-executable-configured"}
         if not shutil.which(executable):
@@ -143,7 +148,7 @@ class SystemStatusService:
             model = settings.project_root / model
         if not model.exists():
             return {"ok": False, "detail": f"missing-piper-model: {model}"}
-        config_path = (settings.piper_config_path or "").strip()
+        config_path = (tts_cfg.piper_config_path or "").strip()
         if config_path:
             config = Path(config_path).expanduser()
             if not config.is_absolute():
@@ -152,21 +157,21 @@ class SystemStatusService:
                 return {"ok": False, "detail": f"missing-piper-config: {config}"}
         return {"ok": True, "detail": "ready"}
 
-    def _check_rvc_health(self) -> dict[str, Any]:
-        rvc_root = discover_rvc_project_root(settings.rvc_project_root)
+    def _check_rvc_health(self, tts_cfg: Any) -> dict[str, Any]:
+        rvc_root = discover_rvc_project_root(tts_cfg.rvc_project_root)
         if rvc_root is None:
             return {"ok": False, "detail": "missing-rvc-project-root"}
         infer_cli = rvc_root / "tools" / "infer_cli.py"
         if not infer_cli.exists():
             return {"ok": False, "detail": f"missing-rvc-infer-cli: {infer_cli}"}
-        rvc_python = discover_rvc_python(settings.rvc_python, rvc_root)
+        rvc_python = discover_rvc_python(tts_cfg.rvc_python, rvc_root)
         if rvc_python is None:
             return {"ok": False, "detail": "missing-rvc-python"}
-        if not (settings.rvc_model_name or "").strip():
+        if not (tts_cfg.rvc_model_name or "").strip():
             return {"ok": False, "detail": "no-rvc-model-name-configured"}
         try:
-            model_path = resolve_rvc_model_path(rvc_root, settings.rvc_model_name)
-            index_path = resolve_rvc_index_path(rvc_root, settings.rvc_index_path, model_path.name)
+            model_path = resolve_rvc_model_path(rvc_root, tts_cfg.rvc_model_name)
+            index_path = resolve_rvc_index_path(rvc_root, tts_cfg.rvc_index_path, model_path.name)
         except Exception as exc:
             return {"ok": False, "detail": str(exc)}
         return {

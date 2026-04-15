@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 
 from .service import DashboardService
+from ..config import settings as _app_settings
 from .auth import auth_config, dashboard_auth_ready, is_authenticated, session_cookie_value, verify_login, websocket_is_authenticated
 from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..schemas.voice import VoiceRoundtripResponse
@@ -156,6 +157,11 @@ def status() -> dict:
     return service.build_status()
 
 
+@app.get("/api/status/runtime")
+def runtime_status() -> dict:
+    return service.build_runtime_status()
+
+
 @app.post("/api/client-log")
 async def client_log(request: Request) -> dict[str, bool]:
     payload = await request.json()
@@ -219,6 +225,50 @@ async def select_tts_provider(request: Request) -> dict:
         return service.set_tts_provider(provider)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/providers/tts/profile")
+async def select_tts_profile(request: Request) -> dict:
+    payload = await request.json()
+    profile = str(payload.get("profile", "")).strip()
+    try:
+        return service.set_tts_profile(profile)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/providers/tts/profile/save")
+async def save_tts_profile(request: Request) -> dict:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="object payload is required")
+    try:
+        return service.save_tts_profile(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/audio/{filename}")
+def serve_audio(filename: str) -> FileResponse:
+    safe_name = Path(filename).name
+    audio_path = _app_settings.audio_output_dir / safe_name
+    if not audio_path.exists() or not audio_path.is_file():
+        raise HTTPException(status_code=404, detail="audio file not found")
+    if audio_path.resolve().parent != _app_settings.audio_output_dir.resolve():
+        raise HTTPException(status_code=400, detail="invalid path")
+    return FileResponse(str(audio_path), media_type="audio/wav")
+
+
+@app.delete("/api/audio/{filename}")
+def delete_audio(filename: str) -> dict:
+    safe_name = Path(filename).name
+    audio_path = _app_settings.audio_output_dir / safe_name
+    if not audio_path.exists() or not audio_path.is_file():
+        raise HTTPException(status_code=404, detail="audio file not found")
+    if audio_path.resolve().parent != _app_settings.audio_output_dir.resolve():
+        raise HTTPException(status_code=400, detail="invalid path")
+    audio_path.unlink()
+    return {"ok": True, "deleted": safe_name}
 
 
 @app.post("/api/providers/llm/test")

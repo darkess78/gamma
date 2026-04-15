@@ -141,6 +141,41 @@ button.ghost.danger-outline {
   margin-bottom: 12px;
 }
 
+.collapse-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  text-align: left;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.collapse-toggle:hover {
+  transform: none;
+}
+
+.collapse-toggle-panel {
+  font-size: 1.1rem;
+}
+
+.collapse-chevron {
+  color: var(--muted);
+  font-size: 1rem;
+  min-width: 16px;
+  text-align: right;
+}
+
+.collapse-body {
+  overflow: hidden;
+}
+
 .view-toggle {
   display: inline-flex;
   align-items: center;
@@ -207,6 +242,7 @@ button.ghost.danger-outline {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 20px;
+  align-items: start;
 }
 
 .panel {
@@ -348,6 +384,23 @@ pre {
   padding: 12px 14px;
 }
 
+/* Panels whose render div should fill available height */
+.panel-fill {
+  display: flex;
+  flex-direction: column;
+  min-height: 200px;
+}
+
+.panel-fill > .panel-head {
+  flex-shrink: 0;
+}
+
+.panel-fill > .render {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
 .vision-preview-shell {
   border: 1px solid rgba(255, 255, 255, 0.04);
   border-radius: 16px;
@@ -406,6 +459,207 @@ pre {
 audio {
   width: 100%;
   margin-top: 16px;
+}
+
+/* TTS Audio Player */
+.tts-player {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 22px;
+}
+
+.tts-player-track {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 20px;
+  padding: 9px 14px;
+  background: var(--panel-2);
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tts-player-row-main {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 14px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 22px;
+}
+
+.tts-player-seek-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding-top: 8px;
+}
+
+.tts-player-seek {
+  width: 100%;
+  display: block;
+  box-sizing: border-box;
+  accent-color: var(--accent-2);
+  cursor: pointer;
+  margin: 0;
+}
+
+.tts-player-time {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.tts-player-row-sub {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+  padding-top: 4px;
+}
+
+.tts-player-vol-label {
+  font-size: 12px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.tts-player-vol-slider {
+  width: 80px;
+  display: block;
+  accent-color: var(--accent-2);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.tts-player-vol-value {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
+}
+
+.tts-artifacts-header {
+  display: grid;
+  grid-template-columns: 1fr 90px 72px 64px;
+  gap: 10px;
+  padding: 4px 13px 8px;
+  margin-top: 6px;
+}
+
+.tts-artifacts-header span {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.tts-artifacts-col-time,
+.tts-artifacts-col-size,
+.tts-artifacts-col-del {
+  text-align: right;
+}
+
+.tts-artifacts {
+  display: grid;
+  gap: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.tts-artifact-row {
+  display: grid;
+  grid-template-columns: 1fr 90px 72px 64px;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 13px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 12px;
+  transition: background 0.12s;
+}
+
+.tts-artifact-play-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.tts-artifact-play-area:hover .tts-artifact-name {
+  color: var(--accent-2);
+}
+
+.tts-artifact-meta {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.tts-artifact-delete {
+  justify-self: end;
+  background: transparent;
+  border: 1px solid rgba(255, 95, 115, 0.3);
+  border-radius: 999px;
+  color: #ff97a4;
+  font-size: 11px;
+  padding: 3px 9px;
+  box-shadow: none;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.tts-artifact-row:hover .tts-artifact-delete {
+  opacity: 1;
+}
+
+.tts-artifact-delete:hover {
+  background: rgba(255, 95, 115, 0.12);
+  transform: none;
+}
+
+.tts-artifact-row:hover {
+  background: rgba(255, 255, 255, 0.065);
+}
+
+.tts-artifact-row.active {
+  border-color: rgba(51, 195, 179, 0.45);
+  background: rgba(51, 195, 179, 0.06);
+}
+
+.tts-artifact-icon {
+  font-size: 13px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.tts-artifact-row.active .tts-artifact-icon {
+  color: var(--accent-2);
+}
+
+.tts-artifact-name {
+  flex: 1;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tts-artifact-meta {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .voice-meter {

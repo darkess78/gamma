@@ -57,17 +57,23 @@
         </div>
         <div class="render" id="machineMeta"></div>
       </section>
-      <section class="panel">
+      <section class="panel panel-fill">
         <div class="panel-head">
           <h2>Backend Health</h2>
         </div>
-        <div class="render" id="backendHealth"></div>
+        <div class="render" id="backendHealth">...</div>
       </section>
-      <section class="panel">
+      <section class="panel panel-fill">
         <div class="panel-head">
           <h2>Providers</h2>
         </div>
-        <div class="render" id="providers"></div>
+        <div class="render" id="providers">...</div>
+      </section>
+      <section class="panel wide panel-fill">
+        <div class="panel-head">
+          <h2>Last Action</h2>
+        </div>
+        <div class="render" id="providerActions">No provider action has been run yet.</div>
       </section>
       <section class="panel wide">
         <div class="panel-head">
@@ -77,43 +83,139 @@
           <div class="action-group">
             <div class="action-title">LLM</div>
             <div class="action-buttons">
-              <button class="ghost" onclick="action('/api/providers/llm/test')">Test LLM</button>
+              <button class="ghost" onclick="action('/api/providers/llm/test')" disabled>Test LLM</button>
             </div>
           </div>
           <div class="action-group">
             <div class="action-title">STT</div>
             <div class="action-buttons">
-              <button class="ghost" onclick="action('/api/providers/stt/test')">Test STT</button>
+              <button class="ghost" onclick="action('/api/providers/stt/test')" disabled>Test STT</button>
             </div>
           </div>
             <div class="action-group">
               <div class="action-title">TTS</div>
               <div class="action-buttons">
-                <select id="ttsProviderSelect" class="text-input" onchange="selectTtsProvider()">
-                  <option value="piper">Piper</option>
-                  <option value="local">GPT-SoVITS</option>
-                  <option value="openai">OpenAI</option>
-                  <option value="stub">Stub</option>
+                <select id="ttsProfileSelect" class="text-input" onchange="selectTtsProfile()" disabled>
+                  <option value="">...</option>
                 </select>
-                <button id="ttsStartButton" class="secondary" onclick="action('/api/providers/tts/start')" hidden>Start TTS</button>
-                <button id="ttsStopButton" class="ghost danger-outline" onclick="action('/api/providers/tts/stop')" hidden>Stop TTS</button>
-                <button id="ttsTestButton" class="ghost" onclick="action('/api/providers/tts/test')">Test TTS</button>
+                <select id="ttsProviderSelect" class="text-input" onchange="selectTtsProvider()" disabled>
+                  <option value="">...</option>
+                </select>
+                <button id="ttsStartButton" class="secondary" onclick="action('/api/providers/tts/start')" hidden disabled>Start TTS</button>
+                <button id="ttsStopButton" class="ghost danger-outline" onclick="action('/api/providers/tts/stop')" hidden disabled>Stop TTS</button>
+                <button id="ttsTestButton" class="ghost" onclick="action('/api/providers/tts/test')" disabled>Test TTS</button>
               </div>
               <div id="ttsControlNote" class="panel-meta"></div>
             </div>
           <div class="action-group">
             <div class="action-title">All</div>
             <div class="action-buttons">
-              <button onclick="action('/api/providers/voice/test')">Full Voice Loop</button>
+              <button onclick="action('/api/providers/voice/test')" disabled>Full Voice Loop</button>
             </div>
           </div>
         </div>
-        <div class="render" id="providerActions"></div>
+        <div id="ttsProfileEditorShell" style="margin-top: 18px; display: none;">
+          <div class="action-group" style="grid-column: 1 / -1;">
+            <button type="button" class="collapse-toggle" onclick="toggleSection('ttsProfileEditorPanel')">
+              <span>TTS Profile Editor</span>
+              <span class="collapse-chevron" id="ttsProfileEditorPanelChevron">></span>
+            </button>
+            <div id="ttsProfileEditorPanel" class="collapse-body" style="display: none;">
+              <div class="action-buttons action-stack" style="margin-top: 14px;">
+                <input id="ttsEditorProfileId" class="text-input" placeholder="profile id, e.g. my_voice">
+                <input id="ttsEditorLabel" class="text-input" placeholder="profile label">
+                <input id="ttsEditorDescription" class="text-input" placeholder="optional description">
+                <div id="ttsEditorPiperFields" class="action-buttons action-stack" hidden style="display: none;">
+                  <input id="ttsEditorPiperModelPath" class="text-input" placeholder="Piper model path">
+                  <input id="ttsEditorPiperConfigPath" class="text-input" placeholder="Piper config path">
+                  <label class="checkbox-row"><input id="ttsEditorRvcEnabled" type="checkbox"> Enable RVC post-process</label>
+                  <input id="ttsEditorRvcModelName" class="text-input" placeholder="RVC model name" hidden>
+                </div>
+                <div id="ttsEditorSovitsFields" class="action-buttons action-stack" hidden style="display: none;">
+                  <input id="ttsEditorSovitsReferenceAudio" class="text-input" placeholder="GPT-SoVITS reference audio path">
+                  <textarea id="ttsEditorSovitsPromptText" class="text-area" placeholder="GPT-SoVITS prompt transcript"></textarea>
+                </div>
+                <div id="ttsEditorQwenFields" class="action-buttons action-stack" hidden style="display: none;">
+                  <input id="ttsEditorQwenEndpoint" class="text-input" placeholder="Qwen3-TTS endpoint (e.g. http://127.0.0.1:9882/tts)">
+                  <input id="ttsEditorQwenReferenceAudio" class="text-input" placeholder="Reference audio path (for voice clone)">
+                  <textarea id="ttsEditorQwenReferenceText" class="text-area" placeholder="Reference audio transcript (for voice clone)"></textarea>
+                  <input id="ttsEditorQwenSpeaker" class="text-input" placeholder="Built-in speaker (e.g. Ryan, Aiden — leave blank for voice clone)">
+                  <input id="ttsEditorQwenLanguage" class="text-input" placeholder="Language (default: English)">
+                  <input id="ttsEditorQwenInstruct" class="text-input" placeholder="Style instruction (optional, e.g. calm tone)">
+                  <div class="action-title">Generation Params (JSON)</div>
+                  <textarea id="ttsEditorQwenExtraJson" class="text-area" placeholder='{"temperature": 0.9, "top_k": 50, "top_p": 1.0, "repetition_penalty": 1.05, "max_new_tokens": 2048, "min_new_tokens": 10}'></textarea>
+                </div>
+                <div id="ttsEditorOpenAiFields" class="action-buttons action-stack" hidden style="display: none;">
+                  <input id="ttsEditorOpenAiModel" class="text-input" placeholder="OpenAI TTS model">
+                  <input id="ttsEditorOpenAiVoice" class="text-input" placeholder="OpenAI TTS voice">
+                  <input id="ttsEditorOpenAiFormat" class="text-input" placeholder="OpenAI TTS format">
+                </div>
+                <div class="action-title">Values JSON</div>
+                <textarea id="ttsEditorValues" class="text-area" placeholder="{}"></textarea>
+                <div class="action-title">Values Help</div>
+                <div class="render compact-render" id="ttsEditorHelp">...</div>
+                <div class="action-buttons">
+                  <button class="secondary" onclick="saveTtsProfile()">Save Profile</button>
+                  <button class="ghost" onclick="duplicateTtsProfile()">Duplicate Profile</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="ttsProfileEditorStatusShell" style="display: none;">
+          <div class="render" id="ttsProfileEditorStatus">Edit the active TTS profile, then save to update config/voices.toml.</div>
+        </div>
       </section>
       <section class="panel wide">
         <div class="panel-head">
-          <h2>Browser Voice</h2>
+          <button type="button" class="collapse-toggle collapse-toggle-panel" onclick="toggleSection('ttsAudioPanel')">
+            <span>TTS Audio Player</span>
+            <span class="collapse-chevron" id="ttsAudioPanelChevron">></span>
+          </button>
         </div>
+        <div id="ttsAudioPanel" class="collapse-body" style="display: none;">
+          <audio id="ttsAudioEngine" preload="auto" style="display: none;"></audio>
+          <div class="tts-player">
+            <div class="tts-player-track" id="ttsPlayerTrack">No file loaded</div>
+            <div class="tts-player-row-main">
+              <button class="secondary" id="ttsPlayerPlayBtn" onclick="ttsPlayerTogglePlay()" disabled>Play</button>
+              <div class="tts-player-seek-wrap">
+                <input type="range" id="ttsPlayerSeek" class="tts-player-seek" min="0" max="100" step="0.1" value="0" disabled oninput="ttsPlayerSeekTo()">
+                <span class="tts-player-time" id="ttsPlayerTime">0:00 / 0:00</span>
+              </div>
+            </div>
+            <div class="tts-player-row-sub">
+              <span class="tts-player-vol-label">Vol</span>
+              <input type="range" id="ttsPlayerVol" class="tts-player-vol-slider" min="0" max="1" step="0.02" value="1" oninput="ttsPlayerSetVolume()">
+              <span id="ttsPlayerVolValue" class="tts-player-vol-value">100%</span>
+              <label class="checkbox-row">
+                <input type="checkbox" id="ttsPlayerLoop" onchange="ttsPlayerSetLoop()"> Loop
+              </label>
+              <a id="ttsPlayerDownload" style="display: none; font-size: 13px; color: var(--accent-2); text-decoration: none; align-self: center;">&#8595; Download</a>
+            </div>
+            <div id="ttsPlayerError" style="display:none; font-size:12px; color:var(--bad); margin-top:6px;"></div>
+            <div class="action-buttons" style="margin-top: 14px;">
+              <button class="ghost" onclick="ttsPlayerLoadLatest()">Load Latest</button>
+              <button class="ghost danger-outline" onclick="ttsPlayerClear()">Clear</button>
+            </div>
+          </div>
+          <div class="tts-artifacts-header">
+            <span class="tts-artifacts-col-name">File</span>
+            <span class="tts-artifacts-col-time">Time</span>
+            <span class="tts-artifacts-col-size">Size</span>
+            <span class="tts-artifacts-col-del"></span>
+          </div>
+          <div id="ttsArtifactList" class="tts-artifacts"><span style="color:var(--muted);font-size:13px;">No recent audio files.</span></div>
+        </div>
+      </section>
+      <section class="panel wide">
+        <div class="panel-head">
+          <button type="button" class="collapse-toggle collapse-toggle-panel" onclick="toggleSection('browserVoicePanel')">
+            <span>Browser Voice</span>
+            <span class="collapse-chevron" id="browserVoicePanelChevron">></span>
+          </button>
+        </div>
+        <div id="browserVoicePanel" class="collapse-body" style="display: none;">
         <div class="provider-actions">
           <div class="action-group">
             <div class="action-title">Live Session</div>
@@ -151,11 +253,16 @@
         <div class="render" id="liveVoiceHistory">No live turns yet.</div>
         <div class="render" id="voiceRoundtripStatus">No browser voice roundtrip has run yet.</div>
         <audio id="voicePlayback" controls preload="none"></audio>
+        </div>
       </section>
       <section class="panel wide">
         <div class="panel-head">
-          <h2>Vision</h2>
+          <button type="button" class="collapse-toggle collapse-toggle-panel" onclick="toggleSection('visionPanel')">
+            <span>Vision</span>
+            <span class="collapse-chevron" id="visionPanelChevron">></span>
+          </button>
         </div>
+        <div id="visionPanel" class="collapse-body" style="display: none;">
         <div class="provider-actions">
           <div class="action-group">
             <div class="action-title">Image</div>
@@ -197,32 +304,47 @@
         <div class="render" id="visionStatus">No vision request has run yet.</div>
         <div class="render" id="visionResult">No vision result yet.</div>
         <div class="render vision-history" id="visionHistory">No recent vision history.</div>
+        </div>
       </section>
-      <section class="panel">
+      <section class="panel panel-fill">
         <div class="panel-head">
           <h2>Memory Stats</h2>
         </div>
-        <div class="render" id="memoryStats"></div>
+        <div class="render" id="memoryStats">...</div>
       </section>
-      <section class="panel">
+      <section class="panel panel-fill">
         <div class="panel-head">
           <h2>Known People</h2>
         </div>
-        <div class="render" id="knownPeople"></div>
+        <div class="render" id="knownPeople">...</div>
       </section>
-      <section class="panel wide">
+      <section class="panel wide panel-fill">
         <div class="panel-head">
           <h2>Recent Timings</h2>
         </div>
-        <div class="render" id="recentTimings"></div>
+        <div class="render" id="recentTimings">...</div>
       </section>
       <section class="panel wide">
-        <h2>Shana Stdout</h2>
-        <pre id="stdoutLog"></pre>
+        <div class="panel-head">
+          <button type="button" class="collapse-toggle collapse-toggle-panel" onclick="toggleSection('stdoutPanel')">
+            <span>Shana Stdout</span>
+            <span class="collapse-chevron" id="stdoutPanelChevron">></span>
+          </button>
+        </div>
+        <div id="stdoutPanel" class="collapse-body" style="display: none;">
+          <pre id="stdoutLog">...</pre>
+        </div>
       </section>
       <section class="panel wide">
-        <h2>Shana Stderr</h2>
-        <pre id="stderrLog"></pre>
+        <div class="panel-head">
+          <button type="button" class="collapse-toggle collapse-toggle-panel" onclick="toggleSection('stderrPanel')">
+            <span>Shana Stderr</span>
+            <span class="collapse-chevron" id="stderrPanelChevron">></span>
+          </button>
+        </div>
+        <div id="stderrPanel" class="collapse-body" style="display: none;">
+          <pre id="stderrLog">...</pre>
+        </div>
       </section>
     </div>
   </div>

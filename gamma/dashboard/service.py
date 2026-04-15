@@ -23,6 +23,7 @@ from ..memory.service import MemoryService
 from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..supervisor.manager import ProcessManager
 from ..system.status import SystemStatusService
+from ..voice.voice_profiles import get_voice_profile, list_voice_profiles, profile_template, save_voice_profile
 
 
 class DashboardService:
@@ -39,15 +40,25 @@ class DashboardService:
     def build_status(self) -> dict[str, Any]:
         local_status = self._system_status.build_status()
         selected_tts_provider = self.selected_tts_provider()
+        selected_tts_profile = self.selected_tts_profile()
+        running_tts_provider = str(local_status["providers"]["tts"].get("provider") or "").strip().lower()
+        running_tts_profile = str(local_status["providers"]["tts"].get("profile_id") or "").strip()
         local_status["providers"]["tts"]["selected_provider"] = selected_tts_provider
-        local_status["providers"]["tts"]["restart_required"] = selected_tts_provider != settings.tts_provider
-        local_status["providers"]["tts"]["available_providers"] = ["piper", "local", "openai", "stub"]
-        shana_process = self._process_manager.find_process("shana")
+        local_status["providers"]["tts"]["selected_profile"] = selected_tts_profile
+        local_status["providers"]["tts"]["selected_profile_label"] = (
+            get_voice_profile(selected_tts_profile).label if get_voice_profile(selected_tts_profile) else None
+        )
+        local_status["providers"]["tts"]["restart_required"] = (
+            selected_tts_provider != running_tts_provider or (selected_tts_profile or "") != running_tts_profile
+        )
+        local_status["providers"]["tts"]["available_providers"] = ["piper", "local", "qwen-tts", "openai", "stub"]
+        local_status["providers"]["tts"]["available_profiles"] = [profile.as_payload() for profile in list_voice_profiles()]
+        local_status["providers"]["tts"]["editor_profile"] = self.tts_profile_editor_state(
+            selected_tts_profile,
+            selected_tts_provider,
+        )
+        runtime_status = self.build_runtime_status()
         system_status = self._probe_json(settings.shana_base_url + "/v1/system/status")
-        api_health = {
-            "ok": system_status.get("ok", False),
-            "detail": "ok" if system_status.get("ok", False) else system_status.get("detail", "unreachable"),
-        }
         return {
             "dashboard": {
                 "name": f"{settings.app_name} dashboard",
@@ -57,9 +68,7 @@ class DashboardService:
             "providers": local_status["providers"],
             "recent_artifacts": local_status["recent_artifacts"],
             "shana": {
-                "url": settings.shana_base_url,
-                "process": self._process_manager.process_payload(shana_process),
-                "api_health": api_health,
+                **runtime_status["shana"],
                 "system_status": system_status,
                 "logs": {
                     "stdout_path": str(self._process_manager.stdout_log("shana")),
@@ -68,13 +77,29 @@ class DashboardService:
                     "stderr_tail": self._tail(self._process_manager.stderr_log("shana")),
                 },
             },
-            "machine": self._machine_status(),
+            "machine": runtime_status["machine"],
             "memory_db": {
                 "stats": self._memory.stats(),
                 "known_people": self._memory.get_known_people(),
             },
             "provider_actions": self._latest_provider_action,
             "timings": self._recent_timings(),
+        }
+
+    def build_runtime_status(self) -> dict[str, Any]:
+        shana_process = self._process_manager.find_process("shana")
+        api_probe = self._probe_json(settings.shana_base_url + "/v1/system/status")
+        api_health = {
+            "ok": api_probe.get("ok", False),
+            "detail": "ok" if api_probe.get("ok", False) else api_probe.get("detail", "unreachable"),
+        }
+        return {
+            "shana": {
+                "url": settings.shana_base_url,
+                "process": self._process_manager.process_payload(shana_process),
+                "api_health": api_health,
+            },
+            "machine": self._machine_status(),
         }
 
     def start_shana(self) -> dict[str, Any]:
@@ -92,27 +117,38 @@ class DashboardService:
 
     def stop_all(self) -> dict[str, Any]:
         shana_result = self._process_manager.stop("shana")
+        tts_results = self._stop_all_tts_servers()
         self._schedule_stop("dashboard")
+        tts_ok = all(bool(result.get("ok")) for result in tts_results.values())
         return {
-            "ok": True,
+            "ok": bool(shana_result.get("ok", False)) and tts_ok,
             "detail": "all-stop-scheduled",
             "shana": shana_result,
+            "tts": tts_results,
             "dashboard_url": settings.dashboard_base_url,
         }
 
     def start_tts(self) -> dict[str, Any]:
+        provider = self.selected_tts_provider()
+        label = "Qwen3-TTS" if self._is_qwen_provider(provider) else "GPT-SoVITS"
         return self._run_provider_action(
             "tts_start",
-            self._tts_script_command("start"),
-            success_detail="GPT-SoVITS start requested.",
+            self._tts_script_command("start", provider),
+            success_detail=f"{label} start requested.",
         )
 
     def stop_tts(self) -> dict[str, Any]:
+        provider = self.selected_tts_provider()
+        label = "Qwen3-TTS" if self._is_qwen_provider(provider) else "GPT-SoVITS"
         return self._run_provider_action(
             "tts_stop",
-            self._tts_script_command("stop"),
-            success_detail="GPT-SoVITS stop requested.",
+            self._tts_script_command("stop", provider),
+            success_detail=f"{label} stop requested.",
         )
+
+    @staticmethod
+    def _is_qwen_provider(provider: str) -> bool:
+        return provider.strip().lower() in {"qwen-tts", "qwen_tts", "qwen", "qwentts"}
 
     def selected_tts_provider(self) -> str:
         app_toml = settings.project_root / "config" / "app.toml"
@@ -122,37 +158,117 @@ class DashboardService:
                 return match.group(1).strip()
         return settings.tts_provider
 
+    def selected_tts_profile(self) -> str | None:
+        app_toml = settings.project_root / "config" / "app.toml"
+        if app_toml.exists():
+            match = re.search(r'(?m)^\s*tts_profile\s*=\s*"([^"]*)"\s*$', app_toml.read_text(encoding="utf-8"))
+            if match:
+                value = match.group(1).strip()
+                return value or None
+        return settings.tts_profile or None
+
     def set_tts_provider(self, provider: str) -> dict[str, Any]:
         normalized = provider.strip().lower()
-        allowed = {"piper", "local", "openai", "stub"}
+        allowed = {"piper", "local", "qwen-tts", "openai", "stub"}
         if normalized not in allowed:
             raise ValueError(f"unsupported tts provider: {provider}")
         app_toml = settings.project_root / "config" / "app.toml"
         existing = app_toml.read_text(encoding="utf-8") if app_toml.exists() else ""
-        if re.search(r'(?m)^\s*tts_provider\s*=\s*"([^"]+)"\s*$', existing):
-            updated = re.sub(
-                r'(?m)^\s*tts_provider\s*=\s*"([^"]+)"\s*$',
-                f'tts_provider = "{normalized}"',
-                existing,
-                count=1,
-            )
-        else:
-            updated = existing.rstrip()
-            if updated:
-                updated += "\n"
-            updated += f'tts_provider = "{normalized}"\n'
+        updated = self._upsert_toml_string(existing, "tts_provider", normalized)
+        updated = self._upsert_toml_string(updated, "tts_profile", "")
         app_toml.write_text(updated, encoding="utf-8")
         self._latest_provider_action = {
             "action": "tts_provider_select",
             "status": "ok",
-            "detail": f"TTS provider set to {normalized}. Restart Shana to use it for conversation responses.",
+            "detail": f"TTS provider set to {normalized}. Saved voice profile cleared. Restart Shana to use it for conversation responses.",
             "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "provider": normalized,
         }
         return {
             "ok": True,
             "provider": normalized,
-            "detail": "TTS provider saved. Restart Shana to use it for normal conversations.",
+            "detail": "TTS provider saved. Saved voice profile cleared. Restart Shana to use it for normal conversations.",
+        }
+
+    def set_tts_profile(self, profile_id: str) -> dict[str, Any]:
+        if not profile_id:
+            app_toml = settings.project_root / "config" / "app.toml"
+            existing = app_toml.read_text(encoding="utf-8") if app_toml.exists() else ""
+            updated = self._upsert_toml_string(existing, "tts_profile", "")
+            app_toml.write_text(updated, encoding="utf-8")
+            self._latest_provider_action = {
+                "action": "tts_profile_select",
+                "status": "ok",
+                "detail": "TTS profile cleared. Restart Shana to use base provider settings for conversation responses.",
+                "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "provider": self.selected_tts_provider(),
+                "profile": "",
+            }
+            return {
+                "ok": True,
+                "provider": self.selected_tts_provider(),
+                "profile": "",
+                "detail": "TTS profile cleared. Restart Shana to use base provider settings for normal conversations.",
+            }
+        profile = get_voice_profile(profile_id)
+        if profile is None:
+            raise ValueError(f"unsupported tts profile: {profile_id}")
+        app_toml = settings.project_root / "config" / "app.toml"
+        existing = app_toml.read_text(encoding="utf-8") if app_toml.exists() else ""
+        updated = self._upsert_toml_string(existing, "tts_profile", profile.profile_id)
+        updated = self._upsert_toml_string(updated, "tts_provider", profile.provider)
+        app_toml.write_text(updated, encoding="utf-8")
+        self._latest_provider_action = {
+            "action": "tts_profile_select",
+            "status": "ok",
+            "detail": f"TTS profile set to {profile.label}. Restart Shana to use it for conversation responses.",
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "provider": profile.provider,
+            "profile": profile.profile_id,
+        }
+        return {
+            "ok": True,
+            "provider": profile.provider,
+            "profile": profile.profile_id,
+            "detail": "TTS profile saved. Restart Shana to use it for normal conversations.",
+        }
+
+    def save_tts_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
+        profile_id = str(payload.get("id", "")).strip()
+        profile = save_voice_profile(
+            profile_id,
+            {
+                "label": payload.get("label", ""),
+                "provider": payload.get("provider", ""),
+                "description": payload.get("description", ""),
+                "values": payload.get("values", {}),
+            },
+        )
+        self._latest_provider_action = {
+            "action": "tts_profile_save",
+            "status": "ok",
+            "detail": f"TTS profile saved: {profile.label}.",
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "provider": profile.provider,
+            "profile": profile.profile_id,
+        }
+        return {
+            "ok": True,
+            "profile": profile.as_payload(),
+            "detail": "TTS profile saved.",
+        }
+
+    def tts_profile_editor_state(self, profile_id: str | None, provider: str | None) -> dict[str, Any]:
+        profile = get_voice_profile(profile_id)
+        if profile is not None:
+            return profile.as_payload()
+        template = profile_template(provider or self.selected_tts_provider())
+        return {
+            "id": "",
+            "label": template.get("label", ""),
+            "provider": template.get("provider", provider or self.selected_tts_provider()),
+            "description": template.get("description", ""),
+            "values": template.get("values", {}),
         }
 
     def test_stt(self) -> dict[str, Any]:
@@ -165,12 +281,26 @@ class DashboardService:
 
     def test_tts(self) -> dict[str, Any]:
         selected_provider = self.selected_tts_provider()
+        selected_profile = self.selected_tts_profile()
+        env = {"SHANA_TTS_PROVIDER": selected_provider}
+        if selected_profile:
+            env["SHANA_TTS_PROFILE"] = selected_profile
         return self._run_provider_action(
             "tts_test",
             self._python_module_command("gamma.run_tts_test", "Dashboard TTS smoke test."),
-            env_overrides={"SHANA_TTS_PROVIDER": selected_provider},
+            env_overrides=env,
             success_detail="TTS smoke test completed.",
         )
+
+    def _upsert_toml_string(self, existing: str, key: str, value: str) -> str:
+        pattern = rf'(?m)^\s*{re.escape(key)}\s*=\s*"([^"]*)"\s*$'
+        if re.search(pattern, existing):
+            return re.sub(pattern, f'{key} = "{value}"', existing, count=1)
+        updated = existing.rstrip()
+        if updated:
+            updated += "\n"
+        updated += f'{key} = "{value}"\n'
+        return updated
 
     def test_llm(self) -> dict[str, Any]:
         return self._run_provider_action(
@@ -349,9 +479,25 @@ class DashboardService:
         return AssistantResponse.model_validate(payload)
 
     def _schedule_stop(self, service_name: str, delay_seconds: float = 0.35) -> None:
+        if service_name == "dashboard":
+            timer = threading.Timer(delay_seconds, self._stop_dashboard_process)
+            timer.daemon = True
+            timer.start()
+            return
         timer = threading.Timer(delay_seconds, lambda: self._process_manager.stop(service_name))
         timer.daemon = True
         timer.start()
+
+    def _stop_dashboard_process(self) -> None:
+        try:
+            process = self._process_manager.find_process("dashboard")
+            current_pid = os.getpid()
+            if process and process.pid != current_pid:
+                self._process_manager.stop("dashboard")
+                return
+            self._process_manager.clear_pid_file("dashboard")
+        finally:
+            os._exit(0)
 
     def _pcm_to_wav_bytes(self, pcm_bytes: bytes) -> bytes:
         buffer = BytesIO()
@@ -584,12 +730,71 @@ class DashboardService:
     def _python_module_command(self, module: str, *args: str) -> list[str]:
         return [self._process_manager.resolve_foreground_python(), "-m", module, *args]
 
-    def _tts_script_command(self, action: str) -> list[str]:
+    def _stop_all_tts_servers(self) -> dict[str, Any]:
+        return {
+            "gpt_sovits": self._run_stop_tts_command("local", "GPT-SoVITS"),
+            "qwen_tts": self._run_stop_tts_command("qwen-tts", "Qwen3-TTS"),
+        }
+
+    def _run_stop_tts_command(self, provider: str, label: str) -> dict[str, Any]:
+        command = self._tts_script_command("stop", provider)
+        started_at = time.perf_counter()
+        payload: dict[str, Any] = {
+            "provider": provider,
+            "label": label,
+            "command": command,
+        }
+        try:
+            completed = self._run_command(command, timeout=60)
+            payload.update(
+                {
+                    "ok": True,
+                    "returncode": completed.returncode,
+                    "stdout": completed.stdout.strip(),
+                    "stderr": completed.stderr.strip(),
+                }
+            )
+        except subprocess.CalledProcessError as exc:
+            payload.update(
+                {
+                    "ok": False,
+                    "returncode": exc.returncode,
+                    "stdout": (exc.stdout or "").strip(),
+                    "stderr": (exc.stderr or "").strip(),
+                    "detail": f"{label} stop failed",
+                }
+            )
+        except subprocess.TimeoutExpired as exc:
+            payload.update(
+                {
+                    "ok": False,
+                    "stdout": (exc.stdout or "").strip() if isinstance(exc.stdout, str) else "",
+                    "stderr": (exc.stderr or "").strip() if isinstance(exc.stderr, str) else "",
+                    "detail": f"{label} stop timed out",
+                }
+            )
+        except Exception as exc:
+            payload.update(
+                {
+                    "ok": False,
+                    "stdout": "",
+                    "stderr": "",
+                    "detail": str(exc),
+                }
+            )
+        payload["duration_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
+        return payload
+
+    def _tts_script_command(self, action: str, provider: str | None = None) -> list[str]:
         scripts_dir = settings.project_root / "scripts"
+        verb = "start" if action == "start" else "stop"
+        if self._is_qwen_provider(provider or ""):
+            script = scripts_dir / f"{verb}_qwen_tts_server.py"
+            return [self._process_manager.resolve_foreground_python(), str(script)]
         if os.name == "nt":
-            script = scripts_dir / f"{'start' if action == 'start' else 'stop'}_gpt_sovits_windows.ps1"
+            script = scripts_dir / f"{verb}_gpt_sovits_windows.ps1"
             return [self._process_manager.resolve_foreground_python(), str(script.with_suffix(".py"))]
-        script = scripts_dir / f"{'start' if action == 'start' else 'stop'}_gpt_sovits_linux.sh"
+        script = scripts_dir / f"{verb}_gpt_sovits_linux.sh"
         return ["bash", str(script)]
 
     def _probe_json(self, url: str, *, raw_payload: bool = False) -> dict[str, Any]:

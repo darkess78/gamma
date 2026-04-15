@@ -48,6 +48,8 @@ def main() -> None:
         "reply": response.spoken_text,
         "audio_path": response.audio_path,
         "audio_content_type": response.audio_content_type,
+        "timing_ms": response.timing_ms,
+        "tts_metadata": response.tts_metadata,
     }
 
     artifact_path: Path | None = None

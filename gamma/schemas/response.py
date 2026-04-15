@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -75,3 +75,5 @@ class AssistantResponse(BaseModel):
     vision: VisionAnalysis | None = None
     audio_path: str | None = None
     audio_content_type: str | None = None
+    timing_ms: dict[str, float] = Field(default_factory=dict)
+    tts_metadata: dict[str, Any] = Field(default_factory=dict)

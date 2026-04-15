@@ -345,6 +345,7 @@ class VoiceModeController:
             response_started_at = perf_counter()
             response = self._conversation.respond(transcript, synthesize_speech=config.synthesize_speech, fast_mode=True)
             response_seconds = perf_counter() - response_started_at
+            response_timing_ms = response.timing_ms if isinstance(response.timing_ms, dict) else {}
             playback_attempted = False
             playback_seconds = 0.0
             if config.playback_enabled and response.audio_path:
@@ -369,9 +370,15 @@ class VoiceModeController:
                         "capture_seconds": capture_seconds,
                         "stt_seconds": stt_seconds,
                         "response_seconds": response_seconds,
+                        "tts_seconds": (
+                            float(response_timing_ms.get("tts_ms", 0.0)) / 1000.0
+                            if isinstance(response_timing_ms.get("tts_ms"), (int, float))
+                            else 0.0
+                        ),
                         "playback_seconds": playback_seconds,
                         "turn_seconds": perf_counter() - turn_started_at,
                     },
+                    "conversation_timing_ms": response_timing_ms,
                 },
             )
         finally:
@@ -524,6 +531,7 @@ def _format_timing_summary(timings: Any) -> str:
         ("capture", "capture_seconds"),
         ("stt", "stt_seconds"),
         ("response", "response_seconds"),
+        ("tts", "tts_seconds"),
         ("playback", "playback_seconds"),
         ("total", "turn_seconds"),
     ]

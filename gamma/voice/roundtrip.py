@@ -43,6 +43,8 @@ class VoiceRoundtripService:
                 fast_mode=True,
             )
             timing["conversation_ms"] = round((time.perf_counter() - conversation_started) * 1000, 1)
+            if response.timing_ms:
+                timing.update(response.timing_ms)
             timing["total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
 
             audio_base64: str | None = None

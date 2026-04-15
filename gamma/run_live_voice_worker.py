@@ -79,6 +79,7 @@ def main() -> int:
             "timing_ms": {
                 "stt_ms": stt_ms,
                 "conversation_ms": conversation_ms,
+                **response.timing_ms,
                 "total_ms": round((time.perf_counter() - started_at) * 1000, 1),
             },
         }

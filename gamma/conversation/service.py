@@ -194,11 +194,13 @@ class ConversationService:
                     tts_result = self._tts_service().synthesize(final_reply_text, emotion="neutral")
                     response.audio_path = tts_result.audio_path
                     response.audio_content_type = tts_result.content_type
+                    response.tts_metadata = dict(tts_result.metadata or {})
                     timing["tts_ms"] = round((time.perf_counter() - tts_started) * 1000, 1)
                 else:
                     timing["tts_ms"] = 0.0
 
                 timing["total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
+                response.timing_ms = dict(timing)
                 self._append_timing_log(
                     user_text=stripped,
                     session_id=session_id,
@@ -277,10 +279,12 @@ class ConversationService:
                 tts_result = self._tts_service().synthesize(final_reply_text, emotion=response.emotion)
                 response.audio_path = tts_result.audio_path
                 response.audio_content_type = tts_result.content_type
+                response.tts_metadata = dict(tts_result.metadata or {})
                 timing["tts_ms"] = round((time.perf_counter() - tts_started) * 1000, 1)
             else:
                 timing["tts_ms"] = 0.0
             timing["total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
+            response.timing_ms = dict(timing)
             self._append_timing_log(
                 user_text=stripped,
                 session_id=session_id,

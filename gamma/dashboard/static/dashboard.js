@@ -223,7 +223,7 @@
       lines.push('You: ' + (turn.transcript || ''));
       lines.push('Shana: ' + (turn.reply_text || ''));
       if (turn.timing_ms) {
-        lines.push('Timing: stt ' + (turn.timing_ms.stt_ms || 0) + ' ms | conversation ' + (turn.timing_ms.conversation_ms || 0) + ' ms | total ' + (turn.timing_ms.total_ms || 0) + ' ms');
+        lines.push('Timing: stt ' + (turn.timing_ms.stt_ms || 0) + ' ms | llm+tts ' + (turn.timing_ms.conversation_ms || 0) + ' ms | tts ' + (turn.timing_ms.tts_ms || 0) + ' ms | total ' + (turn.timing_ms.total_ms || 0) + ' ms');
       }
       if (turn.job && turn.job.cancel_reason) {
         lines.push('Cancel reason: ' + turn.job.cancel_reason);
@@ -392,7 +392,7 @@
       'Reply: ' + (payload.reply_text || 'n/a')
     ];
     var timing = payload.timing_ms || {};
-    lines.push('Timing: stt ' + (timing.stt_ms || 0) + ' ms | conversation ' + (timing.conversation_ms || 0) + ' ms | total ' + (timing.total_ms || 0) + ' ms');
+    lines.push('Timing: stt ' + (timing.stt_ms || 0) + ' ms | llm+tts ' + (timing.conversation_ms || 0) + ' ms | tts ' + (timing.tts_ms || 0) + ' ms | total ' + (timing.total_ms || 0) + ' ms');
     lines.push('Audio returned: ' + (payload.audio_base64 ? 'yes' : 'no'));
     return lines.join('\n');
   }

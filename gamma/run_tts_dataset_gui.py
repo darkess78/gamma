@@ -206,6 +206,15 @@ class TTSDataPrepApp:
         self.waveform_canvas: tk.Canvas | None = None
         self._waveform_sample_cache: dict[str, list[float]] = {}
 
+        self.transcribe_path_var = tk.StringVar()
+        self.transcribe_lang_var = tk.StringVar(value="ja")
+        self.transcribe_model_var = tk.StringVar(value="small")
+        self.transcribe_stream_lang_var = tk.StringVar(value="jpn")
+        self.transcribe_timestamps_var = tk.BooleanVar(value=False)
+        self.transcribe_status_var = tk.StringVar(value="Paste or browse to a media file and click Transcribe.")
+        self.transcribe_worker: threading.Thread | None = None
+        self.transcribe_text: tk.Text | None = None
+
         self._configure_style()
         self._build_ui()
         self._install_context_menus()
@@ -262,11 +271,14 @@ class TTSDataPrepApp:
 
         pipeline_tab = ttk.Frame(notebook)
         review_tab = ttk.Frame(notebook)
+        transcribe_tab = ttk.Frame(notebook)
         notebook.add(pipeline_tab, text="Pipeline")
         notebook.add(review_tab, text="Review")
+        notebook.add(transcribe_tab, text="Transcribe")
 
         self._build_pipeline_tab(pipeline_tab)
         self._build_review_tab(review_tab)
+        self._build_transcribe_tab(transcribe_tab)
         self._build_log_panel(wrapper)
 
     def _build_pipeline_tab(self, parent: ttk.Frame) -> None:
@@ -870,6 +882,16 @@ class TTSDataPrepApp:
                         self.status_var.set(f"Pipeline failed with exit code {exit_code}. Review the log.")
                         self._append_log(f"[system] job failed with exit code {exit_code}", "warn")
                     self.pipeline_cancel_event = None
+                elif event == "transcribe_result":
+                    transcript = str(payload)
+                    if self.transcribe_text is not None:
+                        self.transcribe_text.delete("1.0", "end")
+                        self.transcribe_text.insert("1.0", transcript)
+                    self.transcribe_status_var.set(f"Done. {len(transcript.splitlines())} lines transcribed.")
+                    self._append_log("[system] transcription complete", "success")
+                elif event == "transcribe_error":
+                    self.transcribe_status_var.set(f"Transcription failed: {payload}")
+                    self._append_log(f"[system] transcription failed: {payload}", "warn")
                 elif event == "playback_done":
                     if self.current_record is not None and self.playback_target_clip_id == self.current_record.clip_id:
                         self.playback_position_var.set(self.current_record.duration_seconds)
@@ -1936,6 +1958,217 @@ class TTSDataPrepApp:
             return float(value)
         except (TypeError, ValueError):
             return None
+
+    def _build_transcribe_tab(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(1, weight=1)
+
+        form = ttk.Frame(parent, style="Card.TFrame")
+        form.grid(row=0, column=0, sticky="nsew", pady=(0, 14))
+        form.columnconfigure(1, weight=1)
+
+        ttk.Label(form, text="File Transcription", style="CardTitle.TLabel").grid(
+            row=0, column=0, sticky="w", padx=14, pady=(12, 8)
+        )
+
+        path_label = ttk.Label(form, text="Media File", style="Muted.TLabel")
+        path_label.grid(row=1, column=0, sticky="w", padx=14, pady=6)
+        path_entry = ttk.Entry(form, textvariable=self.transcribe_path_var)
+        path_entry.grid(row=1, column=1, sticky="ew", padx=8, pady=6)
+        browse_btn = ttk.Button(form, text="Browse", style="Ghost.TButton", command=self._browse_transcribe_file)
+        browse_btn.grid(row=1, column=2, sticky="ew", padx=(0, 14), pady=6)
+
+        lang_label = ttk.Label(form, text="Language", style="Muted.TLabel")
+        lang_label.grid(row=2, column=0, sticky="w", padx=14, pady=6)
+        lang_combo = ttk.Combobox(form, textvariable=self.transcribe_lang_var, values=("ja", "en", "auto"), state="readonly")
+        lang_combo.grid(row=2, column=1, sticky="ew", padx=8, pady=6)
+
+        model_label = ttk.Label(form, text="STT Model", style="Muted.TLabel")
+        model_label.grid(row=3, column=0, sticky="w", padx=14, pady=6)
+        model_combo = ttk.Combobox(
+            form, textvariable=self.transcribe_model_var,
+            values=("base", "small", "medium", "large-v3", "base.en", "small.en"),
+        )
+        model_combo.grid(row=3, column=1, sticky="ew", padx=8, pady=6)
+
+        stream_label = ttk.Label(form, text="Audio Stream Lang", style="Muted.TLabel")
+        stream_label.grid(row=4, column=0, sticky="w", padx=14, pady=6)
+        stream_combo = ttk.Combobox(
+            form, textvariable=self.transcribe_stream_lang_var,
+            values=("jpn", "eng", "ja", "en"), state="readonly",
+        )
+        stream_combo.grid(row=4, column=1, sticky="ew", padx=8, pady=6)
+
+        ts_check = ttk.Checkbutton(form, text="Show timestamps", variable=self.transcribe_timestamps_var)
+        ts_check.grid(row=5, column=1, sticky="w", padx=8, pady=(6, 4))
+
+        btn_panel = ttk.Frame(form, style="Panel.TFrame")
+        btn_panel.grid(row=6, column=0, columnspan=3, sticky="ew", padx=14, pady=(4, 8))
+        for col in range(4):
+            btn_panel.columnconfigure(col, weight=1)
+        ttk.Button(btn_panel, text="Transcribe", style="Accent.TButton", command=self._run_transcribe).grid(
+            row=0, column=0, sticky="ew", padx=(0, 8), pady=10
+        )
+        ttk.Button(btn_panel, text="Stop", style="Ghost.TButton", command=self._stop_transcribe).grid(
+            row=0, column=1, sticky="ew", padx=(0, 8), pady=10
+        )
+        ttk.Button(btn_panel, text="Copy Transcript", style="Ghost.TButton", command=self._copy_transcript).grid(
+            row=0, column=2, sticky="ew", padx=(0, 8), pady=10
+        )
+        ttk.Button(btn_panel, text="Save Transcript...", style="Ghost.TButton", command=self._save_transcript).grid(
+            row=0, column=3, sticky="ew", pady=10
+        )
+
+        ttk.Label(form, textvariable=self.transcribe_status_var, style="Muted.TLabel", wraplength=860, justify="left").grid(
+            row=7, column=0, columnspan=3, sticky="w", padx=14, pady=(0, 12)
+        )
+
+        self._attach_tooltip(path_label, "Path to any audio or video file. MKV, MP4, WAV, MP3, and other common formats are supported.")
+        self._attach_tooltip(path_entry, "Paste the full path to an episode or clip, or use Browse to pick a file.")
+        self._attach_tooltip(browse_btn, "Open a file picker to select a media file.")
+        self._attach_tooltip(lang_label, "Language hint for Whisper. Use 'ja' for Japanese, 'en' for English, or 'auto' to let the model detect.")
+        self._attach_tooltip(lang_combo, "Language hint for Whisper. 'auto' is slower and sometimes less accurate on short files.")
+        self._attach_tooltip(model_label, "faster-whisper model to use. 'small' is a good balance of speed and accuracy. 'large-v3' is most accurate but slow on CPU.")
+        self._attach_tooltip(model_combo, "faster-whisper model to use. Avoid '.en' models when transcribing Japanese audio.")
+        self._attach_tooltip(stream_label, "For multi-track containers, prefer this audio language. Use 'jpn' for the original track.")
+        self._attach_tooltip(stream_combo, "Preferred audio stream language. The app will pick the first stream tagged with this language.")
+        self._attach_tooltip(ts_check, "Prefix each line with [start --> end] timestamps so you can locate where each line appears in the file.")
+
+        result_frame = ttk.Frame(parent, style="Card.TFrame")
+        result_frame.grid(row=1, column=0, sticky="nsew")
+        result_frame.columnconfigure(0, weight=1)
+        result_frame.rowconfigure(1, weight=1)
+        ttk.Label(result_frame, text="Transcript", style="CardTitle.TLabel").grid(
+            row=0, column=0, sticky="w", padx=14, pady=(12, 6)
+        )
+        self.transcribe_text = tk.Text(
+            result_frame,
+            bg=self.PANEL_ALT,
+            fg=self.TEXT,
+            insertbackground=self.TEXT,
+            wrap="word",
+            relief="flat",
+            font=("Consolas", 10),
+            highlightthickness=1,
+            highlightbackground=self.BORDER,
+            padx=10,
+            pady=10,
+        )
+        text_scrollbar = ttk.Scrollbar(result_frame, orient="vertical", command=self.transcribe_text.yview)
+        self.transcribe_text.configure(yscrollcommand=text_scrollbar.set)
+        self.transcribe_text.grid(row=1, column=0, sticky="nsew", padx=(14, 0), pady=(0, 14))
+        text_scrollbar.grid(row=1, column=1, sticky="ns", padx=(0, 14), pady=(0, 14))
+
+    def _browse_transcribe_file(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Choose a media file to transcribe",
+            filetypes=[
+                ("Media files", "*.mkv *.mp4 *.wav *.mp3 *.flac *.ogg *.m4a *.aac *.opus *.mka *.webm *.mov"),
+                ("All files", "*.*"),
+            ],
+        )
+        if path:
+            self.transcribe_path_var.set(path)
+
+    def _run_transcribe(self) -> None:
+        path_str = self.transcribe_path_var.get().strip()
+        if not path_str:
+            messagebox.showwarning("No File", "Enter or browse to a media file to transcribe.")
+            return
+        input_path = Path(path_str).expanduser().resolve()
+        if not input_path.exists():
+            messagebox.showwarning("File Not Found", f"File not found:\n{input_path}")
+            return
+        if self.transcribe_worker and self.transcribe_worker.is_alive():
+            messagebox.showwarning("Busy", "A transcription is already running.")
+            return
+        self.transcribe_status_var.set(f"Transcribing {input_path.name}…")
+        if self.transcribe_text is not None:
+            self.transcribe_text.delete("1.0", "end")
+        self._append_log(f"[system] transcribing: {input_path}", "system")
+        self.transcribe_worker = threading.Thread(
+            target=self._transcribe_worker_main,
+            args=(input_path,),
+            daemon=True,
+        )
+        self.transcribe_worker.start()
+
+    def _stop_transcribe(self) -> None:
+        if self.transcribe_worker and self.transcribe_worker.is_alive():
+            self.transcribe_status_var.set("Stop requested — will finish the current file then stop.")
+            self._append_log("[system] transcription stop requested (will finish current file)", "warn")
+        else:
+            messagebox.showinfo("No Active Transcription", "No transcription is currently running.")
+
+    def _transcribe_worker_main(self, input_path: Path) -> None:
+        import argparse
+        try:
+            from .run_transcribe import transcribe_file, format_transcript
+        except ImportError:
+            from gamma.run_transcribe import transcribe_file, format_transcript
+        try:
+            from .config import settings as _settings
+        except ImportError:
+            from gamma.config import settings as _settings
+
+        writer = QueueWriter(self.event_queue)
+        try:
+            with redirect_stdout(writer), redirect_stderr(writer):
+                args = argparse.Namespace(
+                    input_path=str(input_path),
+                    language=self.transcribe_lang_var.get().strip(),
+                    model=self.transcribe_model_var.get().strip() or "small",
+                    device=_settings.stt_device,
+                    compute_type=_settings.stt_compute_type,
+                    beam_size=5,
+                    audio_stream_index=None,
+                    audio_stream_lang=self.transcribe_stream_lang_var.get().strip() or None,
+                    ffmpeg_bin="ffmpeg",
+                    ffprobe_bin="ffprobe",
+                )
+                segments = transcribe_file(args)
+                transcript = format_transcript(segments, timestamps=self.transcribe_timestamps_var.get())
+            writer.flush()
+            self.event_queue.put(("transcribe_result", transcript))
+        except SystemExit as exc:
+            writer.flush()
+            msg = str(exc.code) if exc.code is not None else "aborted"
+            self.event_queue.put(("transcribe_error", msg))
+        except Exception as exc:  # noqa: BLE001
+            writer.flush()
+            self.event_queue.put(("transcribe_error", str(exc)))
+
+    def _copy_transcript(self) -> None:
+        if self.transcribe_text is None:
+            return
+        text = self.transcribe_text.get("1.0", "end-1c").strip()
+        if not text:
+            messagebox.showinfo("Empty", "No transcript to copy.")
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.transcribe_status_var.set("Transcript copied to clipboard.")
+
+    def _save_transcript(self) -> None:
+        if self.transcribe_text is None:
+            return
+        text = self.transcribe_text.get("1.0", "end-1c").strip()
+        if not text:
+            messagebox.showinfo("Empty", "No transcript to save.")
+            return
+        source_name = Path(self.transcribe_path_var.get().strip()).stem if self.transcribe_path_var.get().strip() else "transcript"
+        initial_file = f"{source_name}.txt"
+        path = filedialog.asksaveasfilename(
+            title="Save transcript",
+            initialfile=initial_file,
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        Path(path).write_text(text + "\n", encoding="utf-8")
+        self.transcribe_status_var.set(f"Saved to {Path(path).name}")
+        self._append_log(f"[system] transcript saved: {path}", "system")
 
     def _on_close(self) -> None:
         self._stop_audio(log_message=False)

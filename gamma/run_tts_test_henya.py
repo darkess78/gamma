@@ -55,6 +55,7 @@ def _setdefault(name: str, value: str) -> None:
 
 def _configure_henya_rvc() -> None:
     repo_root = Path(__file__).resolve().parents[1]
+    os.environ["SHANA_TTS_PROFILE"] = ""
     rvc_root = discover_rvc_project_root(os.getenv("SHANA_RVC_PROJECT_ROOT"))
     if rvc_root is None:
         raise SystemExit(

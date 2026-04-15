@@ -162,7 +162,7 @@ class LiveVoiceSession:
                     return
                 await asyncio.sleep(self.poll_interval_seconds)
 
-        async def cancel_active_remote_turn(reason: str) -> None:
+        async def cancel_active_remote_turn(reason: str, *, notify_client: bool = True) -> None:
             nonlocal active_remote_turn_id, active_remote_state
             if not active_remote_turn_id:
                 return
@@ -172,18 +172,20 @@ class LiveVoiceSession:
                 payload = await asyncio.to_thread(self._job_canceler, turn_id, reason=reason)
                 active_remote_state = payload
             except Exception as exc:
-                await self._send_json(websocket, {"type": "error", "detail": f"Failed to cancel live turn: {exc}"})
+                if notify_client:
+                    await self._send_json(websocket, {"type": "error", "detail": f"Failed to cancel live turn: {exc}"})
                 return
-            await self._send_json(
-                websocket,
-                {
-                    "type": "state",
-                    "state": "cancelled",
-                    "detail": "Live turn cancelled.",
-                    "turn_id": turn_id,
-                    "job": payload,
-                },
-            )
+            if notify_client:
+                await self._send_json(
+                    websocket,
+                    {
+                        "type": "state",
+                        "state": "cancelled",
+                        "detail": "Live turn cancelled.",
+                        "turn_id": turn_id,
+                        "job": payload,
+                    },
+                )
             active_remote_turn_id = None
 
         try:
@@ -298,7 +300,7 @@ class LiveVoiceSession:
             await cancel_partial_loop()
             if poll_task is not None:
                 poll_task.cancel()
-            await cancel_active_remote_turn("websocket-closed")
+            await cancel_active_remote_turn("websocket-closed", notify_client=False)
 
     def _state_detail(self, state: str) -> str:
         mapping = {

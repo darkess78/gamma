@@ -18,7 +18,7 @@ from typing import Any
 
 import psutil
 
-from ..config import settings
+from ..config import app_local_config_path, load_app_file_config, settings
 from ..memory.service import MemoryService
 from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..supervisor.manager import ProcessManager
@@ -151,20 +151,15 @@ class DashboardService:
         return provider.strip().lower() in {"qwen-tts", "qwen_tts", "qwen", "qwentts"}
 
     def selected_tts_provider(self) -> str:
-        app_toml = settings.project_root / "config" / "app.toml"
-        if app_toml.exists():
-            match = re.search(r'(?m)^\s*tts_provider\s*=\s*"([^"]+)"\s*$', app_toml.read_text(encoding="utf-8"))
-            if match:
-                return match.group(1).strip()
-        return settings.tts_provider
+        config = load_app_file_config()
+        provider = str(config.get("tts_provider", "")).strip()
+        return provider or settings.tts_provider
 
     def selected_tts_profile(self) -> str | None:
-        app_toml = settings.project_root / "config" / "app.toml"
-        if app_toml.exists():
-            match = re.search(r'(?m)^\s*tts_profile\s*=\s*"([^"]*)"\s*$', app_toml.read_text(encoding="utf-8"))
-            if match:
-                value = match.group(1).strip()
-                return value or None
+        config = load_app_file_config()
+        value = str(config.get("tts_profile", "")).strip()
+        if value:
+            return value
         return settings.tts_profile or None
 
     def set_tts_provider(self, provider: str) -> dict[str, Any]:
@@ -172,10 +167,11 @@ class DashboardService:
         allowed = {"piper", "local", "qwen-tts", "openai", "stub"}
         if normalized not in allowed:
             raise ValueError(f"unsupported tts provider: {provider}")
-        app_toml = settings.project_root / "config" / "app.toml"
+        app_toml = app_local_config_path()
         existing = app_toml.read_text(encoding="utf-8") if app_toml.exists() else ""
         updated = self._upsert_toml_string(existing, "tts_provider", normalized)
         updated = self._upsert_toml_string(updated, "tts_profile", "")
+        app_toml.parent.mkdir(parents=True, exist_ok=True)
         app_toml.write_text(updated, encoding="utf-8")
         self._latest_provider_action = {
             "action": "tts_provider_select",
@@ -192,9 +188,10 @@ class DashboardService:
 
     def set_tts_profile(self, profile_id: str) -> dict[str, Any]:
         if not profile_id:
-            app_toml = settings.project_root / "config" / "app.toml"
+            app_toml = app_local_config_path()
             existing = app_toml.read_text(encoding="utf-8") if app_toml.exists() else ""
             updated = self._upsert_toml_string(existing, "tts_profile", "")
+            app_toml.parent.mkdir(parents=True, exist_ok=True)
             app_toml.write_text(updated, encoding="utf-8")
             self._latest_provider_action = {
                 "action": "tts_profile_select",
@@ -213,10 +210,11 @@ class DashboardService:
         profile = get_voice_profile(profile_id)
         if profile is None:
             raise ValueError(f"unsupported tts profile: {profile_id}")
-        app_toml = settings.project_root / "config" / "app.toml"
+        app_toml = app_local_config_path()
         existing = app_toml.read_text(encoding="utf-8") if app_toml.exists() else ""
         updated = self._upsert_toml_string(existing, "tts_profile", profile.profile_id)
         updated = self._upsert_toml_string(updated, "tts_provider", profile.provider)
+        app_toml.parent.mkdir(parents=True, exist_ok=True)
         app_toml.write_text(updated, encoding="utf-8")
         self._latest_provider_action = {
             "action": "tts_profile_select",

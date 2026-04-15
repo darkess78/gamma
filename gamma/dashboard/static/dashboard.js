@@ -1242,7 +1242,7 @@
       renderBlockIfChanged(
         'ttsProfileEditorStatus',
         data.providers && data.providers.tts ? data.providers.tts.editor_profile || {} : {},
-        'Edit the active TTS profile, then save to update config/voices.toml.',
+        'Edit the active TTS profile, then save to update config/voices.local.toml.',
         'ttsProfileEditorStatusDefault'
       );
     }

@@ -293,15 +293,20 @@ class LiveVoiceJobManager:
         psutil.wait_procs(alive, timeout=3)
 
     def _foreground_python(self) -> str:
-        standalone_python = Path.home() / "AppData" / "Local" / "Programs" / "Python" / "Python312" / "python.exe"
-        if standalone_python.exists():
-            return str(standalone_python)
-        local_venv_windows = settings.project_root / ".venv312" / "Scripts" / "python.exe"
-        if local_venv_windows.exists():
-            return str(local_venv_windows)
-        local_venv_linux = settings.project_root / ".venv" / "bin" / "python"
-        if local_venv_linux.exists():
-            return str(local_venv_linux)
+        candidates = [
+            os.getenv("SHANA_PYTHON"),
+            sys.executable,
+            str(settings.project_root / ".venv" / "bin" / "python"),
+            str(settings.project_root / ".venv" / "Scripts" / "python.exe"),
+            str(settings.project_root / ".venv312" / "Scripts" / "python.exe"),
+            str(Path.home() / "AppData" / "Local" / "Programs" / "Python" / "Python312" / "python.exe"),
+        ]
+        for raw in candidates:
+            if not raw:
+                continue
+            path = Path(raw).expanduser()
+            if path.exists():
+                return str(path.resolve())
         return sys.executable
 
     def _prune_finished_jobs(self, *, max_age_seconds: int = 900) -> None:

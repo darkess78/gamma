@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 import tomllib
 
-from ..config import VOICES_CONFIG, settings
+from ..config import load_voices_file_config, settings, voices_local_config_path
 
 
 @dataclass(slots=True)
@@ -242,16 +242,12 @@ def resolve_tts_config() -> ResolvedTTSConfig:
 
 
 def _load_voices_config() -> dict[str, Any]:
-    path = _voices_config_path()
-    if not path.exists():
-        return {"profiles": {}}
-    with path.open("rb") as handle:
-        data = tomllib.load(handle)
+    data = load_voices_file_config()
     return data if isinstance(data, dict) else {"profiles": {}}
 
 
 def _voices_config_path() -> Path:
-    return settings.project_root / "config" / "voices.toml"
+    return voices_local_config_path()
 
 
 def _write_voices_config(config: dict[str, Any]) -> None:

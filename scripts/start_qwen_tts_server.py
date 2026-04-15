@@ -47,14 +47,24 @@ def main() -> int:
         print(f"Qwen3-TTS server is already listening on port {port}.")
         return 0
 
-    # Use the .venv Python — prefer pythonw.exe (no console window)
-    venv_scripts = repo_root / ".venv" / "Scripts"
-    python_exe = venv_scripts / "pythonw.exe"
-    if not python_exe.exists():
-        python_exe = venv_scripts / "python.exe"
-    if not python_exe.exists():
-        # Fall back to the current interpreter
+    candidates = [
+        os.getenv("SHANA_PYTHON"),
+        str(repo_root / ".venv" / "bin" / "python"),
+        str(repo_root / ".venv" / "Scripts" / "pythonw.exe"),
+        str(repo_root / ".venv" / "Scripts" / "python.exe"),
+        sys.executable,
+    ]
+    python_exe = None
+    for raw in candidates:
+        if not raw:
+            continue
+        candidate = Path(raw).expanduser()
+        if candidate.exists():
+            python_exe = candidate
+            break
+    if python_exe is None:
         python_exe = Path(sys.executable)
+    if os.name == "nt":
         pythonw = python_exe.parent / "pythonw.exe"
         if pythonw.exists():
             python_exe = pythonw
@@ -67,18 +77,21 @@ def main() -> int:
     env.setdefault("PYTHONUTF8", "1")
 
     with stdout_log.open("ab") as stdout_handle, stderr_log.open("ab") as stderr_handle:
-        subprocess.Popen(
-            [str(python_exe), str(server_script)],
-            cwd=str(repo_root),
-            env=env,
-            stdout=stdout_handle,
-            stderr=stderr_handle,
-            creationflags=(
+        kwargs = {
+            "cwd": str(repo_root),
+            "env": env,
+            "stdout": stdout_handle,
+            "stderr": stderr_handle,
+        }
+        if os.name == "nt":
+            kwargs["creationflags"] = (
                 getattr(subprocess, "DETACHED_PROCESS", 0)
                 | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
                 | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            ),
-        )
+            )
+        else:
+            kwargs["start_new_session"] = True
+        subprocess.Popen([str(python_exe), str(server_script)], **kwargs)
 
     print(f"Qwen3-TTS server started. Waiting for model to load (may take up to 90s)...")
     deadline = time.time() + 90

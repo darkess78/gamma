@@ -111,6 +111,15 @@ class SystemStatusService:
         if not tts_cfg.gpt_sovits_endpoint:
             return {"ok": False, "detail": "no-endpoint-configured"}
         base_url = tts_cfg.gpt_sovits_endpoint.rsplit("/tts", 1)[0]
+        return self._check_http_docs_health(base_url)
+
+    def _check_qwen_tts_health(self, tts_cfg: Any) -> dict[str, Any]:
+        if not tts_cfg.qwen_tts_endpoint:
+            return {"ok": False, "detail": "no-endpoint-configured"}
+        base_url = tts_cfg.qwen_tts_endpoint.rsplit("/tts", 1)[0]
+        return self._check_http_docs_health(base_url)
+
+    def _check_http_docs_health(self, base_url: str) -> dict[str, Any]:
         try:
             with urllib.request.urlopen(base_url + "/docs", timeout=5) as response:
                 ok = 200 <= response.status < 400
@@ -132,6 +141,8 @@ class SystemStatusService:
             return rvc if not rvc.get("ok") else {"ok": True, "detail": "ready"}
         if provider in {"local", "gpt-sovits", "gpt_sovits"}:
             return self._check_gpt_sovits_health(tts_cfg)
+        if provider in {"qwen-tts", "qwen_tts", "qwen", "qwentts"}:
+            return self._check_qwen_tts_health(tts_cfg)
         return {"ok": True, "detail": "not-local"}
 
     def _check_piper_health(self, tts_cfg: Any) -> dict[str, Any]:

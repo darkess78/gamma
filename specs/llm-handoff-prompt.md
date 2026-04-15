@@ -157,7 +157,7 @@ The goal is to build a Shana-voice TTS training dataset from the original Shakug
 3. **Review** — load the manifest in the GUI, listen to clips, label them.
 4. **Export** — copy labeled clips into training-ready subsets.
 
-**Data root:** `C:\Users\darke\AppData\Local\GammaTTSDataPrep\`
+**Data root:** platform-local app data directory, for example `~/.local/share/GammaTTSDataPrep/` on Linux or `%LOCALAPPDATA%\GammaTTSDataPrep\` on Windows
 
 ```
 GammaTTSDataPrep\

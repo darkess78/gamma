@@ -1,5 +1,7 @@
 # Local environment
 .env
+config/app.local.toml
+config/voices.local.toml
 # Gamma repo-local virtual environment
 .venv/
 .venv*/

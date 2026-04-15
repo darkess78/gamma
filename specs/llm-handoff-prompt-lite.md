@@ -28,20 +28,53 @@ The broader Gamma assistant (FastAPI backend, voice pipeline, dashboard, tray) i
 
 ---
 
-## Data Paths (Windows)
+## Data Paths
 
 | What | Path |
 |---|---|
-| App data root | `C:\Users\darke\AppData\Local\GammaTTSDataPrep\` |
-| Staged episodes | `...\source_media\shakugan_no_shana\` |
-| Dataset output | `...\shana_dataset\` |
-| Clips | `...\shana_dataset\clips\<episode_id>\<clip_id>.wav` |
-| Labels | `...\shana_dataset\labels.json` |
-| Seed archive | `...\shana_dataset\shana_seed_archive.json` |
-| Manifest | `...\shana_dataset\manifest.jsonl` |
-| Exports | `...\shana_dataset\exports\shana_clean\`, `shana_light_noise\`, `shana_heavy_noise\` |
+| App data root | Platform-local app data dir, such as `~/.local/share/GammaTTSDataPrep/` on Linux or `%LOCALAPPDATA%\GammaTTSDataPrep\` on Windows |
+| Staged episodes | `<app data root>/source_media/shakugan_no_shana/` |
+| Dataset output | `<app data root>/shana_dataset/` |
+| Clips | `<app data root>/shana_dataset/clips/<episode_id>/<clip_id>.wav` |
+| Labels | `<app data root>/shana_dataset/labels.json` |
+| Seed archive | `<app data root>/shana_dataset/shana_seed_archive.json` |
+| Manifest | `<app data root>/shana_dataset/manifest.jsonl` |
+| Exports | `<app data root>/shana_dataset/exports/shana_clean/`, `shana_light_noise/`, `shana_heavy_noise/` |
 | Source anime (share) | `\\10.78.78.250\Media\Anime\Shakugan no Shana\Shakugan no Shana` |
-| Exe | `dist\GammaTTSDataPrep\GammaTTSDataPrep.exe` |
+| Build output | `dist/GammaTTSDataPrep/` |
+*** Add File: C:\Users\darke\Documents\Projects\ai terminal\gamma\specs\linux_portability.md
+# Linux Portability Checklist
+
+Goal: run the same Gamma repo and code on Linux with Linux-local config, without forking the application code.
+
+## Rules
+
+- Shared runtime code must not assume Windows-only paths such as `AppData`, `.exe`, or `pythonw.exe`.
+- Machine-specific settings belong in `config/app.local.toml`, `config/voices.local.toml`, or `.env`.
+- Shared repo defaults belong in `config/*.example.toml` and optional machine-agnostic `config/*.toml`.
+- Platform-specific launcher wrappers are allowed, but shared services should resolve interpreters and paths dynamically.
+
+## Current shape
+
+- App config merges `app.example.toml -> app.toml -> app.local.toml`.
+- Voice config merges `voices.example.toml -> voices.toml -> voices.local.toml`.
+- Dashboard provider/profile edits write to the local override files instead of tracked config.
+- Shared Python resolution prefers `SHANA_PYTHON`, `sys.executable`, and repo virtualenv paths before falling back to old Windows locations.
+- Qwen TTS startup now works as a managed local sidecar on both Windows and Linux.
+- Dataset GUI now defaults to the platform-local app data directory instead of hardcoded Windows `AppData`.
+
+## Linux-specific prerequisites
+
+- Python virtualenv for the Linux host
+- `ffmpeg` and `ffprobe`
+- PortAudio dev packages if using `sounddevice`
+- ALSA tools if using `arecord` and `aplay`
+- Tk packages if using the dataset GUI
+
+## Deferred work
+
+- Runtime verification on a Linux machine
+- Any Linux-only bugs found during real mic, dashboard, or sidecar testing
 
 ---
 

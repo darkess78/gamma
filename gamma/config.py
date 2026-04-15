@@ -21,12 +21,49 @@ def _read_toml(path: Path) -> dict[str, Any]:
     return tomllib.loads(path.read_text(encoding="utf-8"))
 
 
-APP_CONFIG = _read_toml(CONFIG_DIR / "app.toml")
-if not APP_CONFIG:
-    APP_CONFIG = _read_toml(CONFIG_DIR / "app.example.toml")
-VOICES_CONFIG = _read_toml(CONFIG_DIR / "voices.toml")
-if not VOICES_CONFIG:
-    VOICES_CONFIG = _read_toml(CONFIG_DIR / "voices.example.toml")
+def _merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_dicts(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _merged_toml(*paths: Path) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for path in paths:
+        merged = _merge_dicts(merged, _read_toml(path))
+    return merged
+
+
+def app_config_path() -> Path:
+    return CONFIG_DIR / "app.toml"
+
+
+def app_local_config_path() -> Path:
+    return CONFIG_DIR / "app.local.toml"
+
+
+def voices_config_path() -> Path:
+    return CONFIG_DIR / "voices.toml"
+
+
+def voices_local_config_path() -> Path:
+    return CONFIG_DIR / "voices.local.toml"
+
+
+def load_app_file_config() -> dict[str, Any]:
+    return _merged_toml(CONFIG_DIR / "app.example.toml", app_config_path(), app_local_config_path())
+
+
+def load_voices_file_config() -> dict[str, Any]:
+    return _merged_toml(CONFIG_DIR / "voices.example.toml", voices_config_path(), voices_local_config_path())
+
+
+APP_CONFIG = load_app_file_config()
+VOICES_CONFIG = load_voices_file_config()
 MODELS_CONFIG = _read_toml(CONFIG_DIR / "models.toml")
 MEMORY_CONFIG = _read_toml(CONFIG_DIR / "memory.toml")
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import queue
 import subprocess
 import threading
@@ -223,8 +224,12 @@ class TTSDataPrepApp:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _default_data_root(self) -> Path:
-        local_app_data = Path.home() / "AppData" / "Local"
-        return (local_app_data / "GammaTTSDataPrep").resolve()
+        if os.name == "nt":
+            base_dir = Path.home() / "AppData" / "Local"
+        else:
+            xdg_data_home = os.getenv("XDG_DATA_HOME")
+            base_dir = Path(xdg_data_home).expanduser() if xdg_data_home else (Path.home() / ".local" / "share")
+        return (base_dir / "GammaTTSDataPrep").resolve()
 
     def _configure_style(self) -> None:
         style = ttk.Style()
@@ -354,7 +359,7 @@ class TTSDataPrepApp:
         self._attach_tooltip(source_widgets[1], "Folder that contains the original episode files. The app copies from here into local staging so your originals stay untouched.")
         self._attach_tooltip(source_widgets[2], "Open a folder picker for the source media location.")
         self._attach_tooltip(staging_widgets[0], "Local working copy of the source media. Demuxing and extraction operate from here instead of the NAS share.")
-        self._attach_tooltip(staging_widgets[1], "Local working copy of the source media. Rebuilds will not wipe this because it lives under Local AppData by default.")
+        self._attach_tooltip(staging_widgets[1], "Local working copy of the source media. Rebuilds will not wipe this because it lives under the platform-local app data folder by default.")
         self._attach_tooltip(staging_widgets[2], "Open a folder picker for the local staging directory.")
         self._attach_tooltip(dataset_widgets[0], "Folder where extracted clips, manifests, labels, exports, and derived trims are stored.")
         self._attach_tooltip(dataset_widgets[1], "Folder where extracted clips, manifests, labels, exports, and derived trims are stored.")

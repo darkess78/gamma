@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 import psutil
 
 from ..config import settings
+from ..voice.voice_profiles import resolve_tts_config
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,18 +233,41 @@ class ProcessManager:
             path.unlink()
 
     def resolve_foreground_python(self) -> str:
-        standalone_python = Path.home() / "AppData" / "Local" / "Programs" / "Python" / "Python312" / "python.exe"
-        if standalone_python.exists():
-            return str(standalone_python)
-        local_venv = settings.project_root / ".venv312" / "Scripts" / "python.exe"
-        if local_venv.exists():
-            return str(local_venv)
+        for candidate in self._python_candidates():
+            if candidate.exists():
+                return str(candidate)
         return sys.executable
 
     def _resolve_background_python(self) -> str:
-        if os.name == "nt":
-            return self.resolve_foreground_python()
         return self.resolve_foreground_python()
+
+    def _python_candidates(self) -> list[Path]:
+        candidates: list[Path] = []
+        env_python = os.getenv("SHANA_PYTHON")
+        if env_python:
+            candidates.append(Path(env_python).expanduser())
+        if sys.executable:
+            candidates.append(Path(sys.executable))
+        candidates.extend(
+            [
+                settings.project_root / ".venv" / "bin" / "python",
+                settings.project_root / ".venv" / "Scripts" / "python.exe",
+                settings.project_root / ".venv312" / "Scripts" / "python.exe",
+                Path.home() / "AppData" / "Local" / "Programs" / "Python" / "Python312" / "python.exe",
+            ]
+        )
+        seen: set[Path] = set()
+        resolved_candidates: list[Path] = []
+        for candidate in candidates:
+            try:
+                resolved = candidate.expanduser().resolve()
+            except Exception:
+                resolved = candidate.expanduser()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            resolved_candidates.append(resolved)
+        return resolved_candidates
 
     def _start_shana_dependencies(self) -> list[dict[str, Any]]:
         return [
@@ -284,18 +308,21 @@ class ProcessManager:
         return {"name": "stt", "status": "skipped", "detail": f"STT provider {provider} does not have managed sidecar control."}
 
     def _tts_dependency_action(self, action: str) -> dict[str, Any]:
-        provider = settings.tts_provider.strip().lower()
-        if provider not in {"local", "gpt-sovits", "gpt_sovits", "gptsovits"}:
+        tts_cfg = resolve_tts_config()
+        provider = tts_cfg.provider.strip().lower()
+        if provider not in {"local", "gpt-sovits", "gpt_sovits", "gptsovits", "qwen-tts", "qwen_tts", "qwen", "qwentts"}:
             return {"name": "tts", "status": "skipped", "detail": f"TTS provider {provider} does not need local sidecar management."}
-        if not settings.gpt_sovits_endpoint:
-            return {"name": "tts", "status": "skipped", "detail": "No GPT-SoVITS endpoint configured."}
-        if not self._is_local_url(settings.gpt_sovits_endpoint):
+        endpoint = tts_cfg.qwen_tts_endpoint if provider in {"qwen-tts", "qwen_tts", "qwen", "qwentts"} else tts_cfg.gpt_sovits_endpoint
+        label = "Qwen3-TTS" if provider in {"qwen-tts", "qwen_tts", "qwen", "qwentts"} else "GPT-SoVITS"
+        if not endpoint:
+            return {"name": "tts", "status": "skipped", "detail": f"No {label} endpoint configured."}
+        if not self._is_local_url(endpoint):
             return {
                 "name": "tts",
                 "status": "skipped",
-                "detail": f"GPT-SoVITS endpoint is remote and will not be managed here: {settings.gpt_sovits_endpoint}",
+                "detail": f"{label} endpoint is remote and will not be managed here: {endpoint}",
             }
-        script = self._tts_script(action)
+        script = self._tts_script(action, provider=provider)
         try:
             completed = self._run_sidecar_command(script, timeout=45)
             return {
@@ -313,8 +340,13 @@ class ProcessManager:
         except Exception as exc:
             return {"name": "tts", "status": "error", "detail": str(exc)}
 
-    def _tts_script(self, action: str) -> list[str]:
+    def _tts_script(self, action: str, *, provider: str) -> list[str]:
         scripts_dir = settings.project_root / "scripts"
+        if provider in {"qwen-tts", "qwen_tts", "qwen", "qwentts"}:
+            return [
+                self.resolve_foreground_python(),
+                str(scripts_dir / f"{'start' if action == 'start' else 'stop'}_qwen_tts_server.py"),
+            ]
         if os.name == "nt":
             return [
                 self.resolve_foreground_python(),

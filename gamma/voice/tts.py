@@ -80,6 +80,84 @@ class TTSService:
         else:
             raise ConfigurationError(f"Unsupported SHANA_TTS_PROVIDER: {self._cfg.provider}")
 
+    _MAX_CHUNK_CHARS = 3800  # conservative limit; keeps all backends happy (OpenAI caps at 4096)
+
+    def synthesize_multipart(self, text: str) -> TTSResult:
+        """Split *text* into paragraph/sentence chunks, synthesize each, and stitch WAV frames."""
+        chunks = self._split_text(text)
+        if not chunks:
+            raise ValueError("text is empty after parsing")
+        if len(chunks) == 1:
+            return self.synthesize(chunks[0])
+        results = [self.synthesize(chunk) for chunk in chunks]
+        return self._concat_wav_results(results)
+
+    def _split_text(self, text: str) -> list[str]:
+        import re
+        paragraphs = re.split(r"\n\n+", text.strip())
+        chunks: list[str] = []
+        for para in paragraphs:
+            para = para.strip().replace("\n", " ")
+            if not para:
+                continue
+            if len(para) <= self._MAX_CHUNK_CHARS:
+                chunks.append(para)
+            else:
+                # split long paragraphs at sentence boundaries
+                sentences = re.split(r"(?<=[.!?]) +", para)
+                current = ""
+                for sentence in sentences:
+                    sentence = sentence.strip()
+                    if not sentence:
+                        continue
+                    candidate = (current + " " + sentence).strip() if current else sentence
+                    if current and len(candidate) > self._MAX_CHUNK_CHARS:
+                        chunks.append(current)
+                        current = sentence
+                    else:
+                        current = candidate
+                if current:
+                    chunks.append(current)
+        return chunks
+
+    def _concat_wav_results(self, results: list[TTSResult]) -> TTSResult:
+        non_wav = [r for r in results if r.content_type != "audio/wav"]
+        if non_wav:
+            raise ConfigurationError(
+                f"multi-chunk synthesis requires WAV output but got {non_wav[0].content_type}. "
+                "Set SHANA_TTS_FORMAT=wav when using the OpenAI provider."
+            )
+        frames_list: list[bytes] = []
+        params = None
+        for result in results:
+            with wave.open(result.audio_path, "rb") as wf:
+                if params is None:
+                    params = wf.getparams()
+                frames_list.append(wf.readframes(wf.getnframes()))
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        out_path = settings.audio_output_dir / f"tts-{stamp}.wav"
+        with wave.open(str(out_path), "wb") as wf:
+            wf.setparams(params)
+            for frames in frames_list:
+                wf.writeframes(frames)
+        total_backend_ms = round(
+            sum(
+                float(((r.metadata or {}).get("timings_ms") or {}).get("backend_ms") or 0)
+                for r in results
+            ),
+            1,
+        )
+        return TTSResult(
+            provider=results[0].provider,
+            text=" ".join(r.text for r in results),
+            audio_path=str(out_path),
+            content_type="audio/wav",
+            metadata={
+                "timings_ms": {"backend_ms": total_backend_ms},
+                "chunk_count": len(results),
+            },
+        )
+
     def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
         started_at = time.perf_counter()
         result = self._backend.synthesize(text=text, emotion=emotion)

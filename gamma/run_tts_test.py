@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 import time
+from pathlib import Path
 
 from .voice.tts import TTSService
 
@@ -11,6 +12,7 @@ from .voice.tts import TTSService
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("text", nargs="*", help="Text to synthesize")
+    parser.add_argument("--file", dest="input_file", metavar="PATH", help="Path to .txt file to synthesize (auto-splits by paragraph)")
     parser.add_argument("--json", action="store_true", dest="json_output", help="Print raw JSON-style output")
     parser.add_argument("--compact", action="store_true", help="Print a one-line timing summary")
     return parser.parse_args()
@@ -49,9 +51,17 @@ def _print_compact(result: dict) -> None:
 
 def main() -> None:
     args = _parse_args()
-    text = " ".join(args.text).strip() or "Hello from Gamma. This is a local TTS pipeline smoke test."
     started_at = time.perf_counter()
-    result = TTSService().synthesize(text)
+    svc = TTSService()
+    if args.input_file:
+        text = Path(args.input_file).read_text(encoding="utf-8").strip()
+        if not text:
+            print("error: file is empty", file=sys.stderr)
+            sys.exit(1)
+        result = svc.synthesize_multipart(text)
+    else:
+        text = " ".join(args.text).strip() or "Hello from Gamma. This is a local TTS pipeline smoke test."
+        result = svc.synthesize(text)
     total_ms = round((time.perf_counter() - started_at) * 1000, 1)
     payload = {
         "provider": result.provider,

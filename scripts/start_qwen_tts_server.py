@@ -17,9 +17,10 @@ from __future__ import annotations
 import os
 import socket
 import subprocess
-import sys
 import time
 from pathlib import Path
+
+from gamma.system.python_runtime import resolve_python_executable
 
 
 def _is_listening(port: int, host: str = "127.0.0.1") -> bool:
@@ -47,27 +48,7 @@ def main() -> int:
         print(f"Qwen3-TTS server is already listening on port {port}.")
         return 0
 
-    candidates = [
-        os.getenv("SHANA_PYTHON"),
-        str(repo_root / ".venv" / "bin" / "python"),
-        str(repo_root / ".venv" / "Scripts" / "pythonw.exe"),
-        str(repo_root / ".venv" / "Scripts" / "python.exe"),
-        sys.executable,
-    ]
-    python_exe = None
-    for raw in candidates:
-        if not raw:
-            continue
-        candidate = Path(raw).expanduser()
-        if candidate.exists():
-            python_exe = candidate
-            break
-    if python_exe is None:
-        python_exe = Path(sys.executable)
-    if os.name == "nt":
-        pythonw = python_exe.parent / "pythonw.exe"
-        if pythonw.exists():
-            python_exe = pythonw
+    python_exe = resolve_python_executable(repo_root, prefer_windowless=True)
 
     stdout_log.write_text("", encoding="utf-8")
     stderr_log.write_text("", encoding="utf-8")
@@ -91,7 +72,7 @@ def main() -> int:
             )
         else:
             kwargs["start_new_session"] = True
-        subprocess.Popen([str(python_exe), str(server_script)], **kwargs)
+        subprocess.Popen([python_exe, str(server_script)], **kwargs)
 
     print(f"Qwen3-TTS server started. Waiting for model to load (may take up to 90s)...")
     deadline = time.time() + 90

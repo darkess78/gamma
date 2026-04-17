@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import webbrowser
 from pathlib import Path
@@ -89,5 +90,7 @@ class TrayApp:
 
 
 def main() -> int:
+    if os.name != "nt" and not (os.getenv("DISPLAY") or os.getenv("WAYLAND_DISPLAY")):
+        raise SystemExit("Gamma tray requires a graphical Linux session with DISPLAY or WAYLAND_DISPLAY set.")
     TrayApp().run()
     return 0

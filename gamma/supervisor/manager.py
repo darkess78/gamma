@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +11,7 @@ from urllib.parse import urlparse
 import psutil
 
 from ..config import settings
+from ..system.python_runtime import python_candidates, resolve_python_executable
 from ..voice.voice_profiles import resolve_tts_config
 
 
@@ -233,41 +233,13 @@ class ProcessManager:
             path.unlink()
 
     def resolve_foreground_python(self) -> str:
-        for candidate in self._python_candidates():
-            if candidate.exists():
-                return str(candidate)
-        return sys.executable
+        return resolve_python_executable(settings.project_root)
 
     def _resolve_background_python(self) -> str:
         return self.resolve_foreground_python()
 
     def _python_candidates(self) -> list[Path]:
-        candidates: list[Path] = []
-        env_python = os.getenv("SHANA_PYTHON")
-        if env_python:
-            candidates.append(Path(env_python).expanduser())
-        if sys.executable:
-            candidates.append(Path(sys.executable))
-        candidates.extend(
-            [
-                settings.project_root / ".venv" / "bin" / "python",
-                settings.project_root / ".venv" / "Scripts" / "python.exe",
-                settings.project_root / ".venv312" / "Scripts" / "python.exe",
-                Path.home() / "AppData" / "Local" / "Programs" / "Python" / "Python312" / "python.exe",
-            ]
-        )
-        seen: set[Path] = set()
-        resolved_candidates: list[Path] = []
-        for candidate in candidates:
-            try:
-                resolved = candidate.expanduser().resolve()
-            except Exception:
-                resolved = candidate.expanduser()
-            if resolved in seen:
-                continue
-            seen.add(resolved)
-            resolved_candidates.append(resolved)
-        return resolved_candidates
+        return python_candidates(settings.project_root)
 
     def _start_shana_dependencies(self) -> list[dict[str, Any]]:
         return [

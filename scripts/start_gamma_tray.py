@@ -8,6 +8,9 @@ from pathlib import Path
 
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
+    if os.name != "nt" and not (os.getenv("DISPLAY") or os.getenv("WAYLAND_DISPLAY")):
+        print("Gamma tray requires a graphical Linux session with DISPLAY or WAYLAND_DISPLAY set.")
+        return 1
     kwargs: dict[str, object] = {
         "cwd": repo_root,
         "stdout": subprocess.DEVNULL,

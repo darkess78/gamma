@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -17,6 +16,7 @@ from fastapi import UploadFile
 
 from ..config import settings
 from ..schemas.voice import LiveVoiceJobResponse
+from ..system.python_runtime import resolve_python_executable
 
 
 def _utc_now() -> str:
@@ -401,21 +401,7 @@ class LiveVoiceJobManager:
         psutil.wait_procs(alive, timeout=3)
 
     def _foreground_python(self) -> str:
-        candidates = [
-            os.getenv("SHANA_PYTHON"),
-            sys.executable,
-            str(settings.project_root / ".venv" / "bin" / "python"),
-            str(settings.project_root / ".venv" / "Scripts" / "python.exe"),
-            str(settings.project_root / ".venv312" / "Scripts" / "python.exe"),
-            str(Path.home() / "AppData" / "Local" / "Programs" / "Python" / "Python312" / "python.exe"),
-        ]
-        for raw in candidates:
-            if not raw:
-                continue
-            path = Path(raw).expanduser()
-            if path.exists():
-                return str(path.resolve())
-        return sys.executable
+        return resolve_python_executable(settings.project_root)
 
     def _prune_finished_jobs(self, *, max_age_seconds: int = 900) -> None:
         cutoff = time.time() - max_age_seconds

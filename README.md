@@ -282,11 +282,12 @@ Platform wrappers also exist:
 Notes:
 - the dashboard polls local service state and machine metrics
 - supervisor-managed services run without Uvicorn access logs
+- shared background process launch now resolves the active interpreter from `SHANA_PYTHON`, the current process, repo virtualenvs, and platform-native fallbacks on both Windows and Linux
 - local STT runs in-process with Shana
 - Piper runs in-process and has no managed sidecar
 - GPT-SoVITS and Qwen TTS can be managed as local sidecars when configured with local endpoints
 - Ollama remains external; Gamma health-checks it but does not manage its lifecycle
-- tray support on Linux depends on the desktop environment exposing a usable system tray
+- tray support on Linux depends on the desktop environment exposing a usable system tray and a graphical session with `DISPLAY` or `WAYLAND_DISPLAY`
 
 ## Linux host notes
 

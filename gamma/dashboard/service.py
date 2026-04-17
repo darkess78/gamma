@@ -290,6 +290,50 @@ class DashboardService:
             success_detail="TTS smoke test completed.",
         )
 
+    def synthesize_text(self, text: str) -> dict[str, Any]:
+        """Synthesize *text* (multi-chunk if needed) via subprocess; return audio filename."""
+        import tempfile
+        selected_provider = self.selected_tts_provider()
+        selected_profile = self.selected_tts_profile()
+        env = {"SHANA_TTS_PROVIDER": selected_provider}
+        if selected_profile:
+            env["SHANA_TTS_PROFILE"] = selected_profile
+        tmppath: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".txt", encoding="utf-8", delete=False
+            ) as f:
+                f.write(text)
+                tmppath = f.name
+            completed = self._run_command(
+                self._python_module_command("gamma.run_tts_test", "--file", tmppath, "--json"),
+                timeout=300,
+                env_overrides=env,
+            )
+            output = (completed.stdout or "").strip()
+            payload = json.loads(output)
+            audio_path = payload.get("audio_path", "")
+            filename = Path(audio_path).name if audio_path else ""
+            return {
+                "ok": True,
+                "filename": filename,
+                "provider": payload.get("provider"),
+                "timings_ms": payload.get("timings_ms") or {},
+            }
+        except subprocess.CalledProcessError as exc:
+            stderr = (exc.stderr or "").strip()
+            return {"ok": False, "detail": stderr or "synthesis failed"}
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "detail": "synthesis timed out"}
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return {"ok": False, "detail": "synthesis returned unexpected output"}
+        finally:
+            if tmppath:
+                try:
+                    Path(tmppath).unlink()
+                except Exception:
+                    pass
+
     def _upsert_toml_string(self, existing: str, key: str, value: str) -> str:
         pattern = rf'(?m)^\s*{re.escape(key)}\s*=\s*"([^"]*)"\s*$'
         if re.search(pattern, existing):
@@ -331,11 +375,13 @@ class DashboardService:
         pcm_bytes: bytes,
         session_id: str | None,
         synthesize_speech: bool,
+        response_mode: str = "simple_chunked",
     ) -> dict[str, Any]:
         return self.start_remote_live_job(
             pcm_bytes=pcm_bytes,
             session_id=session_id,
             synthesize_speech=synthesize_speech,
+            response_mode=response_mode,
             turn_id=None,
         )
 
@@ -345,6 +391,7 @@ class DashboardService:
         pcm_bytes: bytes,
         session_id: str | None,
         synthesize_speech: bool,
+        response_mode: str,
         turn_id: str | None,
     ) -> dict[str, Any]:
         return self._post_live_audio(
@@ -352,6 +399,7 @@ class DashboardService:
             pcm_bytes=pcm_bytes,
             session_id=session_id,
             synthesize_speech=synthesize_speech,
+            response_mode=response_mode,
             turn_id=turn_id,
         )
 
@@ -361,6 +409,7 @@ class DashboardService:
             pcm_bytes=pcm_bytes,
             session_id=None,
             synthesize_speech=None,
+            response_mode=None,
             turn_id=None,
         )
 
@@ -392,6 +441,10 @@ class DashboardService:
             raise RuntimeError("cancel live turn returned a non-object payload")
         return payload
 
+    def remote_live_history(self, *, limit: int = 20) -> dict[str, Any]:
+        url = settings.shana_base_url + f"/v1/voice/live/history?limit={max(1, min(limit, 100))}"
+        return self._probe_json(url, raw_payload=True)
+
     def _post_live_audio(
         self,
         *,
@@ -399,6 +452,7 @@ class DashboardService:
         pcm_bytes: bytes,
         session_id: str | None,
         synthesize_speech: bool | None,
+        response_mode: str | None,
         turn_id: str | None,
     ) -> dict[str, Any]:
         wav_bytes = self._pcm_to_wav_bytes(pcm_bytes)
@@ -408,6 +462,7 @@ class DashboardService:
             audio_bytes=wav_bytes,
             session_id=session_id,
             synthesize_speech=synthesize_speech,
+            response_mode=response_mode,
             turn_id=turn_id,
         )
         headers = {
@@ -513,6 +568,7 @@ class DashboardService:
         audio_bytes: bytes,
         session_id: str | None,
         synthesize_speech: bool | None,
+        response_mode: str | None,
         turn_id: str | None,
     ) -> bytes:
         parts: list[bytes] = []
@@ -532,6 +588,8 @@ class DashboardService:
             add_field("turn_id", turn_id)
         if synthesize_speech is not None:
             add_field("synthesize_speech", "true" if synthesize_speech else "false")
+        if response_mode:
+            add_field("response_mode", response_mode)
         parts.append(
             (
                 f"--{boundary}\r\n"

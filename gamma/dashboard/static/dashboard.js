@@ -16,6 +16,16 @@
   var liveTurnStartedAt = 0;
   var liveHistory = [];
   var liveJobMeta = null;
+  var livePlaybackQueue = [];
+  var livePlaybackSeenChunks = {};
+  var livePlaybackActive = false;
+  var liveReplyCompleted = false;
+  var liveCurrentChunk = null;
+  var liveCurrentChunkStartedAt = 0;
+  var liveInterruptSpeechStartedAt = 0;
+  var liveInterruptProbePending = false;
+  var liveInterruptProbeChunks = [];
+  var liveInterruptProbeBytes = 0;
   var selectedVisionFile = null;
   var selectedVisionPreviewUrl = null;
   var visionHistory = [];
@@ -270,6 +280,7 @@
       'Status: ' + (job.status || 'n/a'),
       'Worker PID: ' + (job.worker_pid || 'n/a')
     ];
+    if (job.response_mode) lines.push('Response mode: ' + job.response_mode);
     if (job.cancel_reason) lines.push('Cancel reason: ' + job.cancel_reason);
     if (typeof job.cancel_latency_ms !== 'undefined' && job.cancel_latency_ms !== null) lines.push('Cancel latency: ' + fmtDurationMs(job.cancel_latency_ms));
     if (job.started_at) lines.push('Started: ' + fmtLocalDateTime(job.started_at));
@@ -289,6 +300,24 @@
     return Number(input.value || 900);
   }
 
+  function currentInterruptSpeechMs() {
+    var input = document.getElementById('liveInterruptSpeechMs');
+    if (!input) return 260;
+    return Number(input.value || 260);
+  }
+
+  function currentBargeInMode() {
+    var input = document.getElementById('liveBargeInMode');
+    var value = input ? String(input.value || 'transcript') : 'transcript';
+    return value === 'amplitude' ? 'amplitude' : 'transcript';
+  }
+
+  function currentLiveResponseMode() {
+    var input = document.getElementById('liveResponseMode');
+    var value = input ? String(input.value || 'simple_chunked') : 'simple_chunked';
+    return value === 'incremental_experimental' ? 'incremental_experimental' : 'simple_chunked';
+  }
+
   function bargeInEnabled() {
     var input = document.getElementById('liveBargeInEnabled');
     return !!(input && input.checked);
@@ -296,22 +325,33 @@
 
   function updateLiveControlLabels() {
     var speech = document.getElementById('liveSpeechThresholdValue');
+    var interruptSpeech = document.getElementById('liveInterruptSpeechMsValue');
     var silence = document.getElementById('liveSilenceMsValue');
     if (speech) speech.textContent = currentSpeechThreshold().toFixed(3);
+    if (interruptSpeech) interruptSpeech.textContent = String(currentInterruptSpeechMs());
     if (silence) silence.textContent = String(currentSilenceMs());
   }
 
   function loadLiveControlDefaults() {
+    var savedResponseMode = localStorage.getItem('gammaLiveResponseMode');
+    var savedBargeInMode = localStorage.getItem('gammaLiveBargeInMode');
     var savedSpeech = localStorage.getItem('gammaLiveSpeechThreshold');
+    var savedInterruptSpeech = localStorage.getItem('gammaLiveInterruptSpeechMs');
     var savedSilence = localStorage.getItem('gammaLiveSilenceMs');
     var savedBargeIn = localStorage.getItem('gammaLiveBargeIn');
+    if (savedResponseMode) document.getElementById('liveResponseMode').value = savedResponseMode;
+    if (savedBargeInMode) document.getElementById('liveBargeInMode').value = savedBargeInMode;
     if (savedSpeech) document.getElementById('liveSpeechThreshold').value = savedSpeech;
+    if (savedInterruptSpeech) document.getElementById('liveInterruptSpeechMs').value = savedInterruptSpeech;
     if (savedSilence) document.getElementById('liveSilenceMs').value = savedSilence;
     if (savedBargeIn !== null) document.getElementById('liveBargeInEnabled').checked = savedBargeIn === 'true';
   }
 
   function persistLiveControlDefaults() {
+    localStorage.setItem('gammaLiveResponseMode', document.getElementById('liveResponseMode').value);
+    localStorage.setItem('gammaLiveBargeInMode', document.getElementById('liveBargeInMode').value);
     localStorage.setItem('gammaLiveSpeechThreshold', document.getElementById('liveSpeechThreshold').value);
+    localStorage.setItem('gammaLiveInterruptSpeechMs', document.getElementById('liveInterruptSpeechMs').value);
     localStorage.setItem('gammaLiveSilenceMs', document.getElementById('liveSilenceMs').value);
     localStorage.setItem('gammaLiveBargeIn', document.getElementById('liveBargeInEnabled').checked ? 'true' : 'false');
     updateLiveControlLabels();
@@ -369,6 +409,9 @@
       lines.push('Shana: ' + (turn.reply_text || ''));
       if (turn.timing_ms) {
         lines.push('Timing: stt ' + (turn.timing_ms.stt_ms || 0) + ' ms | llm+tts ' + (turn.timing_ms.conversation_ms || 0) + ' ms | tts ' + (turn.timing_ms.tts_ms || 0) + ' ms | total ' + (turn.timing_ms.total_ms || 0) + ' ms');
+        if (turn.timing_ms.time_to_first_chunk_audio_ms) {
+          lines.push('First audio: ' + (turn.timing_ms.time_to_first_chunk_audio_ms || 0) + ' ms');
+        }
       }
       if (turn.job && turn.job.cancel_reason) {
         lines.push('Cancel reason: ' + turn.job.cancel_reason);
@@ -636,6 +679,12 @@
     ];
     var timing = payload.timing_ms || {};
     lines.push('Timing: stt ' + (timing.stt_ms || 0) + ' ms | llm+tts ' + (timing.conversation_ms || 0) + ' ms | tts ' + (timing.tts_ms || 0) + ' ms | total ' + (timing.total_ms || 0) + ' ms');
+    if (timing.time_to_first_chunk_audio_ms) {
+      lines.push('First audio: ' + (timing.time_to_first_chunk_audio_ms || 0) + ' ms');
+    }
+    if (payload.reply_chunks && payload.reply_chunks.length) {
+      lines.push('Chunks: ' + payload.reply_chunks.length);
+    }
     lines.push('Audio returned: ' + (payload.audio_base64 ? 'yes' : 'no'));
     return lines.join('\n');
   }
@@ -1364,6 +1413,41 @@
     }
   }
 
+  async function ttsSynthesizeFromFile() {
+    var input = document.getElementById('ttsSynthesizeFileInput');
+    var note = document.getElementById('ttsSynthesizeNote');
+    var btn = document.getElementById('ttsSynthesizeButton');
+    if (!input || !input.files || !input.files[0]) return;
+    btn.disabled = true;
+    note.textContent = 'Synthesizing\u2026';
+    var formData = new FormData();
+    formData.append('text_file', input.files[0]);
+    try {
+      var response = await fetch('/api/providers/tts/synthesize', { method: 'POST', body: formData });
+      var payload = await response.json();
+      if (!response.ok) {
+        note.textContent = 'Error: ' + (payload.detail || 'synthesis failed');
+        btn.disabled = false;
+        return;
+      }
+      note.textContent = payload.filename ? ('Done \u2014 ' + payload.filename) : 'Done.';
+      if (payload.filename) {
+        ttsPlayerLoad(payload.filename);
+      }
+      postClientLog('tts_synthesize_ok', { filename: payload.filename });
+    } catch (error) {
+      note.textContent = 'Error: ' + String(error);
+      postClientLog('tts_synthesize_error', { error: String(error) });
+    }
+    btn.disabled = false;
+  }
+
+  function onTtsSynthesizeFileChange() {
+    var input = document.getElementById('ttsSynthesizeFileInput');
+    var btn = document.getElementById('ttsSynthesizeButton');
+    if (btn) btn.disabled = !input || !input.files || !input.files[0];
+  }
+
   function startArtifactPoll(beforeName) {
     if (ttsArtifactPollTimer) clearInterval(ttsArtifactPollTimer);
     var pollCount = 0;
@@ -1643,7 +1727,8 @@
     liveSocket.send(JSON.stringify({
       type: 'start_turn',
       session_id: document.getElementById('voiceSessionId').value.trim() || null,
-      synthesize_speech: document.getElementById('voiceSynthesizeSpeech').checked
+      synthesize_speech: document.getElementById('voiceSynthesizeSpeech').checked,
+      response_mode: currentLiveResponseMode()
     }));
     updateLiveStatus('Listening...');
   }
@@ -1668,6 +1753,7 @@
     var playback = document.getElementById('voicePlayback');
     liveAwaitingReply = false;
     liveTurnOpen = false;
+    resetLivePlayback(true);
     if (playback) {
       playback.pause();
       playback.removeAttribute('src');
@@ -1680,20 +1766,189 @@
     updateLiveStatus('Interrupted. Listening for new speech.');
   }
 
+  function resetLivePlayback(stopAudio) {
+    livePlaybackQueue = [];
+    livePlaybackSeenChunks = {};
+    livePlaybackActive = false;
+    liveReplyCompleted = false;
+    liveCurrentChunk = null;
+    liveCurrentChunkStartedAt = 0;
+    liveInterruptSpeechStartedAt = 0;
+    liveInterruptProbePending = false;
+    liveInterruptProbeChunks = [];
+    liveInterruptProbeBytes = 0;
+    if (!stopAudio) {
+      return;
+    }
+    var playback = document.getElementById('voicePlayback');
+    if (!playback) {
+      return;
+    }
+    playback.onended = null;
+    playback.pause();
+    playback.removeAttribute('src');
+    try { playback.load(); } catch (error) {}
+  }
+
+  function queueLiveReplyChunk(chunk, turnId) {
+    if (!chunk || !chunk.chunk_index || !chunk.audio_base64 || !chunk.audio_content_type) {
+      return;
+    }
+    var chunkIndex = Number(chunk.chunk_index);
+    var dedupeKey = String(turnId || '') + ':' + String(chunkIndex);
+    if (!isFinite(chunkIndex) || chunkIndex <= 0 || livePlaybackSeenChunks[dedupeKey]) {
+      return;
+    }
+    livePlaybackSeenChunks[dedupeKey] = true;
+    livePlaybackQueue.push(chunk);
+    livePlaybackQueue.sort(function (a, b) {
+      return Number(a.chunk_index || 0) - Number(b.chunk_index || 0);
+    });
+    playNextLiveReplyChunk();
+  }
+
+  function finishLiveReplyIfIdle() {
+    if (livePlaybackActive || livePlaybackQueue.length) {
+      return;
+    }
+    liveAwaitingReply = false;
+    updateLiveStatus('Live voice is armed. Start speaking.');
+  }
+
+  function playNextLiveReplyChunk() {
+    if (livePlaybackActive || !livePlaybackQueue.length) {
+      if (liveReplyCompleted) {
+        finishLiveReplyIfIdle();
+      }
+      return;
+    }
+    var playback = document.getElementById('voicePlayback');
+    if (!playback) {
+      livePlaybackQueue = [];
+      finishLiveReplyIfIdle();
+      return;
+    }
+    var chunk = livePlaybackQueue.shift();
+    livePlaybackActive = true;
+    liveCurrentChunk = chunk;
+    liveCurrentChunkStartedAt = Date.now();
+    playback.src = 'data:' + chunk.audio_content_type + ';base64,' + chunk.audio_base64;
+    updateLiveStatus('Speaking chunk ' + chunk.chunk_index + (chunk.interruptible === false ? ' (protected)...' : '...'));
+    playback.onended = function () {
+      livePlaybackActive = false;
+      liveCurrentChunk = null;
+      liveCurrentChunkStartedAt = 0;
+      playNextLiveReplyChunk();
+    };
+    playback.play().catch(function () {
+      livePlaybackActive = false;
+      liveCurrentChunk = null;
+      liveCurrentChunkStartedAt = 0;
+      playNextLiveReplyChunk();
+    });
+  }
+
+  function liveCanInterruptCurrentReply() {
+    if (!liveCurrentChunk) {
+      return true;
+    }
+    if (liveCurrentChunk.interruptible !== false) {
+      return true;
+    }
+    var protectMs = Number(liveCurrentChunk.protect_ms || 0);
+    if (!isFinite(protectMs) || protectMs <= 0) {
+      return false;
+    }
+    return (Date.now() - liveCurrentChunkStartedAt) >= protectMs;
+  }
+
+  function updateInterruptCandidate(nowMs, level) {
+    if (!liveAwaitingReply || !bargeInEnabled()) {
+      liveInterruptSpeechStartedAt = 0;
+      clearInterruptProbe();
+      return false;
+    }
+    if (level < currentSpeechThreshold()) {
+      liveInterruptSpeechStartedAt = 0;
+      clearInterruptProbe();
+      return false;
+    }
+    if (!liveCanInterruptCurrentReply()) {
+      liveInterruptSpeechStartedAt = 0;
+      clearInterruptProbe();
+      return false;
+    }
+    if (!liveInterruptSpeechStartedAt) {
+      liveInterruptSpeechStartedAt = nowMs;
+      return false;
+    }
+    return (nowMs - liveInterruptSpeechStartedAt) >= currentInterruptSpeechMs();
+  }
+
+  function clearInterruptProbe() {
+    liveInterruptProbeChunks = [];
+    liveInterruptProbeBytes = 0;
+    liveInterruptProbePending = false;
+  }
+
+  function appendInterruptProbeChunk(buffer) {
+    var chunk = new Uint8Array(buffer.slice(0));
+    liveInterruptProbeChunks.push(chunk);
+    liveInterruptProbeBytes += chunk.length;
+    while (liveInterruptProbeBytes > 64000 && liveInterruptProbeChunks.length > 1) {
+      var removed = liveInterruptProbeChunks.shift();
+      liveInterruptProbeBytes -= removed.length;
+    }
+  }
+
+  function interruptProbeBase64() {
+    if (!liveInterruptProbeBytes) {
+      return '';
+    }
+    var merged = new Uint8Array(liveInterruptProbeBytes);
+    var offset = 0;
+    for (var i = 0; i < liveInterruptProbeChunks.length; i += 1) {
+      merged.set(liveInterruptProbeChunks[i], offset);
+      offset += liveInterruptProbeChunks[i].length;
+    }
+    var binary = '';
+    var chunkSize = 0x8000;
+    for (var start = 0; start < merged.length; start += chunkSize) {
+      var slice = merged.subarray(start, Math.min(start + chunkSize, merged.length));
+      binary += String.fromCharCode.apply(null, slice);
+    }
+    return btoa(binary);
+  }
+
   function handleLiveAudio(event) {
     var input = event.inputBuffer.getChannelData(0);
     var level = rmsLevel(input);
+    var nowMs = Date.now();
+    var downsampled = downsampleBuffer(input, liveAudioContext.sampleRate, LIVE_TARGET_SAMPLE_RATE);
+    var pcm = floatTo16BitPCM(downsampled);
     drawLiveMeter(level);
     if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) {
       return;
     }
-    if (liveAwaitingReply && bargeInEnabled() && level >= currentSpeechThreshold()) {
-      interruptLiveReply();
-    }
     if (liveAwaitingReply) {
+      if (level >= currentSpeechThreshold()) {
+        appendInterruptProbeChunk(pcm.buffer);
+      }
+      if (updateInterruptCandidate(nowMs, level) && !liveInterruptProbePending) {
+        if (currentBargeInMode() === 'amplitude') {
+          liveInterruptSpeechStartedAt = 0;
+          clearInterruptProbe();
+          interruptLiveReply();
+        } else {
+          var probeBase64 = interruptProbeBase64();
+          if (probeBase64) {
+            liveInterruptProbePending = true;
+            liveSocket.send(JSON.stringify({ type: 'interrupt_probe', audio_base64: probeBase64 }));
+          }
+        }
+      }
       return;
     }
-    var nowMs = Date.now();
 
     if (level >= currentSpeechThreshold()) {
       maybeOpenLiveTurn(nowMs);
@@ -1704,8 +1959,6 @@
       return;
     }
 
-    var downsampled = downsampleBuffer(input, liveAudioContext.sampleRate, LIVE_TARGET_SAMPLE_RATE);
-    var pcm = floatTo16BitPCM(downsampled);
     liveSocket.send(pcm.buffer);
     maybeCloseLiveTurn(nowMs);
   }
@@ -1718,6 +1971,7 @@
       liveSocket = new WebSocket((window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/api/voice/live');
       liveSocket.onopen = async function () {
         try {
+          resetLivePlayback(true);
           liveMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
           liveAudioContext = new (window.AudioContext || window.webkitAudioContext)();
           liveSourceNode = liveAudioContext.createMediaStreamSource(liveMediaStream);
@@ -1748,6 +2002,10 @@
           } else if (payload.detail) {
             updateLiveStatus(payload.detail);
           }
+          if (payload.state === 'cancelled' || payload.state === 'interrupted' || payload.state === 'failed') {
+            resetLivePlayback(true);
+            liveAwaitingReply = false;
+          }
           renderLiveMeta(payload.job || null);
           if (payload.state === 'cancelled' || payload.state === 'interrupted' || payload.state === 'failed') {
             liveHistory.push({
@@ -1768,30 +2026,49 @@
           updateLiveStatus('Transcript ready.');
           return;
         }
+        if (payload.type === 'reply_chunk_ready') {
+          queueLiveReplyChunk(payload.chunk || null, payload.turn_id || '');
+          return;
+        }
+        if (payload.type === 'interrupt_probe_result') {
+          liveInterruptProbePending = false;
+          if (payload.text) {
+            updateLiveStatus('Speech detected. Interrupting...');
+            interruptLiveReply();
+          } else {
+            liveInterruptSpeechStartedAt = 0;
+            liveInterruptProbeChunks = [];
+            liveInterruptProbeBytes = 0;
+          }
+          return;
+        }
         if (payload.type === 'turn_result') {
           renderLiveMeta(payload.job || null);
           liveHistory.push(payload);
           renderLiveHistory();
           renderBlock('voiceRoundtripStatus', payload, humanVoiceRoundtrip(payload));
-          if (payload.audio_base64 && payload.audio_content_type) {
-            var playback = document.getElementById('voicePlayback');
-            playback.src = 'data:' + payload.audio_content_type + ';base64,' + payload.audio_base64;
-            updateLiveStatus('Speaking...');
-            playback.onended = function () {
-              liveAwaitingReply = false;
-              updateLiveStatus('Live voice is armed. Start speaking.');
-            };
-            playback.play().catch(function () {
-              liveAwaitingReply = false;
-              updateLiveStatus('Reply ready. Start speaking.');
-            });
+          liveReplyCompleted = true;
+          if (payload.reply_chunks && payload.reply_chunks.length) {
+            for (var i = 0; i < payload.reply_chunks.length; i += 1) {
+              queueLiveReplyChunk(payload.reply_chunks[i], payload.turn_id || '');
+            }
+            finishLiveReplyIfIdle();
+          } else if (payload.audio_base64 && payload.audio_content_type) {
+            resetLivePlayback(false);
+            queueLiveReplyChunk({
+              chunk_index: 1,
+              text: payload.reply_text || '',
+              audio_content_type: payload.audio_content_type,
+              audio_base64: payload.audio_base64
+            }, payload.turn_id || '');
+            liveReplyCompleted = true;
           } else {
-            liveAwaitingReply = false;
-            updateLiveStatus('Reply ready. Start speaking.');
+            finishLiveReplyIfIdle();
           }
           return;
         }
         if (payload.type === 'error') {
+          resetLivePlayback(true);
           liveAwaitingReply = false;
           liveTurnOpen = false;
           renderLiveMeta(payload.job || null);
@@ -1800,6 +2077,7 @@
         }
       };
       liveSocket.onclose = function () {
+        resetLivePlayback(true);
         cleanupLiveAudio();
         liveSocket = null;
         liveAwaitingReply = false;
@@ -1845,6 +2123,7 @@
       }
       liveSocket.close();
     } else {
+      resetLivePlayback(true);
       cleanupLiveAudio();
       liveSocket = null;
       liveAwaitingReply = false;
@@ -2045,6 +2324,8 @@
   window.stopLiveVoice = stopLiveVoice;
   window.analyzeVisionImage = analyzeVisionImage;
   window.askGammaAboutImage = askGammaAboutImage;
+  window.ttsSynthesizeFromFile = ttsSynthesizeFromFile;
+  window.onTtsSynthesizeFileChange = onTtsSynthesizeFileChange;
   window.ttsPlayerLoad = ttsPlayerLoad;
   window.ttsPlayerTogglePlay = ttsPlayerTogglePlay;
   window.ttsPlayerSeekTo = ttsPlayerSeekTo;
@@ -2122,7 +2403,10 @@
   initSectionState('visionPanel', false);
   initSectionState('stdoutPanel', false);
   initSectionState('stderrPanel', false);
+  document.getElementById('liveResponseMode').addEventListener('change', persistLiveControlDefaults);
+  document.getElementById('liveBargeInMode').addEventListener('change', persistLiveControlDefaults);
   document.getElementById('liveSpeechThreshold').addEventListener('input', persistLiveControlDefaults);
+  document.getElementById('liveInterruptSpeechMs').addEventListener('input', persistLiveControlDefaults);
   document.getElementById('liveSilenceMs').addEventListener('input', persistLiveControlDefaults);
   document.getElementById('liveBargeInEnabled').addEventListener('change', persistLiveControlDefaults);
   updateRecordButton();

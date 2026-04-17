@@ -384,6 +384,27 @@ pre {
   padding: 12px 14px;
 }
 
+.legend-details {
+  background: var(--panel-2);
+  border-radius: 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.legend-details summary {
+  cursor: pointer;
+  margin: 0;
+}
+
+.legend-details[open] .legend-body {
+  margin-top: 8px;
+}
+
+.legend-body {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 /* Panels whose render div should fill available height */
 .panel-fill {
   display: flex;

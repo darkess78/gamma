@@ -215,6 +215,24 @@ def test_tts() -> dict:
     return service.test_tts()
 
 
+@app.post("/api/providers/tts/synthesize")
+async def tts_synthesize_file(
+    text_file: UploadFile = File(...),
+) -> dict:
+    raw = await text_file.read()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="file must be UTF-8 encoded text")
+    text = text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="file is empty")
+    result = service.synthesize_text(text)
+    if not result.get("ok"):
+        raise HTTPException(status_code=500, detail=result.get("detail", "synthesis failed"))
+    return result
+
+
 @app.post("/api/providers/tts/select")
 async def select_tts_provider(request: Request) -> dict:
     payload = await request.json()
@@ -292,6 +310,11 @@ async def dashboard_voice_roundtrip(
         session_id=session_id,
         synthesize_speech=synthesize_speech,
     )
+
+
+@app.get("/api/voice/live/history")
+def dashboard_live_voice_history(limit: int = 20) -> dict:
+    return service.remote_live_history(limit=limit)
 
 
 @app.post("/api/vision/analyze", response_model=VisionAnalysis)

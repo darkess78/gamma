@@ -106,6 +106,14 @@
                 <button id="ttsTestButton" class="ghost" onclick="action('/api/providers/tts/test')" disabled>Test TTS</button>
               </div>
               <div id="ttsControlNote" class="panel-meta"></div>
+              <div style="margin-top: 10px;">
+                <div class="action-title" style="margin-bottom: 6px;">Synthesize from file</div>
+                <div class="action-buttons">
+                  <input id="ttsSynthesizeFileInput" type="file" accept=".txt" class="text-input" style="flex: 1;" onchange="onTtsSynthesizeFileChange()">
+                  <button id="ttsSynthesizeButton" class="ghost" onclick="ttsSynthesizeFromFile()" disabled>Synthesize</button>
+                </div>
+                <div id="ttsSynthesizeNote" class="panel-meta"></div>
+              </div>
             </div>
           <div class="action-group">
             <div class="action-title">All</div>
@@ -242,12 +250,24 @@
           <div class="action-group">
             <div class="action-title">Tuning</div>
             <div class="action-buttons action-stack">
+              <label class="range-row">Response mode <select class="text-input" id="liveResponseMode"><option value="simple_chunked">Simple chunked</option><option value="incremental_experimental">Incremental experimental</option></select></label>
+              <label class="range-row">Barge-in mode <select class="text-input" id="liveBargeInMode"><option value="amplitude">Amplitude only</option><option value="transcript">Transcript-confirmed</option></select></label>
               <label class="range-row">Speech threshold <input id="liveSpeechThreshold" type="range" min="8" max="40" step="1" value="18"><span id="liveSpeechThresholdValue">0.018</span></label>
+              <label class="range-row">Interrupt speech ms <input id="liveInterruptSpeechMs" type="range" min="80" max="800" step="20" value="260"><span id="liveInterruptSpeechMsValue">260</span></label>
               <label class="range-row">Silence ms <input id="liveSilenceMs" type="range" min="400" max="1800" step="50" value="900"><span id="liveSilenceMsValue">900</span></label>
             </div>
           </div>
         </div>
         <canvas id="liveVoiceMeter" class="voice-meter" width="900" height="88"></canvas>
+        <details class="legend-details">
+          <summary><strong>Timing legend</strong></summary>
+          <div class="legend-body">
+            <strong>stt</strong>: speech-to-text time for your audio.<br>
+            <strong>llm+tts</strong>: assistant reply generation plus any speech synthesis work done in that backend call.<br>
+            <strong>tts</strong>: speech synthesis time only.<br>
+            <strong>total</strong>: end-to-end time for the full turn.
+          </div>
+        </details>
         <div class="render" id="liveVoiceMeta">No active live turn.</div>
         <div class="render" id="liveVoiceStatus">Live voice session is idle.</div>
         <div class="render" id="liveVoiceHistory">No live turns yet.</div>

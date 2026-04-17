@@ -28,6 +28,7 @@ class LiveVoiceJob:
     turn_id: str
     session_id: str | None
     synthesize_speech: bool
+    response_mode: str
     input_path: Path
     output_path: Path
     status_path: Path
@@ -41,11 +42,14 @@ class LiveVoiceJob:
 
 
 class LiveVoiceJobManager:
+    history_rotate_bytes = 5 * 1024 * 1024
+
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._jobs: dict[str, LiveVoiceJob] = {}
         self._runtime_dir = settings.data_dir / "runtime" / "live_jobs"
         self._runtime_dir.mkdir(parents=True, exist_ok=True)
+        self._history_path = self._runtime_dir / "history.current.jsonl"
 
     async def start_job(
         self,
@@ -53,6 +57,7 @@ class LiveVoiceJobManager:
         audio_file: UploadFile,
         session_id: str | None,
         synthesize_speech: bool,
+        response_mode: str = "simple_chunked",
         turn_id: str | None = None,
     ) -> LiveVoiceJobResponse:
         self._prune_finished_jobs()
@@ -71,6 +76,7 @@ class LiveVoiceJobManager:
                 "status": "queued",
                 "session_id": session_id,
                 "synthesize_speech": synthesize_speech,
+                "response_mode": response_mode,
                 "created_at": _utc_now(),
             },
         )
@@ -82,6 +88,7 @@ class LiveVoiceJobManager:
             status_path=status_path,
             session_id=session_id,
             synthesize_speech=synthesize_speech,
+            response_mode=response_mode,
             stdout_log=stdout_log,
             stderr_log=stderr_log,
         )
@@ -90,6 +97,7 @@ class LiveVoiceJobManager:
             turn_id=actual_turn_id,
             session_id=session_id,
             synthesize_speech=synthesize_speech,
+            response_mode=response_mode,
             input_path=input_path,
             output_path=output_path,
             status_path=status_path,
@@ -113,9 +121,11 @@ class LiveVoiceJobManager:
             status=str(status_payload.get("status", "failed")),
             session_id=job.session_id,
             synthesize_speech=job.synthesize_speech,
+            response_mode=job.response_mode,
             worker_pid=job.process.pid if job.process else None,
             transcript=output_payload.get("transcript"),
             reply_text=output_payload.get("reply_text"),
+            reply_chunks=output_payload.get("reply_chunks", []),
             audio_content_type=output_payload.get("audio_content_type"),
             audio_base64=output_payload.get("audio_base64"),
             timing_ms=output_payload.get("timing_ms", {}),
@@ -128,6 +138,26 @@ class LiveVoiceJobManager:
             cancel_reason=job.cancel_reason or status_payload.get("cancel_reason"),
             error=status_payload.get("error"),
         )
+
+    def get_recent_history(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        if not self._history_path.exists():
+            return []
+        entries: list[dict[str, Any]] = []
+        try:
+            with self._history_path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        payload = json.loads(line)
+                    except Exception:
+                        continue
+                    if isinstance(payload, dict):
+                        entries.append(payload)
+        except Exception:
+            return []
+        return entries[-max(1, limit):]
 
     def cancel_job(self, turn_id: str, *, reason: str = "interrupted") -> LiveVoiceJobResponse:
         job = self._require_job(turn_id)
@@ -147,12 +177,26 @@ class LiveVoiceJobManager:
                 "cancel_requested_at": cancel_requested_at,
                 "cancelled_at": _utc_now(),
                 "cancel_reason": reason,
+                "history_logged": True,
             },
         )
         if job.process is not None and job.process.poll() is None:
             self._kill_process_tree(job.process.pid)
         job.completed_at = _utc_now()
         self._append_lifecycle_event(turn_id, "cancelled", {"reason": reason, "pid": job.process.pid if job.process else None})
+        self._append_history_entry(
+            {
+                "timestamp": _utc_now(),
+                "kind": "event",
+                "label": "cancelled",
+                "detail": "Live turn cancelled.",
+                "job": {
+                    "turn_id": turn_id,
+                    "cancel_reason": reason,
+                    "cancel_latency_ms": self._cancel_latency_ms(cancel_requested_at, _utc_now()),
+                },
+            }
+        )
         return self.get_job(turn_id)
 
     def _spawn_worker(
@@ -164,6 +208,7 @@ class LiveVoiceJobManager:
         status_path: Path,
         session_id: str | None,
         synthesize_speech: bool,
+        response_mode: str,
         stdout_log: Path,
         stderr_log: Path,
     ) -> subprocess.Popen[str]:
@@ -181,6 +226,8 @@ class LiveVoiceJobManager:
             str(status_path),
             "--synthesize-speech",
             "true" if synthesize_speech else "false",
+            "--response-mode",
+            response_mode,
         ]
         if session_id:
             command.extend(["--session-id", session_id])
@@ -236,7 +283,46 @@ class LiveVoiceJobManager:
             )
         if not job.completed_at:
             job.completed_at = _utc_now()
+        self._maybe_log_history(job, status_payload, returncode)
         self._append_lifecycle_event(job.turn_id, "completed" if returncode == 0 else "failed", {"returncode": returncode})
+
+    def _maybe_log_history(self, job: LiveVoiceJob, status_payload: dict[str, Any], returncode: int) -> None:
+        if status_payload.get("history_logged"):
+            return
+        output_payload = self._read_json(job.output_path)
+        status = str(status_payload.get("status") or ("failed" if returncode else "completed"))
+        if status == "completed":
+            entry = {
+                "timestamp": _utc_now(),
+                "turn_id": job.turn_id,
+                "transcript": output_payload.get("transcript"),
+                "reply_text": output_payload.get("reply_text"),
+                "reply_chunks": output_payload.get("reply_chunks", []),
+                "timing_ms": output_payload.get("timing_ms", {}),
+                "job": {
+                    "turn_id": job.turn_id,
+                    "status": status,
+                    "worker_pid": job.process.pid if job.process else None,
+                    "completed_at": job.completed_at,
+                },
+            }
+            self._append_history_entry(entry)
+        elif status in {"failed", "cancelled"}:
+            entry = {
+                "timestamp": _utc_now(),
+                "kind": "event",
+                "label": status,
+                "detail": "Live turn failed." if status == "failed" else "Live turn cancelled.",
+                "job": {
+                    "turn_id": job.turn_id,
+                    "status": status,
+                    "cancel_reason": status_payload.get("cancel_reason"),
+                    "cancel_latency_ms": self._cancel_latency_ms(job.cancel_requested_at, status_payload.get("cancelled_at")),
+                    "error": status_payload.get("error"),
+                },
+            }
+            self._append_history_entry(entry)
+        self._write_status(job.status_path, {**status_payload, "history_logged": True})
 
     def _read_status(self, path: Path) -> dict[str, Any]:
         payload = self._read_json(path)
@@ -258,6 +344,28 @@ class LiveVoiceJobManager:
         line = json.dumps({"timestamp": _utc_now(), "turn_id": turn_id, "event": event, **payload}, ensure_ascii=False)
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(line + "\n")
+
+    def _append_history_entry(self, payload: dict[str, Any]) -> None:
+        self._rotate_history_if_needed()
+        with self._history_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+    def _rotate_history_if_needed(self) -> None:
+        if not self._history_path.exists():
+            return
+        try:
+            size = self._history_path.stat().st_size
+        except OSError:
+            return
+        if size < self.history_rotate_bytes:
+            return
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        rotated_path = self._runtime_dir / f"history.{stamp}.jsonl"
+        suffix = 1
+        while rotated_path.exists():
+            rotated_path = self._runtime_dir / f"history.{stamp}.{suffix}.jsonl"
+            suffix += 1
+        self._history_path.replace(rotated_path)
 
     def _cancel_latency_ms(self, requested_at: str | None, cancelled_at: str | None) -> float | None:
         if not requested_at or not cancelled_at:

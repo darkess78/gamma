@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from collections.abc import Callable
 
@@ -36,11 +37,13 @@ class LiveVoiceSession:
         turn_open = False
         session_id: str | None = None
         synthesize_speech = True
+        response_mode = "simple_chunked"
         current_turn_id = 0
         active_remote_turn_id: str | None = None
         active_remote_state: dict | None = None
         last_partial_text = ""
         interrupted_turn_ids: set[str] = set()
+        sent_chunk_indexes: dict[str, set[int]] = {}
 
         async def cancel_partial_loop() -> None:
             nonlocal partial_task
@@ -101,6 +104,25 @@ class LiveVoiceSession:
                     active_remote_turn_id = None
                     return
                 active_remote_state = payload
+                chunk_indexes = sent_chunk_indexes.setdefault(remote_turn_id, set())
+                for chunk in payload.get("reply_chunks", []) or []:
+                    if not isinstance(chunk, dict):
+                        continue
+                    chunk_index = int(chunk.get("chunk_index", 0) or 0)
+                    if chunk_index <= 0 or chunk_index in chunk_indexes:
+                        continue
+                    if not chunk.get("audio_base64") or not chunk.get("audio_content_type"):
+                        continue
+                    chunk_indexes.add(chunk_index)
+                    await self._send_json(
+                        websocket,
+                        {
+                            "type": "reply_chunk_ready",
+                            "turn_id": remote_turn_id,
+                            "chunk": chunk,
+                            "timing_ms": payload.get("timing_ms", {}),
+                        },
+                    )
                 status = str(payload.get("status", "failed"))
                 if status != last_status:
                     await self._send_json(
@@ -140,6 +162,7 @@ class LiveVoiceSession:
                                 "turn_id": remote_turn_id,
                                 "transcript": payload.get("transcript", ""),
                                 "reply_text": payload.get("reply_text", ""),
+                                "reply_chunks": payload.get("reply_chunks", []),
                                 "audio_content_type": payload.get("audio_content_type"),
                                 "audio_base64": payload.get("audio_base64"),
                                 "timing_ms": payload.get("timing_ms", {}),
@@ -147,6 +170,7 @@ class LiveVoiceSession:
                             },
                         )
                     active_remote_turn_id = None
+                    sent_chunk_indexes.pop(remote_turn_id, None)
                     return
                 if status in {"cancelled", "failed"}:
                     if status == "failed":
@@ -159,6 +183,7 @@ class LiveVoiceSession:
                             },
                         )
                     active_remote_turn_id = None
+                    sent_chunk_indexes.pop(remote_turn_id, None)
                     return
                 await asyncio.sleep(self.poll_interval_seconds)
 
@@ -187,6 +212,7 @@ class LiveVoiceSession:
                     },
                 )
             active_remote_turn_id = None
+            sent_chunk_indexes.pop(turn_id, None)
 
         try:
             while True:
@@ -216,6 +242,29 @@ class LiveVoiceSession:
                         await self._send_json(websocket, {"type": "pong"})
                         continue
 
+                    if event_type == "interrupt_probe":
+                        transcript = ""
+                        timing_ms: dict = {}
+                        audio_base64 = str(payload.get("audio_base64", "") or "")
+                        if audio_base64 and self._partial_transcriber is not None:
+                            try:
+                                pcm_bytes = base64.b64decode(audio_base64)
+                                result = await asyncio.to_thread(self._partial_transcriber, pcm_bytes=pcm_bytes)
+                                transcript = str(result.get("transcript", "")).strip()
+                                timing_ms = result.get("timing_ms", {}) if isinstance(result.get("timing_ms", {}), dict) else {}
+                            except Exception:
+                                transcript = ""
+                                timing_ms = {}
+                        await self._send_json(
+                            websocket,
+                            {
+                                "type": "interrupt_probe_result",
+                                "text": transcript,
+                                "timing_ms": timing_ms,
+                            },
+                        )
+                        continue
+
                     if event_type == "start_turn":
                         await cancel_partial_loop()
                         audio_buffer.clear()
@@ -224,6 +273,7 @@ class LiveVoiceSession:
                         active_remote_state = None
                         session_id = self._normalize_string(payload.get("session_id"))
                         synthesize_speech = bool(payload.get("synthesize_speech", True))
+                        response_mode = self._normalize_response_mode(payload.get("response_mode"))
                         turn_open = True
                         partial_task = asyncio.create_task(partial_loop(current_turn_id))
                         await self._send_json(
@@ -266,6 +316,7 @@ class LiveVoiceSession:
                                 pcm_bytes=bytes(audio_buffer),
                                 session_id=session_id,
                                 synthesize_speech=synthesize_speech,
+                                response_mode=response_mode,
                                 turn_id=None,
                             )
                         except Exception as exc:
@@ -325,6 +376,14 @@ class LiveVoiceSession:
             return None
         normalized = value.strip()
         return normalized or None
+
+    def _normalize_response_mode(self, value: object) -> str:
+        if not isinstance(value, str):
+            return "simple_chunked"
+        normalized = value.strip().lower()
+        if normalized == "incremental_experimental":
+            return normalized
+        return "simple_chunked"
 
     async def _send_json(self, websocket: WebSocket, payload: dict) -> None:
         await websocket.send_text(json.dumps(payload, ensure_ascii=False))

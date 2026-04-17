@@ -1,6 +1,18 @@
 from __future__ import annotations
 
 from pydantic import BaseModel
+from pydantic import Field
+
+
+class VoiceReplyChunk(BaseModel):
+    chunk_index: int
+    text: str
+    audio_content_type: str | None = None
+    audio_base64: str | None = None
+    timing_ms: dict[str, float] = Field(default_factory=dict)
+    interruptible: bool = True
+    protect_ms: int = 0
+    is_final: bool = False
 
 
 class VoiceTranscriptionResponse(BaseModel):
@@ -13,9 +25,11 @@ class LiveVoiceJobResponse(BaseModel):
     status: str
     session_id: str | None = None
     synthesize_speech: bool = True
+    response_mode: str | None = None
     worker_pid: int | None = None
     transcript: str | None = None
     reply_text: str | None = None
+    reply_chunks: list[VoiceReplyChunk] = Field(default_factory=list)
     audio_content_type: str | None = None
     audio_base64: str | None = None
     timing_ms: dict[str, float] = {}
@@ -32,6 +46,7 @@ class LiveVoiceJobResponse(BaseModel):
 class VoiceRoundtripResponse(BaseModel):
     transcript: str
     reply_text: str
+    reply_chunks: list[VoiceReplyChunk] = Field(default_factory=list)
     audio_content_type: str | None = None
     audio_base64: str | None = None
     timing_ms: dict[str, float] = {}

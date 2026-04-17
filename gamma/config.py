@@ -217,6 +217,12 @@ class Settings:
         ),
         default=120,
     )
+    live_voice_response_mode: str = str(
+        _setting(
+            "SHANA_LIVE_VOICE_RESPONSE_MODE",
+            _config_value(APP_CONFIG, "live_voice_response_mode", default="simple_chunked"),
+        )
+    )
 
     stt_provider: str = str(
         _setting(

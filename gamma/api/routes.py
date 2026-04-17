@@ -208,6 +208,7 @@ async def voice_live_start(
     audio_file: UploadFile = File(...),
     session_id: str | None = Form(default=None),
     synthesize_speech: bool = Form(default=True),
+    response_mode: str = Form(default="simple_chunked"),
     turn_id: str | None = Form(default=None),
 ) -> LiveVoiceJobResponse:
     try:
@@ -215,10 +216,19 @@ async def voice_live_start(
             audio_file=audio_file,
             session_id=session_id,
             synthesize_speech=synthesize_speech,
+            response_mode=response_mode,
             turn_id=turn_id,
         )
     except GammaError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/v1/voice/live/history")
+def voice_live_history(limit: int = 20) -> dict[str, list[dict]]:
+    try:
+        return {"items": live_voice_job_manager.get_recent_history(limit=limit)}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

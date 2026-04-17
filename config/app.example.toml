@@ -40,6 +40,7 @@ local_llm_model = "gpt-oss:20b"
 local_llm_supports_vision = false
 local_llm_vision_model = ""
 local_llm_timeout_seconds = 120
+live_voice_response_mode = "simple_chunked"
 dashboard_auth_enabled = false
 dashboard_auth_username = ""
 dashboard_auth_password = ""

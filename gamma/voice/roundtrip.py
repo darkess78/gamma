@@ -8,9 +8,11 @@ from uuid import uuid4
 from fastapi import UploadFile
 
 from ..config import settings
-from ..schemas.voice import VoiceRoundtripResponse, VoiceTranscriptionResponse
+from ..schemas.voice import VoiceReplyChunk, VoiceRoundtripResponse, VoiceTranscriptionResponse
 from .stt import STTService
 from ..conversation.service import ConversationService
+from .reply_chunking import split_reply_text
+from .reply_interruptibility import build_interruptibility
 
 
 class VoiceRoundtripService:
@@ -48,13 +50,29 @@ class VoiceRoundtripService:
             timing["total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
 
             audio_base64: str | None = None
+            reply_chunks: list[VoiceReplyChunk] = []
             if response.audio_path:
                 audio_bytes = Path(response.audio_path).read_bytes()
                 audio_base64 = base64.b64encode(audio_bytes).decode("ascii")
+            else:
+                chunk_texts = split_reply_text(response.spoken_text)
+                chunk_policies = build_interruptibility(chunk_texts)
+                for index, chunk_text in enumerate(chunk_texts, start=1):
+                    policy = chunk_policies[index - 1] if index - 1 < len(chunk_policies) else {}
+                    reply_chunks.append(
+                        VoiceReplyChunk(
+                            chunk_index=index,
+                            text=chunk_text,
+                            interruptible=bool(policy.get("interruptible", True)),
+                            protect_ms=int(policy.get("protect_ms", 0) or 0),
+                            is_final=index == len(chunk_texts),
+                        )
+                    )
 
             return VoiceRoundtripResponse(
                 transcript=transcript,
                 reply_text=response.spoken_text,
+                reply_chunks=reply_chunks,
                 audio_content_type=response.audio_content_type,
                 audio_base64=audio_base64,
                 timing_ms=timing,

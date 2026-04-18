@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 import gamma.system.status as status_module
 import gamma.voice.live_jobs as live_jobs_module
 import gamma.voice.roundtrip as roundtrip_module
+from gamma.config import settings
 from gamma.errors import ConfigurationError, ConversationError, ExternalServiceError
 from gamma.schemas.response import AssistantResponse
 
@@ -19,7 +20,10 @@ with patch.object(status_module, "SystemStatusService", autospec=True), patch.ob
 
 class ApiRoutesTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.client = TestClient(app)
+        headers = {}
+        if settings.api_auth_enabled and settings.api_bearer_token:
+            headers["Authorization"] = f"Bearer {settings.api_bearer_token}"
+        self.client = TestClient(app, headers=headers)
 
     def tearDown(self) -> None:
         self.client.close()

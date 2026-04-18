@@ -107,6 +107,15 @@ def _should_use_micro_mode(transcript: str) -> bool:
     )
 
 
+def _live_chunk_budget(reply_text: str) -> int:
+    words = len(reply_text.split())
+    if words >= 130:
+        return 5
+    if words >= 70:
+        return 4
+    return 3
+
+
 def _run_simple_chunked(
     *,
     started_at: float,
@@ -150,7 +159,7 @@ def _run_simple_chunked(
     }
 
     if synthesize_speech:
-        chunks = split_reply_text(response.spoken_text, max_chunks=3)
+        chunks = split_reply_text(response.spoken_text, max_chunks=_live_chunk_budget(response.spoken_text))
         chunk_policies = build_interruptibility(chunks)
         payload["timing_ms"]["chunk_count"] = len(chunks)
         if chunks:

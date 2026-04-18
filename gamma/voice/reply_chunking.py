@@ -19,11 +19,9 @@ def split_reply_text(reply_text: str, *, max_chunks: int = 2) -> list[str]:
         return [text]
 
     sentences = [part.strip() for part in _SENTENCE_SPLIT_RE.split(text) if part.strip()]
+    sentences = _split_long_units(sentences or [text])
     if len(sentences) <= 1:
-        clauses = _split_long_units(sentences or [text])
-        if len(clauses) <= 1:
-            return [text]
-        sentences = clauses
+        return [text]
     if max_chunks == 2:
         return _split_into_two_chunks(sentences, full_text=text)
     return _split_into_multiple_chunks(sentences, full_text=text, max_chunks=max_chunks)
@@ -116,7 +114,7 @@ def _split_long_units(units: list[str]) -> list[str]:
         if not text:
             continue
         words = text.split()
-        if len(words) <= 22:
+        if len(words) <= 16:
             split_units.append(text)
             continue
 
@@ -128,7 +126,7 @@ def _split_long_units(units: list[str]) -> list[str]:
         current = clauses[0]
         for clause in clauses[1:]:
             candidate = (current + " " + clause).strip()
-            if len(candidate.split()) <= 18:
+            if len(candidate.split()) <= 12:
                 current = candidate
             else:
                 split_units.append(current)

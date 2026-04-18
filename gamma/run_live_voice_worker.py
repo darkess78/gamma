@@ -170,7 +170,12 @@ def _run_simple_chunked(
                     "text": chunk_text,
                     "audio_content_type": tts_result.content_type,
                     "audio_base64": base64.b64encode(audio_bytes).decode("ascii"),
-                    "timing_ms": {"tts_ms": chunk_tts_ms},
+                    "timing_ms": {
+                        "tts_ms": chunk_tts_ms,
+                        "audio_bytes": len(audio_bytes),
+                        "text_chars": len(chunk_text),
+                        "text_words": len(chunk_text.split()),
+                    },
                     "interruptible": bool(policy.get("interruptible", True)),
                     "protect_ms": int(policy.get("protect_ms", 0) or 0),
                     "is_final": index == len(chunks),
@@ -182,6 +187,9 @@ def _run_simple_chunked(
                     payload["timing_ms"]["tts_ms"] = chunk_tts_ms
                     payload["timing_ms"]["time_to_first_chunk_audio_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
                 payload["timing_ms"][f"chunk_{index}_tts_ms"] = chunk_tts_ms
+                payload["timing_ms"][f"chunk_{index}_audio_bytes"] = len(audio_bytes)
+                payload["timing_ms"][f"chunk_{index}_text_chars"] = len(chunk_text)
+                payload["timing_ms"][f"chunk_{index}_text_words"] = len(chunk_text.split())
                 payload["status"] = "speaking" if index < len(chunks) else "completed"
                 _write_output(output_path, payload)
             payload["timing_ms"]["tts_ms"] = round(sum(chunk_timings), 1)
@@ -291,13 +299,22 @@ def _run_incremental_experimental(
                 "text": sentence_text,
                 "audio_content_type": tts_result.content_type,
                 "audio_base64": base64.b64encode(audio_bytes).decode("ascii"),
-                "timing_ms": {"tts_ms": chunk_tts_ms, "generation_ms": generation_ms},
+                "timing_ms": {
+                    "tts_ms": chunk_tts_ms,
+                    "generation_ms": generation_ms,
+                    "audio_bytes": len(audio_bytes),
+                    "text_chars": len(sentence_text),
+                    "text_words": len(sentence_text.split()),
+                },
                 "interruptible": bool(policy.get("interruptible", True)),
                 "protect_ms": int(policy.get("protect_ms", 0) or 0),
                 "is_final": is_final,
             }
             payload["reply_chunks"].append(chunk_payload)
             payload["timing_ms"][f"chunk_{sentence_index}_tts_ms"] = chunk_tts_ms
+            payload["timing_ms"][f"chunk_{sentence_index}_audio_bytes"] = len(audio_bytes)
+            payload["timing_ms"][f"chunk_{sentence_index}_text_chars"] = len(sentence_text)
+            payload["timing_ms"][f"chunk_{sentence_index}_text_words"] = len(sentence_text.split())
             payload["timing_ms"]["tts_ms"] = round(total_tts_ms, 1)
             payload["timing_ms"]["chunk_count"] = len(payload["reply_chunks"])
             payload["status"] = "speaking"

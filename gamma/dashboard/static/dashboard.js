@@ -2265,6 +2265,13 @@
       liveCurrentChunkStartedAt = 0;
       playNextLiveReplyChunk();
     };
+    playback.onerror = function () {
+      livePlaybackActive = false;
+      liveCurrentChunk = null;
+      liveCurrentChunkStartedAt = 0;
+      updateLiveStatus('Chunk playback error. Skipping to next chunk.');
+      playNextLiveReplyChunk();
+    };
     playback.play().catch(function () {
       livePlaybackActive = false;
       liveCurrentChunk = null;

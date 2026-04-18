@@ -23,13 +23,13 @@ _TAG_TO_EMOTION: dict[str, str] = {
 }
 
 _EMOTION_TO_INSTRUCT: dict[str, str] = {
-    "neutral": "Speak naturally with a steady neutral tone.",
-    "happy": "Speak with a warm, happy tone and brighter delivery.",
-    "teasing": "Speak with a playful teasing tone, light and sly rather than mean.",
-    "concerned": "Speak with a softer, concerned tone that sounds careful and supportive.",
-    "excited": "Speak with lively excited energy while keeping the words clear.",
-    "embarrassed": "Speak with slight hesitation and a shy embarrassed tone.",
-    "annoyed": "Speak with mild annoyed restraint, sounding terse but controlled.",
+    "neutral": "Speak naturally with a steady neutral tone. Keep the pacing even and restrained.",
+    "happy": "Use clearly happy prosody: brighter pitch, a lighter smile in the voice, warmer energy, and more upward lift at phrase endings while keeping the words clear.",
+    "teasing": "Use an obviously playful teasing tone with a sly smile in the voice, light rhythm, and a touch of amused mischief rather than harshness.",
+    "concerned": "Use a noticeably softer concerned tone with gentler pacing, careful emphasis, and supportive warmth.",
+    "excited": "Use clearly excited delivery with higher energy, quicker pace, brighter pitch, and emphatic stress while keeping articulation clean.",
+    "embarrassed": "Use a shy embarrassed tone with slight hesitation, softer attack, and a small wavering uncertainty in the voice.",
+    "annoyed": "Use mild but audible annoyed restraint with terser pacing, flatter warmth, and clipped emphasis while staying controlled.",
 }
 
 

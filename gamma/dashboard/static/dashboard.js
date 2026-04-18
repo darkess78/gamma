@@ -2248,7 +2248,7 @@
         return;
       }
       finishCurrentChunkAndContinue('Chunk playback watchdog fired. Advancing to next chunk.');
-    }, durationMs + 2500);
+    }, durationMs + 4000);
   }
 
   function queueLiveReplyChunk(chunk, turnId) {
@@ -2297,6 +2297,9 @@
     playback.onloadedmetadata = function () {
       armLiveChunkWatchdog(playback, chunk);
     };
+    playback.oncanplay = function () {
+      armLiveChunkWatchdog(playback, chunk);
+    };
     playback.src = 'data:' + chunk.audio_content_type + ';base64,' + chunk.audio_base64;
     playback.muted = liveSpeakerMuted;
     updateLiveStatus('Speaking chunk ' + chunk.chunk_index + (chunk.interruptible === false ? ' (protected)...' : '...'));
@@ -2308,9 +2311,6 @@
     };
     playback.onstalled = function () {
       finishCurrentChunkAndContinue('Chunk playback stalled. Skipping to next chunk.');
-    };
-    playback.onabort = function () {
-      finishCurrentChunkAndContinue('Chunk playback aborted. Skipping to next chunk.');
     };
     playback.onsuspend = function () {
       if (playback.ended) {

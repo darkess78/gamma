@@ -260,9 +260,13 @@ def synthesize(body: dict[str, Any]) -> bytes:
         fade_out = np.linspace(1.0, 0.0, fade_out_samples, dtype=np.float32)
         audio[-fade_out_samples:] *= fade_out
 
-    # Pad with silence: 60ms at start, 400ms at end — extra room ensures the
+    # Pad with silence: a slightly longer front pad protects the beginning of
+    # chunked live playback from losing consonant attacks during browser/audio
+    # transitions, while the end pad gives the decoded tail room to decay.
+    # This slightly increases chunk duration, but improves intelligibility.
+    # Pad with silence: 120ms at start, 400ms at end — extra room ensures the
     # decoded tail has space to fully decay before playback stops.
-    pad_start = int(sr * 0.060)
+    pad_start = int(sr * 0.120)
     pad_end = int(sr * 0.400)
     audio = np.concatenate([np.zeros(pad_start, dtype=np.float32), audio, np.zeros(pad_end, dtype=np.float32)])
 

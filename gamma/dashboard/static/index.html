@@ -345,6 +345,50 @@
         </div>
         <div class="render" id="knownPeople">...</div>
       </section>
+      <section class="panel panel-fill">
+        <div class="panel-head">
+          <h2>Assistant Emotion</h2>
+        </div>
+        <div class="render" id="assistantEmotion">No assistant emotion data yet.</div>
+      </section>
+      <section class="panel wide panel-fill">
+        <div class="panel-head">
+          <h2>Assistant Safety & Emotion Settings</h2>
+        </div>
+        <div class="action-grid compact-grid">
+          <div class="action-group">
+            <div class="action-title">Speech Filter</div>
+            <div class="action-buttons action-stack">
+              <select class="text-input" id="assistantSpeechFilterLevel">
+                <option value="strict">Strict</option>
+                <option value="light">Light</option>
+                <option value="none">None</option>
+              </select>
+              <label class="checkbox-row"><input id="assistantHardBlockEnabled" type="checkbox"> Hard block enabled</label>
+              <label class="checkbox-row"><input id="assistantHeuristicEnabled" type="checkbox"> Heuristic enabled</label>
+              <label class="checkbox-row"><input id="assistantLlmEnabled" type="checkbox"> LLM reviewer enabled</label>
+              <label class="checkbox-row"><input id="assistantAutoRewrite" type="checkbox"> Auto rewrite enabled</label>
+              <input class="text-input" id="assistantLlmModel" placeholder="LLM reviewer model (optional)">
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">Emotion Memory</div>
+            <div class="action-buttons action-stack">
+              <label class="checkbox-row"><input id="assistantStateEnabled" type="checkbox"> Assistant emotion tracking enabled</label>
+              <input class="text-input" id="assistantEmotionDecayTurns" type="number" min="0" step="1" placeholder="Decay turns">
+              <input class="text-input" id="assistantEmotionEpisodeThreshold" type="number" min="0" max="1" step="0.05" placeholder="Episode threshold">
+              <input class="text-input" id="assistantEmotionPatternThreshold" type="number" min="1" step="1" placeholder="Pattern threshold">
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">Actions</div>
+            <div class="action-buttons action-stack">
+              <button class="secondary" onclick="saveAssistantSettings()">Save Assistant Settings</button>
+            </div>
+          </div>
+        </div>
+        <div class="render" id="assistantSettingsStatus">No assistant settings changes yet.</div>
+      </section>
       <section class="panel wide panel-fill">
         <div class="panel-head">
           <h2>Latest Memories</h2>
@@ -397,6 +441,6 @@
       <div id="memoryDeleteList" class="memory-delete-list">No recent memory entries available.</div>
     </div>
   </div>
-  <script src="/static/dashboard.js?v=20260417d"></script>
+  <script src="/static/dashboard.js?v=20260418a"></script>
 </body>
 </html>

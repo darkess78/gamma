@@ -48,7 +48,11 @@ class LocalLLMAdapter(LLMAdapter):
                     f"Configured local vision model {target_model} does not report vision capability from Ollama /api/show."
                 )
         payload = {
-            "model": self._model_name_for_request(has_images=bool(image_inputs)),
+            "model": self._model_name_for_request(
+                has_images=bool(image_inputs),
+                system_prompt=system_prompt,
+                user_text=user_text,
+            ),
             "system": system_prompt,
             "prompt": user_text,
             "stream": False,
@@ -77,9 +81,49 @@ class LocalLLMAdapter(LLMAdapter):
             raise ExternalServiceError("Local model returned an empty response.")
         return LLMReply(text=text)
 
-    def _model_name_for_request(self, *, has_images: bool) -> str:
+    def _model_name_for_request(self, *, has_images: bool, system_prompt: str = "", user_text: str = "") -> str:
         if has_images:
             configured = (settings.local_llm_vision_model or "").strip()
             if configured:
                 return configured
+        if settings.local_llm_enable_routing:
+            routed = self._routed_model_name(system_prompt=system_prompt, user_text=user_text)
+            if routed:
+                return routed
         return settings.local_llm_model
+
+    def _routed_model_name(self, *, system_prompt: str, user_text: str) -> str | None:
+        tagging_model = (settings.local_llm_tagging_model or "").strip()
+        light_model = (settings.local_llm_light_model or "").strip()
+        system_lower = system_prompt.lower()
+        prompt_words = len((user_text or "").split())
+
+        if "strict json metadata extractor" in system_lower and tagging_model:
+            return tagging_model
+        if "reply planner for a spoken assistant" in system_lower and (tagging_model or light_model):
+            return tagging_model or light_model
+        if "generating the next sentence for a spoken assistant reply" in system_lower and (tagging_model or light_model):
+            return tagging_model or light_model
+        if "revising a draft reply after safe local tool calls were executed" in system_lower and light_model:
+            return light_model
+        if not light_model:
+            return None
+        if prompt_words > settings.local_llm_light_max_input_words:
+            return None
+        complex_markers = (
+            "why ",
+            "how ",
+            "compare ",
+            "plan ",
+            "debug ",
+            "error ",
+            "remember ",
+            "tool ",
+            "provider ",
+            "memory ",
+            "code ",
+        )
+        lowered = (user_text or "").lower()
+        if any(marker in lowered for marker in complex_markers):
+            return None
+        return light_model

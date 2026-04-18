@@ -11,11 +11,15 @@ from ..identity.profile import SpeakerProfile
 from ..identity.resolver import IdentityResolver
 from ..llm.factory import build_llm_adapter
 from ..memory.service import MemoryService
+from ..persona.assistant_state import AssistantStateStore
+from ..persona.emotion_service import EmotionMemoryService
 from ..persona.loader import build_system_prompt
+from ..safety.speech_filter import SpeechSafetyFilter
 from ..schemas.conversation import SpeakerContext
 from ..schemas.response import AssistantResponse, EmotionTag, MemoryCandidate, ToolCall, ToolExecutionResult, VisionAnalysis
 from ..tools.registry import ToolRegistry
 from ..vision.service import VisionImage, VisionService
+from ..voice.expressive_text import strip_hidden_style_tags
 from ..voice.tts import TTSService
 
 
@@ -30,6 +34,9 @@ class ConversationService:
         self._tools = ToolRegistry()
         self._vision = VisionService()
         self._identity = IdentityResolver()
+        self._assistant_state = AssistantStateStore()
+        self._emotion_memory = EmotionMemoryService()
+        self._speech_filter = SpeechSafetyFilter(settings.speech_filter_level)
 
     def respond(
         self,
@@ -178,10 +185,12 @@ class ConversationService:
                 timing["metadata_ms"] = 0.0
                 timing["memory_persist_ms"] = 0.0
                 timing["total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
+                expressive = strip_hidden_style_tags(final_reply_text, default_emotion="neutral")
+                safe_spoken = self._speech_filter.apply(expressive.clean_text)
 
                 response = AssistantResponse(
-                    spoken_text=final_reply_text,
-                    emotion="neutral",
+                    spoken_text=safe_spoken.spoken_text,
+                    emotion=self._normalize_emotion(expressive.emotion),
                     internal_summary=None,
                     motions=[],
                     tool_calls=inferred_tool_calls,
@@ -191,10 +200,17 @@ class ConversationService:
                 )
                 if synthesize_speech:
                     tts_started = time.perf_counter()
-                    tts_result = self._tts_service().synthesize(final_reply_text, emotion="neutral")
+                    tts_result = self._tts_service().synthesize(response.spoken_text, emotion=response.emotion)
                     response.audio_path = tts_result.audio_path
                     response.audio_content_type = tts_result.content_type
                     response.tts_metadata = dict(tts_result.metadata or {})
+                    response.tts_metadata["speech_filter"] = {
+                        "level": settings.speech_filter_level,
+                        "blocked": safe_spoken.blocked,
+                        "matched_rules": safe_spoken.matched_rules,
+                        "action": safe_spoken.action,
+                        "layers": safe_spoken.layers,
+                    }
                     timing["tts_ms"] = round((time.perf_counter() - tts_started) * 1000, 1)
                 else:
                     timing["tts_ms"] = 0.0
@@ -212,10 +228,11 @@ class ConversationService:
                 if memory_write_ok:
                     threading.Thread(
                         target=self._background_memory_save,
-                        args=(stripped, final_reply_text, session_id),
+                        args=(stripped, response.spoken_text, session_id),
                         daemon=True,
                     ).start()
 
+                self._remember_assistant_state(user_text=stripped, reply_text=response.spoken_text, emotion=response.emotion, session_id=session_id)
                 return response
 
             # Standard path: full metadata extraction + synchronous memory save.
@@ -251,6 +268,10 @@ class ConversationService:
 
             all_tool_calls = inferred_tool_calls + extra_tool_calls
             all_tool_results = inferred_results + extra_results
+            expressive = strip_hidden_style_tags(final_reply_text, default_emotion=extracted["emotion"])
+            response_emotion = self._normalize_emotion(expressive.emotion)
+            safe_spoken = self._speech_filter.apply(expressive.clean_text)
+            final_reply_text = safe_spoken.spoken_text
 
             memory_candidates = (
                 (extracted["memory_candidates"] or self._build_memory_candidates(
@@ -266,7 +287,7 @@ class ConversationService:
 
             response = AssistantResponse(
                 spoken_text=final_reply_text,
-                emotion=extracted["emotion"],
+                emotion=response_emotion,
                 internal_summary=extracted["internal_summary"],
                 motions=extracted["motions"],
                 tool_calls=all_tool_calls,
@@ -280,6 +301,13 @@ class ConversationService:
                 response.audio_path = tts_result.audio_path
                 response.audio_content_type = tts_result.content_type
                 response.tts_metadata = dict(tts_result.metadata or {})
+                response.tts_metadata["speech_filter"] = {
+                    "level": settings.speech_filter_level,
+                    "blocked": safe_spoken.blocked,
+                    "matched_rules": safe_spoken.matched_rules,
+                    "action": safe_spoken.action,
+                    "layers": safe_spoken.layers,
+                }
                 timing["tts_ms"] = round((time.perf_counter() - tts_started) * 1000, 1)
             else:
                 timing["tts_ms"] = 0.0
@@ -292,6 +320,7 @@ class ConversationService:
                 saved_count=saved_count,
                 timing=timing,
             )
+            self._remember_assistant_state(user_text=stripped, reply_text=response.spoken_text, emotion=response.emotion, session_id=session_id)
             return response
         except GammaError:
             raise
@@ -306,6 +335,20 @@ class ConversationService:
                 self._memory.persist_candidates(candidates, session_id=session_id)
         except Exception:
             pass  # background thread — never propagate
+
+    def _remember_assistant_state(self, *, user_text: str, reply_text: str, emotion: str, session_id: str | None = None) -> None:
+        if not settings.assistant_state_enabled:
+            return
+        try:
+            self._assistant_state.update(emotion=emotion, user_text=user_text, reply_text=reply_text)
+            self._emotion_memory.update_from_turn(
+                emotion=emotion,
+                user_text=user_text,
+                reply_text=reply_text,
+                session_id=session_id,
+            )
+        except Exception:
+            pass
 
     def _llm_adapter(self):
         if self._llm is None:

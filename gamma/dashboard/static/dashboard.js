@@ -943,6 +943,55 @@
     return lines.join('\n');
   }
 
+  function humanAssistantEmotion(data) {
+    var state = data && data.state ? data.state : {};
+    var episodes = data && Array.isArray(data.episodes) ? data.episodes : [];
+    var patterns = data && Array.isArray(data.patterns) ? data.patterns : [];
+    var lines = [
+      'Current emotion: ' + (state.current_emotion || 'neutral'),
+      'Intensity: ' + (typeof state.intensity === 'number' ? state.intensity.toFixed(2) : 'n/a'),
+      'Decay turns: ' + (typeof state.decay_turns_remaining === 'number' ? state.decay_turns_remaining : 'n/a')
+    ];
+    if (state.cause_summary) lines.push('Cause: ' + state.cause_summary);
+    if (episodes.length) {
+      lines.push('');
+      lines.push('Recent emotional episodes:');
+      for (var i = Math.max(0, episodes.length - 4); i < episodes.length; i += 1) {
+        lines.push('- [' + (episodes[i].emotion || 'neutral') + '] ' + (episodes[i].event_summary || 'n/a'));
+      }
+    }
+    if (patterns.length) {
+      lines.push('');
+      lines.push('Emotional patterns:');
+      for (var j = Math.max(0, patterns.length - 4); j < patterns.length; j += 1) {
+        lines.push('- ' + (patterns[j].pattern_text || 'n/a') + ' (evidence ' + (patterns[j].evidence_count || 0) + ')');
+      }
+    }
+    return lines.join('\n');
+  }
+
+  function renderAssistantSettings(settingsPayload) {
+    var settings = settingsPayload || {};
+    var bindings = {
+      assistantSpeechFilterLevel: settings.speech_filter_level || 'strict',
+      assistantHardBlockEnabled: !!settings.speech_filter_hard_block_enabled,
+      assistantHeuristicEnabled: !!settings.speech_filter_heuristic_enabled,
+      assistantLlmEnabled: !!settings.speech_filter_llm_enabled,
+      assistantAutoRewrite: !!settings.speech_filter_auto_rewrite,
+      assistantLlmModel: settings.speech_filter_llm_model || '',
+      assistantStateEnabled: !!settings.assistant_state_enabled,
+      assistantEmotionDecayTurns: settings.assistant_emotion_decay_turns,
+      assistantEmotionEpisodeThreshold: settings.assistant_emotion_episode_threshold,
+      assistantEmotionPatternThreshold: settings.assistant_emotion_pattern_threshold
+    };
+    Object.keys(bindings).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      if (el.type === 'checkbox') el.checked = !!bindings[id];
+      else if (typeof bindings[id] !== 'undefined' && bindings[id] !== null) el.value = bindings[id];
+    });
+  }
+
   function humanVisionAnalysis(vision) {
     if (!vision) {
       return 'No vision analysis available.';
@@ -1558,6 +1607,15 @@
       'recentMemories'
     );
 
+    var assistantEmotion = (systemStatus.assistant && systemStatus.assistant.emotion_memory) || (data.assistant && data.assistant.emotion_memory) || {};
+    renderBlockIfChanged(
+      'assistantEmotion',
+      assistantEmotion,
+      humanAssistantEmotion(assistantEmotion),
+      'assistantEmotion'
+    );
+    renderAssistantSettings((data.assistant && data.assistant.settings) || {});
+
     renderBlockIfChanged(
       'recentTimings',
       data.timings || {},
@@ -1671,6 +1729,37 @@
 
   function clearRecentMemory() {
     openMemoryDeleteModal(10);
+  }
+
+  async function saveAssistantSettings() {
+    var payload = {
+      speech_filter_level: document.getElementById('assistantSpeechFilterLevel').value,
+      speech_filter_hard_block_enabled: !!document.getElementById('assistantHardBlockEnabled').checked,
+      speech_filter_heuristic_enabled: !!document.getElementById('assistantHeuristicEnabled').checked,
+      speech_filter_llm_enabled: !!document.getElementById('assistantLlmEnabled').checked,
+      speech_filter_auto_rewrite: !!document.getElementById('assistantAutoRewrite').checked,
+      speech_filter_llm_model: document.getElementById('assistantLlmModel').value.trim(),
+      assistant_state_enabled: !!document.getElementById('assistantStateEnabled').checked,
+      assistant_emotion_decay_turns: Number(document.getElementById('assistantEmotionDecayTurns').value || 0),
+      assistant_emotion_episode_threshold: Number(document.getElementById('assistantEmotionEpisodeThreshold').value || 0.65),
+      assistant_emotion_pattern_threshold: Number(document.getElementById('assistantEmotionPatternThreshold').value || 3)
+    };
+    var response = await fetch('/api/assistant/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    var data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.detail || 'failed to save assistant settings');
+    }
+    setTextIfChanged('assistantSettingsStatus', data.detail || 'Assistant settings saved.', 'assistantSettingsStatus');
+    if (latestData) {
+      latestData.assistant = latestData.assistant || {};
+      latestData.assistant.settings = data.settings || payload;
+    }
+    renderAssistantSettings(data.settings || payload);
+    await loadStatus();
   }
 
   async function ttsSynthesizeFromFile() {
@@ -2832,6 +2921,7 @@
   window.setAllMemorySelections = setAllMemorySelections;
   window.toggleMemoryDeleteSelection = toggleMemoryDeleteSelection;
   window.submitMemoryDeletion = submitMemoryDeletion;
+  window.saveAssistantSettings = saveAssistantSettings;
   loadStatus();
   scheduleRuntimePoll();
 }());

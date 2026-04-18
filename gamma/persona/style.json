@@ -1,7 +1,8 @@
 {
-  "humor": 0.6,
-  "teasing": 0.5,
+  "humor": 0.75,
+  "teasing": 0.65,
   "affection": 0.4,
-  "verbosity": 0.4,
-  "confidence": 0.7
+  "verbosity": 0.45,
+  "confidence": 0.8,
+  "entertainment": 0.85
 }

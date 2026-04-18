@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from fastapi.testclient import TestClient
 
@@ -16,23 +16,27 @@ class DashboardRoutesTest(unittest.TestCase):
     def setUp(self) -> None:
         self._http_auth_patcher = patch.object(main, "is_authenticated", return_value=True)
         self._ws_auth_patcher = patch.object(main, "websocket_is_authenticated", return_value=True)
+        self.mock_service = Mock()
+        self._service_patcher = patch.object(main, "get_dashboard_service", return_value=self.mock_service)
         self._http_auth_patcher.start()
         self._ws_auth_patcher.start()
+        self._service_patcher.start()
         self.client = TestClient(main.app)
 
     def tearDown(self) -> None:
         self.client.close()
         self._ws_auth_patcher.stop()
         self._http_auth_patcher.stop()
+        self._service_patcher.stop()
 
     def test_status_routes(self) -> None:
-        with patch.object(main.service, "build_status", return_value={"ok": True}) as build_status:
+        with patch.object(self.mock_service, "build_status", return_value={"ok": True}) as build_status:
             response = self.client.get("/api/status")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"ok": True})
         build_status.assert_called_once_with()
 
-        with patch.object(main.service, "build_runtime_status", return_value={"runtime": "ok"}) as runtime_status:
+        with patch.object(self.mock_service, "build_runtime_status", return_value={"runtime": "ok"}) as runtime_status:
             response = self.client.get("/api/status/runtime")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"runtime": "ok"})
@@ -48,14 +52,14 @@ class DashboardRoutesTest(unittest.TestCase):
         }
         for path, (method_name, payload) in action_map.items():
             with self.subTest(path=path):
-                with patch.object(main.service, method_name, return_value=payload) as method:
+                with patch.object(self.mock_service, method_name, return_value=payload) as method:
                     response = self.client.post(path)
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.json(), payload)
                 method.assert_called_once_with()
 
     def test_memory_clear_routes(self) -> None:
-        with patch.object(main.service, "clear_recent_memory", return_value={"ok": True, "cleared_total": 1}) as method:
+        with patch.object(self.mock_service, "clear_recent_memory", return_value={"ok": True, "cleared_total": 1}) as method:
             response = self.client.post("/api/memory/clear-recent", json={"minutes": 10})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["cleared_total"], 1)
@@ -63,7 +67,7 @@ class DashboardRoutesTest(unittest.TestCase):
 
         payload = {"ok": True, "cleared_total": 2}
         items = [{"id": 4, "kind": "episodic"}, {"id": 2, "kind": "profile_fact"}]
-        with patch.object(main.service, "clear_selected_memory", return_value=payload) as method:
+        with patch.object(self.mock_service, "clear_selected_memory", return_value=payload) as method:
             response = self.client.post("/api/memory/clear-selected", json={"items": items})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["cleared_total"], 2)
@@ -80,34 +84,49 @@ class DashboardRoutesTest(unittest.TestCase):
         }
         for path, (method_name, payload) in action_map.items():
             with self.subTest(path=path):
-                with patch.object(main.service, method_name, return_value=payload) as method:
+                with patch.object(self.mock_service, method_name, return_value=payload) as method:
                     response = self.client.post(path)
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.json(), payload)
                 method.assert_called_once_with()
 
+    def test_assistant_settings_routes(self) -> None:
+        settings_payload = {"speech_filter_level": "strict", "assistant_state_enabled": True}
+        with patch.object(self.mock_service, "assistant_runtime_settings", return_value=settings_payload) as method:
+            response = self.client.get("/api/assistant/settings")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["settings"], settings_payload)
+        method.assert_called_once_with()
+
+        save_payload = {"ok": True, "settings": settings_payload, "detail": "saved"}
+        with patch.object(self.mock_service, "save_assistant_runtime_settings", return_value=save_payload) as method:
+            response = self.client.post("/api/assistant/settings", json=settings_payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["settings"], settings_payload)
+        method.assert_called_once_with(settings_payload)
+
     def test_tts_provider_profile_and_save_routes(self) -> None:
-        with patch.object(main.service, "set_tts_provider", return_value={"ok": True, "provider": "stub"}) as method:
+        with patch.object(self.mock_service, "set_tts_provider", return_value={"ok": True, "provider": "stub"}) as method:
             response = self.client.post("/api/providers/tts/select", json={"provider": "stub"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["provider"], "stub")
         method.assert_called_once_with("stub")
 
-        with patch.object(main.service, "set_tts_profile", return_value={"ok": True, "profile": "test"}) as method:
+        with patch.object(self.mock_service, "set_tts_profile", return_value={"ok": True, "profile": "test"}) as method:
             response = self.client.post("/api/providers/tts/profile", json={"profile": "test"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["profile"], "test")
         method.assert_called_once_with("test")
 
         payload = {"id": "new_profile", "provider": "stub", "values": {}}
-        with patch.object(main.service, "save_tts_profile", return_value={"ok": True, "profile": payload}) as method:
+        with patch.object(self.mock_service, "save_tts_profile", return_value={"ok": True, "profile": payload}) as method:
             response = self.client.post("/api/providers/tts/profile/save", json=payload)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["profile"], payload)
         method.assert_called_once_with(payload)
 
     def test_tts_synthesize_route(self) -> None:
-        with patch.object(main.service, "synthesize_text", return_value={"ok": True, "filename": "tts-test.wav"}) as method:
+        with patch.object(self.mock_service, "synthesize_text", return_value={"ok": True, "filename": "tts-test.wav"}) as method:
             response = self.client.post(
                 "/api/providers/tts/synthesize",
                 files={"text_file": ("sample.txt", b"hello from dashboard", "text/plain")},
@@ -139,7 +158,9 @@ class DashboardRoutesTest(unittest.TestCase):
             audio_base64="dGVzdA==",
             timing_ms={"total_ms": 1.0},
         )
-        with patch.object(main.voice_roundtrip_service, "run", new=AsyncMock(return_value=payload)) as method:
+        roundtrip_service = Mock()
+        roundtrip_service.run = AsyncMock(return_value=payload)
+        with patch.object(main, "get_voice_roundtrip_service", return_value=roundtrip_service):
             response = self.client.post(
                 "/api/voice/roundtrip",
                 files={"audio_file": ("clip.wav", b"RIFF....", "audio/wav")},
@@ -147,11 +168,11 @@ class DashboardRoutesTest(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["transcript"], "hello")
-        self.assertEqual(method.await_count, 1)
+        self.assertEqual(roundtrip_service.run.await_count, 1)
 
     def test_vision_routes(self) -> None:
         analysis = VisionAnalysis(summary="Image summary")
-        with patch.object(main.service, "analyze_remote_image", return_value=analysis) as method:
+        with patch.object(self.mock_service, "analyze_remote_image", return_value=analysis) as method:
             response = self.client.post(
                 "/api/vision/analyze",
                 files={"image_file": ("image.png", b"png", "image/png")},
@@ -162,7 +183,7 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(method.call_args.kwargs["vision_mode"], "photo")
 
         assistant_response = AssistantResponse(spoken_text="Looks good.")
-        with patch.object(main.service, "respond_remote_image", return_value=assistant_response) as method:
+        with patch.object(self.mock_service, "respond_remote_image", return_value=assistant_response) as method:
             response = self.client.post(
                 "/api/vision/respond",
                 files={"image_file": ("image.png", b"png", "image/png")},
@@ -183,11 +204,13 @@ class DashboardRoutesTest(unittest.TestCase):
             await websocket.send_json({"type": "ready"})
             await websocket.close()
 
-        with patch.object(main.live_voice_session, "handle", side_effect=fake_handle) as method:
+        live_voice_session = Mock()
+        live_voice_session.handle = AsyncMock(side_effect=fake_handle)
+        with patch.object(main, "get_live_voice_session", return_value=live_voice_session):
             with self.client.websocket_connect("/api/voice/live") as websocket:
                 payload = websocket.receive_json()
         self.assertEqual(payload, {"type": "ready"})
-        self.assertEqual(method.call_count, 1)
+        self.assertEqual(live_voice_session.handle.await_count, 1)
 
 
 if __name__ == "__main__":

@@ -9,15 +9,32 @@ from ..errors import ConfigurationError, ConversationError, ExternalServiceError
 from ..schemas.conversation import ConversationRequest
 from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..schemas.voice import LiveVoiceJobResponse, VoiceRoundtripResponse, VoiceTranscriptionResponse
+from ..system.lazy_singleton import LazySingleton
 from ..system.status import SystemStatusService
 from ..voice.live_jobs import LiveVoiceJobManager
 from ..voice.roundtrip import VoiceRoundtripService
 
 router = APIRouter()
-conversation_service = ConversationService()
-system_status_service = SystemStatusService()
-voice_roundtrip_service = VoiceRoundtripService()
-live_voice_job_manager = LiveVoiceJobManager()
+conversation_service = LazySingleton[ConversationService]()
+system_status_service = LazySingleton[SystemStatusService]()
+voice_roundtrip_service = LazySingleton[VoiceRoundtripService]()
+live_voice_job_manager = LazySingleton[LiveVoiceJobManager]()
+
+
+def get_conversation_service() -> ConversationService:
+    return conversation_service.get(ConversationService)
+
+
+def get_system_status_service() -> SystemStatusService:
+    return system_status_service.get(SystemStatusService)
+
+
+def get_voice_roundtrip_service() -> VoiceRoundtripService:
+    return voice_roundtrip_service.get(VoiceRoundtripService)
+
+
+def get_live_voice_job_manager() -> LiveVoiceJobManager:
+    return live_voice_job_manager.get(LiveVoiceJobManager)
 
 
 @router.get("/")
@@ -77,7 +94,7 @@ def assistant_demo() -> AssistantResponse:
 @router.get("/v1/memory/stats")
 def memory_stats() -> dict[str, str | int]:
     try:
-        return conversation_service.memory_stats()
+        return get_conversation_service().memory_stats()
     except ConfigurationError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -85,7 +102,7 @@ def memory_stats() -> dict[str, str | int]:
 @router.get("/v1/system/status")
 def system_status() -> dict:
     try:
-        return system_status_service.build_status()
+        return get_system_status_service().build_status()
     except ConfigurationError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except GammaError as exc:
@@ -95,7 +112,7 @@ def system_status() -> dict:
 @router.post("/v1/conversation/respond", response_model=AssistantResponse)
 def conversation_respond(request: ConversationRequest) -> AssistantResponse:
     try:
-        return conversation_service.respond(
+        return get_conversation_service().respond(
             user_text=request.user_text,
             session_id=request.session_id,
             synthesize_speech=request.synthesize_speech,
@@ -122,7 +139,7 @@ async def conversation_respond_with_image(
 ) -> AssistantResponse:
     try:
         image_bytes = await image_file.read()
-        return conversation_service.respond_with_image(
+        return get_conversation_service().respond_with_image(
             user_text=user_text,
             image_bytes=image_bytes,
             image_media_type=image_file.content_type or "",
@@ -149,7 +166,7 @@ async def vision_analyze(
 ) -> VisionAnalysis:
     try:
         image_bytes = await image_file.read()
-        return conversation_service.analyze_image(
+        return get_conversation_service().analyze_image(
             user_text=user_text,
             image_bytes=image_bytes,
             image_media_type=image_file.content_type or "",
@@ -173,7 +190,7 @@ async def voice_roundtrip(
     synthesize_speech: bool = Form(default=True),
 ) -> VoiceRoundtripResponse:
     try:
-        return await voice_roundtrip_service.run(
+        return await get_voice_roundtrip_service().run(
             audio_file=audio_file,
             session_id=session_id,
             synthesize_speech=synthesize_speech,
@@ -193,7 +210,7 @@ async def voice_transcribe(
     audio_file: UploadFile = File(...),
 ) -> VoiceTranscriptionResponse:
     try:
-        return await voice_roundtrip_service.run_transcription(audio_file=audio_file)
+        return await get_voice_roundtrip_service().run_transcription(audio_file=audio_file)
     except ConversationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ConfigurationError as exc:
@@ -213,7 +230,7 @@ async def voice_live_start(
     turn_id: str | None = Form(default=None),
 ) -> LiveVoiceJobResponse:
     try:
-        return await live_voice_job_manager.start_job(
+        return await get_live_voice_job_manager().start_job(
             audio_file=audio_file,
             session_id=session_id,
             synthesize_speech=synthesize_speech,
@@ -229,7 +246,7 @@ async def voice_live_start(
 @router.get("/v1/voice/live/history")
 def voice_live_history(limit: int = 20) -> dict[str, list[dict]]:
     try:
-        return {"items": live_voice_job_manager.get_recent_history(limit=limit)}
+        return {"items": get_live_voice_job_manager().get_recent_history(limit=limit)}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -237,7 +254,7 @@ def voice_live_history(limit: int = 20) -> dict[str, list[dict]]:
 @router.get("/v1/voice/live/{turn_id}", response_model=LiveVoiceJobResponse)
 def voice_live_status(turn_id: str) -> LiveVoiceJobResponse:
     try:
-        return live_voice_job_manager.get_job(turn_id)
+        return get_live_voice_job_manager().get_job(turn_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"unknown turn_id: {turn_id}") from exc
     except Exception as exc:
@@ -247,7 +264,7 @@ def voice_live_status(turn_id: str) -> LiveVoiceJobResponse:
 @router.post("/v1/voice/live/{turn_id}/cancel", response_model=LiveVoiceJobResponse)
 def voice_live_cancel(turn_id: str, reason: str = Form(default="interrupted")) -> LiveVoiceJobResponse:
     try:
-        return live_voice_job_manager.cancel_job(turn_id, reason=reason)
+        return get_live_voice_job_manager().cancel_job(turn_id, reason=reason)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"unknown turn_id: {turn_id}") from exc
     except Exception as exc:

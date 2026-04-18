@@ -245,6 +245,39 @@ class Settings:
     local_llm_model: str = str(
         _setting("SHANA_LOCAL_LLM_MODEL", _config_value(APP_CONFIG, "local_llm_model", default="gpt-oss:20b"))
     )
+    local_llm_light_model: str = str(
+        _setting(
+            "SHANA_LOCAL_LLM_LIGHT_MODEL",
+            _config_value(
+                MODELS_CONFIG,
+                "local_workers",
+                "summary_model",
+                default=_config_value(APP_CONFIG, "local_llm_light_model", default=""),
+            ),
+        )
+    )
+    local_llm_tagging_model: str = str(
+        _setting(
+            "SHANA_LOCAL_LLM_TAGGING_MODEL",
+            _config_value(
+                MODELS_CONFIG,
+                "local_workers",
+                "tagging_model",
+                default=_config_value(APP_CONFIG, "local_llm_tagging_model", default=""),
+            ),
+        )
+    )
+    local_llm_enable_routing: bool = _as_bool(
+        _setting("SHANA_LOCAL_LLM_ENABLE_ROUTING", _config_value(APP_CONFIG, "local_llm_enable_routing", default=False)),
+        default=False,
+    )
+    local_llm_light_max_input_words: int = _as_int(
+        _setting(
+            "SHANA_LOCAL_LLM_LIGHT_MAX_INPUT_WORDS",
+            _config_value(APP_CONFIG, "local_llm_light_max_input_words", default=40),
+        ),
+        default=40,
+    )
     local_llm_supports_vision: bool = _as_bool(
         _setting(
             "SHANA_LOCAL_LLM_SUPPORTS_VISION",
@@ -383,6 +416,43 @@ class Settings:
     gpt_sovits_timeout_seconds: int = _as_int(_setting("SHANA_GPT_SOVITS_TIMEOUT_SECONDS", 120), default=120)
     gpt_sovits_extra_json: dict = field(
         default_factory=lambda: json.loads(str(_setting("SHANA_GPT_SOVITS_EXTRA_JSON", "{}")) or "{}")
+    )
+    speech_filter_level: str = str(
+        _setting("SHANA_SPEECH_FILTER_LEVEL", _config_value(APP_CONFIG, "speech_filter_level", default="strict"))
+    ).strip().lower() or "strict"
+    speech_filter_hard_block_enabled: bool = _as_bool(
+        _setting("SHANA_SPEECH_FILTER_HARD_BLOCK_ENABLED", _config_value(APP_CONFIG, "speech_filter_hard_block_enabled", default=True)),
+        default=True,
+    )
+    speech_filter_heuristic_enabled: bool = _as_bool(
+        _setting("SHANA_SPEECH_FILTER_HEURISTIC_ENABLED", _config_value(APP_CONFIG, "speech_filter_heuristic_enabled", default=True)),
+        default=True,
+    )
+    speech_filter_llm_enabled: bool = _as_bool(
+        _setting("SHANA_SPEECH_FILTER_LLM_ENABLED", _config_value(APP_CONFIG, "speech_filter_llm_enabled", default=False)),
+        default=False,
+    )
+    speech_filter_llm_model: str = str(
+        _setting("SHANA_SPEECH_FILTER_LLM_MODEL", _config_value(APP_CONFIG, "speech_filter_llm_model", default=""))
+    )
+    speech_filter_auto_rewrite: bool = _as_bool(
+        _setting("SHANA_SPEECH_FILTER_AUTO_REWRITE", _config_value(APP_CONFIG, "speech_filter_auto_rewrite", default=True)),
+        default=True,
+    )
+    assistant_state_enabled: bool = _as_bool(
+        _setting("SHANA_ASSISTANT_STATE_ENABLED", _config_value(APP_CONFIG, "assistant_state_enabled", default=True)),
+        default=True,
+    )
+    assistant_emotion_decay_turns: int = _as_int(
+        _setting("SHANA_ASSISTANT_EMOTION_DECAY_TURNS", _config_value(APP_CONFIG, "assistant_emotion_decay_turns", default=3)),
+        default=3,
+    )
+    assistant_emotion_episode_threshold: float = float(
+        _setting("SHANA_ASSISTANT_EMOTION_EPISODE_THRESHOLD", _config_value(APP_CONFIG, "assistant_emotion_episode_threshold", default=0.65))
+    )
+    assistant_emotion_pattern_threshold: int = _as_int(
+        _setting("SHANA_ASSISTANT_EMOTION_PATTERN_THRESHOLD", _config_value(APP_CONFIG, "assistant_emotion_pattern_threshold", default=3)),
+        default=3,
     )
 
     memory_enabled: bool = _as_bool(

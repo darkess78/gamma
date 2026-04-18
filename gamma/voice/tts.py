@@ -31,6 +31,7 @@ from .rvc_support import (
     resolve_rvc_project_root,
     resolve_rvc_python,
 )
+from .expressive_text import build_qwen_instruct, strip_hidden_style_tags
 from .voice_profiles import ResolvedTTSConfig, resolve_tts_config
 
 
@@ -160,10 +161,13 @@ class TTSService:
 
     def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
         started_at = time.perf_counter()
-        result = self._backend.synthesize(text=text, emotion=emotion)
-        result = self._maybe_apply_rvc(result, emotion=emotion)
+        expressive = strip_hidden_style_tags(text, default_emotion=emotion)
+        result = self._backend.synthesize(text=expressive.clean_text, emotion=expressive.emotion)
+        result = self._maybe_apply_rvc(result, emotion=expressive.emotion)
         result = self._maybe_apply_denoise(result)
         metadata = dict(result.metadata or {})
+        metadata["hidden_style_tags"] = expressive.tags
+        metadata["emotion"] = expressive.emotion
         timings = dict(metadata.get("timings_ms", {})) if isinstance(metadata.get("timings_ms"), dict) else {}
         timings["total_tts_pipeline_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
         metadata["timings_ms"] = timings
@@ -414,8 +418,9 @@ class QwenTTSBackend(BaseFileTTSBackend):
         if self._cfg.qwen_tts_speaker:
             payload["speaker"] = self._cfg.qwen_tts_speaker
 
-        if self._cfg.qwen_tts_instruct:
-            payload["instruct"] = self._cfg.qwen_tts_instruct
+        instruct = build_qwen_instruct(base_instruct=self._cfg.qwen_tts_instruct, emotion=emotion)
+        if instruct:
+            payload["instruct"] = instruct
 
         if self._cfg.qwen_tts_extra_json:
             payload["extra_params"] = self._cfg.qwen_tts_extra_json
@@ -450,6 +455,7 @@ class QwenTTSBackend(BaseFileTTSBackend):
                 "reference_text": self._cfg.qwen_tts_reference_text,
                 "language": self._cfg.qwen_tts_language,
                 "speaker": self._cfg.qwen_tts_speaker,
+                "emotion": emotion,
                 "timings_ms": {"backend_ms": round((time.perf_counter() - started_at) * 1000, 1)},
             },
         )

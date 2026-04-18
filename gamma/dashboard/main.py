@@ -12,21 +12,38 @@ from ..config import settings as _app_settings
 from .auth import auth_config, dashboard_auth_ready, is_authenticated, session_cookie_value, verify_login, websocket_is_authenticated
 from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..schemas.voice import VoiceRoundtripResponse
+from ..system.lazy_singleton import LazySingleton
 from ..voice.live import LiveVoiceSession
 from ..voice.roundtrip import VoiceRoundtripService
 
 app = FastAPI(title="Gamma Dashboard")
-service = DashboardService()
-voice_roundtrip_service = VoiceRoundtripService()
-live_voice_session = LiveVoiceSession(
-    job_starter=service.start_remote_live_job,
-    job_fetcher=service.get_remote_live_job,
-    job_canceler=service.cancel_remote_live_job,
-    partial_transcriber=service.transcribe_remote_live_audio,
-)
+service = LazySingleton[DashboardService]()
+voice_roundtrip_service = LazySingleton[VoiceRoundtripService]()
+live_voice_session = LazySingleton[LiveVoiceSession]()
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="dashboard-static")
+
+
+def get_dashboard_service() -> DashboardService:
+    return service.get(DashboardService)
+
+
+def get_voice_roundtrip_service() -> VoiceRoundtripService:
+    return voice_roundtrip_service.get(VoiceRoundtripService)
+
+
+def get_live_voice_session() -> LiveVoiceSession:
+    def _build_live_voice_session() -> LiveVoiceSession:
+        dashboard_service = get_dashboard_service()
+        return LiveVoiceSession(
+            job_starter=dashboard_service.start_remote_live_job,
+            job_fetcher=dashboard_service.get_remote_live_job,
+            job_canceler=dashboard_service.cancel_remote_live_job,
+            partial_transcriber=dashboard_service.transcribe_remote_live_audio,
+        )
+
+    return live_voice_session.get(_build_live_voice_session)
 
 
 @app.middleware("http")
@@ -155,84 +172,84 @@ def logout() -> RedirectResponse:
 
 @app.get("/api/status")
 def status() -> dict:
-    return service.build_status()
+    return get_dashboard_service().build_status()
 
 
 @app.get("/api/status/runtime")
 def runtime_status() -> dict:
-    return service.build_runtime_status()
+    return get_dashboard_service().build_runtime_status()
 
 
 @app.post("/api/client-log")
 async def client_log(request: Request) -> dict[str, bool]:
     payload = await request.json()
     if isinstance(payload, dict):
-        service.append_client_log(payload)
+        get_dashboard_service().append_client_log(payload)
     return {"ok": True}
 
 
 @app.post("/api/shana/start")
 def start_shana() -> dict:
-    return service.start_shana()
+    return get_dashboard_service().start_shana()
 
 
 @app.post("/api/shana/stop")
 def stop_shana() -> dict:
-    return service.stop_shana()
+    return get_dashboard_service().stop_shana()
 
 
 @app.post("/api/shana/restart")
 def restart_shana() -> dict:
-    return service.restart_shana()
+    return get_dashboard_service().restart_shana()
 
 
 @app.post("/api/dashboard/stop")
 def stop_dashboard() -> dict:
-    return service.stop_dashboard()
+    return get_dashboard_service().stop_dashboard()
 
 
 @app.post("/api/all/stop")
 def stop_all() -> dict:
-    return service.stop_all()
+    return get_dashboard_service().stop_all()
 
 
 @app.post("/api/memory/clear")
 def clear_memory() -> dict:
-    return service.clear_memory()
+    return get_dashboard_service().clear_memory()
 
 
 @app.post("/api/memory/clear-recent")
 async def clear_recent_memory(request: Request) -> dict:
     payload = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
     minutes = int(payload.get("minutes", 10) or 10) if isinstance(payload, dict) else 10
-    return service.clear_recent_memory(minutes=minutes)
+    return get_dashboard_service().clear_recent_memory(minutes=minutes)
 
 
 @app.post("/api/memory/clear-selected")
 async def clear_selected_memory(request: Request) -> dict:
     payload = await request.json()
     selections = payload.get("items", []) if isinstance(payload, dict) else []
-    return service.clear_selected_memory(selections if isinstance(selections, list) else [])
+    return get_dashboard_service().clear_selected_memory(selections if isinstance(selections, list) else [])
 
 
 @app.post("/api/providers/tts/start")
 def start_tts() -> dict:
-    return service.start_tts()
+    return get_dashboard_service().start_tts()
 
 
 @app.post("/api/providers/tts/stop")
 def stop_tts() -> dict:
-    return service.stop_tts()
+    return get_dashboard_service().stop_tts()
 
 
 @app.post("/api/providers/stt/test")
 def test_stt() -> dict:
-    return service.test_stt()
+    return get_dashboard_service().test_stt()
 
 
 @app.post("/api/providers/tts/test")
 def test_tts() -> dict:
-    return service.test_tts()
+    return get_dashboard_service().test_tts()
 
 
 @app.post("/api/providers/tts/synthesize")
@@ -247,7 +264,7 @@ async def tts_synthesize_file(
     text = text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="file is empty")
-    result = service.synthesize_text(text)
+    result = get_dashboard_service().synthesize_text(text)
     if not result.get("ok"):
         raise HTTPException(status_code=500, detail=result.get("detail", "synthesis failed"))
     return result
@@ -260,7 +277,7 @@ async def select_tts_provider(request: Request) -> dict:
     if not provider:
         raise HTTPException(status_code=400, detail="provider is required")
     try:
-        return service.set_tts_provider(provider)
+        return get_dashboard_service().set_tts_provider(provider)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -270,7 +287,7 @@ async def select_tts_profile(request: Request) -> dict:
     payload = await request.json()
     profile = str(payload.get("profile", "")).strip()
     try:
-        return service.set_tts_profile(profile)
+        return get_dashboard_service().set_tts_profile(profile)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -281,7 +298,7 @@ async def save_tts_profile(request: Request) -> dict:
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="object payload is required")
     try:
-        return service.save_tts_profile(payload)
+        return get_dashboard_service().save_tts_profile(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -312,12 +329,28 @@ def delete_audio(filename: str) -> dict:
 
 @app.post("/api/providers/llm/test")
 def test_llm() -> dict:
-    return service.test_llm()
+    return get_dashboard_service().test_llm()
 
 
 @app.post("/api/providers/voice/test")
 def test_voice_roundtrip() -> dict:
-    return service.test_voice_roundtrip()
+    return get_dashboard_service().test_voice_roundtrip()
+
+
+@app.get("/api/assistant/settings")
+def assistant_settings() -> dict:
+    return {"settings": get_dashboard_service().assistant_runtime_settings()}
+
+
+@app.post("/api/assistant/settings")
+async def save_assistant_settings(request: Request) -> dict:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="object payload is required")
+    try:
+        return get_dashboard_service().save_assistant_runtime_settings(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/voice/roundtrip", response_model=VoiceRoundtripResponse)
@@ -326,7 +359,7 @@ async def dashboard_voice_roundtrip(
     session_id: str | None = Form(default=None),
     synthesize_speech: bool = Form(default=True),
 ) -> VoiceRoundtripResponse:
-    return await voice_roundtrip_service.run(
+    return await get_voice_roundtrip_service().run(
         audio_file=audio_file,
         session_id=session_id,
         synthesize_speech=synthesize_speech,
@@ -335,7 +368,7 @@ async def dashboard_voice_roundtrip(
 
 @app.get("/api/voice/live/history")
 def dashboard_live_voice_history(limit: int = 20) -> dict:
-    return service.remote_live_history(limit=limit)
+    return get_dashboard_service().remote_live_history(limit=limit)
 
 
 @app.post("/api/vision/analyze", response_model=VisionAnalysis)
@@ -346,7 +379,7 @@ async def dashboard_vision_analyze(
 ) -> VisionAnalysis:
     try:
         image_bytes = await image_file.read()
-        return service.analyze_remote_image(
+        return get_dashboard_service().analyze_remote_image(
             image_bytes=image_bytes,
             filename=image_file.filename or "dashboard-image",
             content_type=image_file.content_type or "application/octet-stream",
@@ -367,7 +400,7 @@ async def dashboard_vision_respond(
 ) -> AssistantResponse:
     try:
         image_bytes = await image_file.read()
-        return service.respond_remote_image(
+        return get_dashboard_service().respond_remote_image(
             image_bytes=image_bytes,
             filename=image_file.filename or "dashboard-image",
             content_type=image_file.content_type or "application/octet-stream",
@@ -386,6 +419,6 @@ async def dashboard_live_voice(websocket: WebSocket) -> None:
         await websocket.close(code=4401, reason="authentication required")
         return
     try:
-        await live_voice_session.handle(websocket)
+        await get_live_voice_session().handle(websocket)
     except WebSocketDisconnect:
         return

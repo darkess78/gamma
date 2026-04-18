@@ -20,6 +20,7 @@ import psutil
 
 from ..config import app_local_config_path, load_app_file_config, settings
 from ..memory.service import MemoryService
+from ..persona.emotion_service import EmotionMemoryService
 from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..supervisor.manager import ProcessManager
 from ..system.cuda_env import prepend_cuda_library_path
@@ -30,6 +31,7 @@ from ..voice.voice_profiles import get_voice_profile, list_voice_profiles, profi
 class DashboardService:
     def __init__(self) -> None:
         self._memory = MemoryService()
+        self._emotion_memory = EmotionMemoryService()
         self._process_manager = ProcessManager()
         self._system_status = SystemStatusService()
         self._metrics_lock = threading.Lock()
@@ -87,6 +89,10 @@ class DashboardService:
                 "stats": self._memory.stats(),
                 "known_people": self._memory.get_known_people(),
                 "recent_items": self._memory.recent_items(),
+            },
+            "assistant": {
+                "emotion_memory": self._emotion_memory.dashboard_payload(),
+                "settings": self.assistant_runtime_settings(),
             },
             "provider_actions": self._latest_provider_action,
             "timings": self._recent_timings(),
@@ -438,6 +444,85 @@ class DashboardService:
             updated += "\n"
         updated += f'{key} = "{value}"\n'
         return updated
+
+    def _upsert_toml_bool(self, existing: str, key: str, value: bool) -> str:
+        pattern = rf'(?m)^\s*{re.escape(key)}\s*=\s*(true|false)\s*$'
+        replacement = f'{key} = {"true" if value else "false"}'
+        if re.search(pattern, existing):
+            return re.sub(pattern, replacement, existing, count=1)
+        updated = existing.rstrip()
+        if updated:
+            updated += "\n"
+        updated += replacement + "\n"
+        return updated
+
+    def _upsert_toml_number(self, existing: str, key: str, value: int | float) -> str:
+        pattern = rf'(?m)^\s*{re.escape(key)}\s*=\s*([0-9.]+)\s*$'
+        replacement = f"{key} = {value}"
+        if re.search(pattern, existing):
+            return re.sub(pattern, replacement, existing, count=1)
+        updated = existing.rstrip()
+        if updated:
+            updated += "\n"
+        updated += replacement + "\n"
+        return updated
+
+    def assistant_runtime_settings(self) -> dict[str, Any]:
+        config = load_app_file_config()
+        return {
+            "speech_filter_level": str(config.get("speech_filter_level", settings.speech_filter_level)),
+            "speech_filter_hard_block_enabled": bool(config.get("speech_filter_hard_block_enabled", settings.speech_filter_hard_block_enabled)),
+            "speech_filter_heuristic_enabled": bool(config.get("speech_filter_heuristic_enabled", settings.speech_filter_heuristic_enabled)),
+            "speech_filter_llm_enabled": bool(config.get("speech_filter_llm_enabled", settings.speech_filter_llm_enabled)),
+            "speech_filter_llm_model": str(config.get("speech_filter_llm_model", settings.speech_filter_llm_model)),
+            "speech_filter_auto_rewrite": bool(config.get("speech_filter_auto_rewrite", settings.speech_filter_auto_rewrite)),
+            "assistant_state_enabled": bool(config.get("assistant_state_enabled", settings.assistant_state_enabled)),
+            "assistant_emotion_decay_turns": int(config.get("assistant_emotion_decay_turns", settings.assistant_emotion_decay_turns)),
+            "assistant_emotion_episode_threshold": float(config.get("assistant_emotion_episode_threshold", settings.assistant_emotion_episode_threshold)),
+            "assistant_emotion_pattern_threshold": int(config.get("assistant_emotion_pattern_threshold", settings.assistant_emotion_pattern_threshold)),
+        }
+
+    def save_assistant_runtime_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        app_toml = app_local_config_path()
+        existing = app_toml.read_text(encoding="utf-8") if app_toml.exists() else ""
+        updated = existing
+        if "speech_filter_level" in payload:
+            level = str(payload.get("speech_filter_level", settings.speech_filter_level)).strip().lower()
+            if level not in {"strict", "light", "none"}:
+                raise ValueError("unsupported speech_filter_level")
+            updated = self._upsert_toml_string(updated, "speech_filter_level", level)
+        bool_keys = [
+            "speech_filter_hard_block_enabled",
+            "speech_filter_heuristic_enabled",
+            "speech_filter_llm_enabled",
+            "speech_filter_auto_rewrite",
+            "assistant_state_enabled",
+        ]
+        for key in bool_keys:
+            if key in payload:
+                updated = self._upsert_toml_bool(updated, key, bool(payload.get(key)))
+        if "speech_filter_llm_model" in payload:
+            updated = self._upsert_toml_string(updated, "speech_filter_llm_model", str(payload.get("speech_filter_llm_model", "")).strip())
+        if "assistant_emotion_decay_turns" in payload:
+            updated = self._upsert_toml_number(updated, "assistant_emotion_decay_turns", max(0, int(payload.get("assistant_emotion_decay_turns", 0))))
+        if "assistant_emotion_episode_threshold" in payload:
+            threshold = max(0.0, min(1.0, float(payload.get("assistant_emotion_episode_threshold", 0.65))))
+            updated = self._upsert_toml_number(updated, "assistant_emotion_episode_threshold", threshold)
+        if "assistant_emotion_pattern_threshold" in payload:
+            updated = self._upsert_toml_number(updated, "assistant_emotion_pattern_threshold", max(1, int(payload.get("assistant_emotion_pattern_threshold", 1))))
+        app_toml.parent.mkdir(parents=True, exist_ok=True)
+        app_toml.write_text(updated, encoding="utf-8")
+        self._latest_provider_action = {
+            "action": "assistant_runtime_settings_save",
+            "status": "ok",
+            "detail": "Assistant runtime settings saved. Restart Shana to apply them to the backend process.",
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+        return {
+            "ok": True,
+            "settings": self.assistant_runtime_settings(),
+            "detail": "Assistant runtime settings saved. Restart Shana to apply them.",
+        }
 
     def test_llm(self) -> dict[str, Any]:
         return self._run_provider_action(

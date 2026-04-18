@@ -10,6 +10,7 @@ from typing import Any
 from ..config import settings
 from ..llm.ollama_probe import probe_ollama_model_capabilities
 from ..memory.service import MemoryService
+from ..persona.emotion_service import EmotionMemoryService
 from ..voice.rvc_support import (
     discover_rvc_project_root,
     discover_rvc_python,
@@ -22,6 +23,7 @@ from ..voice.voice_profiles import list_voice_profiles, resolve_tts_config
 class SystemStatusService:
     def __init__(self) -> None:
         self._memory = MemoryService()
+        self._emotion_memory = EmotionMemoryService()
 
     def build_status(self) -> dict[str, Any]:
         tts_cfg = resolve_tts_config()
@@ -76,6 +78,19 @@ class SystemStatusService:
                     }
                     for fact in self._memory.get_profile_facts(limit=10, subject_type="primary_user")
                 ],
+            },
+            "assistant": {
+                "emotion_memory": self._emotion_memory.dashboard_payload(),
+            },
+            "safety": {
+                "speech_filter": {
+                    "level": settings.speech_filter_level,
+                    "hard_block_enabled": settings.speech_filter_hard_block_enabled,
+                    "heuristic_enabled": settings.speech_filter_heuristic_enabled,
+                    "llm_enabled": settings.speech_filter_llm_enabled,
+                    "llm_model": settings.speech_filter_llm_model,
+                    "auto_rewrite": settings.speech_filter_auto_rewrite,
+                }
             },
             "recent_artifacts": self._recent_artifacts(),
         }

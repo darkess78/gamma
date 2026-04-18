@@ -37,6 +37,7 @@ class SentenceGenerator:
             "- do not repeat prior text\n"
             "- do not restart the answer\n"
             "- keep the wording natural for speech\n"
+            "- you may optionally prefix the sentence with one hidden tone tag like [happy] or [concerned] to shape delivery\n"
             "- if the answer is already complete, emit an empty sentence_text and is_final=true\n"
         )
         generator_input = (

@@ -16,7 +16,9 @@ from .voice.reply_planner import ReplyPlanner
 from .voice.reply_state import AssistantTurnState, SentenceState
 from .voice.sentence_generator import SentenceGenerator
 from .voice.stt import STTService
+from .voice.expressive_text import strip_hidden_style_tags
 from .voice.tts import TTSService
+from .safety.speech_filter import SpeechSafetyFilter
 
 
 def _utc_now() -> str:
@@ -164,6 +166,7 @@ def _run_incremental_experimental(
     planner_state: dict[str, Any],
     turn_state: AssistantTurnState,
 ) -> dict[str, Any]:
+    speech_filter = SpeechSafetyFilter(settings.speech_filter_level)
     payload: dict[str, Any] = {
         "turn_id": args.turn_id,
         "status": "running",
@@ -209,6 +212,9 @@ def _run_incremental_experimental(
                 break
             continue
 
+        expressive = strip_hidden_style_tags(sentence_text)
+        sentence_text = speech_filter.apply(expressive.clean_text).spoken_text
+
         sentence_state = SentenceState(
             sentence_index=sentence_index,
             text=sentence_text,
@@ -229,7 +235,7 @@ def _run_incremental_experimental(
                 status_payload["status"] = "speaking"
                 _write_status(status_path, status_payload)
             chunk_started = time.perf_counter()
-            tts_result = tts.synthesize(sentence_text, emotion=None)
+            tts_result = tts.synthesize(sentence_text, emotion=expressive.emotion)
             chunk_tts_ms = round((time.perf_counter() - chunk_started) * 1000, 1)
             total_tts_ms += chunk_tts_ms
             audio_bytes = Path(tts_result.audio_path).read_bytes()

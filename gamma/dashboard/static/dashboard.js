@@ -27,6 +27,7 @@
   var liveReplyCompleted = false;
   var liveCurrentChunk = null;
   var liveCurrentChunkStartedAt = 0;
+  var liveCurrentChunkWatchdog = 0;
   var liveInterruptSpeechStartedAt = 0;
   var liveInterruptProbePending = false;
   var liveInterruptProbeChunks = [];
@@ -2196,6 +2197,7 @@
     liveReplyCompleted = false;
     liveCurrentChunk = null;
     liveCurrentChunkStartedAt = 0;
+    clearLiveChunkWatchdog();
     liveInterruptSpeechStartedAt = 0;
     liveInterruptProbePending = false;
     liveInterruptProbeChunks = [];
@@ -2212,6 +2214,41 @@
     playback.pause();
     playback.removeAttribute('src');
     try { playback.load(); } catch (error) {}
+  }
+
+  function clearLiveChunkWatchdog() {
+    if (liveCurrentChunkWatchdog) {
+      clearTimeout(liveCurrentChunkWatchdog);
+      liveCurrentChunkWatchdog = 0;
+    }
+  }
+
+  function finishCurrentChunkAndContinue(message) {
+    clearLiveChunkWatchdog();
+    livePlaybackActive = false;
+    liveCurrentChunk = null;
+    liveCurrentChunkStartedAt = 0;
+    if (message) {
+      updateLiveStatus(message);
+    }
+    playNextLiveReplyChunk();
+  }
+
+  function armLiveChunkWatchdog(playback, chunk) {
+    clearLiveChunkWatchdog();
+    var durationMs = 0;
+    if (playback && isFinite(playback.duration) && playback.duration > 0) {
+      durationMs = Math.ceil(playback.duration * 1000);
+    }
+    if (!durationMs) {
+      durationMs = 15000;
+    }
+    liveCurrentChunkWatchdog = setTimeout(function () {
+      if (!livePlaybackActive || !liveCurrentChunk || liveCurrentChunk !== chunk) {
+        return;
+      }
+      finishCurrentChunkAndContinue('Chunk playback watchdog fired. Advancing to next chunk.');
+    }, durationMs + 2500);
   }
 
   function queueLiveReplyChunk(chunk, turnId) {
@@ -2256,27 +2293,32 @@
     livePlaybackActive = true;
     liveCurrentChunk = chunk;
     liveCurrentChunkStartedAt = Date.now();
+    clearLiveChunkWatchdog();
+    playback.onloadedmetadata = function () {
+      armLiveChunkWatchdog(playback, chunk);
+    };
     playback.src = 'data:' + chunk.audio_content_type + ';base64,' + chunk.audio_base64;
     playback.muted = liveSpeakerMuted;
     updateLiveStatus('Speaking chunk ' + chunk.chunk_index + (chunk.interruptible === false ? ' (protected)...' : '...'));
     playback.onended = function () {
-      livePlaybackActive = false;
-      liveCurrentChunk = null;
-      liveCurrentChunkStartedAt = 0;
-      playNextLiveReplyChunk();
+      finishCurrentChunkAndContinue('');
     };
     playback.onerror = function () {
-      livePlaybackActive = false;
-      liveCurrentChunk = null;
-      liveCurrentChunkStartedAt = 0;
-      updateLiveStatus('Chunk playback error. Skipping to next chunk.');
-      playNextLiveReplyChunk();
+      finishCurrentChunkAndContinue('Chunk playback error. Skipping to next chunk.');
+    };
+    playback.onstalled = function () {
+      finishCurrentChunkAndContinue('Chunk playback stalled. Skipping to next chunk.');
+    };
+    playback.onabort = function () {
+      finishCurrentChunkAndContinue('Chunk playback aborted. Skipping to next chunk.');
+    };
+    playback.onsuspend = function () {
+      if (playback.ended) {
+        finishCurrentChunkAndContinue('');
+      }
     };
     playback.play().catch(function () {
-      livePlaybackActive = false;
-      liveCurrentChunk = null;
-      liveCurrentChunkStartedAt = 0;
-      playNextLiveReplyChunk();
+      finishCurrentChunkAndContinue('Chunk playback rejected. Skipping to next chunk.');
     });
   }
 

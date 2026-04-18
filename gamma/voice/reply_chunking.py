@@ -36,8 +36,13 @@ def _split_into_two_chunks(sentences: list[str], *, full_text: str) -> list[str]
         return [first, second]
 
     if len(sentences) >= 3:
-        first_chunk = " ".join(sentences[:2]).strip()
-        second_chunk = " ".join(sentences[2:]).strip()
+        # Prefer a one-sentence opener when it is substantial enough.
+        # This improves time-to-first-audio for live speech.
+        first_chunk = sentences[0].strip()
+        second_chunk = " ".join(sentences[1:]).strip()
+        if _too_short(first_chunk):
+            first_chunk = " ".join(sentences[:2]).strip()
+            second_chunk = " ".join(sentences[2:]).strip()
         if _too_short(first_chunk):
             first_chunk = " ".join(sentences[:3]).strip()
             second_chunk = " ".join(sentences[3:]).strip()

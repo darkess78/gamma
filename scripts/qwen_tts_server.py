@@ -140,6 +140,40 @@ def _numpy_to_wav_bytes(samples, sr: int) -> bytes:
     return buf.getvalue()
 
 
+def _adaptive_token_bounds(text: str) -> tuple[int, int]:
+    words = max(len(text.split()), 1)
+    chars = len(text)
+    adaptive_min = max(12, min(96, words * 3 + 8, chars // 2 + 8))
+    adaptive_max = max(96, min(640, adaptive_min + 64, words * 10 + 48, chars * 3))
+    return adaptive_min, adaptive_max
+
+
+def _normalize_generation_params(text: str, extra: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(extra)
+    adaptive_min, adaptive_max = _adaptive_token_bounds(text)
+
+    requested_min = normalized.get("min_new_tokens")
+    try:
+        requested_min_int = int(requested_min) if requested_min is not None else adaptive_min
+    except (TypeError, ValueError):
+        requested_min_int = adaptive_min
+
+    requested_max = normalized.get("max_new_tokens")
+    try:
+        requested_max_int = int(requested_max) if requested_max is not None else adaptive_max
+    except (TypeError, ValueError):
+        requested_max_int = adaptive_max
+
+    final_min = min(requested_min_int, adaptive_min)
+    final_max = min(requested_max_int, adaptive_max)
+    if final_max < final_min:
+        final_max = final_min
+
+    normalized["min_new_tokens"] = final_min
+    normalized["max_new_tokens"] = final_max
+    return normalized
+
+
 def synthesize(body: dict[str, Any]) -> bytes:
     import numpy as np
 
@@ -161,7 +195,7 @@ def synthesize(body: dict[str, Any]) -> bytes:
     # min_new_tokens prevents the model from stopping too early (cutoff fix).
     # At 12Hz codec rate, 100 tokens ≈ 8.3s minimum — ensures the model can't
     # fire EOS while speech is still in progress, even for longer utterances.
-    extra.setdefault("min_new_tokens", 100)
+    extra = _normalize_generation_params(text, extra)
 
     mtype = _model_type()
 

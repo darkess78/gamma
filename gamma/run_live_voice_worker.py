@@ -85,6 +85,7 @@ def _run_simple_chunked(
         transcript,
         session_id=args.session_id,
         synthesize_speech=False,
+        fast_mode=True,
     )
     conversation_ms = round((time.perf_counter() - conversation_started) * 1000, 1)
 
@@ -321,8 +322,8 @@ def main() -> int:
 
     stt = STTService()
     conversation = ConversationService()
-    planner = ReplyPlanner(conversation)
-    sentence_generator = SentenceGenerator(conversation)
+    planner = ReplyPlanner(conversation) if response_mode == "incremental_experimental" else None
+    sentence_generator = SentenceGenerator(conversation) if response_mode == "incremental_experimental" else None
     started_at = time.perf_counter()
     status_payload = {
         "turn_id": args.turn_id,
@@ -351,10 +352,20 @@ def main() -> int:
             response_mode=response_mode,
             status="planned",
         )
-        planner_state = planner.plan(user_text=transcript, session_id=args.session_id)
+        if response_mode == "incremental_experimental" and planner is not None and sentence_generator is not None:
+            planner_state = planner.plan(user_text=transcript, session_id=args.session_id)
+        else:
+            planner_state = {
+                "intent": "answer the user directly",
+                "tone": "concise spoken response",
+                "key_points": [transcript[:120]],
+                "estimated_sentence_count": 2,
+                "stop_condition": "stop when the answer is complete",
+                "planner_ms": 0.0,
+            }
         turn_state.planner_state = planner_state
         turn_state.status = "generating"
-        if response_mode == "incremental_experimental":
+        if response_mode == "incremental_experimental" and sentence_generator is not None:
             payload = _run_incremental_experimental(
                 started_at=started_at,
                 args=args,

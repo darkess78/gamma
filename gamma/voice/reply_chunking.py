@@ -4,6 +4,10 @@ import re
 
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+_QUESTION_OPENER_RE = re.compile(
+    r"^(?:who|what|when|where|why|how|which|is|are|do|does|did|can|could|would|should|will|have|has)\b",
+    re.IGNORECASE,
+)
 
 
 def split_reply_text(reply_text: str, *, max_chunks: int = 2) -> list[str]:
@@ -25,7 +29,19 @@ def split_reply_text(reply_text: str, *, max_chunks: int = 2) -> list[str]:
 
 def _too_short(text: str) -> bool:
     words = text.split()
+    if _is_brief_question_opener(text, words):
+        return False
     return len(words) <= 2 or len(text) < 12
+
+
+def _is_brief_question_opener(text: str, words: list[str] | None = None) -> bool:
+    if not text.endswith("?"):
+        return False
+    if words is None:
+        words = text.split()
+    if len(words) > 5:
+        return False
+    return bool(_QUESTION_OPENER_RE.match(text.strip()))
 
 
 def _split_into_two_chunks(sentences: list[str], *, full_text: str) -> list[str]:

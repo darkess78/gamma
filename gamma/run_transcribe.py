@@ -46,6 +46,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Inference device: 'cpu' or 'cuda'.",
     )
     parser.add_argument(
+        "--device-index",
+        type=int,
+        default=settings.stt_device_index,
+        help="GPU index for faster-whisper when using CUDA.",
+    )
+    parser.add_argument(
         "--compute-type",
         default=settings.stt_compute_type,
         help="faster-whisper compute type, e.g. 'int8' or 'float16'.",
@@ -105,7 +111,12 @@ def transcribe_file(args: argparse.Namespace) -> list[dict]:
     input_path = Path(args.input_path).expanduser().resolve()
     language = None if args.language == "auto" else args.language
 
-    model = WhisperModel(args.model, device=args.device, compute_type=args.compute_type)
+    model = WhisperModel(
+        args.model,
+        device=args.device,
+        device_index=args.device_index,
+        compute_type=args.compute_type,
+    )
 
     # Pure audio files can be fed directly to whisper
     if _is_pure_audio(input_path):

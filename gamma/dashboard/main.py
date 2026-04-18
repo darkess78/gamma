@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import mimetypes
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
@@ -195,6 +196,25 @@ def stop_all() -> dict:
     return service.stop_all()
 
 
+@app.post("/api/memory/clear")
+def clear_memory() -> dict:
+    return service.clear_memory()
+
+
+@app.post("/api/memory/clear-recent")
+async def clear_recent_memory(request: Request) -> dict:
+    payload = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    minutes = int(payload.get("minutes", 10) or 10) if isinstance(payload, dict) else 10
+    return service.clear_recent_memory(minutes=minutes)
+
+
+@app.post("/api/memory/clear-selected")
+async def clear_selected_memory(request: Request) -> dict:
+    payload = await request.json()
+    selections = payload.get("items", []) if isinstance(payload, dict) else []
+    return service.clear_selected_memory(selections if isinstance(selections, list) else [])
+
+
 @app.post("/api/providers/tts/start")
 def start_tts() -> dict:
     return service.start_tts()
@@ -274,7 +294,8 @@ def serve_audio(filename: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="audio file not found")
     if audio_path.resolve().parent != _app_settings.audio_output_dir.resolve():
         raise HTTPException(status_code=400, detail="invalid path")
-    return FileResponse(str(audio_path), media_type="audio/wav")
+    media_type = mimetypes.guess_type(str(audio_path))[0] or "application/octet-stream"
+    return FileResponse(str(audio_path), media_type=media_type)
 
 
 @app.delete("/api/audio/{filename}")

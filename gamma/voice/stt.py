@@ -2,9 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import logging
 
 from ..config import settings
 from ..errors import ConfigurationError, ExternalServiceError
+from ..system.cuda_env import prepend_cuda_library_path
+from ..system.torch_devices import resolve_torch_device
+
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -24,11 +30,33 @@ class FasterWhisperSTTBackend(STTBackend):
 
     def __init__(self) -> None:
         try:
+            prepend_cuda_library_path()
+            resolved_device = settings.stt_device
+            resolved_index = settings.stt_device_index
+            try:
+                import torch
+
+                resolved_spec, warning = resolve_torch_device(
+                    settings.stt_device,
+                    preferred_index=settings.stt_device_index,
+                    torch_module=torch,
+                )
+                if warning:
+                    log.warning(warning)
+                if resolved_spec == "cpu":
+                    resolved_device = "cpu"
+                    resolved_index = None
+                elif resolved_spec.startswith("cuda:"):
+                    resolved_device = "cuda"
+                    resolved_index = int(resolved_spec.split(":", 1)[1])
+            except Exception:
+                pass
             from faster_whisper import WhisperModel
 
             self._model = WhisperModel(
                 settings.stt_model,
-                device=settings.stt_device,
+                device=resolved_device,
+                device_index=resolved_index,
                 compute_type=settings.stt_compute_type,
             )
         except Exception as exc:

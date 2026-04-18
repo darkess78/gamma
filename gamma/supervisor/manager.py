@@ -19,12 +19,13 @@ from ..voice.voice_profiles import resolve_tts_config
 class ManagedService:
     name: str
     module: str
-    host: str
+    bind_host: str
+    public_host: str
     port: int
 
     @property
     def url(self) -> str:
-        return f"http://{self.host}:{self.port}"
+        return f"http://{self.public_host}:{self.port}"
 
 
 class ProcessManager:
@@ -32,9 +33,19 @@ class ProcessManager:
         self._runtime_dir = settings.data_dir / "runtime"
         self._runtime_dir.mkdir(parents=True, exist_ok=True)
         self._services = {
-            "shana": ManagedService("shana", "gamma.main:app", settings.shana_host, settings.shana_port),
+            "shana": ManagedService(
+                "shana",
+                "gamma.main:app",
+                settings.shana_bind_host,
+                settings.shana_public_host,
+                settings.shana_port,
+            ),
             "dashboard": ManagedService(
-                "dashboard", "gamma.dashboard.main:app", settings.dashboard_host, settings.dashboard_port
+                "dashboard",
+                "gamma.dashboard.main:app",
+                settings.dashboard_bind_host,
+                settings.dashboard_public_host,
+                settings.dashboard_port,
             ),
         }
 
@@ -65,7 +76,7 @@ class ProcessManager:
             "uvicorn",
             service.module,
             "--host",
-            service.host,
+            service.bind_host,
             "--port",
             str(service.port),
             "--no-access-log",

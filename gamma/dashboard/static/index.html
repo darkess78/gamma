@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shana Control</title>
-  <link rel="stylesheet" href="/static/dashboard.css">
+  <link rel="stylesheet" href="/static/dashboard.css?v=20260417d">
 </head>
 <body>
   <div class="wrap">
@@ -83,13 +83,13 @@
           <div class="action-group">
             <div class="action-title">LLM</div>
             <div class="action-buttons">
-              <button class="ghost" onclick="action('/api/providers/llm/test')" disabled>Test LLM</button>
+              <button id="llmTestButton" class="ghost" onclick="action('/api/providers/llm/test')" disabled>Test LLM</button>
             </div>
           </div>
           <div class="action-group">
             <div class="action-title">STT</div>
             <div class="action-buttons">
-              <button class="ghost" onclick="action('/api/providers/stt/test')" disabled>Test STT</button>
+              <button id="sttTestButton" class="ghost" onclick="action('/api/providers/stt/test')" disabled>Test STT</button>
             </div>
           </div>
             <div class="action-group">
@@ -118,7 +118,7 @@
           <div class="action-group">
             <div class="action-title">All</div>
             <div class="action-buttons">
-              <button onclick="action('/api/providers/voice/test')" disabled>Full Voice Loop</button>
+              <button id="voiceTestButton" onclick="action('/api/providers/voice/test')" disabled>Full Voice Loop</button>
             </div>
           </div>
         </div>
@@ -245,6 +245,8 @@
               <input class="text-input" id="voiceSessionId" placeholder="optional session id">
               <label class="checkbox-row"><input id="voiceSynthesizeSpeech" type="checkbox" checked> Return audio</label>
               <label class="checkbox-row"><input id="liveBargeInEnabled" type="checkbox" checked> Barge-in</label>
+              <button type="button" class="secondary" id="liveSpeakerMuteButton" onclick="toggleLiveSpeakerMuted()">Mute Shana</button>
+              <button type="button" class="secondary" id="liveMicMuteButton" onclick="toggleLiveMicMuted()">Mute Mic</button>
             </div>
           </div>
           <div class="action-group">
@@ -270,6 +272,10 @@
         </details>
         <div class="render" id="liveVoiceMeta">No active live turn.</div>
         <div class="render" id="liveVoiceStatus">Live voice session is idle.</div>
+        <div class="render" id="liveSubtitleStatus">Subtitles idle.</div>
+        <div class="action-buttons" style="margin-top: 10px;">
+          <button class="ghost" onclick="toggleSubtitleWindow()">Pop Out Subtitles</button>
+        </div>
         <div class="render" id="liveVoiceHistory">No live turns yet.</div>
         <div class="render" id="voiceRoundtripStatus">No browser voice roundtrip has run yet.</div>
         <audio id="voicePlayback" controls preload="none"></audio>
@@ -329,6 +335,7 @@
       <section class="panel panel-fill">
         <div class="panel-head">
           <h2>Memory Stats</h2>
+          <button class="ghost danger-outline" onclick="clearRecentMemory()">Clear Recent Memory</button>
         </div>
         <div class="render" id="memoryStats">...</div>
       </section>
@@ -337,6 +344,12 @@
           <h2>Known People</h2>
         </div>
         <div class="render" id="knownPeople">...</div>
+      </section>
+      <section class="panel wide panel-fill">
+        <div class="panel-head">
+          <h2>Latest Memories</h2>
+        </div>
+        <div class="render" id="recentMemories">No stored memories yet.</div>
       </section>
       <section class="panel wide panel-fill">
         <div class="panel-head">
@@ -368,6 +381,22 @@
       </section>
     </div>
   </div>
-  <script src="/static/dashboard.js"></script>
+  <div id="memoryDeleteModal" class="modal-shell" hidden>
+    <div class="modal-backdrop" onclick="closeMemoryDeleteModal()"></div>
+    <div class="modal-card">
+      <div class="panel-head">
+        <h2>Clear Recent Memory</h2>
+        <button class="ghost" type="button" onclick="closeMemoryDeleteModal()">Close</button>
+      </div>
+      <div class="panel-meta" id="memoryDeleteSummary">Recent memory entries from the last 10 minutes.</div>
+      <div class="memory-delete-actions">
+        <button class="ghost" type="button" onclick="setAllMemorySelections(true)">Select All</button>
+        <button class="ghost" type="button" onclick="setAllMemorySelections(false)">Select None</button>
+        <button class="danger" type="button" onclick="submitMemoryDeletion()">Delete Selected</button>
+      </div>
+      <div id="memoryDeleteList" class="memory-delete-list">No recent memory entries available.</div>
+    </div>
+  </div>
+  <script src="/static/dashboard.js?v=20260417d"></script>
 </body>
 </html>

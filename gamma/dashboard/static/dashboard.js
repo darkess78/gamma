@@ -2,9 +2,14 @@
   var viewMode = localStorage.getItem('gammaDashboardViewMode') || 'human';
   var latestData = null;
   var mediaRecorder = null;
-  var recordedChunks = [];
+  var recordAudioContext = null;
+  var recordMediaStream = null;
+  var recordSourceNode = null;
+  var recordProcessorNode = null;
+  var recordedSamples = [];
+  var recordedSampleRate = 16000;
   var recordedBlob = null;
-  var recordedMimeType = 'audio/webm';
+  var recordedMimeType = 'audio/wav';
   var liveSocket = null;
   var liveAudioContext = null;
   var liveMediaStream = null;
@@ -42,6 +47,11 @@
   var ttsPlayerSeeking = false;
   var ttsLastArtifactName = null;
   var ttsArtifactPollTimer = null;
+  var liveSpeakerMuted = false;
+  var liveMicMuted = false;
+  var subtitlePopup = null;
+  var subtitleState = { transcript: '', reply: '', partial: '' };
+  var pendingMemoryDeleteItems = [];
 
   function postClientLog(kind, detail) {
     try {
@@ -135,6 +145,181 @@
     var minutes = Math.floor(seconds / 60);
     var remaining = seconds % 60;
     return minutes + ' min ' + remaining + ' sec';
+  }
+
+  function setSubtitleState(nextState) {
+    subtitleState = {
+      transcript: String(nextState && nextState.transcript || subtitleState.transcript || ''),
+      reply: String(nextState && nextState.reply || subtitleState.reply || ''),
+      partial: String(nextState && nextState.partial || subtitleState.partial || '')
+    };
+    var lines = [];
+    if (subtitleState.partial) lines.push('Listening: ' + subtitleState.partial);
+    if (subtitleState.transcript) lines.push('You: ' + subtitleState.transcript);
+    if (subtitleState.reply) lines.push('Shana: ' + subtitleState.reply);
+    var text = lines.length ? lines.join('\n\n') : 'Subtitles idle.';
+    setTextIfChanged('liveSubtitleStatus', text, 'liveSubtitleStatus');
+    updateSubtitlePopup(text);
+  }
+
+  function updateSubtitlePopup(text) {
+    if (!subtitlePopup || subtitlePopup.closed) {
+      subtitlePopup = null;
+      return;
+    }
+    var target = subtitlePopup.document.getElementById('subtitleText');
+    if (target) target.textContent = text;
+  }
+
+  function toggleSubtitleWindow() {
+    if (subtitlePopup && !subtitlePopup.closed) {
+      subtitlePopup.close();
+      subtitlePopup = null;
+      return;
+    }
+    subtitlePopup = window.open('', 'gammaSubtitleWindow', 'width=900,height=220');
+    if (!subtitlePopup) {
+      updateLiveStatus('Subtitle window blocked by the browser.');
+      return;
+    }
+    subtitlePopup.document.open();
+    subtitlePopup.document.write(
+      '<!doctype html><html><head><title>Gamma Subtitles</title><style>' +
+      'body{margin:0;background:#0f1318;color:#f6f7fb;font:700 32px/1.35 Georgia,serif;padding:20px;}' +
+      '#subtitleText{white-space:pre-wrap;}' +
+      '</style></head><body><div id="subtitleText">Subtitles idle.</div></body></html>'
+    );
+    subtitlePopup.document.close();
+    updateSubtitlePopup(document.getElementById('liveSubtitleStatus').textContent || 'Subtitles idle.');
+  }
+
+  function syncLivePlaybackMute() {
+    var playback = document.getElementById('voicePlayback');
+    if (playback) playback.muted = liveSpeakerMuted;
+    updateMuteButtons();
+  }
+
+  function updateMuteButtons() {
+    var speakerButton = document.getElementById('liveSpeakerMuteButton');
+    var micButton = document.getElementById('liveMicMuteButton');
+    if (speakerButton) {
+      speakerButton.textContent = liveSpeakerMuted ? 'Unmute Shana' : 'Mute Shana';
+      speakerButton.setAttribute('data-muted', liveSpeakerMuted ? 'true' : 'false');
+      speakerButton.classList.remove('secondary', 'danger');
+      speakerButton.classList.add(liveSpeakerMuted ? 'danger' : 'secondary');
+      speakerButton.style.backgroundColor = '';
+      speakerButton.style.border = '';
+      speakerButton.style.color = '';
+      speakerButton.style.boxShadow = '';
+    }
+    if (micButton) {
+      micButton.textContent = liveMicMuted ? 'Unmute Mic' : 'Mute Mic';
+      micButton.setAttribute('data-muted', liveMicMuted ? 'true' : 'false');
+      micButton.classList.remove('secondary', 'danger');
+      micButton.classList.add(liveMicMuted ? 'danger' : 'secondary');
+      micButton.style.backgroundColor = '';
+      micButton.style.border = '';
+      micButton.style.color = '';
+      micButton.style.boxShadow = '';
+    }
+  }
+
+  function memoryDeleteCandidates(minutes) {
+    var safeMinutes = Math.max(1, Number(minutes) || 10);
+    var items = (latestData && latestData.memory_db && Array.isArray(latestData.memory_db.recent_items))
+      ? latestData.memory_db.recent_items.slice(0)
+      : [];
+    var cutoff = Date.now() - (safeMinutes * 60 * 1000);
+    return items.filter(function (item) {
+      var createdAt = item && item.created_at ? Date.parse(item.created_at) : NaN;
+      return isFinite(createdAt) && createdAt >= cutoff;
+    });
+  }
+
+  function openMemoryDeleteModal(minutes) {
+    var safeMinutes = Math.max(1, Number(minutes) || 10);
+    pendingMemoryDeleteItems = memoryDeleteCandidates(safeMinutes).map(function (item) {
+      return {
+        id: Number(item.id || 0),
+        kind: String(item.kind || ''),
+        summary: String(item.summary || ''),
+        created_at: item.created_at || null,
+        subject_name: item.subject_name || '',
+        session_id: item.session_id || '',
+        selected: true
+      };
+    });
+    var modal = document.getElementById('memoryDeleteModal');
+    var summary = document.getElementById('memoryDeleteSummary');
+    var list = document.getElementById('memoryDeleteList');
+    if (!modal || !summary || !list) return;
+    summary.textContent = 'Select which memory entries from the last ' + safeMinutes + ' minutes to delete.';
+    if (!pendingMemoryDeleteItems.length) {
+      list.textContent = 'No recent memory entries available.';
+    } else {
+      var rows = [];
+      for (var i = 0; i < pendingMemoryDeleteItems.length; i += 1) {
+        var item = pendingMemoryDeleteItems[i];
+        var meta = [];
+        meta.push((item.kind === 'episodic' ? 'Episodic' : 'Fact') + ' #' + item.id);
+        if (item.subject_name) meta.push(item.subject_name);
+        if (item.session_id) meta.push('session ' + item.session_id);
+        if (item.created_at) meta.push(fmtLocalDateTime(item.created_at, 'n/a'));
+        rows.push(
+          '<label class="memory-delete-item">' +
+          '<input type="checkbox" data-memory-index="' + i + '" checked onchange="toggleMemoryDeleteSelection(' + i + ', this.checked)">' +
+          '<div><div>' + escapeHtml(item.summary || 'n/a') + '</div><div class="memory-delete-meta">' + escapeHtml(meta.join(' | ')) + '</div></div>' +
+          '</label>'
+        );
+      }
+      list.innerHTML = rows.join('');
+    }
+    modal.hidden = false;
+  }
+
+  function closeMemoryDeleteModal() {
+    var modal = document.getElementById('memoryDeleteModal');
+    if (modal) modal.hidden = true;
+    pendingMemoryDeleteItems = [];
+  }
+
+  function toggleMemoryDeleteSelection(index, checked) {
+    if (!pendingMemoryDeleteItems[index]) return;
+    pendingMemoryDeleteItems[index].selected = !!checked;
+  }
+
+  function setAllMemorySelections(selected) {
+    for (var i = 0; i < pendingMemoryDeleteItems.length; i += 1) {
+      pendingMemoryDeleteItems[i].selected = !!selected;
+    }
+    var inputs = document.querySelectorAll('#memoryDeleteList input[type="checkbox"]');
+    for (var j = 0; j < inputs.length; j += 1) {
+      inputs[j].checked = !!selected;
+    }
+  }
+
+  async function submitMemoryDeletion() {
+    var selected = pendingMemoryDeleteItems
+      .filter(function (item) { return item.selected; })
+      .map(function (item) { return { id: item.id, kind: item.kind }; });
+    if (!selected.length) {
+      alert('Select at least one memory entry to delete.');
+      return;
+    }
+    await action('/api/memory/clear-selected', { body: { items: selected } });
+    closeMemoryDeleteModal();
+  }
+
+  function toggleLiveSpeakerMuted() {
+    liveSpeakerMuted = !liveSpeakerMuted;
+    syncLivePlaybackMute();
+    updateLiveStatus(liveSpeakerMuted ? 'Speaker muted.' : 'Speaker unmuted.');
+  }
+
+  function toggleLiveMicMuted() {
+    liveMicMuted = !liveMicMuted;
+    updateMuteButtons();
+    updateLiveStatus(liveMicMuted ? 'Microphone muted.' : 'Microphone unmuted.');
   }
 
   function humanizeKey(value) {
@@ -590,14 +775,53 @@
   }
 
   function enableProviderControls() {
-    var buttons = document.querySelectorAll('.provider-actions button');
-    for (var i = 0; i < buttons.length; i += 1) {
-      buttons[i].disabled = false;
-    }
+    var llmButton = document.getElementById('llmTestButton');
+    var sttButton = document.getElementById('sttTestButton');
+    var voiceButton = document.getElementById('voiceTestButton');
+    var ttsButton = document.getElementById('ttsTestButton');
     var ttsProvider = document.getElementById('ttsProviderSelect');
     var ttsProfile = document.getElementById('ttsProfileSelect');
     if (ttsProvider) ttsProvider.disabled = false;
     if (ttsProfile) ttsProfile.disabled = false;
+    if (llmButton) llmButton.disabled = false;
+    if (sttButton) sttButton.disabled = false;
+    if (voiceButton) voiceButton.disabled = false;
+    if (ttsButton) ttsButton.disabled = false;
+  }
+
+  function applyProviderControlAvailability(providers) {
+    providers = providers || {};
+    var llm = providers.llm || {};
+    var stt = providers.stt || {};
+    var tts = providers.tts || {};
+    var llmButton = document.getElementById('llmTestButton');
+    var sttButton = document.getElementById('sttTestButton');
+    var voiceButton = document.getElementById('voiceTestButton');
+    var ttsButton = document.getElementById('ttsTestButton');
+    var synthButton = document.getElementById('ttsSynthesizeButton');
+    var synthInput = document.getElementById('ttsSynthesizeFileInput');
+    var ttsNote = document.getElementById('ttsControlNote');
+
+    if (llmButton) {
+      llmButton.disabled = !String(llm.provider || '').trim();
+    }
+    if (sttButton) {
+      sttButton.disabled = String(stt.provider || '').toLowerCase() === 'stub';
+    }
+    if (voiceButton) {
+      voiceButton.disabled = String(stt.provider || '').toLowerCase() === 'stub';
+    }
+    if (ttsButton) {
+      var control = tts && tts.test_control ? tts.test_control : { enabled: true, reason: '' };
+      ttsButton.disabled = control.enabled === false;
+      if (control.enabled === false && ttsNote && !ttsNote.textContent) {
+        ttsNote.textContent = control.reason || 'Test TTS is disabled for the current configuration.';
+      }
+      if (synthButton) {
+        var hasFile = !!(synthInput && synthInput.files && synthInput.files[0]);
+        synthButton.disabled = ttsButton.disabled || !hasFile;
+      }
+    }
   }
 
   function humanProviderAction(action) {
@@ -699,6 +923,22 @@
       var person = people[i];
       var rel = person.relationship_to_user ? ' (' + person.relationship_to_user + ')' : '';
       lines.push('- ' + (person.name || 'Unnamed') + rel);
+    }
+    return lines.join('\n');
+  }
+
+  function humanRecentMemories(items) {
+    if (!items || !items.length) {
+      return 'No stored memories yet.';
+    }
+    var lines = ['Latest stored memory items by save order:'];
+    for (var i = 0; i < items.length; i += 1) {
+      var item = items[i] || {};
+      var label = item.kind === 'episodic' ? 'Episodic' : 'Fact';
+      var subject = item.subject_name ? ' [' + item.subject_name + ']' : '';
+      var scope = item.session_id ? ' {session ' + item.session_id + '}' : '';
+      var when = item.created_at ? ' @ ' + fmtLocalTime(item.created_at, 'n/a') : '';
+      lines.push('- ' + label + subject + scope + when + ': ' + (item.summary || 'n/a'));
     }
     return lines.join('\n');
   }
@@ -1279,6 +1519,7 @@
     updateTtsControlState((data.providers || systemStatus.providers || {}).tts || {});
     renderTtsProfileEditor((data.providers || systemStatus.providers || {}).tts || {});
     enableProviderControls();
+    applyProviderControlAvailability(data.providers || systemStatus.providers || {});
 
     renderBlockIfChanged(
       'providerActions',
@@ -1308,6 +1549,13 @@
       (systemStatus.memory && systemStatus.memory.known_people) || data.memory_db.known_people || [],
       humanKnownPeople((systemStatus.memory && systemStatus.memory.known_people) || data.memory_db.known_people || []),
       'knownPeople'
+    );
+
+    renderBlockIfChanged(
+      'recentMemories',
+      (data.memory_db && data.memory_db.recent_items) || [],
+      humanRecentMemories((data.memory_db && data.memory_db.recent_items) || []),
+      'recentMemories'
     );
 
     renderBlockIfChanged(
@@ -1375,9 +1623,17 @@
   async function action(path, options) {
     options = options || {};
     try {
+      if (options.confirmMessage && !window.confirm(options.confirmMessage)) {
+        return;
+      }
       postClientLog('action_start', { path: path });
       applyOptimisticActionState(path);
-      var response = await fetch(path, { method: 'POST' });
+      var fetchOptions = { method: 'POST' };
+      if (typeof options.body !== 'undefined') {
+        fetchOptions.headers = { 'Content-Type': 'application/json' };
+        fetchOptions.body = JSON.stringify(options.body);
+      }
+      var response = await fetch(path, fetchOptions);
       var payload = await response.json();
       if (!response.ok) {
         postClientLog('action_error', { path: path, payload: payload });
@@ -1413,6 +1669,10 @@
     }
   }
 
+  function clearRecentMemory() {
+    openMemoryDeleteModal(10);
+  }
+
   async function ttsSynthesizeFromFile() {
     var input = document.getElementById('ttsSynthesizeFileInput');
     var note = document.getElementById('ttsSynthesizeNote');
@@ -1445,7 +1705,9 @@
   function onTtsSynthesizeFileChange() {
     var input = document.getElementById('ttsSynthesizeFileInput');
     var btn = document.getElementById('ttsSynthesizeButton');
-    if (btn) btn.disabled = !input || !input.files || !input.files[0];
+    var testButton = document.getElementById('ttsTestButton');
+    var ttsAllowed = !testButton || !testButton.disabled;
+    if (btn) btn.disabled = !ttsAllowed || !input || !input.files || !input.files[0];
   }
 
   function startArtifactPoll(beforeName) {
@@ -1709,6 +1971,78 @@
     return output;
   }
 
+  function mergeFloat32Chunks(chunks) {
+    var totalLength = 0;
+    for (var i = 0; i < chunks.length; i += 1) {
+      totalLength += chunks[i].length;
+    }
+    var merged = new Float32Array(totalLength);
+    var offset = 0;
+    for (var j = 0; j < chunks.length; j += 1) {
+      merged.set(chunks[j], offset);
+      offset += chunks[j].length;
+    }
+    return merged;
+  }
+
+  function encodeWavBlob(samples, sampleRate) {
+    var pcm = floatTo16BitPCM(samples);
+    var bytesPerSample = 2;
+    var blockAlign = bytesPerSample;
+    var byteRate = sampleRate * blockAlign;
+    var dataSize = pcm.length * bytesPerSample;
+    var buffer = new ArrayBuffer(44 + dataSize);
+    var view = new DataView(buffer);
+
+    function writeString(offset, text) {
+      for (var i = 0; i < text.length; i += 1) {
+        view.setUint8(offset + i, text.charCodeAt(i));
+      }
+    }
+
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, 16, true);
+    writeString(36, 'data');
+    view.setUint32(40, dataSize, true);
+
+    var offset = 44;
+    for (var j = 0; j < pcm.length; j += 1) {
+      view.setInt16(offset, pcm[j], true);
+      offset += 2;
+    }
+    return new Blob([buffer], { type: 'audio/wav' });
+  }
+
+  function cleanupBrowserRecorder() {
+    if (recordProcessorNode) {
+      recordProcessorNode.disconnect();
+      recordProcessorNode.onaudioprocess = null;
+      recordProcessorNode = null;
+    }
+    if (recordSourceNode) {
+      recordSourceNode.disconnect();
+      recordSourceNode = null;
+    }
+    if (recordMediaStream) {
+      recordMediaStream.getTracks().forEach(function (track) { track.stop(); });
+      recordMediaStream = null;
+    }
+    if (recordAudioContext) {
+      recordAudioContext.close().catch(function () {});
+      recordAudioContext = null;
+    }
+    mediaRecorder = null;
+  }
+
   function rmsLevel(floatBuffer) {
     var sum = 0;
     for (var i = 0; i < floatBuffer.length; i += 1) {
@@ -1777,6 +2111,7 @@
     liveInterruptProbePending = false;
     liveInterruptProbeChunks = [];
     liveInterruptProbeBytes = 0;
+    setSubtitleState({ transcript: '', reply: '', partial: '' });
     if (!stopAudio) {
       return;
     }
@@ -1833,6 +2168,7 @@
     liveCurrentChunk = chunk;
     liveCurrentChunkStartedAt = Date.now();
     playback.src = 'data:' + chunk.audio_content_type + ';base64,' + chunk.audio_base64;
+    playback.muted = liveSpeakerMuted;
     updateLiveStatus('Speaking chunk ' + chunk.chunk_index + (chunk.interruptible === false ? ' (protected)...' : '...'));
     playback.onended = function () {
       livePlaybackActive = false;
@@ -1926,8 +2262,11 @@
     var nowMs = Date.now();
     var downsampled = downsampleBuffer(input, liveAudioContext.sampleRate, LIVE_TARGET_SAMPLE_RATE);
     var pcm = floatTo16BitPCM(downsampled);
-    drawLiveMeter(level);
+    drawLiveMeter(liveMicMuted ? 0 : level);
     if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    if (liveMicMuted) {
       return;
     }
     if (liveAwaitingReply) {
@@ -1963,8 +2302,25 @@
     maybeCloseLiveTurn(nowMs);
   }
 
+  function browserMicUnavailableReason() {
+    var host = String(window.location.hostname || '').toLowerCase();
+    var localhost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    if (!window.isSecureContext && !localhost) {
+      return 'Browser microphone access requires HTTPS or localhost. Open the dashboard at http://127.0.0.1:8001 on this machine, or serve it over HTTPS.';
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return 'This browser does not expose microphone capture here. Use a current browser over HTTPS or localhost.';
+    }
+    return '';
+  }
+
   async function startLiveVoice() {
     if (liveSocket) {
+      return;
+    }
+    var micReason = browserMicUnavailableReason();
+    if (micReason) {
+      updateLiveStatus(micReason);
       return;
     }
     try {
@@ -1980,6 +2336,7 @@
           liveSourceNode.connect(liveProcessorNode);
           liveProcessorNode.connect(liveAudioContext.destination);
           updateLiveStatus('Live voice is armed. Start speaking.');
+          syncLivePlaybackMute();
           updateLiveButton();
         } catch (error) {
           updateLiveStatus('Live microphone error: ' + String(error));
@@ -2019,14 +2376,19 @@
           return;
         }
         if (payload.type === 'partial_transcript') {
+          setSubtitleState({ partial: payload.text || '' });
           updateLiveStatus('Hearing: ' + (payload.text || '...'));
           return;
         }
         if (payload.type === 'transcript') {
+          setSubtitleState({ transcript: payload.text || '', partial: '' });
           updateLiveStatus('Transcript ready.');
           return;
         }
         if (payload.type === 'reply_chunk_ready') {
+          if (payload.chunk && payload.chunk.text) {
+            setSubtitleState({ reply: payload.chunk.text, partial: '' });
+          }
           queueLiveReplyChunk(payload.chunk || null, payload.turn_id || '');
           return;
         }
@@ -2043,6 +2405,7 @@
           return;
         }
         if (payload.type === 'turn_result') {
+          setSubtitleState({ transcript: payload.transcript || '', reply: payload.reply_text || '', partial: '' });
           renderLiveMeta(payload.job || null);
           liveHistory.push(payload);
           renderLiveHistory();
@@ -2149,34 +2512,48 @@
         mediaRecorder.stop();
         return;
       }
-      var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      recordedChunks = [];
-      var mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
-      recordedMimeType = '';
-      for (var i = 0; i < mimeTypes.length; i += 1) {
-        if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(mimeTypes[i])) {
-          recordedMimeType = mimeTypes[i];
-          break;
-        }
+      var micReason = browserMicUnavailableReason();
+      if (micReason) {
+        document.getElementById('voiceRoundtripStatus').textContent = micReason;
+        return;
       }
-      mediaRecorder = recordedMimeType ? new MediaRecorder(stream, { mimeType: recordedMimeType }) : new MediaRecorder(stream);
-      mediaRecorder.ondataavailable = function (event) {
-        if (event.data && event.data.size > 0) {
-          recordedChunks.push(event.data);
+      cleanupBrowserRecorder();
+      recordMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+      recordSourceNode = recordAudioContext.createMediaStreamSource(recordMediaStream);
+      recordProcessorNode = recordAudioContext.createScriptProcessor(4096, 1, 1);
+      recordedSamples = [];
+      recordedBlob = null;
+      recordedSampleRate = 16000;
+      recordedMimeType = 'audio/wav';
+      recordProcessorNode.onaudioprocess = function (event) {
+        if (liveMicMuted) {
+          return;
+        }
+        var input = event.inputBuffer.getChannelData(0);
+        var downsampled = downsampleBuffer(input, recordAudioContext.sampleRate, recordedSampleRate);
+        recordedSamples.push(new Float32Array(downsampled));
+      };
+      recordSourceNode.connect(recordProcessorNode);
+      recordProcessorNode.connect(recordAudioContext.destination);
+      mediaRecorder = {
+        state: 'recording',
+        stop: function () {
+          if (!mediaRecorder || mediaRecorder.state !== 'recording') {
+            return;
+          }
+          mediaRecorder.state = 'inactive';
+          var merged = mergeFloat32Chunks(recordedSamples);
+          recordedBlob = encodeWavBlob(merged, recordedSampleRate);
+          document.getElementById('voiceRoundtripStatus').textContent = 'Recorded clip ready to send.';
+          cleanupBrowserRecorder();
+          updateRecordButton();
         }
       };
-      mediaRecorder.onstop = function () {
-        recordedBlob = new Blob(recordedChunks, { type: recordedMimeType || 'audio/webm' });
-        document.getElementById('voiceRoundtripStatus').textContent = 'Recorded clip ready to send.';
-        if (mediaRecorder.stream) {
-          mediaRecorder.stream.getTracks().forEach(function (track) { track.stop(); });
-        }
-        updateRecordButton();
-      };
-      mediaRecorder.start();
       document.getElementById('voiceRoundtripStatus').textContent = 'Recording...';
       updateRecordButton();
     } catch (error) {
+      cleanupBrowserRecorder();
       document.getElementById('voiceRoundtripStatus').textContent = 'Microphone error: ' + String(error);
     }
   }
@@ -2187,8 +2564,7 @@
       return;
     }
     var formData = new FormData();
-    var extension = 'webm';
-    if ((recordedMimeType || '').indexOf('mp4') !== -1) extension = 'm4a';
+    var extension = 'wav';
     formData.append('audio_file', recordedBlob, 'browser-recording.' + extension);
     var sessionId = document.getElementById('voiceSessionId').value.trim();
     if (sessionId) formData.append('session_id', sessionId);
@@ -2204,6 +2580,7 @@
       if (payload.audio_base64 && payload.audio_content_type) {
         var playback = document.getElementById('voicePlayback');
         playback.src = 'data:' + payload.audio_content_type + ';base64,' + payload.audio_base64;
+        playback.muted = liveSpeakerMuted;
         playback.play().catch(function () {});
       }
     } catch (error) {
@@ -2411,6 +2788,7 @@
   document.getElementById('liveBargeInEnabled').addEventListener('change', persistLiveControlDefaults);
   updateRecordButton();
   updateLiveButton();
+  updateMuteButtons();
   updateLiveControlLabels();
   renderLiveMeta(null);
   renderLiveHistory();
@@ -2446,6 +2824,14 @@
     element.addEventListener(eventName, syncJsonFromStructuredFields);
   });
   document.getElementById('ttsEditorValues').addEventListener('input', syncStructuredFieldsFromJson);
+  window.toggleLiveSpeakerMuted = toggleLiveSpeakerMuted;
+  window.toggleLiveMicMuted = toggleLiveMicMuted;
+  window.toggleSubtitleWindow = toggleSubtitleWindow;
+  window.clearRecentMemory = clearRecentMemory;
+  window.closeMemoryDeleteModal = closeMemoryDeleteModal;
+  window.setAllMemorySelections = setAllMemorySelections;
+  window.toggleMemoryDeleteSelection = toggleMemoryDeleteSelection;
+  window.submitMemoryDeletion = submitMemoryDeletion;
   loadStatus();
   scheduleRuntimePoll();
 }());

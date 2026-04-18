@@ -13,13 +13,13 @@ def _unique_paths(paths: Iterable[Path]) -> list[Path]:
     for path in paths:
         expanded = path.expanduser()
         try:
-            resolved = expanded.resolve()
+            normalized = expanded.absolute()
         except Exception:
-            resolved = expanded
-        if resolved in seen:
+            normalized = expanded
+        if normalized in seen:
             continue
-        seen.add(resolved)
-        unique.append(resolved)
+        seen.add(normalized)
+        unique.append(normalized)
     return unique
 
 

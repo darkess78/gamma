@@ -190,6 +190,32 @@ python -m pip install -e .
 
 The repo-local `.venv` is platform-specific. Create it from the OS and shell you plan to use; do not copy `.venv` between Windows and Linux.
 
+## Host Binding and LAN Access
+
+Gamma now separates bind addresses from client-facing addresses:
+- `SHANA_BIND_HOST` and `SHANA_DASHBOARD_BIND_HOST` control which interface Uvicorn listens on
+- `SHANA_PUBLIC_HOST` and `SHANA_DASHBOARD_PUBLIC_HOST` control the URLs shown in the dashboard, tray, and helper pages
+
+Default local-only setup:
+
+```env
+SHANA_BIND_HOST=127.0.0.1
+SHANA_PUBLIC_HOST=127.0.0.1
+SHANA_DASHBOARD_BIND_HOST=127.0.0.1
+SHANA_DASHBOARD_PUBLIC_HOST=127.0.0.1
+```
+
+LAN setup on Linux:
+
+```env
+SHANA_BIND_HOST=0.0.0.0
+SHANA_PUBLIC_HOST=192.168.1.50
+SHANA_DASHBOARD_BIND_HOST=0.0.0.0
+SHANA_DASHBOARD_PUBLIC_HOST=192.168.1.50
+```
+
+Use this machine's actual LAN IP for the `*_PUBLIC_HOST` values. Do not set them to `0.0.0.0`.
+
 ## Configuration model
 
 Gamma now uses layered file config so you can keep the same repo and code on multiple machines with different local settings.
@@ -234,6 +260,21 @@ SHANA_STT_PROVIDER=faster-whisper
 SHANA_TTS_PROVIDER=stub
 ```
 
+For a dual-GPU Linux machine, a sensible split is:
+
+```env
+SHANA_LLM_PROVIDER=ollama
+SHANA_LOCAL_LLM_ENDPOINT=http://127.0.0.1:11434
+SHANA_LOCAL_LLM_MODEL=gpt-oss:20b
+SHANA_STT_PROVIDER=local
+SHANA_STT_MODEL=base.en
+SHANA_STT_DEVICE=cuda
+SHANA_STT_DEVICE_INDEX=1
+SHANA_STT_COMPUTE_TYPE=float16
+```
+
+This keeps the main Ollama model on the primary GPU and moves faster-whisper STT to GPU index `1`.
+
 For an OpenAI-backed voice stack, use separate models for chat, speech-to-text, and speech output:
 
 ```env
@@ -252,7 +293,7 @@ SHANA_TTS_VOICE=alloy
 ### Linux / macOS
 
 ```bash
-python -m uvicorn gamma.main:app --reload
+python -m uvicorn gamma.main:app --reload --host "${SHANA_BIND_HOST:-127.0.0.1}" --port "${SHANA_PORT:-8000}"
 ```
 
 ### Windows (PowerShell)
@@ -276,6 +317,7 @@ python scripts/stop_services.py
 ```
 
 Platform wrappers also exist:
+- Cross-platform Python launchers: `scripts/open_gamma.py`, `scripts/start_shana.py`, `scripts/start_dashboard.py`, `scripts/start_gamma_tray.py`, `scripts/stop_services.py`
 - Linux convenience wrappers: `scripts/*_linux.sh`
 - Windows convenience wrappers: `scripts/*_windows.cmd`, `scripts/*_windows.py`
 
@@ -288,6 +330,12 @@ Notes:
 - GPT-SoVITS and Qwen TTS can be managed as local sidecars when configured with local endpoints
 - Ollama remains external; Gamma health-checks it but does not manage its lifecycle
 - tray support on Linux depends on the desktop environment exposing a usable system tray and a graphical session with `DISPLAY` or `WAYLAND_DISPLAY`
+
+For LAN access on Linux:
+- set `SHANA_BIND_HOST=0.0.0.0` and `SHANA_DASHBOARD_BIND_HOST=0.0.0.0`
+- set both `*_PUBLIC_HOST` values to the machine's LAN IP
+- enable dashboard auth and API auth before exposing ports beyond localhost
+- open firewall ports `8000` and `8001` only on trusted networks
 
 ## Linux host notes
 
@@ -323,6 +371,8 @@ SHANA_DASHBOARD_SESSION_SECRET=replace-with-a-long-random-secret
 SHANA_DASHBOARD_COOKIE_SECURE=true
 ```
 
+If you are serving plain HTTP on a home LAN, leave `SHANA_DASHBOARD_COOKIE_SECURE=false` until you terminate TLS in front of Gamma. Secure cookies are not sent over plain HTTP.
+
 ## API Auth
 
 The raw Shana API on port `8000` can also be protected with an optional bearer token.
@@ -357,6 +407,8 @@ curl -X POST http://127.0.0.1:8000/v1/vision/analyze \
   -F "user_text=Read the screen and tell me the important parts." \
   -F "image_file=@test_image.png"
 ```
+
+From another PC on the same LAN, replace `127.0.0.1` with the Gamma machine's LAN IP, for example `http://192.168.1.50:8001/` for the dashboard and `http://192.168.1.50:8000/` for the API.
 
 ## Voice / STT / TTS test commands
 
@@ -402,6 +454,7 @@ Current live behavior:
 - completed, cancelled, and failed live jobs are tracked by turn id
 - hard-cancel currently applies to the dashboard live browser path only
 - CLI voice modes still use their existing non-worker path
+- the browser capture path currently uses `ScriptProcessorNode`; browsers warn that it is deprecated, so this should be migrated to `AudioWorkletNode` in a follow-up cleanup pass
 
 The current implementation is still phrase-based, not true streaming word-by-word transcription. On Windows, the mic controller records through `sounddevice` and plays WAV replies through `winsound`. On Linux it prefers `arecord`/`aplay`, with `sounddevice` as a fallback when those binaries are unavailable.
 

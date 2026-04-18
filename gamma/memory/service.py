@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine, delete, select
 
 from ..config import settings
 from ..schemas.response import MemoryCandidate
@@ -74,6 +75,7 @@ class MemoryService:
                     "subject_type": "TEXT DEFAULT 'primary_user'",
                     "subject_name": "TEXT",
                     "relationship_to_user": "TEXT",
+                    "created_at": "TEXT",
                 },
             )
             self._ensure_sqlite_columns(
@@ -83,6 +85,7 @@ class MemoryService:
                     "subject_type": "TEXT DEFAULT 'primary_user'",
                     "subject_name": "TEXT",
                     "relationship_to_user": "TEXT",
+                    "created_at": "TEXT",
                 },
             )
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_episodicmemory_session_id ON episodicmemory (session_id)")
@@ -284,6 +287,110 @@ class MemoryService:
             if len(people) >= limit:
                 break
         return people
+
+    def recent_items(self, limit: int = 12) -> list[dict[str, str | int | float | None]]:
+        with Session(self._engine) as session:
+            profile_facts = list(session.exec(select(ProfileFact).order_by(ProfileFact.created_at.desc(), ProfileFact.id.desc())))[:limit]
+            episodic_items = list(session.exec(select(EpisodicMemory).order_by(EpisodicMemory.created_at.desc(), EpisodicMemory.id.desc())))[:limit]
+        items: list[dict[str, str | int | float | None]] = []
+        for fact in profile_facts:
+            items.append(
+                {
+                    "kind": "profile_fact",
+                    "id": fact.id,
+                    "subject_type": fact.subject_type,
+                    "subject_name": fact.subject_name,
+                    "relationship_to_user": fact.relationship_to_user,
+                    "summary": fact.fact_text,
+                    "category": fact.category,
+                    "confidence": fact.confidence,
+                    "session_id": None,
+                    "created_at": fact.created_at.isoformat() if fact.created_at else None,
+                }
+            )
+        for memory in episodic_items:
+            items.append(
+                {
+                    "kind": "episodic",
+                    "id": memory.id,
+                    "subject_type": memory.subject_type,
+                    "subject_name": memory.subject_name,
+                    "relationship_to_user": memory.relationship_to_user,
+                    "summary": memory.summary,
+                    "category": memory.tags,
+                    "confidence": memory.importance,
+                    "session_id": memory.session_id,
+                    "created_at": memory.created_at.isoformat() if memory.created_at else None,
+                }
+            )
+        items.sort(key=lambda item: (str(item.get("created_at") or ""), int(item.get("id") or 0)), reverse=True)
+        return items[:limit]
+
+    def clear_all(self) -> dict[str, int]:
+        with Session(self._engine) as session:
+            profile_count = len(list(session.exec(select(ProfileFact))))
+            episodic_count = len(list(session.exec(select(EpisodicMemory))))
+            session.exec(delete(ProfileFact))
+            session.exec(delete(EpisodicMemory))
+            session.commit()
+        return {
+            "profile_count": profile_count,
+            "episodic_count": episodic_count,
+            "cleared_total": profile_count + episodic_count,
+        }
+
+    def clear_recent(self, minutes: int = 10) -> dict[str, int]:
+        safe_minutes = max(1, minutes)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=safe_minutes)
+        with Session(self._engine) as session:
+            recent_facts = list(session.exec(select(ProfileFact).where(ProfileFact.created_at >= cutoff)))
+            recent_episodic = list(session.exec(select(EpisodicMemory).where(EpisodicMemory.created_at >= cutoff)))
+            for fact in recent_facts:
+                session.delete(fact)
+            for memory in recent_episodic:
+                session.delete(memory)
+            session.commit()
+        return {
+            "profile_count": len(recent_facts),
+            "episodic_count": len(recent_episodic),
+            "cleared_total": len(recent_facts) + len(recent_episodic),
+            "minutes": safe_minutes,
+        }
+
+    def clear_selected(self, selections: Iterable[dict[str, object]]) -> dict[str, int]:
+        profile_ids: set[int] = set()
+        episodic_ids: set[int] = set()
+        for item in selections:
+            if not isinstance(item, dict):
+                continue
+            kind = str(item.get("kind", "")).strip().lower()
+            try:
+                raw_id = int(item.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if raw_id <= 0:
+                continue
+            if kind == "profile_fact":
+                profile_ids.add(raw_id)
+            elif kind == "episodic":
+                episodic_ids.add(raw_id)
+        with Session(self._engine) as session:
+            removed_profile = 0
+            removed_episodic = 0
+            if profile_ids:
+                for fact in session.exec(select(ProfileFact).where(ProfileFact.id.in_(profile_ids))):
+                    session.delete(fact)
+                    removed_profile += 1
+            if episodic_ids:
+                for memory in session.exec(select(EpisodicMemory).where(EpisodicMemory.id.in_(episodic_ids))):
+                    session.delete(memory)
+                    removed_episodic += 1
+            session.commit()
+        return {
+            "profile_count": removed_profile,
+            "episodic_count": removed_episodic,
+            "cleared_total": removed_profile + removed_episodic,
+        }
 
     def stats(self) -> dict[str, str | int]:
         db_path = _sqlite_path_from_url(settings.database_url)

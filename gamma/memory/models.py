@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from sqlmodel import Field, SQLModel
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class ProfileFact(SQLModel, table=True):
@@ -11,6 +17,7 @@ class ProfileFact(SQLModel, table=True):
     subject_type: str = Field(default="primary_user", index=True)
     subject_name: str | None = Field(default=None, index=True)
     relationship_to_user: str | None = None
+    created_at: datetime = Field(default_factory=_utc_now, index=True)
 
 
 class EpisodicMemory(SQLModel, table=True):
@@ -22,3 +29,4 @@ class EpisodicMemory(SQLModel, table=True):
     subject_type: str = Field(default="primary_user", index=True)
     subject_name: str | None = Field(default=None, index=True)
     relationship_to_user: str | None = None
+    created_at: datetime = Field(default_factory=_utc_now, index=True)

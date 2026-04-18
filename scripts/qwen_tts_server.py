@@ -38,12 +38,18 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+from gamma.system.torch_devices import resolve_torch_device
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     stream=sys.stdout,
 )
 log = logging.getLogger("qwen_tts_server")
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(PROJECT_ROOT / ".env")
 
 # ---------------------------------------------------------------------------
 # Config
@@ -53,6 +59,7 @@ DTYPE_STR = os.getenv("QWEN_TTS_DTYPE", "float32")
 DEVICE_STR = os.getenv("QWEN_TTS_DEVICE", "auto")
 PORT = int(os.getenv("QWEN_TTS_PORT", "9882"))
 HOST = os.getenv("QWEN_TTS_HOST", "127.0.0.1")
+LOCAL_FILES_ONLY = os.getenv("QWEN_TTS_LOCAL_FILES_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}
 
 def _model_type() -> str:
     """Infer model capability from MODEL_ID: 'base', 'customvoice', or 'voicedesign'."""
@@ -62,6 +69,13 @@ def _model_type() -> str:
     if "voicedesign" in m or "voice_design" in m or "voice-design" in m:
         return "voicedesign"
     return "base"  # Base model: supports voice clone + voice design
+
+
+def _resolved_model_id() -> Path | str:
+    candidate = Path(MODEL_ID).expanduser()
+    if candidate.exists():
+        return candidate.resolve()
+    return MODEL_ID
 
 # ---------------------------------------------------------------------------
 # Model loading (lazy singleton)
@@ -75,7 +89,15 @@ def _load_model():
     if _model is not None:
         return _model
 
-    log.info("Loading Qwen3-TTS model: %s  dtype=%s  device=%s", MODEL_ID, DTYPE_STR, DEVICE_STR)
+    resolved_model = _resolved_model_id()
+    local_files_only = LOCAL_FILES_ONLY or isinstance(resolved_model, Path)
+    log.info(
+        "Loading Qwen3-TTS model: %s  dtype=%s  device=%s  local_files_only=%s",
+        resolved_model,
+        DTYPE_STR,
+        DEVICE_STR,
+        local_files_only,
+    )
 
     import torch
     from qwen_tts import Qwen3TTSModel  # type: ignore[import]
@@ -86,15 +108,15 @@ def _load_model():
     elif DTYPE_STR == "float16":
         dtype = torch.float16
 
-    if DEVICE_STR == "auto":
-        device_map = "cuda:0" if torch.cuda.is_available() else "cpu"
-    else:
-        device_map = DEVICE_STR
+    device_map, warning = resolve_torch_device(DEVICE_STR, torch_module=torch)
+    if warning:
+        log.warning(warning)
 
     model = Qwen3TTSModel.from_pretrained(
-        MODEL_ID,
+        str(resolved_model),
         device_map=device_map,
         dtype=dtype,
+        local_files_only=local_files_only,
         # FlashAttention2 not used — incompatible with Windows native CUDA builds
     )
     _model = model

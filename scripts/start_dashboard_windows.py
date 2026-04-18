@@ -5,6 +5,8 @@ import sys
 import webbrowser
 from pathlib import Path
 
+from gamma.config import settings
+
 
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
@@ -26,7 +28,7 @@ def main() -> int:
             | getattr(subprocess, "CREATE_NO_WINDOW", 0)
         ),
     )
-    webbrowser.open("http://127.0.0.1:8001/")
+    webbrowser.open(settings.dashboard_base_url)
     return 0
 
 

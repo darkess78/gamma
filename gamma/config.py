@@ -135,14 +135,54 @@ class Settings:
     default_language: str = str(
         _setting("SHANA_DEFAULT_LANGUAGE", _config_value(APP_CONFIG, "default_language", default="en"))
     )
-    shana_host: str = str(_setting("SHANA_HOST", _config_value(APP_CONFIG, "shana_host", default="127.0.0.1")))
+    shana_bind_host: str = str(
+        _setting(
+            "SHANA_BIND_HOST",
+            _config_value(
+                APP_CONFIG,
+                "shana_bind_host",
+                default=_setting("SHANA_HOST", _config_value(APP_CONFIG, "shana_host", default="127.0.0.1")),
+            ),
+        )
+    )
+    shana_public_host: str = str(
+        _setting(
+            "SHANA_PUBLIC_HOST",
+            _config_value(
+                APP_CONFIG,
+                "shana_public_host",
+                default=_setting("SHANA_HOST", _config_value(APP_CONFIG, "shana_host", default="127.0.0.1")),
+            ),
+        )
+    )
     shana_port: int = _as_int(_setting("SHANA_PORT", _config_value(APP_CONFIG, "shana_port", default=8000)), default=8000)
-    dashboard_host: str = str(
-        _setting("SHANA_DASHBOARD_HOST", _config_value(APP_CONFIG, "dashboard_host", default="127.0.0.1"))
+    dashboard_bind_host: str = str(
+        _setting(
+            "SHANA_DASHBOARD_BIND_HOST",
+            _config_value(
+                APP_CONFIG,
+                "dashboard_bind_host",
+                default=_setting("SHANA_DASHBOARD_HOST", _config_value(APP_CONFIG, "dashboard_host", default="127.0.0.1")),
+            ),
+        )
+    )
+    dashboard_public_host: str = str(
+        _setting(
+            "SHANA_DASHBOARD_PUBLIC_HOST",
+            _config_value(
+                APP_CONFIG,
+                "dashboard_public_host",
+                default=_setting("SHANA_DASHBOARD_HOST", _config_value(APP_CONFIG, "dashboard_host", default="127.0.0.1")),
+            ),
+        )
     )
     dashboard_port: int = _as_int(
         _setting("SHANA_DASHBOARD_PORT", _config_value(APP_CONFIG, "dashboard_port", default=8001)),
         default=8001,
+    )
+    dashboard_public_port: int = _as_int(
+        _setting("SHANA_DASHBOARD_PUBLIC_PORT", _config_value(APP_CONFIG, "dashboard_public_port", default="")),
+        default=_as_int(_setting("SHANA_DASHBOARD_PORT", _config_value(APP_CONFIG, "dashboard_port", default=8001)), default=8001),
     )
     dashboard_enable_gpu: bool = _as_bool(
         _setting("SHANA_DASHBOARD_ENABLE_GPU", _config_value(APP_CONFIG, "dashboard_enable_gpu", default=True)),
@@ -172,6 +212,12 @@ class Settings:
         _setting("SHANA_DASHBOARD_COOKIE_SECURE", _config_value(APP_CONFIG, "dashboard_cookie_secure", default=False)),
         default=False,
     )
+    dashboard_public_scheme: str = str(
+        _setting(
+            "SHANA_DASHBOARD_PUBLIC_SCHEME",
+            _config_value(APP_CONFIG, "dashboard_public_scheme", default="https" if _as_bool(_setting("SHANA_DASHBOARD_COOKIE_SECURE", _config_value(APP_CONFIG, "dashboard_cookie_secure", default=False)), default=False) else "http"),
+        )
+    ).strip().lower() or "http"
     api_auth_enabled: bool = _as_bool(
         _setting("SHANA_API_AUTH_ENABLED", _config_value(APP_CONFIG, "api_auth_enabled", default=False)),
         default=False,
@@ -237,6 +283,10 @@ class Settings:
         )
     )
     stt_device: str = str(_setting("SHANA_STT_DEVICE", _config_value(APP_CONFIG, "stt_device", default="cpu")))
+    stt_device_index: int = _as_int(
+        _setting("SHANA_STT_DEVICE_INDEX", _config_value(APP_CONFIG, "stt_device_index", default=0)),
+        default=0,
+    )
     stt_compute_type: str = str(
         _setting("SHANA_STT_COMPUTE_TYPE", _config_value(APP_CONFIG, "stt_compute_type", default="int8"))
     )
@@ -345,11 +395,14 @@ class Settings:
 
     @property
     def shana_base_url(self) -> str:
-        return f"http://{self.shana_host}:{self.shana_port}"
+        return f"http://{self.shana_public_host}:{self.shana_port}"
 
     @property
     def dashboard_base_url(self) -> str:
-        return f"http://{self.dashboard_host}:{self.dashboard_port}"
+        default_port = 443 if self.dashboard_public_scheme == "https" else 80
+        if self.dashboard_public_port == default_port:
+            return f"{self.dashboard_public_scheme}://{self.dashboard_public_host}"
+        return f"{self.dashboard_public_scheme}://{self.dashboard_public_host}:{self.dashboard_public_port}"
 
 
 settings = Settings()

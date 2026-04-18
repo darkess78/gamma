@@ -126,6 +126,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Inference device, for example 'cpu' or 'cuda'.",
     )
     parser.add_argument(
+        "--device-index",
+        type=int,
+        default=settings.stt_device_index,
+        help="GPU index for faster-whisper when using CUDA.",
+    )
+    parser.add_argument(
         "--compute-type",
         default=settings.stt_compute_type,
         help="faster-whisper compute type, for example 'int8' or 'float16'.",
@@ -263,7 +269,12 @@ def build_model(args: argparse.Namespace) -> WhisperModel:
             f"Model '{args.model}' is English-only and cannot be used with language '{args.language}'. "
             "Use a multilingual Whisper model such as 'base', 'small', 'medium', or 'large-v3'."
         )
-    return WhisperModel(args.model, device=args.device, compute_type=args.compute_type)
+    return WhisperModel(
+        args.model,
+        device=args.device,
+        device_index=args.device_index,
+        compute_type=args.compute_type,
+    )
 
 
 def merge_transcript_segments(raw_segments: Iterable[object], gap_threshold: float) -> list[dict[str, object]]:

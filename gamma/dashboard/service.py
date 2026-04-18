@@ -22,6 +22,7 @@ from ..config import app_local_config_path, load_app_file_config, settings
 from ..memory.service import MemoryService
 from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..supervisor.manager import ProcessManager
+from ..system.cuda_env import prepend_cuda_library_path
 from ..system.status import SystemStatusService
 from ..voice.voice_profiles import get_voice_profile, list_voice_profiles, profile_template, save_voice_profile
 
@@ -57,6 +58,10 @@ class DashboardService:
             selected_tts_profile,
             selected_tts_provider,
         )
+        local_status["providers"]["tts"]["test_control"] = self._tts_test_control_state(
+            selected_tts_provider,
+            selected_tts_profile,
+        )
         runtime_status = self.build_runtime_status()
         system_status = self._probe_json(settings.shana_base_url + "/v1/system/status")
         return {
@@ -81,10 +86,54 @@ class DashboardService:
             "memory_db": {
                 "stats": self._memory.stats(),
                 "known_people": self._memory.get_known_people(),
+                "recent_items": self._memory.recent_items(),
             },
             "provider_actions": self._latest_provider_action,
             "timings": self._recent_timings(),
         }
+
+    def _tts_test_control_state(self, provider: str, profile_id: str | None) -> dict[str, Any]:
+        normalized = (provider or "").strip().lower()
+        profile = get_voice_profile(profile_id)
+        values = profile.values if profile and isinstance(profile.values, dict) else {}
+        if normalized in {"stub", "openai", "piper"}:
+            return {"enabled": True, "reason": ""}
+        if normalized in {"local", "gpt-sovits", "gpt_sovits"}:
+            ref_audio = str(values.get("gpt_sovits_reference_audio", "")).strip()
+            if not ref_audio:
+                return {
+                    "enabled": False,
+                    "reason": "Test TTS needs a GPT-SoVITS profile with a reference audio file.",
+                }
+            if not self._path_exists(ref_audio):
+                return {
+                    "enabled": False,
+                    "reason": f"Missing GPT-SoVITS reference audio: {ref_audio}",
+                }
+            return {"enabled": True, "reason": ""}
+        if self._is_qwen_provider(normalized):
+            speaker = str(values.get("qwen_tts_speaker", "")).strip()
+            ref_audio = str(values.get("qwen_tts_reference_audio", "")).strip()
+            if speaker:
+                return {"enabled": True, "reason": ""}
+            if not ref_audio:
+                return {
+                    "enabled": False,
+                    "reason": "Test TTS needs a Qwen profile with either a built-in speaker or a reference audio file.",
+                }
+            if not self._path_exists(ref_audio):
+                return {
+                    "enabled": False,
+                    "reason": f"Missing Qwen reference audio: {ref_audio}",
+                }
+            return {"enabled": True, "reason": ""}
+        return {"enabled": False, "reason": "Test TTS is unavailable for the current provider."}
+
+    def _path_exists(self, value: str) -> bool:
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = settings.project_root / path
+        return path.exists()
 
     def build_runtime_status(self) -> dict[str, Any]:
         shana_process = self._process_manager.find_process("shana")
@@ -127,6 +176,39 @@ class DashboardService:
             "tts": tts_results,
             "dashboard_url": settings.dashboard_base_url,
         }
+
+    def clear_memory(self) -> dict[str, Any]:
+        result = self._memory.clear_all()
+        self._latest_provider_action = {
+            "action": "memory_clear",
+            "status": "ok",
+            "detail": f"Cleared {result['cleared_total']} stored memory rows.",
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            **result,
+        }
+        return {"ok": True, "detail": "Memory cleared.", **result}
+
+    def clear_recent_memory(self, *, minutes: int = 10) -> dict[str, Any]:
+        result = self._memory.clear_recent(minutes=minutes)
+        self._latest_provider_action = {
+            "action": "memory_clear_recent",
+            "status": "ok",
+            "detail": f"Cleared {result['cleared_total']} recent memory rows from the last {result['minutes']} minutes.",
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            **result,
+        }
+        return {"ok": True, "detail": "Recent memory cleared.", **result}
+
+    def clear_selected_memory(self, selections: list[dict[str, object]]) -> dict[str, Any]:
+        result = self._memory.clear_selected(selections)
+        self._latest_provider_action = {
+            "action": "memory_clear_selected",
+            "status": "ok",
+            "detail": f"Cleared {result['cleared_total']} selected memory rows.",
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            **result,
+        }
+        return {"ok": True, "detail": "Selected memory cleared.", **result}
 
     def start_tts(self) -> dict[str, Any]:
         provider = self.selected_tts_provider()
@@ -283,6 +365,19 @@ class DashboardService:
         env = {"SHANA_TTS_PROVIDER": selected_provider}
         if selected_profile:
             env["SHANA_TTS_PROFILE"] = selected_profile
+        if self._is_qwen_provider(selected_provider):
+            ready = self._wait_for_qwen_tts_ready(selected_profile, timeout_seconds=90)
+            if not ready.get("ok"):
+                self._latest_provider_action = {
+                    "action": "tts_test",
+                    "status": "error",
+                    "detail": "tts_test failed",
+                    "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "stdout": "",
+                    "stderr": ready.get("detail", "Qwen3-TTS is not ready."),
+                    "duration_ms": 0.0,
+                }
+                return self._latest_provider_action
         return self._run_provider_action(
             "tts_test",
             self._python_module_command("gamma.run_tts_test", "Dashboard TTS smoke test."),
@@ -353,6 +448,20 @@ class DashboardService:
 
     def test_voice_roundtrip(self) -> dict[str, Any]:
         sample = self._sample_audio_path()
+        selected_provider = self.selected_tts_provider()
+        if self._is_qwen_provider(selected_provider):
+            ready = self._wait_for_qwen_tts_ready(self.selected_tts_profile(), timeout_seconds=90)
+            if not ready.get("ok"):
+                self._latest_provider_action = {
+                    "action": "voice_roundtrip_test",
+                    "status": "error",
+                    "detail": "voice_roundtrip_test failed",
+                    "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "stdout": "",
+                    "stderr": ready.get("detail", "Qwen3-TTS is not ready."),
+                    "duration_ms": 0.0,
+                }
+                return self._latest_provider_action
         return self._run_provider_action(
             "voice_roundtrip_test",
             self._python_module_command("gamma.run_voice_roundtrip", str(sample)),
@@ -762,20 +871,43 @@ class DashboardService:
         timeout: int,
         env_overrides: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
+        env = prepend_cuda_library_path(os.environ.copy())
+        if env_overrides:
+            env.update(env_overrides)
         run_kwargs: dict[str, Any] = {
             "cwd": settings.project_root,
             "capture_output": True,
             "text": True,
             "timeout": timeout,
             "check": True,
+            "env": env,
         }
-        if env_overrides:
-            env = os.environ.copy()
-            env.update(env_overrides)
-            run_kwargs["env"] = env
         if os.name == "nt":
             run_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         return subprocess.run(command, **run_kwargs)
+
+    def _wait_for_qwen_tts_ready(self, profile_id: str | None, *, timeout_seconds: int) -> dict[str, Any]:
+        profile = get_voice_profile(profile_id)
+        values = profile.values if profile and isinstance(profile.values, dict) else {}
+        endpoint = str(values.get("qwen_tts_endpoint", "")).strip()
+        if not endpoint:
+            return {"ok": False, "detail": "No Qwen TTS endpoint is configured for the selected profile."}
+        base_url = endpoint.rsplit("/tts", 1)[0]
+        deadline = time.time() + max(timeout_seconds, 1)
+        last_error = "Qwen3-TTS readiness check did not reach the server."
+        while time.time() < deadline:
+            try:
+                with urllib.request.urlopen(base_url + "/health", timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                if 200 <= response.status < 300 and payload.get("status") == "ok":
+                    return {"ok": True, "detail": "ready"}
+                last_error = f"Unexpected Qwen3-TTS health response: HTTP {response.status}"
+            except urllib.error.HTTPError as exc:
+                last_error = f"Qwen3-TTS health check failed: HTTP {exc.code}"
+            except Exception as exc:
+                last_error = f"Qwen3-TTS health check failed: {exc}"
+            time.sleep(1)
+        return {"ok": False, "detail": last_error}
 
     def _sample_audio_path(self) -> Path:
         sample = settings.project_root / "test_audio" / "jfk.flac"

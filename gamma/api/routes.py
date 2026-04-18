@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
 
+from ..config import settings
 from ..conversation.service import ConversationService
 from ..errors import ConfigurationError, ConversationError, ExternalServiceError, GammaError
 from ..schemas.conversation import ConversationRequest
@@ -56,7 +57,7 @@ def dashboard() -> str:
   <div class="card">
     <h1>Dashboard Runs Separately Now</h1>
     <p>The browser dashboard is no longer hosted by the main Shana API process.</p>
-    <p>Start the standalone dashboard and open <a href="http://127.0.0.1:8001/">http://127.0.0.1:8001/</a>.</p>
+    <p>Start the standalone dashboard and open <a href="{settings.dashboard_base_url}/">{settings.dashboard_base_url}/</a>.</p>
   </div>
 </body>
 </html>"""

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import threading
 from datetime import datetime, timezone
@@ -24,6 +25,8 @@ from ..voice.tts import TTSService
 
 
 ALLOWED_EMOTIONS: set[str] = {"neutral", "happy", "teasing", "concerned", "excited", "embarrassed", "annoyed"}
+_CODE_FENCE_RE = re.compile(r"```+")
+_INLINE_TICK_RE = re.compile(r"`([^`]*)`")
 
 
 class ConversationService:
@@ -46,6 +49,7 @@ class ConversationService:
         speaker_ctx: SpeakerContext | None = None,
         fast_mode: bool = False,
         brief_mode: bool = False,
+        micro_mode: bool = False,
     ) -> AssistantResponse:
         return self._respond(
             user_text=user_text,
@@ -54,6 +58,7 @@ class ConversationService:
             speaker=self._identity.resolve(speaker_ctx),
             fast_mode=fast_mode,
             brief_mode=brief_mode,
+            micro_mode=micro_mode,
         )
 
     def respond_with_image(
@@ -121,6 +126,7 @@ class ConversationService:
         speaker: SpeakerProfile | None = None,
         fast_mode: bool = False,
         brief_mode: bool = False,
+        micro_mode: bool = False,
         image: VisionImage | None = None,
         vision_analysis: VisionAnalysis | None = None,
     ) -> AssistantResponse:
@@ -143,7 +149,17 @@ class ConversationService:
                     "This is a low-latency live voice turn. "
                     "Reply in one short sentence when possible, or at most two very short sentences. "
                     "Prefer under 16 words unless clarity requires more. "
-                    "Use concise spoken phrasing and avoid paragraphs."
+                    "Use concise spoken phrasing and avoid paragraphs. "
+                    "Do not use markdown, lists, code fences, or quoted formatting."
+                )
+            if micro_mode:
+                system_prompt += (
+                    "\n\n# Live Voice Micro Reply\n"
+                    "This is a micro-reply turn for live speech. "
+                    "Reply with exactly one very short natural sentence. "
+                    "Prefer 2 to 8 words. "
+                    "No markdown. No code fences. No lists. No roleplay formatting. "
+                    "No explanation unless the user explicitly asks for detail."
                 )
             llm_started = time.perf_counter()
             draft_reply = self._llm_adapter().generate_reply(
@@ -167,14 +183,15 @@ class ConversationService:
             timing["tool_exec_ms"] = round((time.perf_counter() - tool_started) * 1000, 1)
 
             final_reply_text = draft_reply.text
+            final_reply_text = self._cleanup_spoken_text(final_reply_text)
             if inferred_results:
                 direct_reply = self._render_direct_tool_reply(user_text=stripped, tool_results=inferred_results)
                 if direct_reply is not None:
-                    final_reply_text = direct_reply
+                    final_reply_text = self._cleanup_spoken_text(direct_reply)
                     timing["finalizer_ms"] = 0.0
                 else:
                     finalizer_started = time.perf_counter()
-                    final_reply_text = self._finalize_reply_with_tools(
+                    final_reply_text = self._cleanup_spoken_text(self._finalize_reply_with_tools(
                         system_prompt=system_prompt,
                         user_text=self._build_user_input_text(
                             user_text=stripped,
@@ -184,7 +201,7 @@ class ConversationService:
                         draft_reply=draft_reply.text,
                         tool_results=inferred_results,
                         image=image,
-                    )
+                    ))
                     timing["finalizer_ms"] = round((time.perf_counter() - finalizer_started) * 1000, 1)
             else:
                 timing["finalizer_ms"] = 0.0
@@ -337,6 +354,14 @@ class ConversationService:
             raise
         except Exception as exc:
             raise ConversationError(f"Conversation pipeline failed: {exc}") from exc
+
+    def _cleanup_spoken_text(self, text: str) -> str:
+        cleaned = _CODE_FENCE_RE.sub("", text or "")
+        cleaned = _INLINE_TICK_RE.sub(r"\1", cleaned)
+        cleaned = cleaned.replace("*", " ").replace("#", " ")
+        cleaned = re.sub(r"^\s*[-•]\s+", "", cleaned, flags=re.MULTILINE)
+        cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+        return cleaned
 
     def _background_memory_save(self, user_text: str, reply_text: str, session_id: str | None) -> None:
         """Persist memory candidates in a background thread (fast_mode only)."""

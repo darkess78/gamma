@@ -87,6 +87,26 @@ def _should_use_brief_mode(transcript: str) -> bool:
     )
 
 
+def _should_use_micro_mode(transcript: str) -> bool:
+    lowered = transcript.lower().strip()
+    words = transcript.split()
+    if len(words) <= 5:
+        return True
+    return any(
+        phrase in lowered
+        for phrase in [
+            "how are you",
+            "hello",
+            "hi",
+            "hey",
+            "what's up",
+            "whats up",
+            "draw out the",
+            "are you being sarcastic",
+        ]
+    )
+
+
 def _run_simple_chunked(
     *,
     started_at: float,
@@ -108,6 +128,7 @@ def _run_simple_chunked(
         synthesize_speech=False,
         fast_mode=True,
         brief_mode=_should_use_brief_mode(transcript),
+        micro_mode=_should_use_micro_mode(transcript),
     )
     conversation_ms = round((time.perf_counter() - conversation_started) * 1000, 1)
 

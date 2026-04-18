@@ -22,9 +22,7 @@ def split_reply_text(reply_text: str, *, max_chunks: int = 2) -> list[str]:
         return [text]
     if max_chunks == 2:
         return _split_into_two_chunks(sentences, full_text=text)
-
-    chunks = [" ".join(sentences).strip()]
-    return [chunk for chunk in chunks if chunk] or [text]
+    return _split_into_multiple_chunks(sentences, full_text=text, max_chunks=max_chunks)
 
 
 def _too_short(text: str) -> bool:
@@ -67,3 +65,41 @@ def _split_into_two_chunks(sentences: list[str], *, full_text: str) -> list[str]
         return [first_chunk, second_chunk]
 
     return [full_text]
+
+
+def _split_into_multiple_chunks(sentences: list[str], *, full_text: str, max_chunks: int) -> list[str]:
+    if max_chunks <= 2:
+        return _split_into_two_chunks(sentences, full_text=full_text)
+
+    first_chunk = sentences[0].strip()
+    start_index = 1
+    if _too_short(first_chunk) and len(sentences) >= 2:
+        first_chunk = " ".join(sentences[:2]).strip()
+        start_index = 2
+    if _too_short(first_chunk) and len(sentences) >= 3:
+        first_chunk = " ".join(sentences[:3]).strip()
+        start_index = 3
+
+    remaining = sentences[start_index:]
+    if not remaining:
+        return [full_text]
+
+    slots = max_chunks - 1
+    remaining_count = len(remaining)
+    if slots <= 0 or remaining_count <= 0:
+        return [first_chunk] if first_chunk else [full_text]
+
+    base = remaining_count // slots
+    extra = remaining_count % slots
+    chunks = [first_chunk]
+    index = 0
+    for slot in range(slots):
+        take = base + (1 if slot < extra else 0)
+        if take <= 0:
+            continue
+        chunk = " ".join(remaining[index:index + take]).strip()
+        index += take
+        if chunk:
+            chunks.append(chunk)
+
+    return [chunk for chunk in chunks if chunk] or [full_text]

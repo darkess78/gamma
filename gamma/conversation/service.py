@@ -45,6 +45,7 @@ class ConversationService:
         synthesize_speech: bool = False,
         speaker_ctx: SpeakerContext | None = None,
         fast_mode: bool = False,
+        brief_mode: bool = False,
     ) -> AssistantResponse:
         return self._respond(
             user_text=user_text,
@@ -52,6 +53,7 @@ class ConversationService:
             synthesize_speech=synthesize_speech,
             speaker=self._identity.resolve(speaker_ctx),
             fast_mode=fast_mode,
+            brief_mode=brief_mode,
         )
 
     def respond_with_image(
@@ -118,6 +120,7 @@ class ConversationService:
         synthesize_speech: bool,
         speaker: SpeakerProfile | None = None,
         fast_mode: bool = False,
+        brief_mode: bool = False,
         image: VisionImage | None = None,
         vision_analysis: VisionAnalysis | None = None,
     ) -> AssistantResponse:
@@ -134,6 +137,14 @@ class ConversationService:
                 session_id=session_id,
                 speaker=speaker,
             )
+            if brief_mode:
+                system_prompt += (
+                    "\n\n# Live Voice Brevity\n"
+                    "This is a low-latency live voice turn. "
+                    "Reply in one short sentence when possible, or at most two very short sentences. "
+                    "Prefer under 16 words unless clarity requires more. "
+                    "Use concise spoken phrasing and avoid paragraphs."
+                )
             llm_started = time.perf_counter()
             draft_reply = self._llm_adapter().generate_reply(
                 system_prompt=system_prompt,

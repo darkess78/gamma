@@ -66,6 +66,27 @@ def _append_memory_fast_path(conversation: ConversationService, *, user_text: st
         pass
 
 
+def _should_use_brief_mode(transcript: str) -> bool:
+    words = transcript.split()
+    if len(words) <= 8:
+        return True
+    lowered = transcript.lower()
+    return any(
+        phrase in lowered
+        for phrase in [
+            "how are you",
+            "hello",
+            "hi",
+            "hey",
+            "what's up",
+            "whats up",
+            "wait a minute",
+            "give me a minute",
+            "hold on",
+        ]
+    )
+
+
 def _run_simple_chunked(
     *,
     started_at: float,
@@ -86,6 +107,7 @@ def _run_simple_chunked(
         session_id=args.session_id,
         synthesize_speech=False,
         fast_mode=True,
+        brief_mode=_should_use_brief_mode(transcript),
     )
     conversation_ms = round((time.perf_counter() - conversation_started) * 1000, 1)
 
@@ -107,7 +129,7 @@ def _run_simple_chunked(
     }
 
     if synthesize_speech:
-        chunks = split_reply_text(response.spoken_text, max_chunks=2)
+        chunks = split_reply_text(response.spoken_text, max_chunks=3)
         chunk_policies = build_interruptibility(chunks)
         payload["timing_ms"]["chunk_count"] = len(chunks)
         if chunks:

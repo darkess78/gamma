@@ -8,6 +8,7 @@ _QUESTION_OPENER_RE = re.compile(
     r"^(?:who|what|when|where|why|how|which|is|are|do|does|did|can|could|would|should|will|have|has)\b",
     re.IGNORECASE,
 )
+_CLAUSE_BREAK_RE = re.compile(r"(?<=[,;:—-])\s+")
 
 
 def split_reply_text(reply_text: str, *, max_chunks: int = 2) -> list[str]:
@@ -19,7 +20,10 @@ def split_reply_text(reply_text: str, *, max_chunks: int = 2) -> list[str]:
 
     sentences = [part.strip() for part in _SENTENCE_SPLIT_RE.split(text) if part.strip()]
     if len(sentences) <= 1:
-        return [text]
+        clauses = _split_long_units(sentences or [text])
+        if len(clauses) <= 1:
+            return [text]
+        sentences = clauses
     if max_chunks == 2:
         return _split_into_two_chunks(sentences, full_text=text)
     return _split_into_multiple_chunks(sentences, full_text=text, max_chunks=max_chunks)
@@ -103,3 +107,33 @@ def _split_into_multiple_chunks(sentences: list[str], *, full_text: str, max_chu
             chunks.append(chunk)
 
     return [chunk for chunk in chunks if chunk] or [full_text]
+
+
+def _split_long_units(units: list[str]) -> list[str]:
+    split_units: list[str] = []
+    for unit in units:
+        text = unit.strip()
+        if not text:
+            continue
+        words = text.split()
+        if len(words) <= 22:
+            split_units.append(text)
+            continue
+
+        clauses = [part.strip() for part in _CLAUSE_BREAK_RE.split(text) if part.strip()]
+        if len(clauses) <= 1:
+            split_units.append(text)
+            continue
+
+        current = clauses[0]
+        for clause in clauses[1:]:
+            candidate = (current + " " + clause).strip()
+            if len(candidate.split()) <= 18:
+                current = candidate
+            else:
+                split_units.append(current)
+                current = clause
+        if current:
+            split_units.append(current)
+
+    return [unit for unit in split_units if unit]

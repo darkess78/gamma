@@ -161,6 +161,12 @@ class ConversationService:
                     "No markdown. No code fences. No lists. No roleplay formatting. "
                     "No explanation unless the user explicitly asks for detail."
                 )
+            if fast_mode:
+                system_prompt += (
+                    "\n\n# Live Voice Formatting\n"
+                    "For live speech, avoid numbered lists, bullet lists, section labels, and essay formatting. "
+                    "Prefer natural spoken prose with short clauses and clear sentence boundaries."
+                )
             llm_started = time.perf_counter()
             draft_reply = self._llm_adapter().generate_reply(
                 system_prompt=system_prompt,

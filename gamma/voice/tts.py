@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -338,6 +339,31 @@ class BaseFileTTSBackend(TTSBackend):
             return "audio/wav"
         return f"audio/{normalized}"
 
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        """Apply speech-specific text replacements without changing visible reply text."""
+        abbrevs = {
+            r"\bTTS\b": "text to speech",
+            r"\bSTT\b": "speech to text",
+            r"\bLLM\b": "L L M",
+            r"\bAI\b": "A I",
+            r"\bAPI\b": "A P I",
+            r"\bUI\b": "U I",
+            r"\bURL\b": "U R L",
+            r"\bGPU\b": "G P U",
+            r"\bCPU\b": "C P U",
+            r"\bRAM\b": "ram",
+            r"\bRVC\b": "R V C",
+        }
+        pronunciation_overrides = {
+            r"\bShana\b": "Shawna",
+        }
+        for pattern, replacement in abbrevs.items():
+            text = re.sub(pattern, replacement, text)
+        for pattern, replacement in pronunciation_overrides.items():
+            text = re.sub(pattern, replacement, text)
+        return text
+
 
 def _spectral_denoise(samples: "np.ndarray", sr: int, strength: float) -> "np.ndarray":
     """
@@ -400,8 +426,7 @@ class QwenTTSBackend(BaseFileTTSBackend):
 
     def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
         started_at = time.perf_counter()
-
-        payload: dict[str, Any] = {"text": text}
+        payload: dict[str, Any] = {"text": self._normalize_text(text)}
 
         if self._cfg.qwen_tts_language:
             payload["language"] = self._cfg.qwen_tts_language
@@ -494,7 +519,8 @@ class OpenAITTSBackend(BaseFileTTSBackend):
 
     def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
         started_at = time.perf_counter()
-        prompt_text = text if not emotion else f"Emotion: {emotion}.\n\n{text}"
+        normalized_text = self._normalize_text(text)
+        prompt_text = normalized_text if not emotion else f"Emotion: {emotion}.\n\n{normalized_text}"
         fmt = self._cfg.tts_format
         path = self._target_path(f".{fmt}")
         try:
@@ -528,27 +554,6 @@ class GPTSoVITSTTSBackend(BaseFileTTSBackend):
         self._cfg = cfg
         if not self._cfg.gpt_sovits_endpoint:
             raise ConfigurationError("SHANA_GPT_SOVITS_ENDPOINT is required for SHANA_TTS_PROVIDER=gpt-sovits.")
-
-    @staticmethod
-    def _normalize_text(text: str) -> str:
-        """Expand common abbreviations so SoVITS doesn't spell them out letter-by-letter."""
-        import re
-        _ABBREVS = {
-            r"\bTTS\b": "text to speech",
-            r"\bSTT\b": "speech to text",
-            r"\bLLM\b": "L L M",
-            r"\bAI\b": "A I",
-            r"\bAPI\b": "A P I",
-            r"\bUI\b": "U I",
-            r"\bURL\b": "U R L",
-            r"\bGPU\b": "G P U",
-            r"\bCPU\b": "C P U",
-            r"\bRAM\b": "ram",
-            r"\bRVC\b": "R V C",
-        }
-        for pattern, replacement in _ABBREVS.items():
-            text = re.sub(pattern, replacement, text)
-        return text
 
     def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
         started_at = time.perf_counter()

@@ -12,6 +12,7 @@ from ..identity.profile import SpeakerProfile
 from ..identity.resolver import IdentityResolver
 from ..llm.base import LLMCallContext
 from ..llm.factory import build_llm_adapter
+from ..llm.router_adapter import begin_route_trace, take_route_trace
 from ..memory.service import MemoryService
 from ..persona.assistant_state import AssistantStateStore
 from ..persona.emotion_service import EmotionMemoryService
@@ -136,6 +137,7 @@ class ConversationService:
             raise ConversationError("user_text must not be empty.")
 
         try:
+            begin_route_trace()
             started_at = time.perf_counter()
             timing: dict[str, float] = {}
             system_prompt = build_system_prompt(
@@ -258,12 +260,14 @@ class ConversationService:
 
                 timing["total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
                 response.timing_ms = dict(timing)
+                route_events = take_route_trace()
                 self._append_timing_log(
                     user_text=stripped,
                     session_id=session_id,
                     response=response,
                     saved_count=0,
                     timing=timing,
+                    route_events=route_events,
                 )
 
                 if memory_write_ok:
@@ -358,12 +362,14 @@ class ConversationService:
                 timing["tts_ms"] = 0.0
             timing["total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
             response.timing_ms = dict(timing)
+            route_events = take_route_trace()
             self._append_timing_log(
                 user_text=stripped,
                 session_id=session_id,
                 response=response,
                 saved_count=saved_count,
                 timing=timing,
+                route_events=route_events,
             )
             self._remember_assistant_state(user_text=stripped, reply_text=response.spoken_text, emotion=response.emotion, session_id=session_id)
             return response
@@ -914,6 +920,7 @@ class ConversationService:
         response: AssistantResponse,
         saved_count: int,
         timing: dict[str, float],
+        route_events: list[dict[str, object]] | None = None,
     ) -> None:
         log_dir = settings.data_dir / "runtime"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -929,6 +936,7 @@ class ConversationService:
             "memory_saved_count": saved_count,
             "synthesize_speech": bool(response.audio_path or response.audio_content_type),
             "timing_ms": timing,
+            "route_events": route_events or [],
         }
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, ensure_ascii=False) + "\n")

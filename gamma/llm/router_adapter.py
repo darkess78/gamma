@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import json
+import os
+import threading
+import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from ..config import settings
 from ..errors import ConfigurationError
 from .base import LLMAdapter, LLMCallContext, LLMImageInput, LLMReply
+
+_ROUTE_TRACE = threading.local()
 
 
 @dataclass(slots=True)
@@ -14,9 +21,22 @@ class RouteDecision:
     reason: str
 
 
+def begin_route_trace() -> None:
+    _ROUTE_TRACE.events = []
+
+
+def take_route_trace() -> list[dict[str, object]]:
+    events = list(getattr(_ROUTE_TRACE, "events", []))
+    _ROUTE_TRACE.events = []
+    return events
+
+
 class RouterLLMAdapter(LLMAdapter):
+    _provider_backoff_until_global: dict[str, float] = {}
+
     def __init__(self) -> None:
         self._adapters: dict[str, LLMAdapter] = {}
+        self._health_cache: dict[tuple[str, str], tuple[float, dict[str, object]]] = {}
 
     @property
     def supports_vision(self) -> bool:
@@ -35,21 +55,121 @@ class RouterLLMAdapter(LLMAdapter):
         call_context: LLMCallContext | None = None,
         model_override: str | None = None,
     ) -> LLMReply:
-        decision = self._route_request(
+        call_context = call_context or LLMCallContext()
+        decisions = self._route_candidates(
             system_prompt=system_prompt,
             user_text=user_text,
             image_inputs=image_inputs,
             call_context=call_context,
             model_override=model_override,
         )
-        adapter = self._adapter_for_provider(decision.provider)
-        return adapter.generate_reply(
+        last_exc: Exception | None = None
+        seen: set[tuple[str, str | None]] = set()
+        for index, decision in enumerate(decisions):
+            key = (decision.provider, decision.model)
+            if key in seen:
+                continue
+            seen.add(key)
+            availability = self._provider_availability(
+                provider=decision.provider,
+                model=decision.model,
+                has_images=bool(image_inputs),
+            )
+            if not availability.get("ok"):
+                self._record_route_event(
+                    decision=decision,
+                    call_context=call_context,
+                    user_text=user_text,
+                    has_images=bool(image_inputs),
+                    status="skipped",
+                    duration_ms=0.0,
+                    detail=str(availability.get("detail", "unavailable")),
+                    fallback_index=index,
+                )
+                continue
+            started_at = time.perf_counter()
+            try:
+                adapter = self._adapter_for_provider(decision.provider)
+                reply = adapter.generate_reply(
+                    system_prompt=system_prompt,
+                    user_text=user_text,
+                    image_inputs=image_inputs,
+                    call_context=call_context,
+                    model_override=decision.model,
+                )
+                duration_ms = round((time.perf_counter() - started_at) * 1000, 1)
+                event = self._record_route_event(
+                    decision=decision,
+                    call_context=call_context,
+                    user_text=user_text,
+                    has_images=bool(image_inputs),
+                    status="ok",
+                    duration_ms=duration_ms,
+                    detail=str(availability.get("detail", "ready")),
+                    fallback_index=index,
+                )
+                metadata = dict(reply.metadata or {})
+                metadata["route"] = event
+                reply.metadata = metadata
+                self._clear_provider_backoff(decision.provider)
+                return reply
+            except Exception as exc:
+                last_exc = exc
+                duration_ms = round((time.perf_counter() - started_at) * 1000, 1)
+                self._mark_provider_failure(decision.provider)
+                self._record_route_event(
+                    decision=decision,
+                    call_context=call_context,
+                    user_text=user_text,
+                    has_images=bool(image_inputs),
+                    status="error",
+                    duration_ms=duration_ms,
+                    detail=str(exc),
+                    fallback_index=index,
+                )
+        if last_exc is not None:
+            raise last_exc
+        raise ConfigurationError("No usable routed LLM provider is available.")
+
+    def _route_candidates(
+        self,
+        *,
+        system_prompt: str,
+        user_text: str,
+        image_inputs: list[LLMImageInput] | None,
+        call_context: LLMCallContext | None,
+        model_override: str | None,
+    ) -> list[RouteDecision]:
+        primary = self._route_request(
             system_prompt=system_prompt,
             user_text=user_text,
             image_inputs=image_inputs,
             call_context=call_context,
-            model_override=decision.model,
+            model_override=model_override,
         )
+        candidates = [primary]
+        default_route = RouteDecision(
+            provider=self._default_provider(),
+            model=self._default_model(),
+            reason="default-route-fallback",
+        )
+        if primary.provider in {"local", "ollama"} and primary.model != (settings.local_llm_model or "").strip():
+            candidates.append(
+                RouteDecision(
+                    provider="local",
+                    model=(settings.local_llm_model or "").strip() or None,
+                    reason="local-primary-fallback",
+                )
+            )
+        if (default_route.provider, default_route.model) != (primary.provider, primary.model):
+            candidates.append(default_route)
+        hosted = self._hosted_route()
+        if hosted is not None and (hosted.provider, hosted.model) != (primary.provider, primary.model):
+            hosted.reason = "hosted-escalation-fallback"
+            candidates.append(hosted)
+        if not image_inputs and self._default_provider() != "mock":
+            candidates.append(RouteDecision(provider="mock", model=None, reason="mock-last-resort"))
+        return candidates
 
     def _route_request(
         self,
@@ -68,6 +188,7 @@ class RouterLLMAdapter(LLMAdapter):
             return self._route_for_vision()
 
         purpose = (call_context.purpose if call_context else "conversation").strip().lower()
+        profile = self._profile()
         if purpose == "metadata_extraction":
             tagging_model = (settings.local_llm_tagging_model or "").strip()
             if tagging_model:
@@ -83,11 +204,24 @@ class RouterLLMAdapter(LLMAdapter):
 
         light_model = (settings.local_llm_light_model or "").strip()
         fast_requested = bool(call_context and (call_context.fast_mode or call_context.brief_mode or call_context.micro_mode))
-        if fast_requested and light_model:
+        if fast_requested and light_model and profile in {"balanced", "low_latency_voice", "local_only", "offline_safe"}:
             return RouteDecision(provider="local", model=light_model, reason="fast-mode-light-model")
 
-        if light_model and self._is_lightweight_text(user_text):
+        if profile == "high_quality" and purpose in {"conversation", "conversation_draft"}:
+            hosted = self._hosted_route(force=True)
+            if hosted is not None:
+                return RouteDecision(provider=hosted.provider, model=hosted.model, reason="high-quality-hosted-default")
+
+        if light_model and self._is_lightweight_text(user_text) and profile in {"balanced", "low_latency_voice", "local_only", "offline_safe"}:
             return RouteDecision(provider="local", model=light_model, reason="lightweight-turn")
+
+        if (
+            profile == "low_latency_voice"
+            and purpose in {"conversation", "conversation_draft"}
+            and light_model
+            and len((user_text or "").split()) <= min(settings.local_llm_light_max_input_words, 24)
+        ):
+            return RouteDecision(provider="local", model=light_model, reason="low-latency-short-turn")
 
         if self._should_escalate_to_hosted(user_text=user_text, purpose=purpose):
             hosted = self._hosted_route()
@@ -120,8 +254,10 @@ class RouterLLMAdapter(LLMAdapter):
             return self._route_for_vision()
         return RouteDecision(provider=self._default_provider(), model=self._default_model(), reason="default-capability-route")
 
-    def _hosted_route(self) -> RouteDecision | None:
-        if not settings.llm_router_allow_hosted_escalation:
+    def _hosted_route(self, *, force: bool = False) -> RouteDecision | None:
+        if not force and not settings.llm_router_allow_hosted_escalation:
+            return None
+        if self._profile() in {"local_only", "offline_safe"}:
             return None
         provider = (settings.llm_router_hosted_provider or "").strip().lower()
         if not provider:
@@ -132,6 +268,9 @@ class RouterLLMAdapter(LLMAdapter):
         return RouteDecision(provider=provider, model=model, reason="hosted-escalation")
 
     def _default_provider(self) -> str:
+        profile = self._profile()
+        if profile in {"local_only", "offline_safe"}:
+            return "local"
         provider = (settings.llm_router_default_provider or "").strip().lower()
         if provider:
             return provider
@@ -154,6 +293,105 @@ class RouterLLMAdapter(LLMAdapter):
         if provider in {"local", "ollama"}:
             return settings.local_llm_supports_vision
         return False
+
+    def _provider_availability(self, *, provider: str, model: str | None, has_images: bool) -> dict[str, object]:
+        normalized = provider.strip().lower()
+        now = time.time()
+        backoff_until = self._provider_backoff_until_global.get(normalized, 0.0)
+        if backoff_until > now:
+            return {"ok": False, "detail": f"backoff-active:{round(backoff_until - now, 1)}s"}
+        cache_key = (normalized, "vision" if has_images else "text")
+        cached = self._health_cache.get(cache_key)
+        if cached and (now - cached[0]) < 5:
+            return cached[1]
+        if normalized == "openai":
+            api_key = settings.openai_api_key or os.getenv("OPENAI_API_KEY")
+            result = {"ok": bool(api_key and (model or settings.llm_model).strip()), "detail": "ready" if api_key else "missing-openai-api-key"}
+        elif normalized in {"local", "ollama"}:
+            local_health = self._check_local_llm_health()
+            if not local_health.get("ok"):
+                result = local_health
+            elif has_images and not self._provider_supports_vision(normalized):
+                result = {"ok": False, "detail": "vision-not-supported"}
+            else:
+                result = {"ok": True, "detail": str(local_health.get("detail", "ready"))}
+        elif normalized == "mock":
+            result = {"ok": not has_images, "detail": "ready" if not has_images else "mock-no-vision"}
+        else:
+            result = {"ok": False, "detail": f"unsupported-provider: {provider}"}
+        self._health_cache[cache_key] = (now, result)
+        return result
+
+    def _check_local_llm_health(self) -> dict[str, object]:
+        from ..system.status import SystemStatusService
+
+        health = SystemStatusService()._check_ollama_health()
+        if health.get("ok"):
+            return {"ok": True, "detail": "ready"}
+        return {"ok": False, "detail": str(health.get("detail", "local-llm-unhealthy"))}
+
+    def _record_route_event(
+        self,
+        *,
+        decision: RouteDecision,
+        call_context: LLMCallContext,
+        user_text: str,
+        has_images: bool,
+        status: str,
+        duration_ms: float,
+        detail: str,
+        fallback_index: int,
+    ) -> dict[str, object]:
+        event = {
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "purpose": call_context.purpose,
+            "provider": decision.provider,
+            "model": decision.model,
+            "reason": decision.reason,
+            "profile": self._profile(),
+            "status": status,
+            "detail": detail[:240],
+            "duration_ms": duration_ms,
+            "input_words": len((user_text or "").split()),
+            "has_images": has_images,
+            "fast_mode": bool(call_context.fast_mode),
+            "brief_mode": bool(call_context.brief_mode),
+            "micro_mode": bool(call_context.micro_mode),
+            "fallback_index": fallback_index,
+        }
+        current = list(getattr(_ROUTE_TRACE, "events", []))
+        current.append(event)
+        _ROUTE_TRACE.events = current
+        log_dir = settings.data_dir / "runtime"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "llm.routes.jsonl"
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+        return event
+
+    def _mark_provider_failure(self, provider: str) -> None:
+        backoff_seconds = max(0, int(settings.llm_router_failure_backoff_seconds))
+        if backoff_seconds <= 0:
+            return
+        self._provider_backoff_until_global[provider.strip().lower()] = time.time() + backoff_seconds
+
+    def _clear_provider_backoff(self, provider: str) -> None:
+        self._provider_backoff_until_global.pop(provider.strip().lower(), None)
+
+    def _profile(self) -> str:
+        profile = (settings.llm_router_profile or "").strip().lower()
+        if profile in {"balanced", "local_only", "low_latency_voice", "high_quality", "offline_safe"}:
+            return profile
+        return "balanced"
+
+    @classmethod
+    def provider_backoff_state(cls) -> dict[str, float]:
+        now = time.time()
+        return {
+            provider: round(until - now, 1)
+            for provider, until in cls._provider_backoff_until_global.items()
+            if until > now
+        }
 
     def _adapter_for_provider(self, provider: str) -> LLMAdapter:
         normalized = provider.strip().lower()

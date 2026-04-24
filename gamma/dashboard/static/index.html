@@ -369,6 +369,13 @@
               <label class="checkbox-row"><input id="assistantLlmEnabled" type="checkbox"> LLM reviewer enabled</label>
               <label class="checkbox-row"><input id="assistantAutoRewrite" type="checkbox"> Auto rewrite enabled</label>
               <input class="text-input" id="assistantLlmModel" placeholder="LLM reviewer model (optional)">
+              <select class="text-input" id="assistantRouterProfile">
+                <option value="balanced">Router: Balanced</option>
+                <option value="local_only">Router: Local Only</option>
+                <option value="low_latency_voice">Router: Low Latency Voice</option>
+                <option value="high_quality">Router: High Quality</option>
+                <option value="offline_safe">Router: Offline Safe</option>
+              </select>
             </div>
           </div>
           <div class="action-group">

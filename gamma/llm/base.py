@@ -13,6 +13,7 @@ class LLMImageInput:
 @dataclass(slots=True)
 class LLMReply:
     text: str
+    metadata: dict[str, object] | None = None
 
 
 @dataclass(slots=True)

@@ -91,7 +91,7 @@ class DashboardRoutesTest(unittest.TestCase):
                 method.assert_called_once_with()
 
     def test_assistant_settings_routes(self) -> None:
-        settings_payload = {"speech_filter_level": "strict", "assistant_state_enabled": True}
+        settings_payload = {"speech_filter_level": "strict", "assistant_state_enabled": True, "llm_router_profile": "balanced"}
         with patch.object(self.mock_service, "assistant_runtime_settings", return_value=settings_payload) as method:
             response = self.client.get("/api/assistant/settings")
         self.assertEqual(response.status_code, 200)

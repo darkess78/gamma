@@ -273,12 +273,25 @@ class Settings:
             _config_value(APP_CONFIG, "llm_router_hosted_model", default=""),
         )
     ).strip()
+    llm_router_profile: str = str(
+        _setting(
+            "SHANA_LLM_ROUTER_PROFILE",
+            _config_value(APP_CONFIG, "llm_router_profile", default="balanced"),
+        )
+    ).strip().lower() or "balanced"
     llm_router_complex_max_input_words: int = _as_int(
         _setting(
             "SHANA_LLM_ROUTER_COMPLEX_MAX_INPUT_WORDS",
             _config_value(APP_CONFIG, "llm_router_complex_max_input_words", default=120),
         ),
         default=120,
+    )
+    llm_router_failure_backoff_seconds: int = _as_int(
+        _setting(
+            "SHANA_LLM_ROUTER_FAILURE_BACKOFF_SECONDS",
+            _config_value(APP_CONFIG, "llm_router_failure_backoff_seconds", default=45),
+        ),
+        default=45,
     )
     openai_api_key: str | None = _setting("OPENAI_API_KEY", _config_value(APP_CONFIG, "openai_api_key"))
     local_llm_endpoint: str = str(

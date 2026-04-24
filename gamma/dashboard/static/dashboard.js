@@ -635,6 +635,35 @@
     lines.push('LLM: ' + providerLabel(llm.provider) + (llm.model ? ' using ' + llm.model : ''));
     if (llm.endpoint) lines.push('LLM endpoint: ' + llm.endpoint);
     if (llm.health) lines.push('LLM health: ' + fmtHealthStatus(llm.health));
+    lines.push('LLM router: ' + (llm.router_enabled ? 'Enabled' : 'Disabled'));
+    if (llm.router_enabled) {
+      lines.push('Router profile: ' + (llm.router_profile || 'balanced'));
+      lines.push('Router default: ' + providerLabel(llm.router_default_provider) + (llm.router_default_model ? ' using ' + llm.router_default_model : ''));
+      lines.push('Hosted escalation: ' + (llm.router_hosted_escalation ? 'Enabled' : 'Disabled'));
+      if (llm.router_hosted_escalation) {
+        lines.push('Hosted route: ' + providerLabel(llm.router_hosted_provider) + (llm.router_hosted_model ? ' using ' + llm.router_hosted_model : ''));
+      }
+      if (llm.router_failure_backoff_seconds) lines.push('Failure backoff: ' + llm.router_failure_backoff_seconds + ' sec');
+      if (llm.provider_backoff) {
+        var backoffLines = [];
+        for (var backoffProvider in llm.provider_backoff) {
+          if (!Object.prototype.hasOwnProperty.call(llm.provider_backoff, backoffProvider)) continue;
+          backoffLines.push(providerLabel(backoffProvider) + ': ' + llm.provider_backoff[backoffProvider] + ' sec');
+        }
+        if (backoffLines.length) lines.push('Active backoff: ' + backoffLines.join(' | '));
+      }
+      if (llm.last_route) {
+        lines.push('Last route: ' + providerLabel(llm.last_route.provider) + (llm.last_route.model ? ' using ' + llm.last_route.model : '') + ' [' + (llm.last_route.status || 'n/a') + ']');
+      }
+      if (llm.route_summary && llm.route_summary.provider_counts) {
+        var providerCounts = [];
+        for (var providerName in llm.route_summary.provider_counts) {
+          if (!Object.prototype.hasOwnProperty.call(llm.route_summary.provider_counts, providerName)) continue;
+          providerCounts.push(providerLabel(providerName) + ': ' + llm.route_summary.provider_counts[providerName]);
+        }
+        if (providerCounts.length) lines.push('Recent route mix: ' + providerCounts.join(' | '));
+      }
+    }
     lines.push('');
     lines.push('STT: ' + providerLabel(stt.provider) + (stt.model ? ' using ' + stt.model : ''));
     if (stt.device) lines.push('STT device: ' + stt.device);
@@ -888,6 +917,19 @@
       lines.push(fmtLocalDateTime(entry.timestamp) + '  |  Total: ' + fmtDurationMs(phase.total_ms));
       lines.push('Draft: ' + fmtDurationMs(phase.draft_reply_ms) + ' | Metadata: ' + fmtDurationMs(phase.metadata_ms) + ' | Tools: ' + fmtDurationMs(phase.tool_exec_ms));
       lines.push('Finalizer: ' + fmtDurationMs(phase.finalizer_ms) + ' | Memory: ' + fmtDurationMs(phase.memory_persist_ms) + ' | TTS: ' + fmtDurationMs(phase.tts_ms));
+      if (entry.route_events && entry.route_events.length) {
+        var routeLines = [];
+        for (var r = 0; r < entry.route_events.length; r += 1) {
+          var route = entry.route_events[r] || {};
+          routeLines.push(
+            (route.purpose || 'route') + ': ' +
+            providerLabel(route.provider) +
+            (route.model ? ' using ' + route.model : '') +
+            ' [' + (route.profile || 'balanced') + ', ' + (route.status || 'n/a') + ', ' + (route.reason || 'n/a') + ', ' + fmtDurationMs(route.duration_ms) + ']'
+          );
+        }
+        lines.push('Routes: ' + routeLines.join(' || '));
+      }
       lines.push('User: ' + (entry.user_text_preview || ''));
       lines.push('');
     }
@@ -980,6 +1022,7 @@
       assistantLlmEnabled: !!settings.speech_filter_llm_enabled,
       assistantAutoRewrite: !!settings.speech_filter_auto_rewrite,
       assistantLlmModel: settings.speech_filter_llm_model || '',
+      assistantRouterProfile: settings.llm_router_profile || 'balanced',
       assistantStateEnabled: !!settings.assistant_state_enabled,
       assistantEmotionDecayTurns: settings.assistant_emotion_decay_turns,
       assistantEmotionEpisodeThreshold: settings.assistant_emotion_episode_threshold,
@@ -1752,6 +1795,7 @@
       speech_filter_llm_enabled: !!document.getElementById('assistantLlmEnabled').checked,
       speech_filter_auto_rewrite: !!document.getElementById('assistantAutoRewrite').checked,
       speech_filter_llm_model: document.getElementById('assistantLlmModel').value.trim(),
+      llm_router_profile: document.getElementById('assistantRouterProfile').value,
       assistant_state_enabled: !!document.getElementById('assistantStateEnabled').checked,
       assistant_emotion_decay_turns: Number(document.getElementById('assistantEmotionDecayTurns').value || 0),
       assistant_emotion_episode_threshold: Number(document.getElementById('assistantEmotionEpisodeThreshold').value || 0.65),

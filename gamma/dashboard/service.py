@@ -19,6 +19,7 @@ from typing import Any
 import psutil
 
 from ..config import app_local_config_path, load_app_file_config, settings
+from ..llm.router_adapter import RouterLLMAdapter
 from ..memory.service import MemoryService
 from ..persona.emotion_service import EmotionMemoryService
 from ..schemas.response import AssistantResponse, VisionAnalysis
@@ -42,6 +43,7 @@ class DashboardService:
 
     def build_status(self) -> dict[str, Any]:
         local_status = self._system_status.build_status()
+        route_info = self._recent_llm_routes()
         selected_tts_provider = self.selected_tts_provider()
         selected_tts_profile = self.selected_tts_profile()
         running_tts_provider = str(local_status["providers"]["tts"].get("provider") or "").strip().lower()
@@ -64,6 +66,17 @@ class DashboardService:
             selected_tts_provider,
             selected_tts_profile,
         )
+        local_status["providers"]["llm"]["router_enabled"] = settings.llm_router_enabled
+        local_status["providers"]["llm"]["router_profile"] = settings.llm_router_profile
+        local_status["providers"]["llm"]["router_default_provider"] = settings.llm_router_default_provider or settings.llm_provider
+        local_status["providers"]["llm"]["router_default_model"] = settings.llm_router_default_model or settings.llm_model
+        local_status["providers"]["llm"]["router_hosted_escalation"] = settings.llm_router_allow_hosted_escalation
+        local_status["providers"]["llm"]["router_hosted_provider"] = settings.llm_router_hosted_provider
+        local_status["providers"]["llm"]["router_hosted_model"] = settings.llm_router_hosted_model or settings.llm_model
+        local_status["providers"]["llm"]["router_failure_backoff_seconds"] = settings.llm_router_failure_backoff_seconds
+        local_status["providers"]["llm"]["route_summary"] = route_info["summary"]
+        local_status["providers"]["llm"]["last_route"] = route_info["entries"][-1] if route_info["entries"] else None
+        local_status["providers"]["llm"]["provider_backoff"] = RouterLLMAdapter.provider_backoff_state()
         runtime_status = self.build_runtime_status()
         system_status = self._probe_json(settings.shana_base_url + "/v1/system/status")
         return {
@@ -96,6 +109,7 @@ class DashboardService:
             },
             "provider_actions": self._latest_provider_action,
             "timings": self._recent_timings(),
+            "llm_routing": route_info,
         }
 
     def _tts_test_control_state(self, provider: str, profile_id: str | None) -> dict[str, Any]:
@@ -476,6 +490,7 @@ class DashboardService:
             "speech_filter_llm_enabled": bool(config.get("speech_filter_llm_enabled", settings.speech_filter_llm_enabled)),
             "speech_filter_llm_model": str(config.get("speech_filter_llm_model", settings.speech_filter_llm_model)),
             "speech_filter_auto_rewrite": bool(config.get("speech_filter_auto_rewrite", settings.speech_filter_auto_rewrite)),
+            "llm_router_profile": str(config.get("llm_router_profile", settings.llm_router_profile)),
             "assistant_state_enabled": bool(config.get("assistant_state_enabled", settings.assistant_state_enabled)),
             "assistant_emotion_decay_turns": int(config.get("assistant_emotion_decay_turns", settings.assistant_emotion_decay_turns)),
             "assistant_emotion_episode_threshold": float(config.get("assistant_emotion_episode_threshold", settings.assistant_emotion_episode_threshold)),
@@ -503,6 +518,11 @@ class DashboardService:
                 updated = self._upsert_toml_bool(updated, key, bool(payload.get(key)))
         if "speech_filter_llm_model" in payload:
             updated = self._upsert_toml_string(updated, "speech_filter_llm_model", str(payload.get("speech_filter_llm_model", "")).strip())
+        if "llm_router_profile" in payload:
+            profile = str(payload.get("llm_router_profile", settings.llm_router_profile)).strip().lower()
+            if profile not in {"balanced", "local_only", "low_latency_voice", "high_quality", "offline_safe"}:
+                raise ValueError("unsupported llm_router_profile")
+            updated = self._upsert_toml_string(updated, "llm_router_profile", profile)
         if "assistant_emotion_decay_turns" in payload:
             updated = self._upsert_toml_number(updated, "assistant_emotion_decay_turns", max(0, int(payload.get("assistant_emotion_decay_turns", 0))))
         if "assistant_emotion_episode_threshold" in payload:
@@ -1200,6 +1220,41 @@ class DashboardService:
             "avg_total_ms": round(sum(totals) / len(totals), 1) if totals else None,
             "max_total_ms": round(max(totals), 1) if totals else None,
             "min_total_ms": round(min(totals), 1) if totals else None,
+        }
+        return {"entries": entries, "summary": summary}
+
+    def _recent_llm_routes(self, limit: int = 24) -> dict[str, Any]:
+        log_path = settings.data_dir / "runtime" / "llm.routes.jsonl"
+        if not log_path.exists():
+            return {"entries": [], "summary": {"count": 0, "status_counts": {}, "provider_counts": {}}}
+        entries: list[dict[str, Any]] = []
+        for line in reversed(log_path.read_text(encoding="utf-8", errors="replace").splitlines()):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                entries.append(json.loads(stripped))
+            except json.JSONDecodeError:
+                continue
+            if len(entries) >= limit:
+                break
+        entries.reverse()
+        status_counts: dict[str, int] = {}
+        provider_counts: dict[str, int] = {}
+        durations: list[float] = []
+        for entry in entries:
+            status = str(entry.get("status", "") or "unknown")
+            provider = str(entry.get("provider", "") or "unknown")
+            status_counts[status] = status_counts.get(status, 0) + 1
+            provider_counts[provider] = provider_counts.get(provider, 0) + 1
+            duration = entry.get("duration_ms")
+            if isinstance(duration, (int, float)):
+                durations.append(float(duration))
+        summary = {
+            "count": len(entries),
+            "status_counts": status_counts,
+            "provider_counts": provider_counts,
+            "avg_duration_ms": round(sum(durations) / len(durations), 1) if durations else None,
         }
         return {"entries": entries, "summary": summary}
 

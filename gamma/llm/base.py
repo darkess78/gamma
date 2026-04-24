@@ -15,6 +15,14 @@ class LLMReply:
     text: str
 
 
+@dataclass(slots=True)
+class LLMCallContext:
+    purpose: str = "conversation"
+    fast_mode: bool = False
+    brief_mode: bool = False
+    micro_mode: bool = False
+
+
 class LLMAdapter:
     @property
     def supports_vision(self) -> bool:
@@ -25,5 +33,8 @@ class LLMAdapter:
         system_prompt: str,
         user_text: str,
         image_inputs: list[LLMImageInput] | None = None,
+        *,
+        call_context: LLMCallContext | None = None,
+        model_override: str | None = None,
     ) -> LLMReply:
         raise NotImplementedError

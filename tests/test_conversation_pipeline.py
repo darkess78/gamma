@@ -21,11 +21,12 @@ class _FakeLLMAdapter:
         self._replies = list(replies)
         self.calls: list[dict[str, object]] = []
 
-    def generate_reply(self, system_prompt: str, user_text: str, image_inputs=None):
+    def generate_reply(self, system_prompt: str, user_text: str, image_inputs=None, **kwargs):
         self.calls.append({
             "system_prompt": system_prompt,
             "user_text": user_text,
             "image_inputs": image_inputs,
+            "kwargs": kwargs,
         })
         return _FakeLLMReply(self._replies.pop(0))
 

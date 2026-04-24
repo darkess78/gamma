@@ -6,6 +6,10 @@ from .base import LLMAdapter
 
 
 def build_llm_adapter() -> LLMAdapter:
+    if settings.llm_router_enabled:
+        from .router_adapter import RouterLLMAdapter
+
+        return RouterLLMAdapter()
     provider = settings.llm_provider.strip().lower()
     if provider == "openai":
         from .openai_adapter import OpenAIAdapter

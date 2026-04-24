@@ -10,6 +10,7 @@ from ..config import settings
 from ..errors import ConversationError, GammaError
 from ..identity.profile import SpeakerProfile
 from ..identity.resolver import IdentityResolver
+from ..llm.base import LLMCallContext
 from ..llm.factory import build_llm_adapter
 from ..memory.service import MemoryService
 from ..persona.assistant_state import AssistantStateStore
@@ -176,6 +177,12 @@ class ConversationService:
                     vision_analysis=vision_analysis,
                 ),
                 image_inputs=[image.to_llm_input()] if image is not None else None,
+                call_context=LLMCallContext(
+                    purpose="conversation_draft",
+                    fast_mode=fast_mode,
+                    brief_mode=brief_mode,
+                    micro_mode=micro_mode,
+                ),
             )
             timing["draft_reply_ms"] = round((time.perf_counter() - llm_started) * 1000, 1)
 
@@ -272,7 +279,11 @@ class ConversationService:
             # Standard path: full metadata extraction + synchronous memory save.
             metadata_started = time.perf_counter()
             extracted = (
-                self._extract_turn_metadata(user_text=stripped, reply_text=draft_reply.text, speaker=speaker)
+                self._extract_turn_metadata(
+                    user_text=stripped,
+                    reply_text=draft_reply.text,
+                    speaker=speaker,
+                )
                 if self._needs_metadata_pass(stripped, inferred_tool_calls)
                 else self._default_metadata()
             )
@@ -436,7 +447,11 @@ class ConversationService:
             f"Assistant reply:\n{reply_text}\n"
         )
         try:
-            raw = self._llm_adapter().generate_reply(system_prompt=extraction_prompt, user_text=extraction_input).text
+            raw = self._llm_adapter().generate_reply(
+                system_prompt=extraction_prompt,
+                user_text=extraction_input,
+                call_context=LLMCallContext(purpose="metadata_extraction"),
+            ).text
             payload = self._parse_json_object(raw)
             return {
                 "internal_summary": self._normalize_summary(payload.get("internal_summary")),
@@ -610,6 +625,7 @@ class ConversationService:
                 system_prompt=finalizer_prompt,
                 user_text=finalizer_input,
                 image_inputs=[image.to_llm_input()] if image is not None else None,
+                call_context=LLMCallContext(purpose="tool_finalizer"),
             ).text
         except Exception:
             return draft_reply

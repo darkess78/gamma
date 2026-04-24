@@ -5,7 +5,7 @@ import os
 
 from ..config import settings
 from ..errors import ConfigurationError, ExternalServiceError
-from .base import LLMAdapter, LLMImageInput, LLMReply
+from .base import LLMAdapter, LLMCallContext, LLMImageInput, LLMReply
 
 
 class OpenAIAdapter(LLMAdapter):
@@ -28,7 +28,11 @@ class OpenAIAdapter(LLMAdapter):
         system_prompt: str,
         user_text: str,
         image_inputs: list[LLMImageInput] | None = None,
+        *,
+        call_context: LLMCallContext | None = None,
+        model_override: str | None = None,
     ) -> LLMReply:
+        _ = call_context
         user_content: list[dict[str, object]] = [{"type": "input_text", "text": user_text}]
         for image_input in image_inputs or []:
             encoded = base64.b64encode(image_input.data).decode("ascii")
@@ -40,7 +44,7 @@ class OpenAIAdapter(LLMAdapter):
             )
         try:
             response = self._client.responses.create(
-                model=settings.llm_model,
+                model=model_override or settings.llm_model,
                 input=[
                     {"role": "system", "content": [{"type": "input_text", "text": system_prompt}]},
                     {"role": "user", "content": user_content},

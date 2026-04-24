@@ -238,6 +238,48 @@ class Settings:
             _config_value(MODELS_CONFIG, "llm", "model", default=_config_value(APP_CONFIG, "llm_model", default="gpt-4.1-mini")),
         )
     )
+    llm_router_enabled: bool = _as_bool(
+        _setting("SHANA_LLM_ROUTER_ENABLED", _config_value(APP_CONFIG, "llm_router_enabled", default=False)),
+        default=False,
+    )
+    llm_router_default_provider: str = str(
+        _setting(
+            "SHANA_LLM_ROUTER_DEFAULT_PROVIDER",
+            _config_value(APP_CONFIG, "llm_router_default_provider", default=""),
+        )
+    ).strip().lower()
+    llm_router_default_model: str = str(
+        _setting(
+            "SHANA_LLM_ROUTER_DEFAULT_MODEL",
+            _config_value(APP_CONFIG, "llm_router_default_model", default=""),
+        )
+    ).strip()
+    llm_router_allow_hosted_escalation: bool = _as_bool(
+        _setting(
+            "SHANA_LLM_ROUTER_ALLOW_HOSTED_ESCALATION",
+            _config_value(APP_CONFIG, "llm_router_allow_hosted_escalation", default=False),
+        ),
+        default=False,
+    )
+    llm_router_hosted_provider: str = str(
+        _setting(
+            "SHANA_LLM_ROUTER_HOSTED_PROVIDER",
+            _config_value(APP_CONFIG, "llm_router_hosted_provider", default="openai"),
+        )
+    ).strip().lower() or "openai"
+    llm_router_hosted_model: str = str(
+        _setting(
+            "SHANA_LLM_ROUTER_HOSTED_MODEL",
+            _config_value(APP_CONFIG, "llm_router_hosted_model", default=""),
+        )
+    ).strip()
+    llm_router_complex_max_input_words: int = _as_int(
+        _setting(
+            "SHANA_LLM_ROUTER_COMPLEX_MAX_INPUT_WORDS",
+            _config_value(APP_CONFIG, "llm_router_complex_max_input_words", default=120),
+        ),
+        default=120,
+    )
     openai_api_key: str | None = _setting("OPENAI_API_KEY", _config_value(APP_CONFIG, "openai_api_key"))
     local_llm_endpoint: str = str(
         _setting("SHANA_LOCAL_LLM_ENDPOINT", _config_value(APP_CONFIG, "local_llm_endpoint", default="http://127.0.0.1:11434"))

@@ -5,6 +5,7 @@ import time
 from typing import Any
 
 from ..conversation.service import ConversationService
+from ..llm.base import LLMCallContext
 from ..persona.loader import build_system_prompt
 
 
@@ -35,6 +36,7 @@ class ReplyPlanner:
             raw = self._conversation._llm_adapter().generate_reply(
                 system_prompt=planner_prompt,
                 user_text=planner_input,
+                call_context=LLMCallContext(purpose="voice_reply_planner", fast_mode=True),
             ).text
             payload = self._conversation._parse_json_object(raw)
             if not isinstance(payload, dict):

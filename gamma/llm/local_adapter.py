@@ -8,7 +8,7 @@ from ..errors import ConfigurationError
 from ..config import settings
 from ..errors import ExternalServiceError
 from .ollama_probe import probe_ollama_model_capabilities
-from .base import LLMAdapter, LLMImageInput, LLMReply
+from .base import LLMAdapter, LLMCallContext, LLMImageInput, LLMReply
 
 
 class LocalLLMAdapter(LLMAdapter):
@@ -27,13 +27,17 @@ class LocalLLMAdapter(LLMAdapter):
         system_prompt: str,
         user_text: str,
         image_inputs: list[LLMImageInput] | None = None,
+        *,
+        call_context: LLMCallContext | None = None,
+        model_override: str | None = None,
     ) -> LLMReply:
+        _ = call_context
         if image_inputs:
             if not self.supports_vision:
                 raise ConfigurationError(
                     "Local vision is disabled. Set SHANA_LOCAL_LLM_SUPPORTS_VISION=true and configure a multimodal Ollama model."
                 )
-            target_model = self._model_name_for_request(has_images=True)
+            target_model = self._model_name_for_request(has_images=True, model_override=model_override)
             capability = probe_ollama_model_capabilities(
                 endpoint=settings.local_llm_endpoint,
                 model=target_model,
@@ -52,6 +56,7 @@ class LocalLLMAdapter(LLMAdapter):
                 has_images=bool(image_inputs),
                 system_prompt=system_prompt,
                 user_text=user_text,
+                model_override=model_override,
             ),
             "system": system_prompt,
             "prompt": user_text,
@@ -81,12 +86,21 @@ class LocalLLMAdapter(LLMAdapter):
             raise ExternalServiceError("Local model returned an empty response.")
         return LLMReply(text=text)
 
-    def _model_name_for_request(self, *, has_images: bool, system_prompt: str = "", user_text: str = "") -> str:
+    def _model_name_for_request(
+        self,
+        *,
+        has_images: bool,
+        system_prompt: str = "",
+        user_text: str = "",
+        model_override: str | None = None,
+    ) -> str:
+        if model_override:
+            return model_override
         if has_images:
             configured = (settings.local_llm_vision_model or "").strip()
             if configured:
                 return configured
-        if settings.local_llm_enable_routing:
+        if settings.local_llm_enable_routing and not settings.llm_router_enabled:
             routed = self._routed_model_name(system_prompt=system_prompt, user_text=user_text)
             if routed:
                 return routed

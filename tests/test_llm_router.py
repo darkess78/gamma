@@ -46,6 +46,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
         self._original_values = {
             "llm_provider": settings.llm_provider,
             "llm_model": settings.llm_model,
+            "openai_api_key": settings.openai_api_key,
             "llm_router_enabled": settings.llm_router_enabled,
             "llm_router_default_provider": settings.llm_router_default_provider,
             "llm_router_default_model": settings.llm_router_default_model,
@@ -67,6 +68,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
         self.addCleanup(self._temp_dir.cleanup)
         settings.llm_provider = "local"
         settings.llm_model = "gpt-4.1-mini"
+        settings.openai_api_key = "test-openai-key"
         settings.llm_router_enabled = True
         settings.llm_router_default_provider = "local"
         settings.llm_router_default_model = "gpt-oss:20b"

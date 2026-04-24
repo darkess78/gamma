@@ -350,6 +350,10 @@
     return health.detail ? 'Unavailable (' + health.detail + ')' : 'Unavailable';
   }
 
+  function formatRouterScope(scope) {
+    return String(scope || 'text').replace(/_/g, ' ');
+  }
+
   function updateStamp(text) {
     document.getElementById('stamp').textContent = text;
   }
@@ -635,6 +639,18 @@
     lines.push('LLM: ' + providerLabel(llm.provider) + (llm.model ? ' using ' + llm.model : ''));
     if (llm.endpoint) lines.push('LLM endpoint: ' + llm.endpoint);
     if (llm.health) lines.push('LLM health: ' + fmtHealthStatus(llm.health));
+    if (llm.router_capabilities && llm.router_capabilities.length) {
+      for (var c = 0; c < llm.router_capabilities.length; c += 1) {
+        var capability = llm.router_capabilities[c] || {};
+        if (!capability.health) continue;
+        lines.push(
+          'LLM capability: ' +
+          providerLabel(capability.provider) +
+          ' [' + formatRouterScope(capability.scope) + '] ' +
+          fmtHealthStatus(capability.health)
+        );
+      }
+    }
     lines.push('LLM router: ' + (llm.router_enabled ? 'Enabled' : 'Disabled'));
     if (llm.router_enabled) {
       lines.push('Router profile: ' + (llm.router_profile || 'balanced'));
@@ -644,16 +660,23 @@
         lines.push('Hosted route: ' + providerLabel(llm.router_hosted_provider) + (llm.router_hosted_model ? ' using ' + llm.router_hosted_model : ''));
       }
       if (llm.router_failure_backoff_seconds) lines.push('Failure backoff: ' + llm.router_failure_backoff_seconds + ' sec');
-      if (llm.provider_backoff) {
+      if (llm.provider_backoff_entries && llm.provider_backoff_entries.length) {
         var backoffLines = [];
-        for (var backoffProvider in llm.provider_backoff) {
-          if (!Object.prototype.hasOwnProperty.call(llm.provider_backoff, backoffProvider)) continue;
-          backoffLines.push(providerLabel(backoffProvider) + ': ' + llm.provider_backoff[backoffProvider] + ' sec');
+        for (var b = 0; b < llm.provider_backoff_entries.length; b += 1) {
+          var backoffEntry = llm.provider_backoff_entries[b] || {};
+          backoffLines.push(
+            providerLabel(backoffEntry.provider) + ' [' + formatRouterScope(backoffEntry.scope) + ']: ' + backoffEntry.seconds + ' sec'
+          );
         }
         if (backoffLines.length) lines.push('Active backoff: ' + backoffLines.join(' | '));
       }
       if (llm.last_route) {
-        lines.push('Last route: ' + providerLabel(llm.last_route.provider) + (llm.last_route.model ? ' using ' + llm.last_route.model : '') + ' [' + (llm.last_route.status || 'n/a') + ']');
+        lines.push(
+          'Last route: ' +
+          providerLabel(llm.last_route.provider) +
+          (llm.last_route.model ? ' using ' + llm.last_route.model : '') +
+          ' [' + (llm.last_route.route_family || 'route') + ', ' + (llm.last_route.status || 'n/a') + ']'
+        );
       }
       if (llm.route_summary && llm.route_summary.provider_counts) {
         var providerCounts = [];
@@ -662,6 +685,14 @@
           providerCounts.push(providerLabel(providerName) + ': ' + llm.route_summary.provider_counts[providerName]);
         }
         if (providerCounts.length) lines.push('Recent route mix: ' + providerCounts.join(' | '));
+      }
+      if (llm.route_summary && llm.route_summary.route_family_counts) {
+        var familyCounts = [];
+        for (var familyName in llm.route_summary.route_family_counts) {
+          if (!Object.prototype.hasOwnProperty.call(llm.route_summary.route_family_counts, familyName)) continue;
+          familyCounts.push(familyName + ': ' + llm.route_summary.route_family_counts[familyName]);
+        }
+        if (familyCounts.length) lines.push('Recent route families: ' + familyCounts.join(' | '));
       }
     }
     lines.push('');
@@ -920,13 +951,13 @@
       if (entry.route_events && entry.route_events.length) {
         var routeLines = [];
         for (var r = 0; r < entry.route_events.length; r += 1) {
-          var route = entry.route_events[r] || {};
-          routeLines.push(
-            (route.purpose || 'route') + ': ' +
-            providerLabel(route.provider) +
-            (route.model ? ' using ' + route.model : '') +
-            ' [' + (route.profile || 'balanced') + ', ' + (route.status || 'n/a') + ', ' + (route.reason || 'n/a') + ', ' + fmtDurationMs(route.duration_ms) + ']'
-          );
+            var route = entry.route_events[r] || {};
+            routeLines.push(
+              (route.route_family || route.purpose || 'route') + ': ' +
+              providerLabel(route.provider) +
+              (route.model ? ' using ' + route.model : '') +
+              ' [' + (route.profile || 'balanced') + ', ' + (route.status || 'n/a') + ', ' + (route.reason || 'n/a') + ', ' + fmtDurationMs(route.duration_ms) + ']'
+            );
         }
         lines.push('Routes: ' + routeLines.join(' || '));
       }
@@ -1023,6 +1054,11 @@
       assistantAutoRewrite: !!settings.speech_filter_auto_rewrite,
       assistantLlmModel: settings.speech_filter_llm_model || '',
       assistantRouterProfile: settings.llm_router_profile || 'balanced',
+      assistantRouterHostedEscalation: !!settings.llm_router_allow_hosted_escalation,
+      assistantRouterPersonaHosted: !!settings.llm_router_persona_hosted_fallback_enabled,
+      assistantRouterPersonaHeavyHosted: !!settings.llm_router_persona_heavy_hosted_fallback_enabled,
+      assistantRouterLightWords: settings.llm_router_chat_light_max_input_words,
+      assistantRouterComplexWords: settings.llm_router_complex_max_input_words,
       assistantStateEnabled: !!settings.assistant_state_enabled,
       assistantEmotionDecayTurns: settings.assistant_emotion_decay_turns,
       assistantEmotionEpisodeThreshold: settings.assistant_emotion_episode_threshold,
@@ -1796,6 +1832,11 @@
       speech_filter_auto_rewrite: !!document.getElementById('assistantAutoRewrite').checked,
       speech_filter_llm_model: document.getElementById('assistantLlmModel').value.trim(),
       llm_router_profile: document.getElementById('assistantRouterProfile').value,
+      llm_router_allow_hosted_escalation: !!document.getElementById('assistantRouterHostedEscalation').checked,
+      llm_router_persona_hosted_fallback_enabled: !!document.getElementById('assistantRouterPersonaHosted').checked,
+      llm_router_persona_heavy_hosted_fallback_enabled: !!document.getElementById('assistantRouterPersonaHeavyHosted').checked,
+      llm_router_chat_light_max_input_words: Number(document.getElementById('assistantRouterLightWords').value || 40),
+      llm_router_complex_max_input_words: Number(document.getElementById('assistantRouterComplexWords').value || 120),
       assistant_state_enabled: !!document.getElementById('assistantStateEnabled').checked,
       assistant_emotion_decay_turns: Number(document.getElementById('assistantEmotionDecayTurns').value || 0),
       assistant_emotion_episode_threshold: Number(document.getElementById('assistantEmotionEpisodeThreshold').value || 0.65),

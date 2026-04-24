@@ -108,7 +108,11 @@ class VisionService:
                 system_prompt=analysis_prompt,
                 user_text=analysis_input,
                 image_inputs=[image.to_llm_input()],
-                call_context=LLMCallContext(purpose="vision_analysis"),
+                call_context=LLMCallContext(
+                    purpose="vision_analysis",
+                    reasoning_depth="normal",
+                    interaction_mode="vision",
+                ),
             ).text
             payload = self._parse_json_object(raw)
         except Exception as exc:

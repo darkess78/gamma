@@ -22,6 +22,10 @@ class LLMCallContext:
     fast_mode: bool = False
     brief_mode: bool = False
     micro_mode: bool = False
+    reasoning_depth: str = "normal"
+    persona_sensitive: bool = False
+    interaction_mode: str = "chat"
+    cost_sensitive: bool = False
 
 
 class LLMAdapter:

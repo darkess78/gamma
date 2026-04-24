@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from gamma.config import settings
 from gamma.conversation.service import ConversationService
 from gamma.persona.assistant_state import AssistantStateStore
 from gamma.schemas.conversation import SpeakerContext
@@ -47,6 +48,12 @@ class _FakeTTSService:
 
 
 class ConversationPipelineTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._original_memory_personality = settings.memory_personality
+
+    def tearDown(self) -> None:
+        settings.memory_personality = self._original_memory_personality
+
     def test_fast_mode_strips_hidden_tone_tags_before_tts(self) -> None:
         service = ConversationService()
         service._llm = _FakeLLMAdapter(["[happy] Hey there."])
@@ -159,6 +166,31 @@ class ConversationPipelineTest(unittest.TestCase):
             reply_text="Understood.",
         )
         self.assertTrue(any(candidate.type == "project" for candidate in project_candidates))
+        self.assertFalse(any(candidate.type == "episodic" for candidate in project_candidates))
+
+    def test_memory_candidate_builder_only_stores_episodic_for_memorable_turns(self) -> None:
+        settings.memory_personality = "entertainer"
+        service = ConversationService()
+        routine_candidates = service._build_memory_candidates(
+            user_text="I am working on the Gamma router latency work right now and fixing another bug tonight.",
+            reply_text="Understood.",
+        )
+        self.assertFalse(any(candidate.type == "episodic" for candidate in routine_candidates))
+
+        memorable_candidates = service._build_memory_candidates(
+            user_text="Please don't forget that today is my birthday and it means a lot to me.",
+            reply_text="I won't.",
+        )
+        self.assertTrue(any(candidate.type == "episodic" for candidate in memorable_candidates))
+
+    def test_assistant_memory_personality_keeps_worklike_episodic_turns(self) -> None:
+        settings.memory_personality = "assistant"
+        service = ConversationService()
+        candidates = service._build_memory_candidates(
+            user_text="I am working on the Gamma router latency work right now and fixing another bug tonight.",
+            reply_text="Understood.",
+        )
+        self.assertTrue(any(candidate.type == "episodic" for candidate in candidates))
 
 
 if __name__ == "__main__":

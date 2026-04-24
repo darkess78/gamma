@@ -77,6 +77,12 @@ class DashboardService:
         local_status["providers"]["llm"]["route_summary"] = route_info["summary"]
         local_status["providers"]["llm"]["last_route"] = route_info["entries"][-1] if route_info["entries"] else None
         local_status["providers"]["llm"]["provider_backoff"] = RouterLLMAdapter.provider_backoff_state()
+        local_status["providers"]["llm"]["provider_backoff_entries"] = self._format_router_backoff_entries(
+            local_status["providers"]["llm"]["provider_backoff"]
+        )
+        local_status["providers"]["llm"]["router_capabilities"] = self._build_router_capability_status(
+            local_status["providers"]["llm"]
+        )
         runtime_status = self.build_runtime_status()
         system_status = self._probe_json(settings.shana_base_url + "/v1/system/status")
         return {
@@ -491,6 +497,27 @@ class DashboardService:
             "speech_filter_llm_model": str(config.get("speech_filter_llm_model", settings.speech_filter_llm_model)),
             "speech_filter_auto_rewrite": bool(config.get("speech_filter_auto_rewrite", settings.speech_filter_auto_rewrite)),
             "llm_router_profile": str(config.get("llm_router_profile", settings.llm_router_profile)),
+            "llm_router_allow_hosted_escalation": bool(
+                config.get("llm_router_allow_hosted_escalation", settings.llm_router_allow_hosted_escalation)
+            ),
+            "llm_router_chat_light_max_input_words": int(
+                config.get("llm_router_chat_light_max_input_words", settings.llm_router_chat_light_max_input_words)
+            ),
+            "llm_router_complex_max_input_words": int(
+                config.get("llm_router_complex_max_input_words", settings.llm_router_complex_max_input_words)
+            ),
+            "llm_router_persona_hosted_fallback_enabled": bool(
+                config.get(
+                    "llm_router_persona_hosted_fallback_enabled",
+                    settings.llm_router_persona_hosted_fallback_enabled,
+                )
+            ),
+            "llm_router_persona_heavy_hosted_fallback_enabled": bool(
+                config.get(
+                    "llm_router_persona_heavy_hosted_fallback_enabled",
+                    settings.llm_router_persona_heavy_hosted_fallback_enabled,
+                )
+            ),
             "assistant_state_enabled": bool(config.get("assistant_state_enabled", settings.assistant_state_enabled)),
             "assistant_emotion_decay_turns": int(config.get("assistant_emotion_decay_turns", settings.assistant_emotion_decay_turns)),
             "assistant_emotion_episode_threshold": float(config.get("assistant_emotion_episode_threshold", settings.assistant_emotion_episode_threshold)),
@@ -511,6 +538,9 @@ class DashboardService:
             "speech_filter_heuristic_enabled",
             "speech_filter_llm_enabled",
             "speech_filter_auto_rewrite",
+            "llm_router_allow_hosted_escalation",
+            "llm_router_persona_hosted_fallback_enabled",
+            "llm_router_persona_heavy_hosted_fallback_enabled",
             "assistant_state_enabled",
         ]
         for key in bool_keys:
@@ -523,6 +553,18 @@ class DashboardService:
             if profile not in {"balanced", "local_only", "low_latency_voice", "high_quality", "offline_safe"}:
                 raise ValueError("unsupported llm_router_profile")
             updated = self._upsert_toml_string(updated, "llm_router_profile", profile)
+        if "llm_router_chat_light_max_input_words" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "llm_router_chat_light_max_input_words",
+                max(1, int(payload.get("llm_router_chat_light_max_input_words", settings.llm_router_chat_light_max_input_words))),
+            )
+        if "llm_router_complex_max_input_words" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "llm_router_complex_max_input_words",
+                max(1, int(payload.get("llm_router_complex_max_input_words", settings.llm_router_complex_max_input_words))),
+            )
         if "assistant_emotion_decay_turns" in payload:
             updated = self._upsert_toml_number(updated, "assistant_emotion_decay_turns", max(0, int(payload.get("assistant_emotion_decay_turns", 0))))
         if "assistant_emotion_episode_threshold" in payload:
@@ -1226,7 +1268,7 @@ class DashboardService:
     def _recent_llm_routes(self, limit: int = 24) -> dict[str, Any]:
         log_path = settings.data_dir / "runtime" / "llm.routes.jsonl"
         if not log_path.exists():
-            return {"entries": [], "summary": {"count": 0, "status_counts": {}, "provider_counts": {}}}
+            return {"entries": [], "summary": {"count": 0, "status_counts": {}, "provider_counts": {}, "route_family_counts": {}}}
         entries: list[dict[str, Any]] = []
         for line in reversed(log_path.read_text(encoding="utf-8", errors="replace").splitlines()):
             stripped = line.strip()
@@ -1241,12 +1283,15 @@ class DashboardService:
         entries.reverse()
         status_counts: dict[str, int] = {}
         provider_counts: dict[str, int] = {}
+        route_family_counts: dict[str, int] = {}
         durations: list[float] = []
         for entry in entries:
             status = str(entry.get("status", "") or "unknown")
             provider = str(entry.get("provider", "") or "unknown")
+            route_family = str(entry.get("route_family", "") or "unknown")
             status_counts[status] = status_counts.get(status, 0) + 1
             provider_counts[provider] = provider_counts.get(provider, 0) + 1
+            route_family_counts[route_family] = route_family_counts.get(route_family, 0) + 1
             duration = entry.get("duration_ms")
             if isinstance(duration, (int, float)):
                 durations.append(float(duration))
@@ -1254,9 +1299,62 @@ class DashboardService:
             "count": len(entries),
             "status_counts": status_counts,
             "provider_counts": provider_counts,
+            "route_family_counts": route_family_counts,
             "avg_duration_ms": round(sum(durations) / len(durations), 1) if durations else None,
         }
         return {"entries": entries, "summary": summary}
+
+    def _format_router_backoff_entries(self, backoff_state: dict[str, Any]) -> list[dict[str, Any]]:
+        entries: list[dict[str, Any]] = []
+        for key, seconds in backoff_state.items():
+            normalized_key = str(key or "").strip()
+            provider = normalized_key
+            scope = "text"
+            if ":" in normalized_key:
+                provider, scope = normalized_key.split(":", 1)
+            entries.append(
+                {
+                    "key": normalized_key,
+                    "provider": provider,
+                    "scope": scope,
+                    "seconds": float(seconds),
+                }
+            )
+        return entries
+
+    def _build_router_capability_status(self, llm_status: dict[str, Any]) -> list[dict[str, Any]]:
+        capabilities: list[dict[str, Any]] = []
+        provider = str(llm_status.get("provider") or "").strip().lower()
+        text_health = llm_status.get("health")
+        if provider in {"local", "ollama", "openai", "mock"}:
+            capabilities.append(
+                {
+                    "provider": provider or "unknown",
+                    "scope": "text",
+                    "health": text_health,
+                }
+            )
+        if provider in {"local", "ollama"}:
+            capabilities.append(
+                {
+                    "provider": provider,
+                    "scope": "vision",
+                    "health": llm_status.get("vision_capability"),
+                }
+            )
+        hosted_provider = str(llm_status.get("router_hosted_provider") or "").strip().lower()
+        if hosted_provider and hosted_provider != provider:
+            hosted_health = {"ok": True, "detail": "configured"}
+            if hosted_provider == "openai" and not settings.openai_api_key:
+                hosted_health = {"ok": False, "detail": "missing-openai-api-key"}
+            capabilities.append(
+                {
+                    "provider": hosted_provider,
+                    "scope": "text",
+                    "health": hosted_health,
+                }
+            )
+        return capabilities
 
     def _api_headers(self) -> dict[str, str]:
         if settings.api_auth_enabled and settings.api_bearer_token:

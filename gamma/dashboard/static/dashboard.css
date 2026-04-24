@@ -344,6 +344,17 @@ pre {
   margin-bottom: 18px;
 }
 
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.compact-grid {
+  gap: 14px;
+}
+
 .action-group {
   background: rgba(255, 255, 255, 0.035);
   border: 1px solid rgba(255, 255, 255, 0.04);
@@ -376,7 +387,8 @@ pre {
 }
 
 .text-input {
-  min-width: 220px;
+  min-width: 0;
+  width: 100%;
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--line);
@@ -471,6 +483,10 @@ pre {
   gap: 8px;
   color: var(--muted);
   font-size: 14px;
+}
+
+.action-stack .checkbox-row {
+  width: 100%;
 }
 
 .range-row {

@@ -170,6 +170,8 @@ class ConversationService:
                     "For live speech, avoid numbered lists, bullet lists, section labels, and essay formatting. "
                     "Prefer natural spoken prose with short clauses and clear sentence boundaries."
                 )
+            tools_ok = speaker is None or speaker.tools_allowed
+            inferred_tool_calls = self._infer_tool_calls(stripped, speaker=speaker) if tools_ok else []
             llm_started = time.perf_counter()
             draft_reply = self._llm_adapter().generate_reply(
                 system_prompt=system_prompt,
@@ -184,15 +186,17 @@ class ConversationService:
                     fast_mode=fast_mode,
                     brief_mode=brief_mode,
                     micro_mode=micro_mode,
+                    reasoning_depth="heavy" if self._looks_like_heavy_reasoning_turn(stripped) else "normal",
+                    persona_sensitive=not bool(inferred_tool_calls),
+                    interaction_mode="chat",
+                    cost_sensitive=bool(fast_mode or brief_mode or micro_mode),
                 ),
             )
             timing["draft_reply_ms"] = round((time.perf_counter() - llm_started) * 1000, 1)
 
-            tools_ok = speaker is None or speaker.tools_allowed
             memory_write_ok = speaker is None or speaker.memory_write_allowed
 
             # Inferred tool calls always run synchronously — they can change spoken text.
-            inferred_tool_calls = self._infer_tool_calls(stripped, speaker=speaker) if tools_ok else []
             tool_started = time.perf_counter()
             inferred_results = self._execute_tool_calls(inferred_tool_calls)
             timing["tool_exec_ms"] = round((time.perf_counter() - tool_started) * 1000, 1)
@@ -456,7 +460,12 @@ class ConversationService:
             raw = self._llm_adapter().generate_reply(
                 system_prompt=extraction_prompt,
                 user_text=extraction_input,
-                call_context=LLMCallContext(purpose="metadata_extraction"),
+                call_context=LLMCallContext(
+                    purpose="metadata_extraction",
+                    reasoning_depth="light",
+                    interaction_mode="memory",
+                    cost_sensitive=True,
+                ),
             ).text
             payload = self._parse_json_object(raw)
             return {
@@ -631,7 +640,12 @@ class ConversationService:
                 system_prompt=finalizer_prompt,
                 user_text=finalizer_input,
                 image_inputs=[image.to_llm_input()] if image is not None else None,
-                call_context=LLMCallContext(purpose="tool_finalizer"),
+                call_context=LLMCallContext(
+                    purpose="tool_finalizer",
+                    reasoning_depth="normal",
+                    persona_sensitive=True,
+                    interaction_mode="tooling",
+                ),
             ).text
         except Exception:
             return draft_reply
@@ -790,6 +804,7 @@ class ConversationService:
         candidates: list[MemoryCandidate] = []
         stripped = user_text.strip()
         lowered = stripped.lower()
+        has_structured_candidate = False
         if "my name is " in lowered:
             candidates.append(
                 MemoryCandidate(
@@ -799,6 +814,7 @@ class ConversationService:
                     tags=["identity"],
                 )
             )
+            has_structured_candidate = True
         elif any(phrase in lowered for phrase in ["remember that ", "my favorite", "i like ", "i prefer ", "i dislike ", "i do not like ", "i hate "]):
             candidates.append(
                 MemoryCandidate(
@@ -808,6 +824,7 @@ class ConversationService:
                     tags=["preference"],
                 )
             )
+            has_structured_candidate = True
         elif any(phrase in lowered for phrase in ["i am working on ", "i'm working on ", "the main project is "]):
             candidates.append(
                 MemoryCandidate(
@@ -817,6 +834,7 @@ class ConversationService:
                     tags=["project_state"],
                 )
             )
+            has_structured_candidate = True
         elif lowered.startswith("this is ") and len(stripped.split()) >= 4:
             candidates.append(
                 MemoryCandidate(
@@ -828,6 +846,7 @@ class ConversationService:
                     subject_name=self._extract_named_person(stripped),
                 )
             )
+            has_structured_candidate = True
         elif any(phrase in lowered for phrase in ["my friend ", "my brother ", "my sister ", "my coworker ", "my manager ", "my wife ", "my husband ", "my partner "]):
             candidates.append(
                 MemoryCandidate(
@@ -840,7 +859,8 @@ class ConversationService:
                     relationship_to_user=self._extract_relationship_label(lowered),
                 )
             )
-        if len(stripped.split()) >= 8 and self._should_store_episodic_memory(lowered):
+            has_structured_candidate = True
+        if len(stripped.split()) >= 8 and self._should_store_episodic_memory(lowered, has_structured_candidate=has_structured_candidate):
             candidates.append(
                 MemoryCandidate(
                     type="episodic",
@@ -851,7 +871,91 @@ class ConversationService:
             )
         return candidates[:3]
 
-    def _should_store_episodic_memory(self, lowered_user_text: str) -> bool:
+    def _should_store_episodic_memory(self, lowered_user_text: str, *, has_structured_candidate: bool = False) -> bool:
+        if self._memory_personality() == "assistant":
+            return self._assistant_should_store_episodic_memory(
+                lowered_user_text,
+                has_structured_candidate=has_structured_candidate,
+            )
+        return self._entertainer_should_store_episodic_memory(
+            lowered_user_text,
+            has_structured_candidate=has_structured_candidate,
+        )
+
+    def _entertainer_should_store_episodic_memory(
+        self,
+        lowered_user_text: str,
+        *,
+        has_structured_candidate: bool = False,
+    ) -> bool:
+        word_count = len(lowered_user_text.split())
+        if word_count < 12:
+            return False
+        low_signal_markers = {"hi", "hello", "thanks", "thank you", "ok", "okay", "cool", "nice", "good morning", "good night"}
+        if lowered_user_text.strip() in low_signal_markers:
+            return False
+        memorable_markers = (
+            "remember",
+            "deadline",
+            "anniversary",
+            "birthday",
+            "graduated",
+            "promotion",
+            "promoted",
+            "engaged",
+            "married",
+            "broke up",
+            "passed away",
+            "died",
+            "won",
+            "lost",
+            "celebrate",
+            "celebrating",
+            "proud of",
+            "upset",
+            "frustrated",
+            "sad about",
+            "excited about",
+            "nervous about",
+            "afraid",
+            "diagnosed",
+            "moving to",
+            "moving into",
+            "starting a new job",
+            "quit my job",
+            "apologize",
+            "sorry about",
+            "never forget",
+            "please don't forget",
+            "important to me",
+            "means a lot to me",
+            "big day",
+        )
+        if any(marker in lowered_user_text for marker in memorable_markers):
+            return True
+        if has_structured_candidate:
+            return False
+        routine_work_markers = (
+            "project",
+            "working on",
+            "plan",
+            "issue",
+            "bug",
+            "error",
+            "task",
+            "todo",
+            "fixing",
+        )
+        if any(marker in lowered_user_text for marker in routine_work_markers):
+            return False
+        return word_count >= 18 and any(marker in lowered_user_text for marker in ["always", "never", "every time", "keeps happening"])
+
+    def _assistant_should_store_episodic_memory(
+        self,
+        lowered_user_text: str,
+        *,
+        has_structured_candidate: bool = False,
+    ) -> bool:
         if len(lowered_user_text.split()) < 10:
             return False
         low_signal_markers = {"hi", "hello", "thanks", "thank you", "ok", "okay", "cool", "nice", "good morning", "good night"}
@@ -873,9 +977,27 @@ class ConversationService:
             "bug",
             "error",
         )
-        return any(marker in lowered_user_text for marker in strong_markers)
+        if any(marker in lowered_user_text for marker in strong_markers):
+            return True
+        if has_structured_candidate:
+            return False
+        return False
 
     def _episodic_importance(self, lowered_user_text: str) -> float:
+        if self._memory_personality() == "assistant":
+            return self._assistant_episodic_importance(lowered_user_text)
+        return self._entertainer_episodic_importance(lowered_user_text)
+
+    def _entertainer_episodic_importance(self, lowered_user_text: str) -> float:
+        if any(marker in lowered_user_text for marker in ["never forget", "please don't forget", "important to me", "means a lot to me"]):
+            return 0.86
+        if any(marker in lowered_user_text for marker in ["birthday", "anniversary", "graduated", "promotion", "engaged", "married", "passed away", "died"]):
+            return 0.82
+        if any(marker in lowered_user_text for marker in ["won", "lost", "celebrate", "proud of", "upset", "frustrated", "sad about", "excited about", "nervous about"]):
+            return 0.76
+        return 0.7
+
+    def _assistant_episodic_importance(self, lowered_user_text: str) -> float:
         if any(marker in lowered_user_text for marker in ["deadline", "urgent", "important", "remember"]):
             return 0.72
         if any(marker in lowered_user_text for marker in ["project", "working on", "plan", "issue", "bug", "error"]):
@@ -883,6 +1005,23 @@ class ConversationService:
         return 0.56
 
     def _episodic_tags(self, lowered_user_text: str) -> list[str]:
+        if self._memory_personality() == "assistant":
+            return self._assistant_episodic_tags(lowered_user_text)
+        return self._entertainer_episodic_tags(lowered_user_text)
+
+    def _entertainer_episodic_tags(self, lowered_user_text: str) -> list[str]:
+        tags = ["conversation"]
+        if any(marker in lowered_user_text for marker in ["birthday", "anniversary", "graduated", "promotion", "engaged", "married", "moving to", "starting a new job"]):
+            tags.append("milestone")
+        if any(marker in lowered_user_text for marker in ["won", "lost", "celebrate", "proud of"]):
+            tags.append("event")
+        if any(marker in lowered_user_text for marker in ["upset", "frustrated", "sad about", "excited about", "nervous about", "afraid"]):
+            tags.append("emotion")
+        if any(marker in lowered_user_text for marker in ["remember", "never forget", "please don't forget", "important to me", "means a lot to me"]):
+            tags.append("durable")
+        return tags[:4]
+
+    def _assistant_episodic_tags(self, lowered_user_text: str) -> list[str]:
         tags = ["conversation"]
         if any(marker in lowered_user_text for marker in ["project", "working on", "plan"]):
             tags.append("project")
@@ -891,6 +1030,12 @@ class ConversationService:
         if "remember" in lowered_user_text:
             tags.append("durable")
         return tags[:4]
+
+    def _memory_personality(self) -> str:
+        personality = (settings.memory_personality or "").strip().lower()
+        if personality in {"assistant", "entertainer"}:
+            return personality
+        return "entertainer"
 
     def _extract_named_person(self, text: str) -> str | None:
         relation_match = re.search(
@@ -912,6 +1057,26 @@ class ConversationService:
             if f"my {label} " in lowered:
                 return label
         return None
+
+    def _looks_like_heavy_reasoning_turn(self, user_text: str) -> bool:
+        lowered = (user_text or "").lower()
+        if len(lowered.split()) > settings.llm_router_complex_max_input_words:
+            return True
+        markers = (
+            "write code",
+            "debug",
+            "traceback",
+            "stack trace",
+            "refactor",
+            "architecture",
+            "design a system",
+            "compare",
+            "tradeoff",
+            "step by step",
+            "plan",
+            "analyze",
+        )
+        return any(marker in lowered for marker in markers)
 
     def _parse_json_object(self, raw: str) -> dict:
         stripped = raw.strip()

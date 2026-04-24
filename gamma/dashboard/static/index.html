@@ -368,16 +368,21 @@
               <label class="checkbox-row"><input id="assistantHeuristicEnabled" type="checkbox"> Heuristic enabled</label>
               <label class="checkbox-row"><input id="assistantLlmEnabled" type="checkbox"> LLM reviewer enabled</label>
               <label class="checkbox-row"><input id="assistantAutoRewrite" type="checkbox"> Auto rewrite enabled</label>
-              <input class="text-input" id="assistantLlmModel" placeholder="LLM reviewer model (optional)">
-              <select class="text-input" id="assistantRouterProfile">
-                <option value="balanced">Router: Balanced</option>
-                <option value="local_only">Router: Local Only</option>
-                <option value="low_latency_voice">Router: Low Latency Voice</option>
-                <option value="high_quality">Router: High Quality</option>
-                <option value="offline_safe">Router: Offline Safe</option>
-              </select>
+                <input class="text-input" id="assistantLlmModel" placeholder="LLM reviewer model (optional)">
+                <select class="text-input" id="assistantRouterProfile">
+                  <option value="balanced">Router: Balanced</option>
+                  <option value="local_only">Router: Local Only</option>
+                  <option value="low_latency_voice">Router: Low Latency Voice</option>
+                  <option value="high_quality">Router: High Quality</option>
+                  <option value="offline_safe">Router: Offline Safe</option>
+                </select>
+                <label class="checkbox-row"><input id="assistantRouterHostedEscalation" type="checkbox"> Hosted escalation enabled</label>
+                <label class="checkbox-row"><input id="assistantRouterPersonaHosted" type="checkbox"> Persona chat hosted fallback</label>
+                <label class="checkbox-row"><input id="assistantRouterPersonaHeavyHosted" type="checkbox"> Persona heavy hosted fallback</label>
+                <input class="text-input" id="assistantRouterLightWords" type="number" min="1" step="1" placeholder="Router light max words">
+                <input class="text-input" id="assistantRouterComplexWords" type="number" min="1" step="1" placeholder="Router heavy threshold words">
+              </div>
             </div>
-          </div>
           <div class="action-group">
             <div class="action-title">Emotion Memory</div>
             <div class="action-buttons action-stack">

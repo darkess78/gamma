@@ -293,6 +293,27 @@ class Settings:
         ),
         default=45,
     )
+    llm_router_chat_light_max_input_words: int = _as_int(
+        _setting(
+            "SHANA_LLM_ROUTER_CHAT_LIGHT_MAX_INPUT_WORDS",
+            _config_value(APP_CONFIG, "llm_router_chat_light_max_input_words", default=40),
+        ),
+        default=40,
+    )
+    llm_router_persona_hosted_fallback_enabled: bool = _as_bool(
+        _setting(
+            "SHANA_LLM_ROUTER_PERSONA_HOSTED_FALLBACK_ENABLED",
+            _config_value(APP_CONFIG, "llm_router_persona_hosted_fallback_enabled", default=False),
+        ),
+        default=False,
+    )
+    llm_router_persona_heavy_hosted_fallback_enabled: bool = _as_bool(
+        _setting(
+            "SHANA_LLM_ROUTER_PERSONA_HEAVY_HOSTED_FALLBACK_ENABLED",
+            _config_value(APP_CONFIG, "llm_router_persona_heavy_hosted_fallback_enabled", default=True),
+        ),
+        default=True,
+    )
     openai_api_key: str | None = _setting("OPENAI_API_KEY", _config_value(APP_CONFIG, "openai_api_key"))
     local_llm_endpoint: str = str(
         _setting("SHANA_LOCAL_LLM_ENDPOINT", _config_value(APP_CONFIG, "local_llm_endpoint", default="http://127.0.0.1:11434"))
@@ -517,6 +538,9 @@ class Settings:
     memory_write_mode: str = str(
         _setting("SHANA_MEMORY_WRITE_MODE", _config_value(MEMORY_CONFIG, "write_mode", default="selective"))
     )
+    memory_personality: str = str(
+        _setting("SHANA_MEMORY_PERSONALITY", _config_value(MEMORY_CONFIG, "personality", default="entertainer"))
+    ).strip().lower() or "entertainer"
 
     @property
     def shana_base_url(self) -> str:

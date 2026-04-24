@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from gamma.config import settings
 from gamma.dashboard import main
+from gamma.dashboard.service import DashboardService
 from gamma.schemas.response import AssistantResponse, VisionAnalysis
 from gamma.schemas.voice import VoiceRoundtripResponse
 
@@ -91,7 +92,16 @@ class DashboardRoutesTest(unittest.TestCase):
                 method.assert_called_once_with()
 
     def test_assistant_settings_routes(self) -> None:
-        settings_payload = {"speech_filter_level": "strict", "assistant_state_enabled": True, "llm_router_profile": "balanced"}
+        settings_payload = {
+            "speech_filter_level": "strict",
+            "assistant_state_enabled": True,
+            "llm_router_profile": "balanced",
+            "llm_router_allow_hosted_escalation": True,
+            "llm_router_chat_light_max_input_words": 32,
+            "llm_router_complex_max_input_words": 140,
+            "llm_router_persona_hosted_fallback_enabled": False,
+            "llm_router_persona_heavy_hosted_fallback_enabled": True,
+        }
         with patch.object(self.mock_service, "assistant_runtime_settings", return_value=settings_payload) as method:
             response = self.client.get("/api/assistant/settings")
         self.assertEqual(response.status_code, 200)
@@ -211,6 +221,22 @@ class DashboardRoutesTest(unittest.TestCase):
                 payload = websocket.receive_json()
         self.assertEqual(payload, {"type": "ready"})
         self.assertEqual(live_voice_session.handle.await_count, 1)
+
+    def test_router_capability_status_includes_hosted_and_local_scopes(self) -> None:
+        service = DashboardService()
+        with patch.object(settings, "openai_api_key", "test-key"):
+            entries = service._build_router_capability_status(
+                {
+                    "provider": "local",
+                    "health": {"ok": True, "detail": "ready"},
+                    "vision_capability": {"ok": False, "detail": "vision-disabled-in-config"},
+                    "router_hosted_provider": "openai",
+                }
+            )
+        scopes = {(entry["provider"], entry["scope"]) for entry in entries}
+        self.assertIn(("local", "text"), scopes)
+        self.assertIn(("local", "vision"), scopes)
+        self.assertIn(("openai", "text"), scopes)
 
 
 if __name__ == "__main__":

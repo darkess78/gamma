@@ -36,7 +36,14 @@ class ReplyPlanner:
             raw = self._conversation._llm_adapter().generate_reply(
                 system_prompt=planner_prompt,
                 user_text=planner_input,
-                call_context=LLMCallContext(purpose="voice_reply_planner", fast_mode=True),
+                call_context=LLMCallContext(
+                    purpose="voice_reply_planner",
+                    fast_mode=True,
+                    reasoning_depth="light",
+                    persona_sensitive=True,
+                    interaction_mode="live_voice",
+                    cost_sensitive=True,
+                ),
             ).text
             payload = self._conversation._parse_json_object(raw)
             if not isinstance(payload, dict):

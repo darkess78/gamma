@@ -43,6 +43,7 @@ class _TestRouter(RouterLLMAdapter):
 
 class RouterLLMAdapterTest(unittest.TestCase):
     def setUp(self) -> None:
+        RouterLLMAdapter._provider_backoff_until_global = {}
         self._original_values = {
             "llm_provider": settings.llm_provider,
             "llm_model": settings.llm_model,
@@ -56,6 +57,9 @@ class RouterLLMAdapterTest(unittest.TestCase):
             "llm_router_profile": settings.llm_router_profile,
             "llm_router_complex_max_input_words": settings.llm_router_complex_max_input_words,
             "llm_router_failure_backoff_seconds": settings.llm_router_failure_backoff_seconds,
+            "llm_router_chat_light_max_input_words": settings.llm_router_chat_light_max_input_words,
+            "llm_router_persona_hosted_fallback_enabled": settings.llm_router_persona_hosted_fallback_enabled,
+            "llm_router_persona_heavy_hosted_fallback_enabled": settings.llm_router_persona_heavy_hosted_fallback_enabled,
             "local_llm_model": settings.local_llm_model,
             "local_llm_light_model": settings.local_llm_light_model,
             "local_llm_tagging_model": settings.local_llm_tagging_model,
@@ -78,6 +82,9 @@ class RouterLLMAdapterTest(unittest.TestCase):
         settings.llm_router_profile = "balanced"
         settings.llm_router_complex_max_input_words = 120
         settings.llm_router_failure_backoff_seconds = 45
+        settings.llm_router_chat_light_max_input_words = 40
+        settings.llm_router_persona_hosted_fallback_enabled = False
+        settings.llm_router_persona_heavy_hosted_fallback_enabled = True
         settings.local_llm_model = "gpt-oss:20b"
         settings.local_llm_light_model = "qwen2.5:7b"
         settings.local_llm_tagging_model = "qwen2.5:3b"
@@ -89,6 +96,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
     def tearDown(self) -> None:
         for key, value in self._original_values.items():
             setattr(settings, key, value)
+        RouterLLMAdapter._provider_backoff_until_global = {}
 
     def test_metadata_route_prefers_local_tagging_model(self) -> None:
         router = RouterLLMAdapter()
@@ -101,6 +109,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
         )
         self.assertEqual(decision.provider, "local")
         self.assertEqual(decision.model, "qwen2.5:3b")
+        self.assertEqual(decision.route_family, "metadata")
 
     def test_model_override_uses_default_provider(self) -> None:
         router = RouterLLMAdapter()
@@ -114,6 +123,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
         self.assertEqual(decision.provider, "local")
         self.assertEqual(decision.model, "custom-model")
         self.assertEqual(decision.reason, "explicit-model-override")
+        self.assertEqual(decision.route_family, "explicit_override")
 
     def test_fast_short_turn_prefers_local_light_model(self) -> None:
         router = RouterLLMAdapter()
@@ -126,6 +136,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
         )
         self.assertEqual(decision.provider, "local")
         self.assertEqual(decision.model, "qwen2.5:7b")
+        self.assertEqual(decision.route_family, "chat_light")
 
     def test_lightweight_turn_prefers_local_light_model_without_fast_flag(self) -> None:
         router = RouterLLMAdapter()
@@ -139,6 +150,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
         self.assertEqual(decision.provider, "local")
         self.assertEqual(decision.model, "qwen2.5:7b")
         self.assertEqual(decision.reason, "lightweight-turn")
+        self.assertEqual(decision.route_family, "chat_light")
 
     def test_tool_finalizer_prefers_light_model(self) -> None:
         router = RouterLLMAdapter()
@@ -152,6 +164,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
         self.assertEqual(decision.provider, "local")
         self.assertEqual(decision.model, "qwen2.5:7b")
         self.assertEqual(decision.reason, "tool-finalizer-light-model")
+        self.assertEqual(decision.route_family, "tool_finalize")
 
     def test_voice_helper_prefers_tagging_model(self) -> None:
         router = RouterLLMAdapter()
@@ -165,6 +178,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
         self.assertEqual(decision.provider, "local")
         self.assertEqual(decision.model, "qwen2.5:3b")
         self.assertEqual(decision.reason, "voice-helper-local-worker")
+        self.assertEqual(decision.route_family, "voice_fast")
 
     def test_voice_helper_falls_back_to_light_model_when_tagging_missing(self) -> None:
         settings.local_llm_tagging_model = ""
@@ -179,6 +193,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
         self.assertEqual(decision.provider, "local")
         self.assertEqual(decision.model, "qwen2.5:7b")
         self.assertEqual(decision.reason, "voice-helper-local-worker")
+        self.assertEqual(decision.route_family, "voice_fast")
 
     def test_heavy_turn_can_escalate_to_hosted_when_enabled(self) -> None:
         settings.llm_router_allow_hosted_escalation = True
@@ -192,6 +207,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
         )
         self.assertEqual(decision.provider, "openai")
         self.assertEqual(decision.model, "gpt-4.1")
+        self.assertEqual(decision.route_family, "reasoning_heavy")
 
     def test_default_route_uses_default_provider_and_model(self) -> None:
         settings.local_llm_light_model = ""
@@ -206,6 +222,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
         self.assertEqual(decision.provider, "local")
         self.assertEqual(decision.model, "gpt-oss:20b")
         self.assertEqual(decision.reason, "default-route")
+        self.assertEqual(decision.route_family, "chat_light")
 
     def test_local_only_profile_never_uses_hosted_route(self) -> None:
         settings.llm_router_allow_hosted_escalation = True
@@ -219,6 +236,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
             model_override=None,
         )
         self.assertEqual(decision.provider, "local")
+        self.assertEqual(decision.route_family, "reasoning_heavy")
 
     def test_high_quality_profile_prefers_hosted_route_for_conversation(self) -> None:
         settings.llm_router_allow_hosted_escalation = True
@@ -233,6 +251,43 @@ class RouterLLMAdapterTest(unittest.TestCase):
         )
         self.assertEqual(decision.provider, "openai")
         self.assertEqual(decision.reason, "high-quality-hosted-default")
+        self.assertEqual(decision.route_family, "chat_light")
+
+    def test_persona_sensitive_chat_does_not_force_hosted_in_high_quality(self) -> None:
+        settings.llm_router_allow_hosted_escalation = True
+        settings.llm_router_profile = "high_quality"
+        router = RouterLLMAdapter()
+        decision = router._route_request(
+            system_prompt="conversation prompt",
+            user_text="Tell me something sweet and playful.",
+            image_inputs=None,
+            call_context=LLMCallContext(
+                purpose="conversation_draft",
+                persona_sensitive=True,
+                interaction_mode="chat",
+            ),
+            model_override=None,
+        )
+        self.assertEqual(decision.route_family, "chat_persona")
+        self.assertEqual(decision.provider, "local")
+
+    def test_persona_sensitive_heavy_turn_uses_persona_heavy_family(self) -> None:
+        settings.llm_router_allow_hosted_escalation = True
+        router = RouterLLMAdapter()
+        decision = router._route_request(
+            system_prompt="conversation prompt",
+            user_text="Please analyze this relationship dynamic and compare the tradeoffs step by step.",
+            image_inputs=None,
+            call_context=LLMCallContext(
+                purpose="conversation_draft",
+                persona_sensitive=True,
+                reasoning_depth="heavy",
+                interaction_mode="chat",
+            ),
+            model_override=None,
+        )
+        self.assertEqual(decision.route_family, "reasoning_heavy_persona")
+        self.assertEqual(decision.provider, "local")
 
     def test_unhealthy_local_light_route_falls_back_to_hosted(self) -> None:
         settings.llm_router_allow_hosted_escalation = True
@@ -265,7 +320,25 @@ class RouterLLMAdapterTest(unittest.TestCase):
         )
         self.assertEqual(reply.text, "openai:tell me a quick joke")
         backoff = router.provider_backoff_state()
-        self.assertIn("local", backoff)
+        self.assertIn("local:chat_light", backoff)
+
+    def test_vision_backoff_does_not_block_text_routes(self) -> None:
+        router = _TestRouter()
+        router._mark_provider_failure("local", has_images=True, route_family="vision")
+        vision_availability = router._provider_availability(
+            provider="local",
+            model="gpt-oss:20b",
+            has_images=True,
+            route_family="vision",
+        )
+        text_availability = router._provider_availability(
+            provider="local",
+            model="gpt-oss:20b",
+            has_images=False,
+            route_family="chat_light",
+        )
+        self.assertFalse(bool(vision_availability["ok"]))
+        self.assertTrue(bool(text_availability["ok"]))
 
     def test_generate_reply_records_route_log_and_trace(self) -> None:
         router = _TestRouter()
@@ -280,8 +353,64 @@ class RouterLLMAdapterTest(unittest.TestCase):
         self.assertTrue(events)
         self.assertEqual(events[-1]["provider"], "local")
         self.assertEqual(events[-1]["status"], "ok")
+        self.assertEqual(events[-1]["route_family"], "metadata")
         log_path = settings.data_dir / "runtime" / "llm.routes.jsonl"
         self.assertTrue(log_path.exists())
+
+    def test_persona_sensitive_chat_chain_avoids_hosted_fallback(self) -> None:
+        settings.llm_router_allow_hosted_escalation = True
+        router = RouterLLMAdapter()
+        primary = router._route_request(
+            system_prompt="conversation prompt",
+            user_text="Tell me something sweet and playful.",
+            image_inputs=None,
+            call_context=LLMCallContext(
+                purpose="conversation_draft",
+                persona_sensitive=True,
+                interaction_mode="chat",
+            ),
+            model_override=None,
+        )
+        chain = router._build_route_chain(primary=primary, route_family=primary.route_family, has_images=False)
+        self.assertFalse(any(decision.provider == "openai" for decision in chain))
+
+    def test_persona_heavy_chain_can_include_hosted_when_enabled(self) -> None:
+        settings.llm_router_allow_hosted_escalation = True
+        settings.llm_router_persona_heavy_hosted_fallback_enabled = True
+        router = RouterLLMAdapter()
+        primary = router._route_request(
+            system_prompt="conversation prompt",
+            user_text="Please analyze this relationship dynamic and compare the tradeoffs step by step.",
+            image_inputs=None,
+            call_context=LLMCallContext(
+                purpose="conversation_draft",
+                persona_sensitive=True,
+                reasoning_depth="heavy",
+                interaction_mode="chat",
+            ),
+            model_override=None,
+        )
+        chain = router._build_route_chain(primary=primary, route_family=primary.route_family, has_images=False)
+        self.assertTrue(any(decision.provider == "openai" for decision in chain))
+
+    def test_persona_heavy_chain_omits_hosted_when_disabled(self) -> None:
+        settings.llm_router_allow_hosted_escalation = True
+        settings.llm_router_persona_heavy_hosted_fallback_enabled = False
+        router = RouterLLMAdapter()
+        primary = router._route_request(
+            system_prompt="conversation prompt",
+            user_text="Please analyze this relationship dynamic and compare the tradeoffs step by step.",
+            image_inputs=None,
+            call_context=LLMCallContext(
+                purpose="conversation_draft",
+                persona_sensitive=True,
+                reasoning_depth="heavy",
+                interaction_mode="chat",
+            ),
+            model_override=None,
+        )
+        chain = router._build_route_chain(primary=primary, route_family=primary.route_family, has_images=False)
+        self.assertFalse(any(decision.provider == "openai" for decision in chain))
 
     def test_vision_route_falls_back_to_hosted_provider_when_local_has_no_vision(self) -> None:
         settings.llm_router_allow_hosted_escalation = True
@@ -295,6 +424,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
         )
         self.assertEqual(decision.provider, "openai")
         self.assertEqual(decision.model, "gpt-4.1")
+        self.assertEqual(decision.route_family, "vision")
 
     def test_vision_route_uses_default_local_route_when_local_supports_vision(self) -> None:
         settings.llm_router_allow_hosted_escalation = False
@@ -311,6 +441,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
         self.assertEqual(decision.provider, "local")
         self.assertEqual(decision.model, "gpt-oss:20b")
         self.assertEqual(decision.reason, "default-vision-route")
+        self.assertEqual(decision.route_family, "vision")
 
     def test_vision_route_can_use_explicit_local_vision_fallback(self) -> None:
         settings.llm_router_allow_hosted_escalation = False
@@ -329,6 +460,22 @@ class RouterLLMAdapterTest(unittest.TestCase):
         self.assertEqual(decision.provider, "local")
         self.assertEqual(decision.model, "llama3.2-vision")
         self.assertEqual(decision.reason, "local-vision-route")
+        self.assertEqual(decision.route_family, "vision")
+
+    def test_persona_sensitive_chat_classifies_as_chat_persona(self) -> None:
+        router = RouterLLMAdapter()
+        decision = router._route_request(
+            system_prompt="conversation prompt",
+            user_text="Tell me something sweet and playful.",
+            image_inputs=None,
+            call_context=LLMCallContext(
+                purpose="conversation_draft",
+                persona_sensitive=True,
+                interaction_mode="chat",
+            ),
+            model_override=None,
+        )
+        self.assertEqual(decision.route_family, "chat_persona")
 
 
 if __name__ == "__main__":

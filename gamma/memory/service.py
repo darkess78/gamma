@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import re
+import weakref
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
 from sqlmodel import Session, SQLModel, create_engine, delete, select
+from sqlalchemy.pool import NullPool
 
 from ..config import settings
 from ..schemas.response import MemoryCandidate
@@ -108,11 +110,20 @@ def _normalize_subject_name(value: str | None) -> str | None:
 class MemoryService:
     def __init__(self) -> None:
         connect_args = {}
+        engine_kwargs = {}
         if settings.database_url.startswith("sqlite"):
             connect_args["check_same_thread"] = False
-        self._engine = create_engine(settings.database_url, connect_args=connect_args)
+            # SQLite connections should close immediately after use; pooled file handles
+            # trigger noisy ResourceWarnings in short-lived test/service instances.
+            engine_kwargs["poolclass"] = NullPool
+        self._engine = create_engine(settings.database_url, connect_args=connect_args, **engine_kwargs)
+        self._engine_finalizer = weakref.finalize(self, self._engine.dispose)
         SQLModel.metadata.create_all(self._engine)
         self._ensure_compatible_schema()
+
+    def close(self) -> None:
+        if self._engine_finalizer.alive:
+            self._engine_finalizer()
 
     def _ensure_compatible_schema(self) -> None:
         if not settings.database_url.startswith("sqlite"):

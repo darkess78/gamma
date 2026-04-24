@@ -38,12 +38,63 @@ def _profile_slot(category: str, fact_text: str) -> str | None:
     if category == "identity" and lowered.startswith("my name is "):
         return "identity:name"
     if category in {"preference", "user_preference"}:
+        if lowered.startswith("i do not like ") or lowered.startswith("remember that i do not like "):
+            return "preference:dislike"
+        if lowered.startswith("i dislike ") or lowered.startswith("remember that i dislike "):
+            return "preference:dislike"
+        if lowered.startswith("i hate ") or lowered.startswith("remember that i hate "):
+            return "preference:dislike"
         if lowered.startswith("my favorite "):
             return "preference:favorite"
         if lowered.startswith("i prefer ") or lowered.startswith("remember that i prefer "):
             return "preference:prefer"
         if lowered.startswith("i like ") or lowered.startswith("remember that i like "):
             return "preference:like"
+    if category in {"project", "project_state"}:
+        if lowered.startswith("i am working on ") or lowered.startswith("i'm working on "):
+            return "project:active"
+        if lowered.startswith("the main project is "):
+            return "project:active"
+    return None
+
+
+def _memory_text_signature(text: str) -> str:
+    normalized = _normalize_whitespace(text).lower()
+    normalized = re.sub(r"[.!?]+$", "", normalized)
+    return normalized.strip()
+
+
+def _episodic_signature(text: str) -> str:
+    normalized = _memory_text_signature(text)
+    normalized = re.sub(r"\|\s*assistant replied:.*$", "", normalized)
+    normalized = re.sub(r"^user said:\s*", "", normalized)
+    normalized = re.sub(r"\b(user said|assistant replied)\b", "", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
+    normalized = normalized.strip()
+    normalized = re.sub(r"[.!?]+$", "", normalized)
+    return normalized.strip()
+
+
+def _extract_preference_subject(slot: str | None, fact_text: str) -> str | None:
+    if not slot or not slot.startswith("preference:"):
+        return None
+    lowered = _memory_text_signature(fact_text)
+    prefixes = (
+        "remember that i do not like ",
+        "i do not like ",
+        "remember that i dislike ",
+        "i dislike ",
+        "remember that i hate ",
+        "i hate ",
+        "my favorite ",
+        "remember that i prefer ",
+        "i prefer ",
+        "remember that i like ",
+        "i like ",
+    )
+    for prefix in prefixes:
+        if lowered.startswith(prefix):
+            return lowered[len(prefix):].strip() or None
     return None
 
 
@@ -158,6 +209,7 @@ class MemoryService:
                     saved += self._upsert_profile_fact(session, candidate)
                 elif candidate.type == "episodic":
                     saved += self._upsert_episodic_memory(session, candidate, session_id=session_id)
+                session.flush()
             if saved:
                 session.commit()
         return saved
@@ -187,6 +239,23 @@ class MemoryService:
             return 0
 
         slot = _profile_slot(category, normalized_text)
+        preference_subject = _extract_preference_subject(slot, normalized_text)
+        if preference_subject and slot in {"preference:like", "preference:dislike"}:
+            opposite_slot = "preference:dislike" if slot == "preference:like" else "preference:like"
+            opposite_statement = select(ProfileFact).where(
+                ProfileFact.category.in_(["preference", "user_preference"]),
+                ProfileFact.subject_type == subject_type,
+            )
+            if subject_name:
+                opposite_statement = opposite_statement.where(ProfileFact.subject_name == subject_name)
+            else:
+                opposite_statement = opposite_statement.where(ProfileFact.subject_name.is_(None))
+            for fact in list(session.exec(opposite_statement)):
+                if _profile_slot(fact.category, fact.fact_text) != opposite_slot:
+                    continue
+                if _extract_preference_subject(opposite_slot, fact.fact_text) == preference_subject:
+                    session.delete(fact)
+
         if slot:
             candidate_categories = [category]
             if category == "preference":
@@ -249,6 +318,27 @@ class MemoryService:
                 existing.tags = ",".join(merged_tags)
             existing.relationship_to_user = relationship_to_user or existing.relationship_to_user
             session.add(existing)
+            return 0
+
+        scope_statement = select(EpisodicMemory).where(EpisodicMemory.subject_type == subject_type)
+        if session_id:
+            scope_statement = scope_statement.where(EpisodicMemory.session_id == session_id)
+        else:
+            scope_statement = scope_statement.where(EpisodicMemory.session_id.is_(None))
+        if subject_name:
+            scope_statement = scope_statement.where(EpisodicMemory.subject_name == subject_name)
+        else:
+            scope_statement = scope_statement.where(EpisodicMemory.subject_name.is_(None))
+        signature = _episodic_signature(normalized_summary)
+        for memory in list(session.exec(scope_statement.order_by(EpisodicMemory.id.desc()))):
+            if _episodic_signature(memory.summary) != signature:
+                continue
+            memory.importance = max(memory.importance, importance)
+            if normalized_tags:
+                merged_tags = sorted({tag for tag in (memory.tags.split(",") + candidate.tags) if tag})
+                memory.tags = ",".join(merged_tags)
+            memory.relationship_to_user = relationship_to_user or memory.relationship_to_user
+            session.add(memory)
             return 0
 
         session.add(

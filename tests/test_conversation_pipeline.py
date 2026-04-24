@@ -144,6 +144,22 @@ class ConversationPipelineTest(unittest.TestCase):
         self.assertTrue(state.notes)
         self.assertIn("Fine, I guess.", state.notes[-1])
 
+    def test_memory_candidate_builder_extracts_other_person_and_project_state(self) -> None:
+        service = ConversationService()
+        candidates = service._build_memory_candidates(
+            user_text="My friend Alice is helping with the manga finder project.",
+            reply_text="Okay.",
+        )
+        self.assertTrue(candidates)
+        self.assertEqual(candidates[0].subject_type, "other_person")
+        self.assertEqual(candidates[0].subject_name, "Alice")
+
+        project_candidates = service._build_memory_candidates(
+            user_text="I am working on the Gamma router latency work right now.",
+            reply_text="Understood.",
+        )
+        self.assertTrue(any(candidate.type == "project" for candidate in project_candidates))
+
 
 if __name__ == "__main__":
     unittest.main()

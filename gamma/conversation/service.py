@@ -799,25 +799,119 @@ class ConversationService:
                     tags=["identity"],
                 )
             )
-        elif any(phrase in lowered for phrase in ["remember that ", "my favorite", "i like ", "i prefer "]):
+        elif any(phrase in lowered for phrase in ["remember that ", "my favorite", "i like ", "i prefer ", "i dislike ", "i do not like ", "i hate "]):
+            candidates.append(
+                MemoryCandidate(
+                    type="profile",
+                    text=stripped,
+                    importance=0.84,
+                    tags=["preference"],
+                )
+            )
+        elif any(phrase in lowered for phrase in ["i am working on ", "i'm working on ", "the main project is "]):
+            candidates.append(
+                MemoryCandidate(
+                    type="project",
+                    text=stripped,
+                    importance=0.86,
+                    tags=["project_state"],
+                )
+            )
+        elif lowered.startswith("this is ") and len(stripped.split()) >= 4:
             candidates.append(
                 MemoryCandidate(
                     type="profile",
                     text=stripped,
                     importance=0.8,
-                    tags=["preference"],
+                    tags=["other_person"],
+                    subject_type="other_person",
+                    subject_name=self._extract_named_person(stripped),
                 )
             )
-        if len(stripped.split()) >= 8:
+        elif any(phrase in lowered for phrase in ["my friend ", "my brother ", "my sister ", "my coworker ", "my manager ", "my wife ", "my husband ", "my partner "]):
+            candidates.append(
+                MemoryCandidate(
+                    type="profile",
+                    text=stripped,
+                    importance=0.82,
+                    tags=["other_person"],
+                    subject_type="other_person",
+                    subject_name=self._extract_named_person(stripped),
+                    relationship_to_user=self._extract_relationship_label(lowered),
+                )
+            )
+        if len(stripped.split()) >= 8 and self._should_store_episodic_memory(lowered):
             candidates.append(
                 MemoryCandidate(
                     type="episodic",
                     text=f"User said: {stripped} | Assistant replied: {reply_text}",
-                    importance=0.55,
-                    tags=["conversation"],
+                    importance=self._episodic_importance(lowered),
+                    tags=self._episodic_tags(lowered),
                 )
             )
-        return candidates
+        return candidates[:3]
+
+    def _should_store_episodic_memory(self, lowered_user_text: str) -> bool:
+        if len(lowered_user_text.split()) < 10:
+            return False
+        low_signal_markers = {"hi", "hello", "thanks", "thank you", "ok", "okay", "cool", "nice", "good morning", "good night"}
+        if lowered_user_text.strip() in low_signal_markers:
+            return False
+        strong_markers = (
+            "remember",
+            "project",
+            "working on",
+            "plan",
+            "deadline",
+            "prefer",
+            "favorite",
+            "friend",
+            "manager",
+            "brother",
+            "sister",
+            "issue",
+            "bug",
+            "error",
+        )
+        return any(marker in lowered_user_text for marker in strong_markers)
+
+    def _episodic_importance(self, lowered_user_text: str) -> float:
+        if any(marker in lowered_user_text for marker in ["deadline", "urgent", "important", "remember"]):
+            return 0.72
+        if any(marker in lowered_user_text for marker in ["project", "working on", "plan", "issue", "bug", "error"]):
+            return 0.64
+        return 0.56
+
+    def _episodic_tags(self, lowered_user_text: str) -> list[str]:
+        tags = ["conversation"]
+        if any(marker in lowered_user_text for marker in ["project", "working on", "plan"]):
+            tags.append("project")
+        if any(marker in lowered_user_text for marker in ["issue", "bug", "error"]):
+            tags.append("problem")
+        if "remember" in lowered_user_text:
+            tags.append("durable")
+        return tags[:4]
+
+    def _extract_named_person(self, text: str) -> str | None:
+        relation_match = re.search(
+            r"(?i:\bmy\s+(?:friend|brother|sister|coworker|manager|wife|husband|partner)\s+)([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b",
+            text,
+        )
+        if relation_match:
+            return relation_match.group(1)
+        intro_match = re.search(r"(?i:\bthis is\s+)([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b", text)
+        if intro_match:
+            return intro_match.group(1)
+        match = re.search(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b", text)
+        if not match:
+            return None
+        return match.group(1)
+
+    def _extract_relationship_label(self, lowered: str) -> str | None:
+        for label in ["friend", "brother", "sister", "coworker", "manager", "wife", "husband", "partner"]:
+            if f"my {label} " in lowered:
+                return label
+        return None
 
     def _parse_json_object(self, raw: str) -> dict:
         stripped = raw.strip()

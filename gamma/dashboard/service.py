@@ -1155,12 +1155,14 @@ class DashboardService:
             return {"ok": False, "detail": "nvidia-smi-timeout"}
 
         gpus: list[dict[str, Any]] = []
-        for line in completed.stdout.splitlines():
+        for index, line in enumerate(completed.stdout.splitlines()):
             parts = [part.strip() for part in line.split(",")]
             if len(parts) != 5:
                 continue
             gpus.append(
                 {
+                    "index": index,
+                    "label": f"GPU {index}",
                     "name": parts[0],
                     "memory_total_mb": int(parts[1]),
                     "memory_used_mb": int(parts[2]),

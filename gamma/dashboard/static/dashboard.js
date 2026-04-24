@@ -206,8 +206,8 @@
     if (speakerButton) {
       speakerButton.textContent = liveSpeakerMuted ? 'Unmute Shana' : 'Mute Shana';
       speakerButton.setAttribute('data-muted', liveSpeakerMuted ? 'true' : 'false');
-      speakerButton.classList.remove('secondary', 'danger');
-      speakerButton.classList.add(liveSpeakerMuted ? 'danger' : 'secondary');
+      speakerButton.classList.remove('secondary', 'danger', 'info', 'warn');
+      speakerButton.classList.add(liveSpeakerMuted ? 'info' : 'warn');
       speakerButton.style.backgroundColor = '';
       speakerButton.style.border = '';
       speakerButton.style.color = '';
@@ -216,8 +216,8 @@
     if (micButton) {
       micButton.textContent = liveMicMuted ? 'Unmute Mic' : 'Mute Mic';
       micButton.setAttribute('data-muted', liveMicMuted ? 'true' : 'false');
-      micButton.classList.remove('secondary', 'danger');
-      micButton.classList.add(liveMicMuted ? 'danger' : 'secondary');
+      micButton.classList.remove('secondary', 'danger', 'info', 'warn');
+      micButton.classList.add(liveMicMuted ? 'info' : 'warn');
       micButton.style.backgroundColor = '';
       micButton.style.border = '';
       micButton.style.color = '';
@@ -1410,8 +1410,20 @@
     setTextIfChanged('hostRam', machine.memory ? (machine.memory.percent.toFixed(1) + '%') : 'n/a');
     setTextIfChanged('hostDisk', machine.disk ? (machine.disk.percent.toFixed(1) + '%') : 'n/a');
     if (gpu.ok && gpu.gpus && gpu.gpus.length) {
-      var first = gpu.gpus[0];
-      setTextIfChanged('hostGpu', first.utilization_percent + '% / ' + first.memory_used_mb + ' MB');
+      var gpuLines = gpu.gpus.map(function (entry, idx) {
+        var label = String(entry.label || ('GPU ' + idx));
+        var name = String(entry.name || 'Unknown GPU');
+        var usedMb = Number(entry.memory_used_mb || 0);
+        var totalMb = Number(entry.memory_total_mb || 0);
+        var util = Number(entry.utilization_percent || 0);
+        var temp = Number(entry.temperature_c || 0);
+        return label + ' [' + name + ']\n'
+          + util + '% util / '
+          + usedMb + ' MB'
+          + (totalMb ? ' of ' + totalMb + ' MB' : '')
+          + (temp ? ' / ' + temp + ' C' : '');
+      });
+      setTextIfChanged('hostGpu', gpuLines.join('\n\n'));
     } else {
       setTextIfChanged('hostGpu', gpu.detail || 'n/a');
     }

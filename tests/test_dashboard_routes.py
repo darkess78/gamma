@@ -238,6 +238,13 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn(("local", "vision"), scopes)
         self.assertIn(("openai", "text"), scopes)
 
+    def test_assistant_runtime_settings_reads_config_without_error(self) -> None:
+        service = DashboardService()
+        payload = service.assistant_runtime_settings()
+        self.assertIn("speech_filter_level", payload)
+        self.assertIn("llm_router_profile", payload)
+        self.assertIn("assistant_state_enabled", payload)
+
 
 if __name__ == "__main__":
     unittest.main()

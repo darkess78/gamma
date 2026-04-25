@@ -18,7 +18,7 @@ from typing import Any
 
 import psutil
 
-from ..config import app_local_config_path, load_desired_tts_selection, settings
+from ..config import app_local_config_path, load_app_file_config, load_desired_tts_selection, settings
 from ..llm.router_adapter import RouterLLMAdapter
 from ..memory.service import MemoryService
 from ..persona.emotion_service import EmotionMemoryService

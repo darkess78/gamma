@@ -24,6 +24,7 @@ htmlcov/
 
 # Local runtime state / generated outputs
 *.db
+*.db.backup-*
 data/
 *.wav
 *.mp3

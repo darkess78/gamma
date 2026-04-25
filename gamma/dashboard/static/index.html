@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shana Control</title>
-  <link rel="stylesheet" href="/static/dashboard.css?v=20260417d">
+  <link rel="stylesheet" href="/static/dashboard.css?v=20260424a">
 </head>
 <body>
   <div class="wrap">
@@ -15,12 +15,12 @@
       </div>
       <div class="hero-side">
         <div class="view-toggle">
-          <span>Readable</span>
+          <span title="Human-readable summaries instead of raw JSON payloads.">Readable</span>
           <label class="switch">
-            <input id="viewModeSwitch" type="checkbox" onchange="toggleViewMode()">
+            <input id="viewModeSwitch" type="checkbox" onchange="toggleViewMode()" title="Switch between readable summaries and raw JSON responses throughout the dashboard.">
             <span class="slider"></span>
           </label>
-          <span>JSON</span>
+          <span title="Raw API/status payloads for debugging.">JSON</span>
         </div>
         <div class="stamp" id="stamp">Loading...</div>
       </div>
@@ -95,10 +95,10 @@
             <div class="action-group">
               <div class="action-title">TTS</div>
               <div class="action-buttons">
-                <select id="ttsProfileSelect" class="text-input" onchange="selectTtsProfile()" disabled>
+                <select id="ttsProfileSelect" class="text-input" onchange="selectTtsProfile()" disabled title="Choose the saved voice profile Shana should use for text-to-speech.">
                   <option value="">...</option>
                 </select>
-                <select id="ttsProviderSelect" class="text-input" onchange="selectTtsProvider()" disabled>
+                <select id="ttsProviderSelect" class="text-input" onchange="selectTtsProvider()" disabled title="Choose which TTS backend is active for the selected voice profile.">
                   <option value="">...</option>
                 </select>
                 <button id="ttsStartButton" class="secondary" onclick="action('/api/providers/tts/start')" hidden disabled>Start TTS</button>
@@ -109,7 +109,7 @@
               <div style="margin-top: 10px;">
                 <div class="action-title" style="margin-bottom: 6px;">Synthesize from file</div>
                 <div class="action-buttons">
-                  <input id="ttsSynthesizeFileInput" type="file" accept=".txt" class="text-input" style="flex: 1;" onchange="onTtsSynthesizeFileChange()">
+                  <input id="ttsSynthesizeFileInput" type="file" accept=".txt" class="text-input" style="flex: 1;" onchange="onTtsSynthesizeFileChange()" title="Upload a plain text file and synthesize it through the current TTS configuration.">
                   <button id="ttsSynthesizeButton" class="ghost" onclick="ttsSynthesizeFromFile()" disabled>Synthesize</button>
                 </div>
                 <div id="ttsSynthesizeNote" class="panel-meta"></div>
@@ -242,9 +242,9 @@
           <div class="action-group">
             <div class="action-title">Session</div>
             <div class="action-buttons">
-              <input class="text-input" id="voiceSessionId" placeholder="optional session id">
-              <label class="checkbox-row"><input id="voiceSynthesizeSpeech" type="checkbox" checked> Return audio</label>
-              <label class="checkbox-row"><input id="liveBargeInEnabled" type="checkbox" checked> Barge-in</label>
+              <input class="text-input" id="voiceSessionId" placeholder="optional session id" title="Optional session id used to group live voice turns into the same conversation context.">
+              <label class="checkbox-row" title="When enabled, live/browser voice requests also return synthesized reply audio."><input id="voiceSynthesizeSpeech" type="checkbox" checked> Return audio</label>
+              <label class="checkbox-row" title="Allow your speech to interrupt Shana mid-reply during live voice playback."><input id="liveBargeInEnabled" type="checkbox" checked> Barge-in</label>
               <button type="button" class="secondary" id="liveSpeakerMuteButton" onclick="toggleLiveSpeakerMuted()">Mute Shana</button>
               <button type="button" class="secondary" id="liveMicMuteButton" onclick="toggleLiveMicMuted()">Mute Mic</button>
             </div>
@@ -252,11 +252,11 @@
           <div class="action-group">
             <div class="action-title">Tuning</div>
             <div class="action-buttons action-stack">
-              <label class="range-row">Response mode <select class="text-input" id="liveResponseMode"><option value="simple_chunked">Simple chunked</option><option value="incremental_experimental">Incremental experimental</option></select></label>
-              <label class="range-row">Barge-in mode <select class="text-input" id="liveBargeInMode"><option value="amplitude">Amplitude only</option><option value="transcript">Transcript-confirmed</option></select></label>
-              <label class="range-row">Speech threshold <input id="liveSpeechThreshold" type="range" min="8" max="40" step="1" value="18"><span id="liveSpeechThresholdValue">0.018</span></label>
-              <label class="range-row">Interrupt speech ms <input id="liveInterruptSpeechMs" type="range" min="80" max="800" step="20" value="260"><span id="liveInterruptSpeechMsValue">260</span></label>
-              <label class="range-row">Silence ms <input id="liveSilenceMs" type="range" min="400" max="1800" step="50" value="900"><span id="liveSilenceMsValue">900</span></label>
+              <label class="range-row" title="Choose how Shana chunks live replies. Incremental is lower-latency but more experimental.">Response mode <select class="text-input" id="liveResponseMode"><option value="simple_chunked">Simple chunked</option><option value="incremental_experimental">Incremental experimental</option></select></label>
+              <label class="range-row" title="Choose whether interruption detection is based only on audio level or confirmed transcript activity.">Barge-in mode <select class="text-input" id="liveBargeInMode"><option value="amplitude">Amplitude only</option><option value="transcript">Transcript-confirmed</option></select></label>
+              <label class="range-row" title="Minimum detected mic energy before live voice treats your input as speech. Higher values ignore more background noise.">Speech threshold <input id="liveSpeechThreshold" type="range" min="8" max="40" step="1" value="18"><span id="liveSpeechThresholdValue">0.018</span></label>
+              <label class="range-row" title="How long your speech must continue before it counts as an interrupt request while Shana is already talking.">Interrupt speech ms <input id="liveInterruptSpeechMs" type="range" min="80" max="800" step="20" value="260"><span id="liveInterruptSpeechMsValue">260</span></label>
+              <label class="range-row" title="How much silence must pass before live voice closes your turn and sends it for STT/LLM processing.">Silence ms <input id="liveSilenceMs" type="range" min="400" max="1800" step="50" value="900"><span id="liveSilenceMsValue">900</span></label>
             </div>
           </div>
         </div>
@@ -303,20 +303,20 @@
           <div class="action-group">
             <div class="action-title">Prompt</div>
             <div class="action-buttons action-stack">
-              <textarea class="text-area" id="visionPrompt" placeholder="Ask Gamma what to look for in the image.">Tell me what is important in this image.</textarea>
-              <input class="text-input" id="visionSessionId" placeholder="optional session id for ask-gamma mode">
+              <textarea class="text-area" id="visionPrompt" placeholder="Ask Gamma what to look for in the image." title="Prompt sent with the uploaded image for analysis or ask-Gamma mode.">Tell me what is important in this image.</textarea>
+              <input class="text-input" id="visionSessionId" placeholder="optional session id for ask-gamma mode" title="Optional session id to keep image-based conversation turns in the same chat context.">
             </div>
           </div>
           <div class="action-group">
             <div class="action-title">Mode</div>
             <div class="action-buttons action-stack">
-              <select class="text-input" id="visionMode">
+              <select class="text-input" id="visionMode" title="Hints the vision model about the kind of image you are sending.">
                 <option value="auto">Auto</option>
                 <option value="screen">Screen</option>
                 <option value="document">Document</option>
                 <option value="photo">Photo</option>
               </select>
-              <label class="checkbox-row"><input id="visionSynthesizeSpeech" type="checkbox"> Return audio on ask</label>
+              <label class="checkbox-row" title="If enabled, Ask Gamma about image also returns synthesized speech for the reply."><input id="visionSynthesizeSpeech" type="checkbox"> Return audio on ask</label>
             </div>
           </div>
           <div class="action-group">
@@ -345,51 +345,47 @@
         </div>
         <div class="render" id="knownPeople">...</div>
       </section>
-      <section class="panel panel-fill">
-        <div class="panel-head">
-          <h2>Assistant Emotion</h2>
-        </div>
-        <div class="render" id="assistantEmotion">No assistant emotion data yet.</div>
-      </section>
       <section class="panel wide panel-fill">
         <div class="panel-head">
           <h2>Assistant Safety & Emotion Settings</h2>
         </div>
-        <div class="action-grid compact-grid">
+        <div class="assistant-settings-grid">
+          <div class="render" id="assistantEmotion">No assistant emotion data yet.</div>
+          <div class="action-grid compact-grid">
           <div class="action-group">
             <div class="action-title">Speech Filter</div>
             <div class="action-buttons action-stack">
-              <select class="text-input" id="assistantSpeechFilterLevel">
+              <select class="text-input" id="assistantSpeechFilterLevel" title="Controls how aggressively reply text is filtered before speech output. Strict blocks more content; none disables filtering.">
                 <option value="strict">Strict</option>
                 <option value="light">Light</option>
                 <option value="none">None</option>
               </select>
-              <label class="checkbox-row"><input id="assistantHardBlockEnabled" type="checkbox"> Hard block enabled</label>
-              <label class="checkbox-row"><input id="assistantHeuristicEnabled" type="checkbox"> Heuristic enabled</label>
-              <label class="checkbox-row"><input id="assistantLlmEnabled" type="checkbox"> LLM reviewer enabled</label>
-              <label class="checkbox-row"><input id="assistantAutoRewrite" type="checkbox"> Auto rewrite enabled</label>
-                <input class="text-input" id="assistantLlmModel" placeholder="LLM reviewer model (optional)">
-                <select class="text-input" id="assistantRouterProfile">
+              <label class="checkbox-row" title="Immediately block clearly disallowed speech before softer heuristic or LLM review stages."><input id="assistantHardBlockEnabled" type="checkbox"> Hard block enabled</label>
+              <label class="checkbox-row" title="Use simple phrase/rule heuristics to catch risky speech before TTS."><input id="assistantHeuristicEnabled" type="checkbox"> Heuristic enabled</label>
+              <label class="checkbox-row" title="Run a model-based reviewer over candidate speech when the local heuristic is not enough."><input id="assistantLlmEnabled" type="checkbox"> LLM reviewer enabled</label>
+              <label class="checkbox-row" title="If a reply is risky, try to rewrite it into a safer form instead of only blocking it."><input id="assistantAutoRewrite" type="checkbox"> Auto rewrite enabled</label>
+                <input class="text-input" id="assistantLlmModel" placeholder="LLM reviewer model (optional)" title="Optional model override for the speech-review pass. Leave blank to use the configured default reviewer model.">
+                <select class="text-input" id="assistantRouterProfile" title="Select the top-level LLM routing policy. This changes how aggressively Gamma prefers local, hosted, or low-latency paths.">
                   <option value="balanced">Router: Balanced</option>
                   <option value="local_only">Router: Local Only</option>
                   <option value="low_latency_voice">Router: Low Latency Voice</option>
                   <option value="high_quality">Router: High Quality</option>
                   <option value="offline_safe">Router: Offline Safe</option>
                 </select>
-                <label class="checkbox-row"><input id="assistantRouterHostedEscalation" type="checkbox"> Hosted escalation enabled</label>
-                <label class="checkbox-row"><input id="assistantRouterPersonaHosted" type="checkbox"> Persona chat hosted fallback</label>
-                <label class="checkbox-row"><input id="assistantRouterPersonaHeavyHosted" type="checkbox"> Persona heavy hosted fallback</label>
-                <input class="text-input" id="assistantRouterLightWords" type="number" min="1" step="1" placeholder="Router light max words">
-                <input class="text-input" id="assistantRouterComplexWords" type="number" min="1" step="1" placeholder="Router heavy threshold words">
+                <label class="checkbox-row" title="Allow the router to escalate heavier turns to the hosted provider when policy permits it."><input id="assistantRouterHostedEscalation" type="checkbox"> Hosted escalation enabled</label>
+                <label class="checkbox-row" title="Permit hosted fallback for normal persona-sensitive chat turns when the router family allows it."><input id="assistantRouterPersonaHosted" type="checkbox"> Persona chat hosted fallback</label>
+                <label class="checkbox-row" title="Permit hosted fallback for persona-sensitive heavy reasoning turns."><input id="assistantRouterPersonaHeavyHosted" type="checkbox"> Persona heavy hosted fallback</label>
+                <input class="text-input" id="assistantRouterLightWords" type="number" min="1" step="1" placeholder="Router light max words" title="Maximum user word count for the router to still consider a turn lightweight.">
+                <input class="text-input" id="assistantRouterComplexWords" type="number" min="1" step="1" placeholder="Router heavy threshold words" title="Word-count threshold where the router starts treating a turn as complex/heavy.">
               </div>
             </div>
           <div class="action-group">
             <div class="action-title">Emotion Memory</div>
             <div class="action-buttons action-stack">
-              <label class="checkbox-row"><input id="assistantStateEnabled" type="checkbox"> Assistant emotion tracking enabled</label>
-              <input class="text-input" id="assistantEmotionDecayTurns" type="number" min="0" step="1" placeholder="Decay turns">
-              <input class="text-input" id="assistantEmotionEpisodeThreshold" type="number" min="0" max="1" step="0.05" placeholder="Episode threshold">
-              <input class="text-input" id="assistantEmotionPatternThreshold" type="number" min="1" step="1" placeholder="Pattern threshold">
+              <label class="checkbox-row" title="Track Shana's assistant-state emotion over time and persist notable emotional episodes/patterns."><input id="assistantStateEnabled" type="checkbox"> Assistant emotion tracking enabled</label>
+              <input class="text-input" id="assistantEmotionDecayTurns" type="number" min="0" step="1" placeholder="Decay turns" title="How many turns emotional state should persist before decaying back toward neutral.">
+              <input class="text-input" id="assistantEmotionEpisodeThreshold" type="number" min="0" max="1" step="0.05" placeholder="Episode threshold" title="Minimum emotion intensity required before a turn is stored as an emotional episode.">
+              <input class="text-input" id="assistantEmotionPatternThreshold" type="number" min="1" step="1" placeholder="Pattern threshold" title="How many repeated emotional signals are needed before a pattern is kept as long-term emotion memory.">
             </div>
           </div>
           <div class="action-group">
@@ -398,6 +394,7 @@
               <button class="secondary" onclick="saveAssistantSettings()">Save Assistant Settings</button>
             </div>
           </div>
+        </div>
         </div>
         <div class="render" id="assistantSettingsStatus">No assistant settings changes yet.</div>
       </section>

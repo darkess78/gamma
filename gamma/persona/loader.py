@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -26,16 +25,9 @@ CORE_MEMORIES_PATH = settings.data_dir / "core_memories.md"
 # Module-level cache: (mtime, content). Re-read only when the file changes on disk.
 _file_cache: dict[Path, tuple[float, str]] = {}
 
-
-def _read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8").strip()
-
-
-def _read_json(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
 def _read_toml(path: Path) -> dict:
+    import tomllib
+
     return tomllib.loads(path.read_text(encoding="utf-8"))
 
 
@@ -63,8 +55,7 @@ def build_system_prompt(
     boundaries = _cached_text(PERSONA_DIR / "boundaries.md")
     style = json.loads(_cached_text(PERSONA_DIR / "style.json") or "{}")
     relationship = json.loads(_cached_text(PERSONA_DIR / "relationship_state.json") or "{}")
-    persona_config = _read_toml(CONFIG_DIR / "persona.toml") if (CONFIG_DIR / "persona.toml").exists() else {}
-    # Load additional YAML persona definitions if present
+    persona_config: dict = {}
     yaml_path = CONFIG_DIR / "persona.yaml"
     if yaml_path.exists() and yaml is not None:
         try:
@@ -72,16 +63,7 @@ def build_system_prompt(
         except Exception:
             persona_yaml = None
         if persona_yaml:
-            persona_config["yaml"] = persona_yaml
-    # Load scenario definitions
-    scenario_path = CONFIG_DIR / "scenario.yaml"
-    if scenario_path.exists() and yaml is not None:
-        try:
-            scenario_yaml = yaml.safe_load(scenario_path.read_text(encoding="utf-8"))
-        except Exception:
-            scenario_yaml = None
-        if scenario_yaml:
-            persona_config["scenario"] = scenario_yaml
+            persona_config = persona_yaml if isinstance(persona_yaml, dict) else {"value": persona_yaml}
     memory_config = _read_toml(CONFIG_DIR / "memory.toml") if (CONFIG_DIR / "memory.toml").exists() else {}
 
     # Build the speaker block

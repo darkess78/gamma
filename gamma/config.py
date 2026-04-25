@@ -50,6 +50,10 @@ def voices_config_path() -> Path:
     return CONFIG_DIR / "voices.toml"
 
 
+def voices_presets_config_path() -> Path:
+    return CONFIG_DIR / "voices.presets.toml"
+
+
 def voices_local_config_path() -> Path:
     return CONFIG_DIR / "voices.local.toml"
 
@@ -58,8 +62,25 @@ def load_app_file_config() -> dict[str, Any]:
     return _merged_toml(CONFIG_DIR / "app.example.toml", app_config_path(), app_local_config_path())
 
 
+def load_desired_app_file_config() -> dict[str, Any]:
+    return load_app_file_config()
+
+
+def load_desired_tts_selection() -> dict[str, str]:
+    config = load_desired_app_file_config()
+    return {
+        "tts_provider": str(config.get("tts_provider", "")).strip(),
+        "tts_profile": str(config.get("tts_profile", "")).strip(),
+    }
+
+
 def load_voices_file_config() -> dict[str, Any]:
-    return _merged_toml(CONFIG_DIR / "voices.example.toml", voices_config_path(), voices_local_config_path())
+    return _merged_toml(
+        CONFIG_DIR / "voices.example.toml",
+        voices_presets_config_path(),
+        voices_config_path(),
+        voices_local_config_path(),
+    )
 
 
 APP_CONFIG = load_app_file_config()
@@ -492,6 +513,44 @@ class Settings:
     gpt_sovits_timeout_seconds: int = _as_int(_setting("SHANA_GPT_SOVITS_TIMEOUT_SECONDS", 120), default=120)
     gpt_sovits_extra_json: dict = field(
         default_factory=lambda: json.loads(str(_setting("SHANA_GPT_SOVITS_EXTRA_JSON", "{}")) or "{}")
+    )
+    qwen_tts_endpoint: str | None = _setting(
+        "SHANA_QWEN_TTS_ENDPOINT",
+        _config_value(APP_CONFIG, "qwen_tts_endpoint", default=""),
+    )
+    qwen_tts_reference_audio: str | None = _setting(
+        "SHANA_QWEN_TTS_REFERENCE_AUDIO",
+        _config_value(APP_CONFIG, "qwen_tts_reference_audio", default=""),
+    )
+    qwen_tts_reference_text: str | None = _setting(
+        "SHANA_QWEN_TTS_REFERENCE_TEXT",
+        _config_value(APP_CONFIG, "qwen_tts_reference_text", default=""),
+    )
+    qwen_tts_language: str = str(
+        _setting(
+            "SHANA_QWEN_TTS_LANGUAGE",
+            _config_value(APP_CONFIG, "qwen_tts_language", default="English"),
+        )
+    )
+    qwen_tts_speaker: str | None = _setting(
+        "SHANA_QWEN_TTS_SPEAKER",
+        _config_value(APP_CONFIG, "qwen_tts_speaker", default=""),
+    )
+    qwen_tts_instruct: str | None = _setting(
+        "SHANA_QWEN_TTS_INSTRUCT",
+        _config_value(APP_CONFIG, "qwen_tts_instruct", default=""),
+    )
+    qwen_tts_timeout_seconds: int = _as_int(
+        _setting(
+            "SHANA_QWEN_TTS_TIMEOUT_SECONDS",
+            _config_value(APP_CONFIG, "qwen_tts_timeout_seconds", default=120),
+        ),
+        default=120,
+    )
+    qwen_tts_extra_json: dict = field(
+        default_factory=lambda: json.loads(
+            str(_setting("SHANA_QWEN_TTS_EXTRA_JSON", _config_value(APP_CONFIG, "qwen_tts_extra_json", default="{}"))) or "{}"
+        )
     )
     speech_filter_level: str = str(
         _setting("SHANA_SPEECH_FILTER_LEVEL", _config_value(APP_CONFIG, "speech_filter_level", default="strict"))

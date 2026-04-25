@@ -22,7 +22,7 @@ What it does not do:
 GUI behavior:
 - runs staging and extraction in a worker thread so the window stays responsive
 - streams live logs from the pipeline, including each extracted candidate speech clip
-- loads `manifest.jsonl` after a run and lets you tag clips as `Shana`, `Shana-noisy`, `Not Shana`, or `Reject`
+- loads `manifest.jsonl` after a run and lets you tag clips as `Shana`, `Shana-light-noise`, `Shana-heavy-noise`, `Not Shana`, or `Reject`
 - plays extracted `.wav` clips directly inside the review pane on Windows
 - can rank the review queue by acoustic similarity to your confirmed `Shana` labels
 - can scan for exact and near-duplicate clips in the review queue
@@ -36,12 +36,13 @@ GUI behavior:
 Important limitation:
 - the GUI cannot truly tell you "this is Shana speaking"
 - it can only show that a candidate speech segment was extracted
-- `Shana / Shana-noisy / Not Shana / Reject` is a manual review decision in the current workflow
+- `Shana / Shana-light-noise / Shana-heavy-noise / Not Shana / Reject` is a manual review decision in the current workflow
 - the similarity ranking is heuristic triage from seeded Shana clips, not robust speaker identification
 
 Recommended labeling:
 - `Shana`: clean solo lines suitable for core training
-- `Shana-noisy`: mostly Shana, but with tolerable background bleed or mild contamination
+- `Shana-light-noise`: mostly Shana with minor contamination that may still be usable for some training passes
+- `Shana-heavy-noise`: mostly Shana, but with enough bleed or contamination that it should stay separated from cleaner data
 - `Not Shana`: valid speech clip, wrong speaker
 - `Reject`: unusable clip due to overlap, heavy SFX, music, or corruption
 
@@ -63,7 +64,7 @@ Packaged app storage:
 
 Ranking note:
 - the seeded similarity ranking currently uses only clips labeled `Shana` as the clean reference set
-- `Shana-noisy` clips are exported separately but are not used as seed references by default
+- `Shana-light-noise` and `Shana-heavy-noise` clips are exported separately but are not used as seed references by default
 
 Duplicate note:
 - `Find Duplicates` marks byte-identical WAV clips as exact duplicates

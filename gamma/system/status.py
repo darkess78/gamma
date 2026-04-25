@@ -63,7 +63,11 @@ class SystemStatusService:
                     "rvc_enabled": tts_cfg.rvc_enabled,
                     "rvc_model_name": tts_cfg.rvc_model_name if tts_cfg.rvc_enabled else None,
                     "rvc_formant": tts_cfg.rvc_formant if tts_cfg.rvc_enabled else None,
-                    "endpoint": tts_cfg.gpt_sovits_endpoint,
+                    "endpoint": (
+                        tts_cfg.qwen_tts_endpoint
+                        if tts_cfg.provider in {"qwen-tts", "qwen_tts", "qwen", "qwentts"}
+                        else tts_cfg.gpt_sovits_endpoint
+                    ),
                     "health": self._check_tts_health(tts_cfg),
                 },
             },

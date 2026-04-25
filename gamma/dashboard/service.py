@@ -18,7 +18,7 @@ from typing import Any
 
 import psutil
 
-from ..config import app_local_config_path, load_app_file_config, settings
+from ..config import app_local_config_path, load_desired_tts_selection, settings
 from ..llm.router_adapter import RouterLLMAdapter
 from ..memory.service import MemoryService
 from ..persona.emotion_service import EmotionMemoryService
@@ -259,13 +259,11 @@ class DashboardService:
         return provider.strip().lower() in {"qwen-tts", "qwen_tts", "qwen", "qwentts"}
 
     def selected_tts_provider(self) -> str:
-        config = load_app_file_config()
-        provider = str(config.get("tts_provider", "")).strip()
+        provider = load_desired_tts_selection().get("tts_provider", "")
         return provider or settings.tts_provider
 
     def selected_tts_profile(self) -> str | None:
-        config = load_app_file_config()
-        value = str(config.get("tts_profile", "")).strip()
+        value = load_desired_tts_selection().get("tts_profile", "")
         if value:
             return value
         return settings.tts_profile or None

@@ -44,7 +44,7 @@ Inputs
 |---|---|---|
 | Voice input and reply loop | Present | `gamma/voice/`, `gamma/run_live_voice_worker.py` |
 | Conversation orchestration | Present | `gamma/conversation/service.py` |
-| Persona and relationship layer | Present | `gamma/persona/`, `config/persona.yaml`, `config/scenario.yaml` |
+| Persona and relationship layer | Present | `gamma/persona/`, `config/persona.yaml` |
 | Runtime memory | Present | `gamma/memory/service.py` |
 | Output speech filtering | Present | `gamma/safety/`, `gamma/persona/boundaries.md` |
 | Basic tool routing | Partial | `gamma/tools/` |

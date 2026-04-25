@@ -177,6 +177,17 @@ def profile_template(provider: str) -> dict[str, Any]:
             "gpt_sovits_text_lang": settings.gpt_sovits_text_lang,
             "gpt_sovits_extra_json": dict(settings.gpt_sovits_extra_json or {}),
         }
+    elif normalized in {"qwen-tts", "qwen_tts", "qwen", "qwentts"}:
+        base["values"] = {
+            "qwen_tts_endpoint": settings.qwen_tts_endpoint or "",
+            "qwen_tts_reference_audio": settings.qwen_tts_reference_audio or "",
+            "qwen_tts_reference_text": settings.qwen_tts_reference_text or "",
+            "qwen_tts_language": settings.qwen_tts_language,
+            "qwen_tts_speaker": settings.qwen_tts_speaker or "",
+            "qwen_tts_instruct": settings.qwen_tts_instruct or "",
+            "qwen_tts_timeout_seconds": settings.qwen_tts_timeout_seconds,
+            "qwen_tts_extra_json": dict(settings.qwen_tts_extra_json or {}),
+        }
     return base
 
 
@@ -227,14 +238,14 @@ def resolve_tts_config() -> ResolvedTTSConfig:
             _coalesce(values.get("gpt_sovits_timeout_seconds"), settings.gpt_sovits_timeout_seconds)
         ),
         gpt_sovits_extra_json=dict(_coalesce(values.get("gpt_sovits_extra_json"), settings.gpt_sovits_extra_json) or {}),
-        qwen_tts_endpoint=_coalesce(values.get("qwen_tts_endpoint"), getattr(settings, "qwen_tts_endpoint", None)),
-        qwen_tts_reference_audio=_coalesce(values.get("qwen_tts_reference_audio"), getattr(settings, "qwen_tts_reference_audio", None)),
-        qwen_tts_reference_text=_coalesce(values.get("qwen_tts_reference_text"), getattr(settings, "qwen_tts_reference_text", None)),
-        qwen_tts_language=str(_coalesce(values.get("qwen_tts_language"), getattr(settings, "qwen_tts_language", None)) or "English"),
-        qwen_tts_speaker=_coalesce(values.get("qwen_tts_speaker"), getattr(settings, "qwen_tts_speaker", None)),
-        qwen_tts_instruct=_coalesce(values.get("qwen_tts_instruct"), getattr(settings, "qwen_tts_instruct", None)),
-        qwen_tts_timeout_seconds=int(_coalesce(values.get("qwen_tts_timeout_seconds"), getattr(settings, "qwen_tts_timeout_seconds", None)) or 120),
-        qwen_tts_extra_json=dict(_coalesce(values.get("qwen_tts_extra_json"), getattr(settings, "qwen_tts_extra_json", None)) or {}),
+        qwen_tts_endpoint=_coalesce(values.get("qwen_tts_endpoint"), settings.qwen_tts_endpoint),
+        qwen_tts_reference_audio=_coalesce(values.get("qwen_tts_reference_audio"), settings.qwen_tts_reference_audio),
+        qwen_tts_reference_text=_coalesce(values.get("qwen_tts_reference_text"), settings.qwen_tts_reference_text),
+        qwen_tts_language=str(_coalesce(values.get("qwen_tts_language"), settings.qwen_tts_language) or "English"),
+        qwen_tts_speaker=_coalesce(values.get("qwen_tts_speaker"), settings.qwen_tts_speaker),
+        qwen_tts_instruct=_coalesce(values.get("qwen_tts_instruct"), settings.qwen_tts_instruct),
+        qwen_tts_timeout_seconds=int(_coalesce(values.get("qwen_tts_timeout_seconds"), settings.qwen_tts_timeout_seconds) or 120),
+        qwen_tts_extra_json=dict(_coalesce(values.get("qwen_tts_extra_json"), settings.qwen_tts_extra_json) or {}),
         denoise_enabled=bool(_coalesce(values.get("denoise_enabled"), False)),
         denoise_strength=float(_coalesce(values.get("denoise_strength"), 1.5)),
         denoise_gain=float(_coalesce(values.get("denoise_gain"), 1.0)),

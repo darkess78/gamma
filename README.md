@@ -75,11 +75,7 @@ SHANA_STT_PROVIDER=local
 SHANA_TTS_PROVIDER=stub
 ```
 
-For low-latency local speech, prefer Piper as the default TTS path and keep RVC disabled during normal conversation. If you want a slower converted voice test, use:
-
-```bash
-python -m gamma.run_tts_test_henya "test phrase"
-```
+For low-latency local speech, prefer Piper as the default TTS path and keep RVC disabled during normal conversation. If you want a slower converted voice test, select a preset RVC-backed profile in the dashboard or set `SHANA_TTS_PROFILE=henya_rvc` before running a TTS smoke test.
 
 Smoke-test output modes:
 
@@ -87,21 +83,20 @@ Smoke-test output modes:
 python -m gamma.run_tts_test "test phrase"
 python -m gamma.run_tts_test --compact "test phrase"
 python -m gamma.run_tts_test --json "test phrase"
-python -m gamma.run_tts_test_henya --compact "test phrase"
 ```
 
 RVC layering:
 - RVC is an optional post-process on top of generated WAV output; it is not a standalone TTS provider
 - the intended local low-latency stack is `Piper -> optional RVC`
 - keep `SHANA_RVC_ENABLED=false` for normal realtime conversation
-- use `python -m gamma.run_tts_test_henya ...` when you want the slower Henya-converted path
+- use an RVC-backed voice profile such as `henya_rvc` when you want the slower converted path
 - Gamma now auto-discovers an RVC checkout in common sibling locations such as `../RVC/Retrieval-based-Voice-Conversion-WebUI-main`
 - Gamma also auto-discovers the RVC Python interpreter from an adjacent `.venv` when present
 - `SHANA_RVC_MODEL_NAME` is still required; `SHANA_RVC_INDEX_PATH` is optional when Gamma can find a matching `.index`
 
 Dashboard behavior:
 - the TTS profile dropdown lets you choose a named voice profile, not just a raw provider
-- named TTS voice profiles load from `config/voices.example.toml`, then `config/voices.toml`, then `config/voices.local.toml`
+- named TTS voice profiles load from `config/voices.example.toml`, then `config/voices.presets.toml`, then `config/voices.toml`, then `config/voices.local.toml`
 - the TTS dropdown persists machine-local selections to `config/app.local.toml`
 - `Test TTS` uses the selected provider immediately
 - conversation and live voice flows use the provider loaded by the running Shana process, so restart Shana after changing provider or profile if you want the active service to switch too
@@ -227,18 +222,20 @@ App config loads in this order:
 
 Voice profile config loads in this order:
 1. `config/voices.example.toml`
-2. `config/voices.toml`
-3. `config/voices.local.toml`
+2. `config/voices.presets.toml`
+3. `config/voices.toml`
+4. `config/voices.local.toml`
 
 Then `.env` and process environment variables override file-based values.
 
 Use the files like this:
 - `config/*.example.toml`: shareable defaults and examples kept in git
+- `config/voices.presets.toml`: repo presets for local testing voices that are useful but not canonical defaults
 - `config/app.toml` and `config/voices.toml`: shareable repo defaults when they are machine-agnostic
 - `config/app.local.toml` and `config/voices.local.toml`: machine-local overrides ignored by git
 - `.env`: secrets and environment overrides
 
-`config/models.toml` supplies provider/model defaults, `config/memory.toml` supplies memory defaults, and `config/persona.toml` plus the persona YAML files feed prompt construction.
+`config/models.toml` supplies provider/model defaults, `config/memory.toml` supplies memory defaults, and `config/persona.yaml` is the editable structured persona source used during prompt construction.
 
 ## Example environment
 
@@ -319,7 +316,7 @@ python scripts/stop_services.py
 Platform wrappers also exist:
 - Cross-platform Python launchers: `scripts/open_gamma.py`, `scripts/start_shana.py`, `scripts/start_dashboard.py`, `scripts/start_gamma_tray.py`, `scripts/stop_services.py`
 - Linux convenience wrappers: `scripts/*_linux.sh`
-- Windows convenience wrappers: `scripts/*_windows.cmd`, `scripts/*_windows.py`
+- Windows convenience wrappers: `scripts/*_windows.cmd`
 
 Notes:
 - the dashboard polls local service state and machine metrics

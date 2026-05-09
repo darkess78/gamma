@@ -92,3 +92,14 @@ qwen_tts_reference_text = "Hey there, thanks for stopping by today. I am testing
 qwen_tts_language = "English"
 qwen_tts_timeout_seconds = 120
 qwen_tts_extra_json = { temperature = 0.9, top_k = 50, top_p = 1.0, repetition_penalty = 1.05, max_new_tokens = 2048, min_new_tokens = 100 }
+
+[profiles.qwen_shana_clean]
+label = "Qwen3-TTS Shana Clean"
+provider = "qwen-tts"
+description = "Qwen3-TTS voice clone using a clean labeled Shana reference clip."
+qwen_tts_endpoint = "http://127.0.0.1:9882/tts"
+qwen_tts_reference_audio = "./assets/voice_references/shana/shana_qwen_ref_clean.wav"
+qwen_tts_reference_text = "その穴埋め問題、全然意味のない場所が空いてるわ。"
+qwen_tts_language = "English"
+qwen_tts_timeout_seconds = 120
+qwen_tts_extra_json = { temperature = 0.9, top_k = 50, top_p = 1.0, repetition_penalty = 1.05, max_new_tokens = 2048, min_new_tokens = 100 }

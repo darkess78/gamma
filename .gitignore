@@ -30,6 +30,10 @@ data/
 *.mp3
 *.flac.json
 *.wav.json
+!assets/
+!assets/voice_references/
+!assets/voice_references/shana/
+!assets/voice_references/shana/*.wav
 
 # Large/private local assets
 imagegen/

@@ -11,6 +11,7 @@ import urllib.error
 import urllib.request
 import uuid
 import wave
+from collections import deque
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -1235,25 +1236,29 @@ class DashboardService:
     def _tail(self, path: Path, *, limit: int = 60) -> str:
         if not path.exists():
             return ""
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        return "\n".join(lines[-limit:])
+        lines: deque[str] = deque(maxlen=max(1, limit))
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                lines.append(line.rstrip("\n"))
+        return "\n".join(lines)
 
     def _recent_timings(self, limit: int = 12) -> dict[str, Any]:
         log_path = settings.data_dir / "runtime" / "conversation.timings.jsonl"
         if not log_path.exists():
             return {"entries": [], "summary": {"count": 0}}
-        entries: list[dict[str, Any]] = []
-        for line in reversed(log_path.read_text(encoding="utf-8", errors="replace").splitlines()):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                entries.append(json.loads(stripped))
-            except json.JSONDecodeError:
-                continue
-            if len(entries) >= limit:
-                break
-        entries.reverse()
+        entries_deque: deque[dict[str, Any]] = deque(maxlen=max(1, limit))
+        with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    payload = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(payload, dict):
+                    entries_deque.append(payload)
+        entries = list(entries_deque)
         totals = [entry.get("timing_ms", {}).get("total_ms") for entry in entries if isinstance(entry.get("timing_ms", {}).get("total_ms"), (int, float))]
         summary = {
             "count": len(entries),
@@ -1267,18 +1272,19 @@ class DashboardService:
         log_path = settings.data_dir / "runtime" / "llm.routes.jsonl"
         if not log_path.exists():
             return {"entries": [], "summary": {"count": 0, "status_counts": {}, "provider_counts": {}, "route_family_counts": {}}}
-        entries: list[dict[str, Any]] = []
-        for line in reversed(log_path.read_text(encoding="utf-8", errors="replace").splitlines()):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                entries.append(json.loads(stripped))
-            except json.JSONDecodeError:
-                continue
-            if len(entries) >= limit:
-                break
-        entries.reverse()
+        entries_deque: deque[dict[str, Any]] = deque(maxlen=max(1, limit))
+        with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    payload = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(payload, dict):
+                    entries_deque.append(payload)
+        entries = list(entries_deque)
         status_counts: dict[str, int] = {}
         provider_counts: dict[str, int] = {}
         route_family_counts: dict[str, int] = {}

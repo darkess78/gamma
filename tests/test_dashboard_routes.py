@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 from fastapi.testclient import TestClient
@@ -244,6 +247,34 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn("speech_filter_level", payload)
         self.assertIn("llm_router_profile", payload)
         self.assertIn("assistant_state_enabled", payload)
+
+    def test_dashboard_file_helpers_read_only_recent_entries(self) -> None:
+        service = DashboardService()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_dir = Path(temp_dir) / "runtime"
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            stdout_log = runtime_dir / "shana.stdout.log"
+            stdout_log.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+
+            timings_log = runtime_dir / "conversation.timings.jsonl"
+            for index in range(6):
+                payload = {"timing_ms": {"total_ms": index + 1}}
+                with timings_log.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(payload) + "\n")
+
+            routes_log = runtime_dir / "llm.routes.jsonl"
+            for index in range(8):
+                payload = {"status": "ok", "provider": "local", "route_family": f"family-{index}", "duration_ms": index + 0.5}
+                with routes_log.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(payload) + "\n")
+
+            with patch.object(settings, "data_dir", Path(temp_dir)):
+                self.assertEqual(service._tail(stdout_log, limit=2), "three\nfour")
+                timings = service._recent_timings(limit=3)
+                routes = service._recent_llm_routes(limit=4)
+
+        self.assertEqual([entry["timing_ms"]["total_ms"] for entry in timings["entries"]], [4, 5, 6])
+        self.assertEqual([entry["route_family"] for entry in routes["entries"]], ["family-4", "family-5", "family-6", "family-7"])
 
 
 if __name__ == "__main__":

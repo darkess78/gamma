@@ -92,6 +92,16 @@ class LiveVoiceSession:
                     pass
             poll_task = asyncio.create_task(poll_remote_job(remote_turn_id))
 
+        async def cancel_polling() -> None:
+            nonlocal poll_task
+            if poll_task is not None:
+                poll_task.cancel()
+                try:
+                    await poll_task
+                except asyncio.CancelledError:
+                    pass
+                poll_task = None
+
         async def poll_remote_job(remote_turn_id: str) -> None:
             nonlocal active_remote_turn_id, active_remote_state
             last_status: str | None = None
@@ -349,8 +359,7 @@ class LiveVoiceSession:
         finally:
             receive_task.cancel()
             await cancel_partial_loop()
-            if poll_task is not None:
-                poll_task.cancel()
+            await cancel_polling()
             await cancel_active_remote_turn("websocket-closed", notify_client=False)
 
     def _state_detail(self, state: str) -> str:

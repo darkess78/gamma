@@ -425,9 +425,9 @@ class RouterLLMAdapter(LLMAdapter):
         return result
 
     def _check_local_llm_health(self) -> dict[str, object]:
-        from ..system.status import SystemStatusService
+        from ..system.status import probe_ollama_health
 
-        health = SystemStatusService()._check_ollama_health()
+        health = probe_ollama_health(settings.local_llm_endpoint, timeout_seconds=5)
         if health.get("ok"):
             return {"ok": True, "detail": "ready"}
         return {"ok": False, "detail": str(health.get("detail", "local-llm-unhealthy"))}

@@ -20,6 +20,19 @@ from ..voice.rvc_support import (
 from ..voice.voice_profiles import list_voice_profiles, resolve_tts_config
 
 
+def probe_ollama_health(endpoint: str, *, timeout_seconds: int = 5) -> dict[str, Any]:
+    try:
+        with urllib.request.urlopen(endpoint.rstrip("/") + "/api/tags", timeout=timeout_seconds) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        model_names = [model.get("name") for model in payload.get("models", []) if isinstance(model, dict)]
+        return {
+            "ok": True,
+            "models": model_names,
+        }
+    except Exception as exc:
+        return {"ok": False, "detail": str(exc)}
+
+
 class SystemStatusService:
     def __init__(self) -> None:
         self._memory = MemoryService()
@@ -100,16 +113,7 @@ class SystemStatusService:
         }
 
     def _check_ollama_health(self) -> dict[str, Any]:
-        try:
-            with urllib.request.urlopen(settings.local_llm_endpoint.rstrip("/") + "/api/tags", timeout=5) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-            model_names = [model.get("name") for model in payload.get("models", []) if isinstance(model, dict)]
-            return {
-                "ok": True,
-                "models": model_names,
-            }
-        except Exception as exc:
-            return {"ok": False, "detail": str(exc)}
+        return probe_ollama_health(settings.local_llm_endpoint, timeout_seconds=5)
 
     def _check_local_llm_vision_capability(self) -> dict[str, Any]:
         if not settings.local_llm_supports_vision:

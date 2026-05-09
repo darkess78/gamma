@@ -165,6 +165,8 @@ Recommended starting points:
 
 ## Quick start
 
+Run project commands from the repo-local virtual environment. On Linux/macOS, activate `.venv` before using `python`, `pytest`, or any Gamma CLI; alternatively call `.venv/bin/python` directly. On Windows, use the `.venv\Scripts` equivalents. Do not rely on the system Python for normal repo work.
+
 ### Linux / macOS
 
 ```bash

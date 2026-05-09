@@ -53,5 +53,8 @@
       "rms": 2011.3
     }
   ],
-  "note": "No reliable joined transcript; not wired as default Qwen reference."
+  "transcript_file": "assets/voice_references/shana/shana_clean_reference_montage_20s.txt",
+  "transcript_source": "Multilingual Whisper small, language=ja. Review manually before using as strict Qwen ref_text.",
+  "transcript": "一応本を思ってるんだから\nペンパツシャクガンのシャナとして\n無駄口叩かない!\n私に教えるつもりがあるなら\nちゃんと勉強してから出直しなさい\n信じる戦いをする!\n幼児がお弁当食べてるの嫌だった\nどこにも騒がないから\nいつもの幼児に戻ったから\nそれは…\nそれが友柄だったら\nお前食われてるわね",
+  "note": "Experimental montage from labeled Shana clean clips. Use only after manually reviewing the machine transcript."
 }

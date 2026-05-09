@@ -173,7 +173,7 @@ Run project commands from the repo-local virtual environment. On Linux/macOS, ac
 cp .env.example .env
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e .
+python -m pip install -e ".[dev]"
 ```
 
 ### Windows (PowerShell)
@@ -182,8 +182,10 @@ python -m pip install -e .
 Copy-Item .env.example .env
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e .
+python -m pip install -e ".[dev]"
 ```
+
+Use `python -m pip install -e .` only when you need runtime dependencies without development and test tools.
 
 The repo-local `.venv` is platform-specific. Create it from the OS and shell you plan to use; do not copy `.venv` between Windows and Linux.
 

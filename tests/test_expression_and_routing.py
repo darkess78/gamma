@@ -3,12 +3,14 @@ from __future__ import annotations
 import unittest
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 from gamma.config import settings
 from gamma.llm.local_adapter import LocalLLMAdapter
 from gamma.persona.emotion_service import EmotionMemoryService
 from gamma.safety.speech_filter import SpeechSafetyFilter
 from gamma.voice.expressive_text import build_qwen_instruct, strip_hidden_style_tags
+from gamma.voice.tts import QwenTTSBackend
 
 
 class ExpressiveTextTest(unittest.TestCase):
@@ -22,6 +24,25 @@ class ExpressiveTextTest(unittest.TestCase):
         instruct = build_qwen_instruct(base_instruct="Keep the pacing natural.", emotion="concerned")
         self.assertIn("Keep the pacing natural.", instruct or "")
         self.assertIn("concerned tone", instruct or "")
+
+    def test_qwen_speed_is_selected_from_internal_emotion(self) -> None:
+        backend = QwenTTSBackend(
+            SimpleNamespace(
+                qwen_tts_endpoint="http://127.0.0.1:9882/tts",
+                qwen_tts_extra_json={
+                    "temperature": 0.44,
+                    "speed": 0.88,
+                    "speed_by_emotion": {"default": 0.88, "excited": 0.94, "concerned": 0.84},
+                },
+            )
+        )
+
+        excited = backend._extra_params_for_emotion("excited")
+        neutral = backend._extra_params_for_emotion("neutral")
+
+        self.assertEqual(excited["speed"], 0.94)
+        self.assertEqual(neutral["speed"], 0.88)
+        self.assertNotIn("speed_by_emotion", excited)
 
 
 class SpeechSafetyFilterTest(unittest.TestCase):

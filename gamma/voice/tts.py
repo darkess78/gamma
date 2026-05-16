@@ -447,8 +447,9 @@ class QwenTTSBackend(BaseFileTTSBackend):
         if instruct:
             payload["instruct"] = instruct
 
-        if self._cfg.qwen_tts_extra_json:
-            payload["extra_params"] = self._cfg.qwen_tts_extra_json
+        extra_params = self._extra_params_for_emotion(emotion)
+        if extra_params:
+            payload["extra_params"] = extra_params
 
         body = json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(
@@ -481,9 +482,34 @@ class QwenTTSBackend(BaseFileTTSBackend):
                 "language": self._cfg.qwen_tts_language,
                 "speaker": self._cfg.qwen_tts_speaker,
                 "emotion": emotion,
+                "speed": extra_params.get("speed") if extra_params else None,
                 "timings_ms": {"backend_ms": round((time.perf_counter() - started_at) * 1000, 1)},
             },
         )
+
+    def _extra_params_for_emotion(self, emotion: str | None) -> dict[str, Any]:
+        extra = dict(self._cfg.qwen_tts_extra_json or {})
+        speed_by_emotion = extra.pop("speed_by_emotion", None)
+        if isinstance(speed_by_emotion, dict):
+            speed = self._select_emotion_speed(speed_by_emotion, emotion)
+            if speed is not None:
+                extra["speed"] = speed
+        return extra
+
+    def _select_emotion_speed(self, speed_by_emotion: dict[Any, Any], emotion: str | None) -> float | None:
+        keys = []
+        if emotion:
+            keys.append(str(emotion).strip().lower())
+        keys.extend(["default", "neutral"])
+        for key in keys:
+            if key not in speed_by_emotion:
+                continue
+            try:
+                speed = float(speed_by_emotion[key])
+            except (TypeError, ValueError):
+                continue
+            return max(0.75, min(1.2, speed))
+        return None
 
     def _validate_wav_payload(self, audio_bytes: bytes) -> None:
         try:

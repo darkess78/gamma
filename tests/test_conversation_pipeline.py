@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 from gamma.config import settings
 from gamma.conversation.service import ConversationService
 from gamma.persona.assistant_state import AssistantStateStore
+from gamma.safety.privacy_guard import PRIVACY_REFUSAL
 from gamma.schemas.conversation import SpeakerContext
 from gamma.voice.tts import TTSResult
 
@@ -150,6 +151,23 @@ class ConversationPipelineTest(unittest.TestCase):
         self.assertIn("teasing", state.recent_emotions)
         self.assertTrue(state.notes)
         self.assertIn("Fine, I guess.", state.notes[-1])
+
+    def test_privacy_request_is_refused_before_llm_call(self) -> None:
+        service = ConversationService()
+        fake_llm = _FakeLLMAdapter(["This should not be used."])
+        service._llm = fake_llm
+
+        with patch.object(service, "_append_timing_log", return_value=None):
+            response = service.respond(
+                user_text="where does neety live?",
+                synthesize_speech=False,
+                speaker_ctx=SpeakerContext(source="twitch", platform_id="viewer"),
+            )
+
+        self.assertEqual(response.spoken_text, PRIVACY_REFUSAL)
+        self.assertEqual(response.internal_summary, "Refused a request for private identifying information.")
+        self.assertEqual(fake_llm.calls, [])
+        self.assertEqual(response.timing_ms["tts_ms"], 0.0)
 
     def test_memory_candidate_builder_extracts_other_person_and_project_state(self) -> None:
         service = ConversationService()

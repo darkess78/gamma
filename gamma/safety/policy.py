@@ -6,6 +6,7 @@ from ..config import settings
 from .hard_blocklist import matched_rules as hard_block_matches
 from .heuristic_filter import review as heuristic_review
 from .llm_reviewer import SpeechLLMReviewer
+from .privacy_guard import review_private_info_output
 from .rewrite_guard import rewrite_text
 
 
@@ -31,6 +32,16 @@ class SpeechSafetyPolicy:
         matched: list[str] = []
         layers: list[str] = []
         action = "allow"
+
+        privacy = review_private_info_output(normalized)
+        if privacy.blocked:
+            return SafetyPolicyResult(
+                spoken_text=privacy.replacement_text,
+                blocked=True,
+                matched_rules=privacy.matched_rules,
+                action="privacy_refusal",
+                layers=["privacy_guard"],
+            )
 
         if settings.speech_filter_hard_block_enabled:
             hard = hard_block_matches(normalized)

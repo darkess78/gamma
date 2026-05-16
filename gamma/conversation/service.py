@@ -17,6 +17,7 @@ from ..memory.service import MemoryService
 from ..persona.assistant_state import AssistantStateStore
 from ..persona.emotion_service import EmotionMemoryService
 from ..persona.loader import build_system_prompt
+from ..safety.privacy_guard import review_private_info_request
 from ..safety.speech_filter import SpeechSafetyFilter
 from ..schemas.conversation import SpeakerContext
 from ..schemas.response import AssistantResponse, EmotionTag, MemoryCandidate, ToolCall, ToolExecutionResult, VisionAnalysis
@@ -137,6 +138,52 @@ class ConversationService:
             raise ConversationError("user_text must not be empty.")
 
         try:
+            privacy_decision = review_private_info_request(stripped)
+            if privacy_decision.blocked:
+                started_at = time.perf_counter()
+                response = AssistantResponse(
+                    spoken_text=privacy_decision.replacement_text,
+                    emotion="neutral",
+                    internal_summary="Refused a request for private identifying information.",
+                )
+                timing = {
+                    "privacy_guard_ms": round((time.perf_counter() - started_at) * 1000, 1),
+                    "total_ms": round((time.perf_counter() - started_at) * 1000, 1),
+                }
+                if synthesize_speech:
+                    tts_started = time.perf_counter()
+                    tts_result = self._tts_service().synthesize(response.spoken_text, emotion=response.emotion)
+                    response.audio_path = tts_result.audio_path
+                    response.audio_content_type = tts_result.content_type
+                    response.tts_metadata = dict(tts_result.metadata or {})
+                    response.tts_metadata["speech_filter"] = {
+                        "level": settings.speech_filter_level,
+                        "blocked": True,
+                        "matched_rules": privacy_decision.matched_rules,
+                        "action": "privacy_refusal",
+                        "layers": ["privacy_guard"],
+                    }
+                    timing["tts_ms"] = round((time.perf_counter() - tts_started) * 1000, 1)
+                    timing["total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
+                else:
+                    timing["tts_ms"] = 0.0
+                response.timing_ms = timing
+                self._append_timing_log(
+                    user_text=stripped,
+                    session_id=session_id,
+                    response=response,
+                    saved_count=0,
+                    timing=timing,
+                    route_events=[
+                        {
+                            "provider": "privacy_guard",
+                            "status": "blocked",
+                            "matched_rules": privacy_decision.matched_rules,
+                        }
+                    ],
+                )
+                return response
+
             begin_route_trace()
             started_at = time.perf_counter()
             timing: dict[str, float] = {}

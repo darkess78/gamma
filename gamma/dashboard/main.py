@@ -41,6 +41,8 @@ def get_live_voice_session() -> LiveVoiceSession:
             job_fetcher=dashboard_service.get_remote_live_job,
             job_canceler=dashboard_service.cancel_remote_live_job,
             partial_transcriber=dashboard_service.transcribe_remote_live_audio,
+            idle_settings_provider=dashboard_service.live_idle_settings,
+            idle_event_recorder=dashboard_service.record_remote_stream_event,
         )
 
     return live_voice_session.get(_build_live_voice_session)
@@ -369,6 +371,21 @@ async def dashboard_voice_roundtrip(
 @app.get("/api/voice/live/history")
 def dashboard_live_voice_history(limit: int = 20) -> dict:
     return get_dashboard_service().remote_live_history(limit=limit)
+
+
+@app.get("/api/stream/traces/recent")
+def dashboard_stream_recent_traces(limit: int = 50) -> dict:
+    return get_dashboard_service().stream_recent_traces(limit=limit)
+
+
+@app.get("/api/stream/eval/recent")
+def dashboard_stream_recent_eval(limit: int = 50) -> dict:
+    return get_dashboard_service().stream_recent_eval(limit=limit)
+
+
+@app.get("/api/stream/outputs/recent")
+def dashboard_stream_recent_outputs(limit: int = 50) -> dict:
+    return get_dashboard_service().stream_recent_outputs(limit=limit)
 
 
 @app.post("/api/vision/analyze", response_model=VisionAnalysis)

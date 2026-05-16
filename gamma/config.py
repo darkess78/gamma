@@ -399,6 +399,52 @@ class Settings:
             _config_value(APP_CONFIG, "live_voice_response_mode", default="simple_chunked"),
         )
     )
+    proactive_idle_enabled: bool = _as_bool(
+        _setting("SHANA_PROACTIVE_IDLE_ENABLED", _config_value(APP_CONFIG, "proactive_idle_enabled", default=False)),
+        default=False,
+    )
+    proactive_idle_min_silence_seconds: int = _as_int(
+        _setting(
+            "SHANA_PROACTIVE_IDLE_MIN_SILENCE_SECONDS",
+            _config_value(APP_CONFIG, "proactive_idle_min_silence_seconds", default=30),
+        ),
+        default=30,
+    )
+    proactive_idle_target_silence_seconds: int = _as_int(
+        _setting(
+            "SHANA_PROACTIVE_IDLE_TARGET_SILENCE_SECONDS",
+            _config_value(APP_CONFIG, "proactive_idle_target_silence_seconds", default=60),
+        ),
+        default=60,
+    )
+    proactive_idle_cooldown_seconds: int = _as_int(
+        _setting(
+            "SHANA_PROACTIVE_IDLE_COOLDOWN_SECONDS",
+            _config_value(APP_CONFIG, "proactive_idle_cooldown_seconds", default=180),
+        ),
+        default=180,
+    )
+    proactive_idle_max_attempts_per_topic: int = _as_int(
+        _setting(
+            "SHANA_PROACTIVE_IDLE_MAX_ATTEMPTS_PER_TOPIC",
+            _config_value(APP_CONFIG, "proactive_idle_max_attempts_per_topic", default=2),
+        ),
+        default=2,
+    )
+    proactive_idle_tick_seconds: int = _as_int(
+        _setting(
+            "SHANA_PROACTIVE_IDLE_TICK_SECONDS",
+            _config_value(APP_CONFIG, "proactive_idle_tick_seconds", default=5),
+        ),
+        default=5,
+    )
+    proactive_idle_speech_enabled: bool = _as_bool(
+        _setting(
+            "SHANA_PROACTIVE_IDLE_SPEECH_ENABLED",
+            _config_value(APP_CONFIG, "proactive_idle_speech_enabled", default=False),
+        ),
+        default=False,
+    )
 
     stt_provider: str = str(
         _setting(

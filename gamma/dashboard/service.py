@@ -521,6 +521,23 @@ class DashboardService:
             "assistant_emotion_decay_turns": int(config.get("assistant_emotion_decay_turns", settings.assistant_emotion_decay_turns)),
             "assistant_emotion_episode_threshold": float(config.get("assistant_emotion_episode_threshold", settings.assistant_emotion_episode_threshold)),
             "assistant_emotion_pattern_threshold": int(config.get("assistant_emotion_pattern_threshold", settings.assistant_emotion_pattern_threshold)),
+            "proactive_idle_enabled": bool(config.get("proactive_idle_enabled", settings.proactive_idle_enabled)),
+            "proactive_idle_min_silence_seconds": int(
+                config.get("proactive_idle_min_silence_seconds", settings.proactive_idle_min_silence_seconds)
+            ),
+            "proactive_idle_target_silence_seconds": int(
+                config.get("proactive_idle_target_silence_seconds", settings.proactive_idle_target_silence_seconds)
+            ),
+            "proactive_idle_cooldown_seconds": int(
+                config.get("proactive_idle_cooldown_seconds", settings.proactive_idle_cooldown_seconds)
+            ),
+            "proactive_idle_max_attempts_per_topic": int(
+                config.get("proactive_idle_max_attempts_per_topic", settings.proactive_idle_max_attempts_per_topic)
+            ),
+            "proactive_idle_tick_seconds": int(config.get("proactive_idle_tick_seconds", settings.proactive_idle_tick_seconds)),
+            "proactive_idle_speech_enabled": bool(
+                config.get("proactive_idle_speech_enabled", settings.proactive_idle_speech_enabled)
+            ),
         }
 
     def save_assistant_runtime_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -541,6 +558,8 @@ class DashboardService:
             "llm_router_persona_hosted_fallback_enabled",
             "llm_router_persona_heavy_hosted_fallback_enabled",
             "assistant_state_enabled",
+            "proactive_idle_enabled",
+            "proactive_idle_speech_enabled",
         ]
         for key in bool_keys:
             if key in payload:
@@ -571,6 +590,36 @@ class DashboardService:
             updated = self._upsert_toml_number(updated, "assistant_emotion_episode_threshold", threshold)
         if "assistant_emotion_pattern_threshold" in payload:
             updated = self._upsert_toml_number(updated, "assistant_emotion_pattern_threshold", max(1, int(payload.get("assistant_emotion_pattern_threshold", 1))))
+        if "proactive_idle_min_silence_seconds" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "proactive_idle_min_silence_seconds",
+                max(5, int(payload.get("proactive_idle_min_silence_seconds", settings.proactive_idle_min_silence_seconds))),
+            )
+        if "proactive_idle_target_silence_seconds" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "proactive_idle_target_silence_seconds",
+                max(10, int(payload.get("proactive_idle_target_silence_seconds", settings.proactive_idle_target_silence_seconds))),
+            )
+        if "proactive_idle_cooldown_seconds" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "proactive_idle_cooldown_seconds",
+                max(30, int(payload.get("proactive_idle_cooldown_seconds", settings.proactive_idle_cooldown_seconds))),
+            )
+        if "proactive_idle_max_attempts_per_topic" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "proactive_idle_max_attempts_per_topic",
+                max(1, int(payload.get("proactive_idle_max_attempts_per_topic", settings.proactive_idle_max_attempts_per_topic))),
+            )
+        if "proactive_idle_tick_seconds" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "proactive_idle_tick_seconds",
+                max(1, int(payload.get("proactive_idle_tick_seconds", settings.proactive_idle_tick_seconds))),
+            )
         app_toml.parent.mkdir(parents=True, exist_ok=True)
         app_toml.write_text(updated, encoding="utf-8")
         self._latest_provider_action = {
@@ -699,6 +748,24 @@ class DashboardService:
     def remote_live_history(self, *, limit: int = 20) -> dict[str, Any]:
         url = settings.shana_base_url + f"/v1/voice/live/history?limit={max(1, min(limit, 100))}"
         return self._probe_json(url, raw_payload=True)
+
+    def stream_recent_traces(self, *, limit: int = 50) -> dict[str, Any]:
+        url = settings.shana_base_url + f"/v1/stream/traces/recent?limit={max(1, min(limit, 200))}"
+        return self._probe_json(url, raw_payload=True)
+
+    def stream_recent_eval(self, *, limit: int = 50) -> dict[str, Any]:
+        url = settings.shana_base_url + f"/v1/stream/eval/recent?limit={max(1, min(limit, 200))}"
+        return self._probe_json(url, raw_payload=True)
+
+    def stream_recent_outputs(self, *, limit: int = 50) -> dict[str, Any]:
+        url = settings.shana_base_url + f"/v1/stream/outputs/recent?limit={max(1, min(limit, 200))}"
+        return self._probe_json(url, raw_payload=True)
+
+    def live_idle_settings(self) -> dict[str, Any]:
+        return self.assistant_runtime_settings()
+
+    def record_remote_stream_event(self, event: dict[str, Any]) -> dict[str, Any]:
+        return self._post_remote_json("/v1/stream/events", event)
 
     def _post_live_audio(
         self,
@@ -1143,6 +1210,27 @@ class DashboardService:
             return {"ok": False, "detail": f"http-{exc.code}"}
         except Exception as exc:
             return {"ok": False, "detail": str(exc)}
+
+    def _post_remote_json(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        headers = {"Content-Type": "application/json", **self._api_headers()}
+        request = urllib.request.Request(
+            settings.shana_base_url + path,
+            data=body,
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                response_payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"remote json post failed: http-{exc.code} {detail}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"remote json post failed: {exc}") from exc
+        if not isinstance(response_payload, dict):
+            raise RuntimeError("remote json post returned a non-object payload")
+        return response_payload
 
     def _machine_status(self) -> dict[str, Any]:
         now = time.time()

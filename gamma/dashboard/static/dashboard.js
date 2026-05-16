@@ -333,9 +333,13 @@
       .replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
   }
 
-  function providerLabel(value) {
+  function providerLabel(value, kind) {
     var normalized = String(value || '').toLowerCase();
-    if (normalized === 'local' || normalized === 'gpt-sovits' || normalized === 'gpt_sovits') return 'GPT-SoVITS';
+    if (normalized === 'local' && kind === 'stt') return 'Local Whisper';
+    if (normalized === 'local' && kind === 'tts') return 'GPT-SoVITS';
+    if (normalized === 'local') return 'Local';
+    if (normalized === 'faster-whisper' || normalized === 'faster_whisper') return 'Faster Whisper';
+    if (normalized === 'gpt-sovits' || normalized === 'gpt_sovits') return 'GPT-SoVITS';
     if (normalized === 'qwen-tts' || normalized === 'qwen_tts' || normalized === 'qwen' || normalized === 'qwentts') return 'Qwen3-TTS';
     if (normalized === 'openai') return 'OpenAI';
     if (normalized === 'stt') return 'STT';
@@ -636,7 +640,7 @@
     var llm = providers.llm || {};
     var stt = providers.stt || {};
     var tts = providers.tts || {};
-    lines.push('LLM: ' + providerLabel(llm.provider) + (llm.model ? ' using ' + llm.model : ''));
+    lines.push('LLM: ' + providerLabel(llm.provider, 'llm') + (llm.model ? ' using ' + llm.model : ''));
     if (llm.endpoint) lines.push('LLM endpoint: ' + llm.endpoint);
     if (llm.health) lines.push('LLM health: ' + fmtHealthStatus(llm.health));
     if (llm.router_capabilities && llm.router_capabilities.length) {
@@ -645,7 +649,7 @@
         if (!capability.health) continue;
         lines.push(
           'LLM capability: ' +
-          providerLabel(capability.provider) +
+          providerLabel(capability.provider, 'llm') +
           ' [' + formatRouterScope(capability.scope) + '] ' +
           fmtHealthStatus(capability.health)
         );
@@ -654,10 +658,10 @@
     lines.push('LLM router: ' + (llm.router_enabled ? 'Enabled' : 'Disabled'));
     if (llm.router_enabled) {
       lines.push('Router profile: ' + (llm.router_profile || 'balanced'));
-      lines.push('Router default: ' + providerLabel(llm.router_default_provider) + (llm.router_default_model ? ' using ' + llm.router_default_model : ''));
+      lines.push('Router default: ' + providerLabel(llm.router_default_provider, 'llm') + (llm.router_default_model ? ' using ' + llm.router_default_model : ''));
       lines.push('Hosted escalation: ' + (llm.router_hosted_escalation ? 'Enabled' : 'Disabled'));
       if (llm.router_hosted_escalation) {
-        lines.push('Hosted route: ' + providerLabel(llm.router_hosted_provider) + (llm.router_hosted_model ? ' using ' + llm.router_hosted_model : ''));
+        lines.push('Hosted route: ' + providerLabel(llm.router_hosted_provider, 'llm') + (llm.router_hosted_model ? ' using ' + llm.router_hosted_model : ''));
       }
       if (llm.router_failure_backoff_seconds) lines.push('Failure backoff: ' + llm.router_failure_backoff_seconds + ' sec');
       if (llm.provider_backoff_entries && llm.provider_backoff_entries.length) {
@@ -665,7 +669,7 @@
         for (var b = 0; b < llm.provider_backoff_entries.length; b += 1) {
           var backoffEntry = llm.provider_backoff_entries[b] || {};
           backoffLines.push(
-            providerLabel(backoffEntry.provider) + ' [' + formatRouterScope(backoffEntry.scope) + ']: ' + backoffEntry.seconds + ' sec'
+            providerLabel(backoffEntry.provider, 'llm') + ' [' + formatRouterScope(backoffEntry.scope) + ']: ' + backoffEntry.seconds + ' sec'
           );
         }
         if (backoffLines.length) lines.push('Active backoff: ' + backoffLines.join(' | '));
@@ -673,7 +677,7 @@
       if (llm.last_route) {
         lines.push(
           'Last route: ' +
-          providerLabel(llm.last_route.provider) +
+          providerLabel(llm.last_route.provider, 'llm') +
           (llm.last_route.model ? ' using ' + llm.last_route.model : '') +
           ' [' + (llm.last_route.route_family || 'route') + ', ' + (llm.last_route.status || 'n/a') + ']'
         );
@@ -682,7 +686,7 @@
         var providerCounts = [];
         for (var providerName in llm.route_summary.provider_counts) {
           if (!Object.prototype.hasOwnProperty.call(llm.route_summary.provider_counts, providerName)) continue;
-          providerCounts.push(providerLabel(providerName) + ': ' + llm.route_summary.provider_counts[providerName]);
+          providerCounts.push(providerLabel(providerName, 'llm') + ': ' + llm.route_summary.provider_counts[providerName]);
         }
         if (providerCounts.length) lines.push('Recent route mix: ' + providerCounts.join(' | '));
       }
@@ -696,13 +700,13 @@
       }
     }
     lines.push('');
-    lines.push('STT: ' + providerLabel(stt.provider) + (stt.model ? ' using ' + stt.model : ''));
+    lines.push('STT: ' + providerLabel(stt.provider, 'stt') + (stt.model ? ' using ' + stt.model : ''));
     if (stt.device) lines.push('STT device: ' + stt.device);
     if (stt.health) lines.push('STT health: ' + fmtHealthStatus(stt.health));
     lines.push('');
-    lines.push('TTS running: ' + providerLabel(tts.provider) + (tts.model ? ' using ' + tts.model : ''));
+    lines.push('TTS running: ' + providerLabel(tts.provider, 'tts') + (tts.model ? ' using ' + tts.model : ''));
     if (tts.profile_label) lines.push('TTS voice profile: ' + tts.profile_label);
-    if (tts.selected_provider) lines.push('TTS saved selection: ' + providerLabel(tts.selected_provider));
+    if (tts.selected_provider) lines.push('TTS saved selection: ' + providerLabel(tts.selected_provider, 'tts'));
     if (tts.selected_profile_label) lines.push('TTS saved profile: ' + tts.selected_profile_label);
     lines.push('TTS restart required: ' + (tts.restart_required ? 'Yes' : 'No'));
     if (tts.endpoint) lines.push('TTS endpoint: ' + tts.endpoint);
@@ -725,8 +729,8 @@
     var editorStatusShell = document.getElementById('ttsProfileEditorStatusShell');
 
     function restartNote(nextProvider) {
-      var runningProvider = providerLabel(tts.provider);
-      var selectedProviderLabel = providerLabel(tts.selected_provider || nextProvider || provider);
+      var runningProvider = providerLabel(tts.provider, 'tts');
+      var selectedProviderLabel = providerLabel(tts.selected_provider || nextProvider || provider, 'tts');
       if (selectedProviderLabel === 'GPT-SoVITS') {
         return 'Start GPT-SoVITS, then restart Shana to switch conversations from ' + runningProvider + ' to GPT-SoVITS.';
       }
@@ -746,7 +750,7 @@
           var providerValue = String(tts.available_providers[p] || '');
           if (!providerValue) continue;
           var selectedProvider = providerValue.toLowerCase() === provider ? ' selected' : '';
-          var providerOptionLabel = providerLabel(providerValue);
+          var providerOptionLabel = providerLabel(providerValue, 'tts');
           providerOptions.push('<option value="' + providerValue + '"' + selectedProvider + '>' + escapeHtml(providerOptionLabel) + '</option>');
         }
         select.innerHTML = providerOptions.join('');
@@ -1062,7 +1066,12 @@
       assistantStateEnabled: !!settings.assistant_state_enabled,
       assistantEmotionDecayTurns: settings.assistant_emotion_decay_turns,
       assistantEmotionEpisodeThreshold: settings.assistant_emotion_episode_threshold,
-      assistantEmotionPatternThreshold: settings.assistant_emotion_pattern_threshold
+      assistantEmotionPatternThreshold: settings.assistant_emotion_pattern_threshold,
+      assistantProactiveIdleEnabled: !!settings.proactive_idle_enabled,
+      assistantProactiveIdleMinSilence: settings.proactive_idle_min_silence_seconds,
+      assistantProactiveIdleTargetSilence: settings.proactive_idle_target_silence_seconds,
+      assistantProactiveIdleCooldown: settings.proactive_idle_cooldown_seconds,
+      assistantProactiveIdleMaxAttempts: settings.proactive_idle_max_attempts_per_topic
     };
     Object.keys(bindings).forEach(function (id) {
       var el = document.getElementById(id);
@@ -1840,7 +1849,12 @@
       assistant_state_enabled: !!document.getElementById('assistantStateEnabled').checked,
       assistant_emotion_decay_turns: Number(document.getElementById('assistantEmotionDecayTurns').value || 0),
       assistant_emotion_episode_threshold: Number(document.getElementById('assistantEmotionEpisodeThreshold').value || 0.65),
-      assistant_emotion_pattern_threshold: Number(document.getElementById('assistantEmotionPatternThreshold').value || 3)
+      assistant_emotion_pattern_threshold: Number(document.getElementById('assistantEmotionPatternThreshold').value || 3),
+      proactive_idle_enabled: !!document.getElementById('assistantProactiveIdleEnabled').checked,
+      proactive_idle_min_silence_seconds: Number(document.getElementById('assistantProactiveIdleMinSilence').value || 30),
+      proactive_idle_target_silence_seconds: Number(document.getElementById('assistantProactiveIdleTargetSilence').value || 60),
+      proactive_idle_cooldown_seconds: Number(document.getElementById('assistantProactiveIdleCooldown').value || 180),
+      proactive_idle_max_attempts_per_topic: Number(document.getElementById('assistantProactiveIdleMaxAttempts').value || 2)
     };
     var response = await fetch('/api/assistant/settings', {
       method: 'POST',
@@ -2637,6 +2651,27 @@
             liveInterruptProbeChunks = [];
             liveInterruptProbeBytes = 0;
           }
+          return;
+        }
+        if (payload.type === 'idle_decision') {
+          liveHistory.push({
+            kind: 'event',
+            label: 'idle decision',
+            detail: (payload.would_reply ? 'Would speak: ' : 'Stayed quiet: ') + (payload.reason || payload.decision || 'n/a'),
+            job: payload.stream || null
+          });
+          renderLiveHistory();
+          updateLiveStatus('Idle policy dry run: ' + (payload.reason || payload.decision || 'decision logged') + '.');
+          return;
+        }
+        if (payload.type === 'idle_decision_error') {
+          liveHistory.push({
+            kind: 'event',
+            label: 'idle decision error',
+            detail: payload.detail || 'Idle decision failed.',
+            job: null
+          });
+          renderLiveHistory();
           return;
         }
         if (payload.type === 'turn_result') {

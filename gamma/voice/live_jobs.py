@@ -14,7 +14,7 @@ from uuid import uuid4
 import psutil
 from fastapi import UploadFile
 
-from ..config import settings
+from ..config import load_desired_tts_selection, settings
 from ..schemas.voice import LiveVoiceJobResponse
 from ..system.python_runtime import resolve_python_executable
 
@@ -77,6 +77,7 @@ class LiveVoiceJobManager:
                 "session_id": session_id,
                 "synthesize_speech": synthesize_speech,
                 "response_mode": response_mode,
+                "tts": self._selected_tts_env(),
                 "created_at": _utc_now(),
             },
         )
@@ -183,6 +184,7 @@ class LiveVoiceJobManager:
         if job.process is not None and job.process.poll() is None:
             self._kill_process_tree(job.process.pid)
         job.completed_at = _utc_now()
+        self._cleanup_completed_input(job)
         self._append_lifecycle_event(turn_id, "cancelled", {"reason": reason, "pid": job.process.pid if job.process else None})
         self._append_history_entry(
             {
@@ -236,6 +238,7 @@ class LiveVoiceJobManager:
                 "cwd": settings.project_root,
                 "stdout": stdout_handle,
                 "stderr": stderr_handle,
+                "env": self._worker_env(),
             }
             if os.name == "nt":
                 kwargs["creationflags"] = (
@@ -247,12 +250,41 @@ class LiveVoiceJobManager:
                 kwargs["start_new_session"] = True
             return subprocess.Popen(command, **kwargs)
 
+    def _selected_tts_env(self) -> dict[str, str]:
+        selected = load_desired_tts_selection()
+        provider = selected.get("tts_provider") or settings.tts_provider
+        profile = selected.get("tts_profile") or settings.tts_profile
+        env = {"SHANA_TTS_PROVIDER": provider}
+        if profile:
+            env["SHANA_TTS_PROFILE"] = profile
+        else:
+            env["SHANA_TTS_PROFILE"] = ""
+        return env
+
+    def _worker_env(self) -> dict[str, str]:
+        env = dict(os.environ)
+        env.update(self._selected_tts_env())
+        return env
+
     async def _save_upload(self, turn_id: str, audio_file: UploadFile) -> Path:
         suffix = Path(audio_file.filename or "").suffix or ".wav"
         target = self._runtime_dir / f"{turn_id}{suffix}"
         content = await audio_file.read()
         target.write_bytes(content)
         return target
+
+    def _cleanup_completed_input(self, job: LiveVoiceJob) -> None:
+        try:
+            resolved_input = job.input_path.resolve()
+            resolved_runtime = self._runtime_dir.resolve()
+        except Exception:
+            return
+        if resolved_input.parent != resolved_runtime:
+            return
+        try:
+            resolved_input.unlink(missing_ok=True)
+        except Exception:
+            pass
 
     def _require_job(self, turn_id: str) -> LiveVoiceJob:
         with self._lock:
@@ -284,6 +316,7 @@ class LiveVoiceJobManager:
         if not job.completed_at:
             job.completed_at = _utc_now()
         self._maybe_log_history(job, status_payload, returncode)
+        self._cleanup_completed_input(job)
         self._append_lifecycle_event(job.turn_id, "completed" if returncode == 0 else "failed", {"returncode": returncode})
 
     def _maybe_log_history(self, job: LiveVoiceJob, status_payload: dict[str, Any], returncode: int) -> None:

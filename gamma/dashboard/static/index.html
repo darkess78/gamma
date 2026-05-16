@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shana Control</title>
-  <link rel="stylesheet" href="/static/dashboard.css?v=20260424a">
+  <link rel="stylesheet" href="/static/dashboard.css?v=20260424b">
 </head>
 <body>
   <div class="wrap">
@@ -345,7 +345,7 @@
         </div>
         <div class="render" id="knownPeople">...</div>
       </section>
-      <section class="panel wide panel-fill">
+      <section class="panel full-width panel-fill">
         <div class="panel-head">
           <h2>Assistant Safety & Emotion Settings</h2>
         </div>
@@ -386,6 +386,16 @@
               <input class="text-input" id="assistantEmotionDecayTurns" type="number" min="0" step="1" placeholder="Decay turns" title="How many turns emotional state should persist before decaying back toward neutral.">
               <input class="text-input" id="assistantEmotionEpisodeThreshold" type="number" min="0" max="1" step="0.05" placeholder="Episode threshold" title="Minimum emotion intensity required before a turn is stored as an emotional episode.">
               <input class="text-input" id="assistantEmotionPatternThreshold" type="number" min="1" step="1" placeholder="Pattern threshold" title="How many repeated emotional signals are needed before a pattern is kept as long-term emotion memory.">
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">Live Idle</div>
+            <div class="action-buttons action-stack">
+              <label class="checkbox-row" title="Log dry-run proactive idle decisions during live voice sessions. This does not make Shana speak yet."><input id="assistantProactiveIdleEnabled" type="checkbox"> Proactive idle decisions enabled</label>
+              <input class="text-input" id="assistantProactiveIdleMinSilence" type="number" min="5" step="1" placeholder="Min silence seconds" title="Do not consider proactive speech before this much silence.">
+              <input class="text-input" id="assistantProactiveIdleTargetSilence" type="number" min="10" step="1" placeholder="Target silence seconds" title="Normal silence duration before a conversation lull event is emitted.">
+              <input class="text-input" id="assistantProactiveIdleCooldown" type="number" min="30" step="1" placeholder="Cooldown seconds" title="Minimum time between proactive idle decisions.">
+              <input class="text-input" id="assistantProactiveIdleMaxAttempts" type="number" min="1" step="1" placeholder="Max attempts per topic" title="How many proactive attempts are allowed before the policy asks for a topic shift.">
             </div>
           </div>
           <div class="action-group">

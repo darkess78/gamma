@@ -9,16 +9,23 @@ from ..errors import ConfigurationError, ConversationError, ExternalServiceError
 from ..schemas.conversation import ConversationRequest
 from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..schemas.voice import LiveVoiceJobResponse, VoiceRoundtripResponse, VoiceTranscriptionResponse
+from ..stream.brain import StreamBrain
+from ..stream.models import StreamInputEvent, StreamTurnResult
+from ..stream.output import StreamOutputLogService
+from ..stream.replay import StreamEvalReport, StreamReplayService
 from ..system.lazy_singleton import LazySingleton
 from ..system.status import SystemStatusService
-from ..voice.live_jobs import LiveVoiceJobManager
+from ..voice.live_runtime import LiveTurnRuntime, SubprocessLiveTurnRuntime
 from ..voice.roundtrip import VoiceRoundtripService
 
 router = APIRouter()
 conversation_service = LazySingleton[ConversationService]()
 system_status_service = LazySingleton[SystemStatusService]()
 voice_roundtrip_service = LazySingleton[VoiceRoundtripService]()
-live_voice_job_manager = LazySingleton[LiveVoiceJobManager]()
+live_turn_runtime = LazySingleton[LiveTurnRuntime]()
+stream_brain = LazySingleton[StreamBrain]()
+stream_replay_service = LazySingleton[StreamReplayService]()
+stream_output_log_service = LazySingleton[StreamOutputLogService]()
 
 
 def get_conversation_service() -> ConversationService:
@@ -33,8 +40,20 @@ def get_voice_roundtrip_service() -> VoiceRoundtripService:
     return voice_roundtrip_service.get(VoiceRoundtripService)
 
 
-def get_live_voice_job_manager() -> LiveVoiceJobManager:
-    return live_voice_job_manager.get(LiveVoiceJobManager)
+def get_live_turn_runtime() -> LiveTurnRuntime:
+    return live_turn_runtime.get(SubprocessLiveTurnRuntime)
+
+
+def get_stream_brain() -> StreamBrain:
+    return stream_brain.get(StreamBrain)
+
+
+def get_stream_replay_service() -> StreamReplayService:
+    return stream_replay_service.get(StreamReplayService)
+
+
+def get_stream_output_log_service() -> StreamOutputLogService:
+    return stream_output_log_service.get(StreamOutputLogService)
 
 
 @router.get("/")
@@ -126,6 +145,54 @@ def conversation_respond(request: ConversationRequest) -> AssistantResponse:
     except ExternalServiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except GammaError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/v1/stream/events", response_model=StreamTurnResult)
+def stream_event(event: StreamInputEvent, synthesize_speech: bool = False, fast_mode: bool = True) -> StreamTurnResult:
+    try:
+        return get_stream_brain().handle_event(
+            event,
+            synthesize_speech=synthesize_speech,
+            fast_mode=fast_mode,
+        )
+    except ConversationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ConfigurationError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except ExternalServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except GammaError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/v1/stream/traces/recent")
+def stream_recent_traces(limit: int = 50) -> dict[str, list[dict]]:
+    try:
+        return {"items": get_stream_replay_service().recent_traces(limit=limit)}
+    except GammaError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/v1/stream/eval/recent", response_model=StreamEvalReport)
+def stream_eval_recent(limit: int = 50) -> StreamEvalReport:
+    try:
+        return get_stream_replay_service().evaluate_recent(limit=limit)
+    except GammaError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/v1/stream/outputs/recent")
+def stream_recent_outputs(limit: int = 50) -> dict[str, list[dict]]:
+    try:
+        return {"items": get_stream_output_log_service().recent_outputs(limit=limit)}
+    except GammaError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
@@ -230,7 +297,7 @@ async def voice_live_start(
     turn_id: str | None = Form(default=None),
 ) -> LiveVoiceJobResponse:
     try:
-        return await get_live_voice_job_manager().start_job(
+        return await get_live_turn_runtime().start_turn(
             audio_file=audio_file,
             session_id=session_id,
             synthesize_speech=synthesize_speech,
@@ -246,7 +313,7 @@ async def voice_live_start(
 @router.get("/v1/voice/live/history")
 def voice_live_history(limit: int = 20) -> dict[str, list[dict]]:
     try:
-        return {"items": get_live_voice_job_manager().get_recent_history(limit=limit)}
+        return {"items": get_live_turn_runtime().get_recent_history(limit=limit)}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -254,7 +321,7 @@ def voice_live_history(limit: int = 20) -> dict[str, list[dict]]:
 @router.get("/v1/voice/live/{turn_id}", response_model=LiveVoiceJobResponse)
 def voice_live_status(turn_id: str) -> LiveVoiceJobResponse:
     try:
-        return get_live_voice_job_manager().get_job(turn_id)
+        return get_live_turn_runtime().get_turn(turn_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"unknown turn_id: {turn_id}") from exc
     except Exception as exc:
@@ -264,7 +331,7 @@ def voice_live_status(turn_id: str) -> LiveVoiceJobResponse:
 @router.post("/v1/voice/live/{turn_id}/cancel", response_model=LiveVoiceJobResponse)
 def voice_live_cancel(turn_id: str, reason: str = Form(default="interrupted")) -> LiveVoiceJobResponse:
     try:
-        return get_live_voice_job_manager().cancel_job(turn_id, reason=reason)
+        return get_live_turn_runtime().cancel_turn(turn_id, reason=reason)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"unknown turn_id: {turn_id}") from exc
     except Exception as exc:

@@ -67,6 +67,7 @@ class VisionAnalysis(BaseModel):
 class AssistantResponse(BaseModel):
     spoken_text: str
     emotion: EmotionTag = "neutral"
+    voice_styles: list[str] = Field(default_factory=list)
     internal_summary: str | None = None
     motions: list[str] = Field(default_factory=list)
     tool_calls: list[ToolCall] = Field(default_factory=list)

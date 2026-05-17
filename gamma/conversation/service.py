@@ -285,6 +285,7 @@ class ConversationService:
                 response = AssistantResponse(
                     spoken_text=safe_spoken.spoken_text,
                     emotion=self._normalize_emotion(expressive.emotion),
+                    voice_styles=expressive.styles,
                     internal_summary=None,
                     motions=[],
                     tool_calls=inferred_tool_calls,
@@ -294,7 +295,11 @@ class ConversationService:
                 )
                 if synthesize_speech:
                     tts_started = time.perf_counter()
-                    tts_result = self._tts_service().synthesize(response.spoken_text, emotion=response.emotion)
+                    tts_result = self._tts_service().synthesize(
+                        response.spoken_text,
+                        emotion=response.emotion,
+                        styles=response.voice_styles,
+                    )
                     response.audio_path = tts_result.audio_path
                     response.audio_content_type = tts_result.content_type
                     response.tts_metadata = dict(tts_result.metadata or {})
@@ -388,6 +393,7 @@ class ConversationService:
             response = AssistantResponse(
                 spoken_text=final_reply_text,
                 emotion=response_emotion,
+                voice_styles=expressive.styles,
                 internal_summary=extracted["internal_summary"],
                 motions=extracted["motions"],
                 tool_calls=all_tool_calls,
@@ -397,7 +403,7 @@ class ConversationService:
             )
             if synthesize_speech:
                 tts_started = time.perf_counter()
-                tts_result = self._tts_service().synthesize(final_reply_text, emotion=response.emotion)
+                tts_result = self._tts_service().synthesize(final_reply_text, emotion=response.emotion, styles=response.voice_styles)
                 response.audio_path = tts_result.audio_path
                 response.audio_content_type = tts_result.content_type
                 response.tts_metadata = dict(tts_result.metadata or {})

@@ -118,10 +118,11 @@ qwen_tts_extra_json = { temperature = 0.58, top_k = 20, top_p = 0.82, repetition
 [profiles.qwen_shana_montage_soft]
 label = "Qwen3-TTS Shana Montage Soft"
 provider = "qwen-tts"
-description = "Longer Shana reference montage for stronger character identity in English, with conservative generation settings."
+description = "Longer Shana reference montage for stronger character identity in English, with conservative generation settings and a mild softening hint."
 qwen_tts_endpoint = "http://127.0.0.1:9882/tts"
 qwen_tts_reference_audio = "./assets/voice_references/shana/shana_clean_reference_montage_20s.wav"
 qwen_tts_reference_text = "一応本を思ってるんだから\nペンパツシャクガンのシャナとして\n無駄口叩かない!\n私に教えるつもりがあるなら\nちゃんと勉強してから出直しなさい\n信じる戦いをする!\n幼児がお弁当食べてるの嫌だった\nどこにも騒がないから\nいつもの幼児に戻ったから\nそれは…\nそれが友柄だったら\nお前食われてるわね"
 qwen_tts_language = "English"
+qwen_tts_instruct = "Keep Shana's character identity while speaking in clear English with a soft nearby voice, low vocal pressure, smooth vowels, gentle consonants, and restrained emphasis. Avoid shouting, sharp projection, or intense stage delivery."
 qwen_tts_timeout_seconds = 120
-qwen_tts_extra_json = { temperature = 0.4, top_k = 8, top_p = 0.62, repetition_penalty = 1.0, speed = 0.86, speed_by_emotion = { neutral = 0.86, happy = 0.88, teasing = 0.87, concerned = 0.82, excited = 0.92, embarrassed = 0.82, annoyed = 0.84, default = 0.86 }, max_new_tokens = 2048, min_new_tokens = 100 }
+qwen_tts_extra_json = { temperature = 0.4, top_k = 8, top_p = 0.62, repetition_penalty = 1.0, speed = 0.82, output_peak = 0.64, speed_by_emotion = { neutral = 0.82, happy = 0.84, teasing = 0.83, concerned = 0.78, excited = 0.86, embarrassed = 0.78, annoyed = 0.8, default = 0.82 }, max_new_tokens = 2048, min_new_tokens = 100 }

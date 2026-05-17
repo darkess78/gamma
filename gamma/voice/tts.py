@@ -160,14 +160,22 @@ class TTSService:
             },
         )
 
-    def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
+    def synthesize(self, text: str, emotion: str | None = None, styles: list[str] | None = None) -> TTSResult:
         started_at = time.perf_counter()
         expressive = strip_hidden_style_tags(text, default_emotion=emotion)
-        result = self._backend.synthesize(text=expressive.clean_text, emotion=expressive.emotion)
+        voice_styles = list(expressive.styles)
+        for style in styles or []:
+            if style not in voice_styles:
+                voice_styles.append(style)
+        if isinstance(self._backend, QwenTTSBackend):
+            result = self._backend.synthesize(text=expressive.clean_text, emotion=expressive.emotion, styles=voice_styles)
+        else:
+            result = self._backend.synthesize(text=expressive.clean_text, emotion=expressive.emotion)
         result = self._maybe_apply_rvc(result, emotion=expressive.emotion)
         result = self._maybe_apply_denoise(result)
         metadata = dict(result.metadata or {})
         metadata["hidden_style_tags"] = expressive.tags
+        metadata["hidden_voice_styles"] = voice_styles
         metadata["emotion"] = expressive.emotion
         timings = dict(metadata.get("timings_ms", {})) if isinstance(metadata.get("timings_ms"), dict) else {}
         timings["total_tts_pipeline_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
@@ -424,7 +432,7 @@ class QwenTTSBackend(BaseFileTTSBackend):
                 "python scripts/start_qwen_tts_server.py"
             )
 
-    def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
+    def synthesize(self, text: str, emotion: str | None = None, styles: list[str] | None = None) -> TTSResult:
         started_at = time.perf_counter()
         payload: dict[str, Any] = {"text": self._normalize_text(text)}
 
@@ -443,11 +451,11 @@ class QwenTTSBackend(BaseFileTTSBackend):
         if self._cfg.qwen_tts_speaker:
             payload["speaker"] = self._cfg.qwen_tts_speaker
 
-        instruct = build_qwen_instruct(base_instruct=self._cfg.qwen_tts_instruct, emotion=emotion)
+        instruct = build_qwen_instruct(base_instruct=self._cfg.qwen_tts_instruct, emotion=emotion, styles=styles)
         if instruct:
             payload["instruct"] = instruct
 
-        extra_params = self._extra_params_for_emotion(emotion)
+        extra_params = self._extra_params_for_emotion(emotion, styles=styles)
         if extra_params:
             payload["extra_params"] = extra_params
 
@@ -482,19 +490,55 @@ class QwenTTSBackend(BaseFileTTSBackend):
                 "language": self._cfg.qwen_tts_language,
                 "speaker": self._cfg.qwen_tts_speaker,
                 "emotion": emotion,
+                "styles": styles or [],
                 "speed": extra_params.get("speed") if extra_params else None,
+                "output_peak": extra_params.get("output_peak") if extra_params else None,
                 "timings_ms": {"backend_ms": round((time.perf_counter() - started_at) * 1000, 1)},
             },
         )
 
-    def _extra_params_for_emotion(self, emotion: str | None) -> dict[str, Any]:
+    def _extra_params_for_emotion(self, emotion: str | None, styles: list[str] | None = None) -> dict[str, Any]:
         extra = dict(self._cfg.qwen_tts_extra_json or {})
         speed_by_emotion = extra.pop("speed_by_emotion", None)
         if isinstance(speed_by_emotion, dict):
             speed = self._select_emotion_speed(speed_by_emotion, emotion)
             if speed is not None:
                 extra["speed"] = speed
+        self._apply_voice_styles(extra, styles or [])
         return extra
+
+    def _apply_voice_styles(self, extra: dict[str, Any], styles: list[str]) -> None:
+        if not styles:
+            return
+        speed = self._float_param(extra.get("speed"), default=0.82)
+        output_peak = self._float_param(extra.get("output_peak"), default=0.64)
+        for style in styles:
+            if style == "soft":
+                speed -= 0.01
+                output_peak -= 0.05
+            elif style == "quiet":
+                output_peak -= 0.08
+            elif style == "firm":
+                speed += 0.01
+                output_peak += 0.06
+            elif style == "fast":
+                speed += 0.05
+            elif style == "slow":
+                speed -= 0.05
+            elif style == "bright":
+                speed += 0.02
+                output_peak += 0.03
+            elif style == "deadpan":
+                speed -= 0.01
+                output_peak -= 0.03
+        extra["speed"] = max(0.74, min(0.94, speed))
+        extra["output_peak"] = max(0.48, min(0.78, output_peak))
+
+    def _float_param(self, value: Any, *, default: float) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
 
     def _select_emotion_speed(self, speed_by_emotion: dict[Any, Any], emotion: str | None) -> float | None:
         keys = []

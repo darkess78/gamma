@@ -35,10 +35,10 @@ class _FakeLLMAdapter:
 
 class _FakeTTSService:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str | None]] = []
+        self.calls: list[tuple[str, str | None, list[str]]] = []
 
-    def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
-        self.calls.append((text, emotion))
+    def synthesize(self, text: str, emotion: str | None = None, styles: list[str] | None = None) -> TTSResult:
+        self.calls.append((text, emotion, styles or []))
         return TTSResult(
             provider="fake",
             text=text,
@@ -74,7 +74,7 @@ class ConversationPipelineTest(unittest.TestCase):
 
         self.assertEqual(response.spoken_text, "Hey there.")
         self.assertEqual(response.emotion, "happy")
-        self.assertEqual(fake_tts.calls, [("Hey there.", "happy")])
+        self.assertEqual(fake_tts.calls, [("Hey there.", "happy", [])])
         self.assertEqual(response.tts_metadata["speech_filter"]["blocked"], False)
         service._remember_assistant_state.assert_called_once_with(
             user_text="hello",
@@ -82,6 +82,28 @@ class ConversationPipelineTest(unittest.TestCase):
             emotion="happy",
             session_id=None,
         )
+
+    def test_fast_mode_passes_hidden_voice_style_tags_to_tts(self) -> None:
+        service = ConversationService()
+        service._llm = _FakeLLMAdapter(["[teasing] [soft] [fast] Fine, keep up."])
+        fake_tts = _FakeTTSService()
+        service._tts = fake_tts
+        service._remember_assistant_state = Mock()
+
+        with patch("gamma.conversation.service.build_system_prompt", return_value="prompt"), patch.object(
+            service, "_append_timing_log", return_value=None
+        ):
+            response = service.respond(
+                user_text="say it softer but faster",
+                synthesize_speech=True,
+                fast_mode=True,
+                speaker_ctx=SpeakerContext(source="discord", platform_id="unknown-user"),
+            )
+
+        self.assertEqual(response.spoken_text, "Fine, keep up.")
+        self.assertEqual(response.emotion, "teasing")
+        self.assertEqual(response.voice_styles, ["soft", "fast"])
+        self.assertEqual(fake_tts.calls, [("Fine, keep up.", "teasing", ["soft", "fast"])])
 
     def test_standard_mode_filters_blocked_text_before_tts(self) -> None:
         service = ConversationService()
@@ -116,7 +138,7 @@ class ConversationPipelineTest(unittest.TestCase):
         self.assertEqual(response.emotion, "happy")
         self.assertEqual(
             fake_tts.calls,
-            [("I’m not going to say that. Let’s keep it safe and respectful.", "happy")],
+            [("I’m not going to say that. Let’s keep it safe and respectful.", "happy", [])],
         )
         self.assertEqual(response.tts_metadata["speech_filter"]["blocked"], True)
         self.assertTrue(response.tts_metadata["speech_filter"]["matched_rules"])

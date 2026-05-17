@@ -22,6 +22,22 @@ _TAG_TO_EMOTION: dict[str, str] = {
     "irritated": "annoyed",
 }
 
+_TAG_TO_STYLE: dict[str, str] = {
+    "soft": "soft",
+    "quiet": "quiet",
+    "nearby": "quiet",
+    "gentle": "soft",
+    "firm": "firm",
+    "stern": "firm",
+    "fast": "fast",
+    "quick": "fast",
+    "slow": "slow",
+    "slower": "slow",
+    "warm": "warm",
+    "bright": "bright",
+    "deadpan": "deadpan",
+}
+
 _EMOTION_TO_INSTRUCT: dict[str, str] = {
     "neutral": "Speak naturally with a steady neutral tone. Keep the pacing even and restrained.",
     "happy": "Use clearly happy prosody: brighter pitch, a lighter smile in the voice, warmer energy, and more upward lift at phrase endings while keeping the words clear.",
@@ -32,22 +48,38 @@ _EMOTION_TO_INSTRUCT: dict[str, str] = {
     "annoyed": "Use mild but audible annoyed restraint with terser pacing, flatter warmth, and clipped emphasis while staying controlled.",
 }
 
+_STYLE_TO_INSTRUCT: dict[str, str] = {
+    "soft": "Use a softer delivery with low vocal pressure, gentle consonants, and restrained emphasis.",
+    "quiet": "Use a quiet nearby voice without projecting or sounding like stage delivery.",
+    "firm": "Use a firmer controlled tone while keeping volume moderate and avoiding harshness.",
+    "fast": "Use a slightly quicker pace while keeping articulation clear.",
+    "slow": "Use a slightly slower pace with calmer spacing between phrases.",
+    "warm": "Use a warmer tone with smooth vowels and a small smile in the voice.",
+    "bright": "Use a little more brightness and lift while staying controlled.",
+    "deadpan": "Use a flatter, dry delivery with minimal pitch lift.",
+}
+
 
 @dataclass(slots=True)
 class ExpressiveText:
     clean_text: str
     emotion: str | None
     tags: list[str]
+    styles: list[str]
 
 
 def strip_hidden_style_tags(text: str, *, default_emotion: str | None = None) -> ExpressiveText:
     tags: list[str] = []
+    styles: list[str] = []
 
     def _replace(match: re.Match[str]) -> str:
         raw = match.group("tag").strip().lower()
         normalized = raw.replace("-", "_")
         if normalized in _TAG_TO_EMOTION:
             tags.append(normalized)
+            return ""
+        if normalized in _TAG_TO_STYLE:
+            styles.append(_TAG_TO_STYLE[normalized])
             return ""
         return match.group(0)
 
@@ -56,15 +88,22 @@ def strip_hidden_style_tags(text: str, *, default_emotion: str | None = None) ->
     detected_emotion = default_emotion
     if tags:
         detected_emotion = _TAG_TO_EMOTION.get(tags[-1], detected_emotion)
-    return ExpressiveText(clean_text=clean_text, emotion=detected_emotion, tags=tags)
+    return ExpressiveText(clean_text=clean_text, emotion=detected_emotion, tags=tags, styles=styles)
 
 
-def build_qwen_instruct(*, base_instruct: str | None, emotion: str | None) -> str | None:
+def build_qwen_instruct(*, base_instruct: str | None, emotion: str | None, styles: list[str] | None = None) -> str | None:
     parts: list[str] = []
     if base_instruct and base_instruct.strip():
         parts.append(base_instruct.strip())
     if emotion and emotion in _EMOTION_TO_INSTRUCT:
         parts.append(_EMOTION_TO_INSTRUCT[emotion])
+    seen: set[str] = set()
+    for style in styles or []:
+        if style in seen:
+            continue
+        seen.add(style)
+        if style in _STYLE_TO_INSTRUCT:
+            parts.append(_STYLE_TO_INSTRUCT[style])
     if not parts:
         return None
     return " ".join(parts)

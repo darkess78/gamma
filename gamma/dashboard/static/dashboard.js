@@ -2459,7 +2459,7 @@
       finishCurrentChunkAndContinue('Chunk playback error. Skipping to next chunk.');
     };
     playback.onstalled = function () {
-      finishCurrentChunkAndContinue('Chunk playback stalled. Skipping to next chunk.');
+      updateLiveStatus('Chunk playback stalled. Waiting for audio to resume...');
     };
     playback.onsuspend = function () {
       if (playback.ended) {

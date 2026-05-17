@@ -189,6 +189,7 @@ def _stream_result_from_live_payload(
     response = AssistantResponse(
         spoken_text=str(payload.get("reply_text", "") or ""),
         emotion=response_emotion if response_emotion in {"neutral", "happy", "teasing", "concerned", "excited", "embarrassed", "annoyed"} else "neutral",
+        voice_styles=payload.get("voice_styles", []) if isinstance(payload.get("voice_styles"), list) else [],
         motions=[],
         tool_calls=[],
         tool_results=[],
@@ -320,6 +321,7 @@ def _run_simple_chunked(
         "reply_chunks": [],
         "response_mode": response_mode,
         "voice_affect": voice_affect or {},
+        "voice_styles": response.voice_styles,
         "stream": _serialize_stream_turn_result(stream_result),
         "planner_state": planner_state,
         "incremental_preview": _serialize_turn_state(turn_state),
@@ -343,7 +345,7 @@ def _run_simple_chunked(
             for index, chunk_text in enumerate(chunks, start=1):
                 policy = chunk_policies[index - 1] if index - 1 < len(chunk_policies) else {}
                 chunk_started = time.perf_counter()
-                tts_result = tts.synthesize(chunk_text, emotion=response.emotion)
+                tts_result = tts.synthesize(chunk_text, emotion=response.emotion, styles=response.voice_styles)
                 chunk_tts_ms = round((time.perf_counter() - chunk_started) * 1000, 1)
                 chunk_timings.append(chunk_tts_ms)
                 audio_bytes = _read_live_tts_audio_bytes(tts_result)
@@ -456,6 +458,7 @@ def _run_incremental_experimental(
     total_generation_ms = 0.0
     total_tts_ms = 0.0
     response_emotion = "neutral"
+    response_voice_styles: list[str] = []
     tts = TTSService() if synthesize_speech else None
 
     for sentence_index in range(1, max_sentences + 1):
@@ -482,6 +485,9 @@ def _run_incremental_experimental(
         expressive = strip_hidden_style_tags(sentence_text)
         if expressive.emotion:
             response_emotion = expressive.emotion
+        for style in expressive.styles:
+            if style not in response_voice_styles:
+                response_voice_styles.append(style)
         sentence_text = speech_filter.apply(expressive.clean_text).spoken_text
 
         sentence_state = SentenceState(
@@ -504,7 +510,7 @@ def _run_incremental_experimental(
                 status_payload["status"] = "speaking"
                 _write_status(status_path, status_payload)
             chunk_started = time.perf_counter()
-            tts_result = tts.synthesize(sentence_text, emotion=expressive.emotion)
+            tts_result = tts.synthesize(sentence_text, emotion=expressive.emotion, styles=expressive.styles)
             chunk_tts_ms = round((time.perf_counter() - chunk_started) * 1000, 1)
             total_tts_ms += chunk_tts_ms
             audio_bytes = _read_live_tts_audio_bytes(tts_result)
@@ -576,6 +582,7 @@ def _run_incremental_experimental(
     payload["timing_ms"]["conversation_ms"] = round(float(payload["timing_ms"]["planner_ms"]) + total_generation_ms, 1)
     payload["timing_ms"]["tts_ms"] = round(total_tts_ms, 1)
     payload["timing_ms"]["chunk_count"] = len(payload["reply_chunks"])
+    payload["voice_styles"] = response_voice_styles
     stream_result = _stream_result_from_live_payload(
         stream_event=stream_event,
         stream_brain=stream_brain,

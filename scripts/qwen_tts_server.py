@@ -144,7 +144,7 @@ def _adaptive_token_bounds(text: str) -> tuple[int, int]:
     words = max(len(text.split()), 1)
     chars = len(text)
     adaptive_min = max(12, min(96, words * 3 + 8, chars // 2 + 8))
-    adaptive_max = max(96, min(640, adaptive_min + 64, words * 10 + 48, chars * 3))
+    adaptive_max = max(160, min(1200, words * 12 + 96, chars * 3))
     return adaptive_min, adaptive_max
 
 
@@ -174,6 +174,15 @@ def _normalize_generation_params(text: str, extra: dict[str, Any]) -> dict[str, 
     return normalized
 
 
+def _pop_output_peak(extra: dict[str, Any]) -> float:
+    raw = extra.pop("output_peak", extra.pop("peak", 0.95))
+    try:
+        peak = float(raw)
+    except (TypeError, ValueError):
+        peak = 0.95
+    return max(0.35, min(0.95, peak))
+
+
 def synthesize(body: dict[str, Any]) -> bytes:
     import numpy as np
 
@@ -196,6 +205,7 @@ def synthesize(body: dict[str, Any]) -> bytes:
     # At 12Hz codec rate, 100 tokens ≈ 8.3s minimum — ensures the model can't
     # fire EOS while speech is still in progress, even for longer utterances.
     extra = _normalize_generation_params(text, extra)
+    output_peak = _pop_output_peak(extra)
 
     mtype = _model_type()
 
@@ -272,7 +282,7 @@ def synthesize(body: dict[str, Any]) -> bytes:
 
     peak = np.max(np.abs(audio))
     if peak > 0:
-        audio = audio / peak * 0.95
+        audio = audio / peak * output_peak
 
     return _numpy_to_wav_bytes(audio, int(sr))
 

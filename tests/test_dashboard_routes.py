@@ -120,6 +120,17 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(response["settings"], save_payload)
         method.assert_called_once_with(save_payload)
 
+    def test_stream_ready_status_reports_filtered_audio_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            audio_path = Path(temp_dir) / "filtered.wav"
+            audio_path.write_bytes(b"RIFF")
+            with patch.object(settings, "stream_filtered_audio_path", str(audio_path)):
+                payload = DashboardService().stream_ready_status()
+
+        self.assertTrue(payload["safety_gate"]["enabled"])
+        self.assertTrue(payload["filtered_audio"]["exists"])
+        self.assertEqual(payload["filtered_audio"]["resolved_path"], str(audio_path))
+
     def test_twitch_viewer_trust_routes(self) -> None:
         trust_payload = {"items": [{"platform_user_id": "u1", "trust_level": "trusted"}], "trust_levels": ["trusted"]}
         with patch.object(self.mock_service, "twitch_viewer_trust", return_value=trust_payload) as method:

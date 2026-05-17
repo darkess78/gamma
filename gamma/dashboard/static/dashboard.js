@@ -1042,6 +1042,25 @@
     return lines.join('\n');
   }
 
+  function humanStreamReady(payload, worker) {
+    payload = payload || {};
+    worker = worker || {};
+    var controls = worker.controls || {};
+    var process = worker.process || {};
+    var safety = payload.safety_gate || {};
+    var filteredAudio = payload.filtered_audio || {};
+    var lines = [];
+    lines.push('Worker: ' + (process.running ? 'running' : (worker.configured ? 'stopped' : 'not configured')));
+    lines.push('Dry run: ' + (controls.dry_run ? 'On' : 'Off'));
+    lines.push('Voice: ' + (controls.voice_enabled ? 'On' : 'Off') + ' / Subtitles: ' + (controls.subtitles_enabled ? 'On' : 'Off'));
+    lines.push('Safety gate: ' + (safety.enabled ? 'On' : 'Off') + ' / LLM review: ' + (safety.llm_review_enabled ? 'On' : 'Off'));
+    lines.push('Reviewer timeout: ' + (typeof safety.review_timeout_seconds === 'undefined' ? 'n/a' : safety.review_timeout_seconds + ' sec') + ' -> ' + (safety.review_timeout_action || 'n/a'));
+    lines.push('Filtered audio: ' + (filteredAudio.exists ? 'ready' : 'missing') + (filteredAudio.configured_path ? ' / ' + filteredAudio.configured_path : ''));
+    lines.push('Speech gap: ' + (typeof controls.min_speech_gap_seconds === 'undefined' ? 'n/a' : controls.min_speech_gap_seconds + ' sec'));
+    lines.push('Speech budget: ' + (typeof controls.max_speech_seconds_per_minute === 'undefined' ? 'n/a' : controls.max_speech_seconds_per_minute + ' sec/min'));
+    return lines.join('\n');
+  }
+
   function humanStreamTraces(payload) {
     var items = payload && Array.isArray(payload.items) ? payload.items : [];
     if (!items.length) return 'No recent stream traces.';
@@ -1076,11 +1095,13 @@
       var input = entry.input;
       var safety = entry.safety;
       var reasons = Array.isArray(safety.reasons) && safety.reasons.length ? safety.reasons.join(', ') : 'n/a';
+      if (reasons === 'n/a' && Array.isArray(safety.matched_rules) && safety.matched_rules.length) reasons = safety.matched_rules.join(', ');
       var decision = item.decision || {};
       return [
-        fmtLocalDateTime(item.recorded_at || input.occurred_at) + ' / ' + (safety.category || safety.action || 'classified'),
+        fmtLocalDateTime(item.recorded_at || input.occurred_at) + ' / ' + (safety.category || safety.action || 'classified') + (safety.stage ? ' / ' + safety.stage : ''),
         '  decision: ' + (decision.decision || 'n/a') + ' / ' + (decision.reason || 'n/a'),
-        '  drop: ' + (safety.should_drop ? 'yes' : 'no') + ' / reasons: ' + reasons,
+        '  drop: ' + (safety.should_drop ? 'yes' : 'no') + ' / approved: ' + (safety.playback_approved ? 'yes' : 'no') + ' / timeout: ' + (safety.review_timeout ? 'yes' : 'no'),
+        '  reasons: ' + reasons,
         '  safe text: ' + oneLine(safety.safe_prompt_text || input.text || 'n/a', 180)
       ].join('\n');
     }).join('\n\n');
@@ -1899,6 +1920,7 @@
 
     var twitchWorker = data.twitch && data.twitch.worker ? data.twitch.worker : {};
     renderBlockIfChanged('twitchWorkerStatus', twitchWorker, humanTwitchWorker(twitchWorker), 'twitchWorkerStatus');
+    renderBlockIfChanged('streamReadyStatus', data.twitch && data.twitch.stream_ready ? data.twitch.stream_ready : {}, humanStreamReady(data.twitch && data.twitch.stream_ready ? data.twitch.stream_ready : {}, twitchWorker), 'streamReadyStatus');
     var twitchStartButton = document.getElementById('twitchWorkerStartButton');
     var twitchStopButton = document.getElementById('twitchWorkerStopButton');
     var twitchProcess = twitchWorker.process || {};

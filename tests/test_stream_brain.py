@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from gamma.config import settings
+from gamma.safety.llm_reviewer import LLMReviewDecision
 from gamma.schemas.response import AssistantResponse, ToolCall, ToolExecutionResult
 from gamma.stream.actions import ActionPlanner
 from gamma.stream.brain import StreamBrain
@@ -82,6 +85,22 @@ class _FakeUnsafeConversation:
             tool_results=[],
             memory_candidates=[],
         )
+
+
+class _AllowReviewer:
+    def review(self, _text: str) -> LLMReviewDecision:
+        return LLMReviewDecision(action="allow", reason="safe", confidence=1.0)
+
+
+class _BlockReviewer:
+    def review(self, _text: str) -> LLMReviewDecision:
+        return LLMReviewDecision(action="block", reason="unsafe-by-reviewer", confidence=0.9)
+
+
+class _SlowReviewer:
+    def review(self, _text: str) -> LLMReviewDecision:
+        time.sleep(0.2)
+        return LLMReviewDecision(action="allow", reason="late", confidence=1.0)
 
 
 class _FakeClock:
@@ -444,6 +463,59 @@ class StreamBrainTest(unittest.TestCase):
         self.assertTrue(result.output_events[1].payload["filtered"])
         self.assertNotIn("idiot", str([event.payload for event in result.output_events]).lower())
         self.assertEqual(result.action_plan.items, [])
+
+    def test_twitch_llm_safety_reviewer_failure_uses_filtered_output(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(settings, "speech_filter_llm_enabled", True),
+            patch.object(settings, "stream_safety_review_timeout_seconds", 1.0),
+        ):
+            brain = StreamBrain(
+                conversation=_FakeConversation(),  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+                safety_reviewer=_BlockReviewer(),
+            )
+            result = brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana say hello",
+                    actor=StreamActor(source="twitch", platform_id="u1"),
+                )
+            )
+
+        self.assertEqual(result.safety_decision["stage"], "llm")
+        self.assertTrue(result.safety_decision["blocked"])
+        self.assertEqual(result.safety_decision["action"], "filtered")
+        self.assertEqual(result.assistant_response.spoken_text if result.assistant_response else None, "filtered")
+        self.assertEqual(result.output_events[1].payload["text"], "filtered")
+
+    def test_twitch_llm_safety_reviewer_timeout_skips_output_without_filtered(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(settings, "speech_filter_llm_enabled", True),
+            patch.object(settings, "stream_safety_review_timeout_seconds", 0.01),
+            patch.object(settings, "stream_safety_review_timeout_action", "skip"),
+        ):
+            brain = StreamBrain(
+                conversation=_FakeConversation(),  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+                safety_reviewer=_SlowReviewer(),
+            )
+            result = brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana say hello",
+                    actor=StreamActor(source="twitch", platform_id="u1"),
+                )
+            )
+
+        self.assertEqual(result.safety_decision["action"], "skip")
+        self.assertTrue(result.safety_decision["review_timeout"])
+        self.assertFalse(result.safety_decision["blocked"])
+        self.assertEqual(result.decision.decision, "defer")
+        self.assertEqual(result.decision.reason, "stream_safety_review_timeout")
+        self.assertIsNone(result.assistant_response)
+        self.assertEqual(result.output_events, [])
 
     def test_stream_route_delegates_to_brain(self) -> None:
         from gamma.api.routes import stream_event

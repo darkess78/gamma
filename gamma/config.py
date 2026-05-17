@@ -689,6 +689,18 @@ class Settings:
     stream_filtered_audio_path: str = str(
         _setting("SHANA_STREAM_FILTERED_AUDIO_PATH", _config_value(APP_CONFIG, "stream_filtered_audio_path", default="./assets/audio/system/filtered.wav"))
     ).strip()
+    stream_safety_review_timeout_seconds: float = float(
+        _setting(
+            "SHANA_STREAM_SAFETY_REVIEW_TIMEOUT_SECONDS",
+            _config_value(APP_CONFIG, "stream_safety_review_timeout_seconds", default=2.0),
+        )
+    )
+    stream_safety_review_timeout_action: str = str(
+        _setting(
+            "SHANA_STREAM_SAFETY_REVIEW_TIMEOUT_ACTION",
+            _config_value(APP_CONFIG, "stream_safety_review_timeout_action", default="skip"),
+        )
+    ).strip().lower() or "skip"
     assistant_state_enabled: bool = _as_bool(
         _setting("SHANA_ASSISTANT_STATE_ENABLED", _config_value(APP_CONFIG, "assistant_state_enabled", default=True)),
         default=True,

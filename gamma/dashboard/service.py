@@ -126,6 +126,7 @@ class DashboardService:
             },
             "twitch": {
                 "worker": self.twitch_worker_status(),
+                "stream_ready": self.stream_ready_status(),
             },
             "provider_actions": self._latest_provider_action,
             "timings": self._recent_timings(),
@@ -251,6 +252,22 @@ class DashboardService:
             "state": read_twitch_worker_state(),
         }
 
+    def stream_ready_status(self) -> dict[str, Any]:
+        filtered_audio_path = self._resolve_path(settings.stream_filtered_audio_path)
+        return {
+            "safety_gate": {
+                "enabled": True,
+                "review_timeout_seconds": settings.stream_safety_review_timeout_seconds,
+                "review_timeout_action": settings.stream_safety_review_timeout_action,
+                "llm_review_enabled": bool(settings.speech_filter_llm_enabled),
+            },
+            "filtered_audio": {
+                "configured_path": settings.stream_filtered_audio_path,
+                "resolved_path": str(filtered_audio_path) if filtered_audio_path else "",
+                "exists": bool(filtered_audio_path and filtered_audio_path.exists()),
+            },
+        }
+
     def twitch_runtime_settings(self) -> dict[str, Any]:
         config = load_app_file_config()
         return {
@@ -344,6 +361,14 @@ class DashboardService:
             "settings": self.twitch_runtime_settings(),
             "detail": "Twitch runtime settings saved. Restart the Twitch worker to apply ingestion-side changes.",
         }
+
+    def _resolve_path(self, raw_path: str | None) -> Path | None:
+        if not raw_path:
+            return None
+        path = Path(raw_path)
+        if not path.is_absolute():
+            path = settings.project_root / path
+        return path
 
     def twitch_viewer_trust(self, *, platform: str = "twitch", limit: int = 100) -> dict[str, Any]:
         return {

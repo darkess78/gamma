@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Protocol
 from uuid import uuid4
 
 from ..config import settings
 from ..conversation.service import ConversationService
 from ..errors import ConversationError
 from ..schemas.response import AssistantResponse
-from ..safety.speech_filter import SpeechSafetyFilter
+from ..safety.hard_blocklist import matched_rules as hard_block_matches
+from ..safety.heuristic_filter import review as heuristic_review
+from ..safety.llm_reviewer import LLMReviewDecision, SpeechLLMReviewer
+from ..safety.privacy_guard import review_private_info_output
+from ..safety.rewrite_guard import rewrite_text
 from .actions import ActionPlanner
 from .models import (
     ActionPlan,
@@ -29,6 +36,11 @@ DEFAULT_MAX_SPEECH_SECONDS_PER_MINUTE = 20.0
 HIGH_PRIORITY_BYPASS_THRESHOLD = 20
 
 
+class StreamSafetyReviewer(Protocol):
+    def review(self, text: str) -> LLMReviewDecision:
+        ...
+
+
 class StreamBrain:
     """Policy boundary between public/live events and the conversation service."""
 
@@ -39,13 +51,14 @@ class StreamBrain:
         trace_store: StreamTraceStore | None = None,
         action_planner: ActionPlanner | None = None,
         output_dispatcher: StreamOutputDispatcher | None = None,
+        safety_reviewer: StreamSafetyReviewer | None = None,
     ) -> None:
         self._conversation = conversation or ConversationService()
         self._trace_store = trace_store or StreamTraceStore()
         self._action_planner = action_planner or ActionPlanner()
         self._output_dispatcher = output_dispatcher or StreamOutputDispatcher()
         self._pacer = StreamSpeechPacer()
-        self._speech_filter = SpeechSafetyFilter(settings.speech_filter_level)
+        self._safety_reviewer = safety_reviewer or SpeechLLMReviewer()
 
     def handle_event(
         self,
@@ -105,6 +118,21 @@ class StreamBrain:
         if safety_decision.get("blocked"):
             response = _filtered_stream_response()
             action_plan = ActionPlan()
+        elif safety_decision.get("action") in {"skip", "defer", "hold"}:
+            safety_action = str(safety_decision.get("action") or "skip")
+            decision = TurnDecision(
+                decision="defer",
+                reason="stream_safety_review_timeout" if safety_decision.get("review_timeout") else "stream_safety_review_skipped",
+                should_call_conversation=False,
+                response_mode=decision.response_mode,
+                metadata={
+                    **decision.metadata,
+                    "safety_action": safety_action,
+                    "review_timeout": bool(safety_decision.get("review_timeout")),
+                },
+            )
+            response = None
+            action_plan = ActionPlan()
         budget_decision = self._pacer.apply_budget(event, decision, response.spoken_text if response else "")
         if budget_decision is not None:
             decision = budget_decision
@@ -134,35 +162,108 @@ class StreamBrain:
     def _review_stream_output(self, event: StreamInputEvent, response: AssistantResponse | None) -> dict:
         if response is None or not _is_public_stream_event(event):
             return {}
-        review = self._speech_filter.apply(response.spoken_text)
         speech_filter = response.tts_metadata.get("speech_filter") if isinstance(response.tts_metadata, dict) else None
         if isinstance(speech_filter, dict) and speech_filter.get("blocked"):
             return {
                 "action": "filtered",
                 "blocked": True,
                 "source": "conversation_speech_filter",
+                "stage": "fast",
                 "matched_rules": speech_filter.get("matched_rules", []),
                 "layers": speech_filter.get("layers", []),
                 "filter_action": speech_filter.get("action"),
                 "safe_output": "filtered",
+                "playback_approved": False,
             }
-        if review.blocked:
+        fast_review = _fast_stream_safety_review(response.spoken_text)
+        if fast_review["blocked"]:
             return {
                 "action": "filtered",
                 "blocked": True,
-                "source": "stream_output_gate",
-                "matched_rules": review.matched_rules,
-                "layers": review.layers,
-                "filter_action": review.action,
+                "source": "stream_output_gate_fast",
+                "stage": "fast",
+                "matched_rules": fast_review["matched_rules"],
+                "layers": fast_review["layers"],
+                "filter_action": fast_review["filter_action"],
                 "safe_output": "filtered",
+                "playback_approved": False,
+            }
+        llm_decision = self._review_stream_output_with_llm(event, response.spoken_text)
+        if llm_decision is not None:
+            return llm_decision
+        return {
+            "action": "allow",
+            "blocked": False,
+            "source": "stream_output_gate_fast",
+            "stage": "fast",
+            "matched_rules": fast_review["matched_rules"],
+            "layers": fast_review["layers"],
+            "filter_action": fast_review["filter_action"],
+            "playback_approved": True,
+        }
+
+    def _review_stream_output_with_llm(self, event: StreamInputEvent, text: str) -> dict | None:
+        if not _twitch_control_enabled(event, "llm_safety_review_enabled", True):
+            return None
+        if not settings.speech_filter_llm_enabled:
+            return None
+        timeout_seconds = max(0.05, float(settings.stream_safety_review_timeout_seconds or 2.0))
+        started_at = time.perf_counter()
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(self._safety_reviewer.review, text)
+        try:
+            review = future.result(timeout=timeout_seconds)
+        except FutureTimeoutError:
+            future.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+            return {
+                "action": _stream_review_timeout_action(),
+                "blocked": False,
+                "source": "stream_output_gate_llm",
+                "stage": "llm",
+                "review_timeout": True,
+                "timeout_seconds": timeout_seconds,
+                "review_ms": round((time.perf_counter() - started_at) * 1000, 1),
+                "playback_approved": False,
+            }
+        except Exception as exc:
+            executor.shutdown(wait=False, cancel_futures=True)
+            return {
+                "action": "skip",
+                "blocked": False,
+                "source": "stream_output_gate_llm",
+                "stage": "llm",
+                "review_error": str(exc),
+                "review_ms": round((time.perf_counter() - started_at) * 1000, 1),
+                "playback_approved": False,
+            }
+        finally:
+            if future.done():
+                executor.shutdown(wait=False, cancel_futures=True)
+        review_ms = round((time.perf_counter() - started_at) * 1000, 1)
+        if review.action != "allow":
+            return {
+                "action": "filtered",
+                "blocked": True,
+                "source": "stream_output_gate_llm",
+                "stage": "llm",
+                "matched_rules": [review.reason] if review.reason else [],
+                "layers": ["llm"],
+                "filter_action": review.action,
+                "review_ms": review_ms,
+                "safe_output": "filtered",
+                "playback_approved": False,
             }
         return {
             "action": "allow",
             "blocked": False,
-            "source": "stream_output_gate",
-            "matched_rules": review.matched_rules,
-            "layers": review.layers,
+            "source": "stream_output_gate_llm",
+            "stage": "llm",
+            "matched_rules": [review.reason] if review.reason else [],
+            "layers": ["llm"],
             "filter_action": review.action,
+            "review_ms": review_ms,
+            "playback_approved": True,
         }
 
     def record_result(self, result: StreamTurnResult) -> None:
@@ -613,6 +714,46 @@ def _filtered_audio_path() -> Path | None:
 
 def _is_public_stream_event(event: StreamInputEvent) -> bool:
     return event.actor.source == "twitch" or event.kind in {"chat_message", "follow", "donation", "redeem"}
+
+
+def _fast_stream_safety_review(text: str) -> dict:
+    normalized = " ".join((text or "").split())
+    privacy = review_private_info_output(normalized)
+    if privacy.blocked:
+        return {
+            "blocked": True,
+            "matched_rules": privacy.matched_rules,
+            "layers": ["privacy_guard"],
+            "filter_action": "privacy_refusal",
+        }
+    matched: list[str] = []
+    layers: list[str] = []
+    filter_action = "allow"
+    if settings.speech_filter_hard_block_enabled:
+        hard = hard_block_matches(normalized)
+        if hard:
+            matched.extend(hard)
+            layers.append("hard_block")
+            filter_action = "block"
+    if filter_action == "allow" and settings.speech_filter_heuristic_enabled:
+        heuristic = heuristic_review(text=normalized, level=settings.speech_filter_level)
+        if heuristic.matched_rules:
+            matched.extend(heuristic.matched_rules)
+            layers.append("heuristic")
+            filter_action = heuristic.action
+    return {
+        "blocked": filter_action == "block",
+        "matched_rules": matched,
+        "layers": layers,
+        "filter_action": filter_action,
+        "safe_text": rewrite_text(text=normalized, action=filter_action) if filter_action != "allow" else normalized,
+    }
+
+
+def _stream_review_timeout_action() -> str:
+    if settings.stream_safety_review_timeout_action in {"skip", "defer", "hold"}:
+        return settings.stream_safety_review_timeout_action
+    return "skip"
 
 
 def _stream_min_gap_seconds(event: StreamInputEvent, default: float) -> float:

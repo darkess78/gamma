@@ -22,6 +22,7 @@ from .trace import StreamTraceStore
 
 DEFAULT_STREAM_SPEECH_GAP_SECONDS = 5.0
 DEFAULT_SPAM_QUIP_COOLDOWN_SECONDS = 60.0
+DEFAULT_MAX_SPEECH_SECONDS_PER_MINUTE = 20.0
 HIGH_PRIORITY_BYPASS_THRESHOLD = 20
 
 
@@ -98,6 +99,12 @@ class StreamBrain:
             )
             output_events = output_events_from_response(input_event=event, turn_id=turn_id, response=response)
             action_plan = self._action_planner.plan_from_response(response)
+        budget_decision = self._pacer.apply_budget(event, decision, response.spoken_text if response else "")
+        if budget_decision is not None:
+            decision = budget_decision
+            response = None
+            action_plan = ActionPlan()
+            output_events = []
         output_events = _filter_stream_output_events(event, output_events)
         output_dispatch = self._output_dispatcher.dispatch(output_events) if output_events else None
 
@@ -297,13 +304,16 @@ class StreamSpeechPacer:
         now=time.monotonic,
         default_min_gap_seconds: float = DEFAULT_STREAM_SPEECH_GAP_SECONDS,
         default_spam_quip_cooldown_seconds: float = DEFAULT_SPAM_QUIP_COOLDOWN_SECONDS,
+        default_max_speech_seconds_per_minute: float = DEFAULT_MAX_SPEECH_SECONDS_PER_MINUTE,
     ) -> None:
         self._now = now
         self._default_min_gap_seconds = default_min_gap_seconds
         self._default_spam_quip_cooldown_seconds = default_spam_quip_cooldown_seconds
+        self._default_max_speech_seconds_per_minute = default_max_speech_seconds_per_minute
         self._last_spoken_at: float | None = None
         self._last_spam_quip_at: float | None = None
         self._pending: dict[str, dict] = {}
+        self._speech_budget_events: list[tuple[float, float]] = []
 
     def apply(self, event: StreamInputEvent, decision: TurnDecision) -> TurnDecision:
         if not _decision_would_speak(decision):
@@ -342,6 +352,53 @@ class StreamSpeechPacer:
             self._last_spam_quip_at = now
         return decision
 
+    def apply_budget(self, event: StreamInputEvent, decision: TurnDecision, spoken_text: str) -> TurnDecision | None:
+        if not _decision_would_speak(decision) or not _is_paced_stream_event(event):
+            return None
+        if not _twitch_control_enabled(event, "voice_enabled", True):
+            return None
+        max_seconds = _stream_max_speech_seconds_per_minute(event, self._default_max_speech_seconds_per_minute)
+        if max_seconds <= 0:
+            estimate = _estimate_speech_seconds(spoken_text)
+            pending = self._store_pending(
+                event=event,
+                decision=decision,
+                min_gap=0.0,
+                elapsed=0.0,
+                budget_seconds=0.0,
+                estimated_speech_seconds=estimate,
+            )
+            return self._budget_deferred_decision(
+                decision=decision,
+                pending=pending,
+                max_seconds=max_seconds,
+                used_seconds=0.0,
+                estimated_seconds=estimate,
+            )
+        now = self._now()
+        self._prune_speech_budget(now)
+        used_seconds = sum(seconds for _timestamp, seconds in self._speech_budget_events)
+        estimated_seconds = _estimate_speech_seconds(spoken_text)
+        if used_seconds + estimated_seconds > max_seconds:
+            pending = self._store_pending(
+                event=event,
+                decision=decision,
+                min_gap=0.0,
+                elapsed=0.0,
+                budget_seconds=max_seconds,
+                budget_used_seconds=used_seconds,
+                estimated_speech_seconds=estimated_seconds,
+            )
+            return self._budget_deferred_decision(
+                decision=decision,
+                pending=pending,
+                max_seconds=max_seconds,
+                used_seconds=used_seconds,
+                estimated_seconds=estimated_seconds,
+            )
+        self._speech_budget_events.append((now, estimated_seconds))
+        return None
+
     def mark_spoken(self, now: float | None = None) -> None:
         self._last_spoken_at = self._now() if now is None else now
 
@@ -357,7 +414,15 @@ class StreamSpeechPacer:
     def clear_pending(self) -> None:
         self._pending.clear()
 
-    def _store_pending(self, *, event: StreamInputEvent, decision: TurnDecision, min_gap: float, elapsed: float) -> dict:
+    def _store_pending(
+        self,
+        *,
+        event: StreamInputEvent,
+        decision: TurnDecision,
+        min_gap: float,
+        elapsed: float,
+        **extra: float,
+    ) -> dict:
         slot = _pending_slot(event)
         replaced = self._pending.get(slot)
         item = {
@@ -374,10 +439,46 @@ class StreamSpeechPacer:
             "min_gap_seconds": min_gap,
             "elapsed_seconds": round(elapsed, 3),
         }
+        for key, value in extra.items():
+            item[key] = round(value, 3)
         if replaced:
             item["replaced_event_id"] = replaced.get("event_id")
         self._pending[slot] = item
         return item
+
+    def _prune_speech_budget(self, now: float) -> None:
+        self._speech_budget_events = [
+            (timestamp, seconds)
+            for timestamp, seconds in self._speech_budget_events
+            if now - timestamp < 60.0
+        ]
+
+    def _budget_deferred_decision(
+        self,
+        *,
+        decision: TurnDecision,
+        pending: dict,
+        max_seconds: float,
+        used_seconds: float,
+        estimated_seconds: float,
+    ) -> TurnDecision:
+        return TurnDecision(
+            decision="defer",
+            reason="stream_speech_budget_deferred",
+            should_call_conversation=False,
+            response_mode=decision.response_mode,
+            requires_moderation_review=decision.requires_moderation_review,
+            metadata={
+                **decision.metadata,
+                "would_decision": decision.decision,
+                "would_reason": decision.reason,
+                "max_speech_seconds_per_minute": max_seconds,
+                "budget_used_seconds": round(used_seconds, 3),
+                "estimated_speech_seconds": round(estimated_seconds, 3),
+                "pending_slot": pending["slot"],
+                "replaced_event_id": pending.get("replaced_event_id"),
+            },
+        )
 
     def _spam_quip_cooldown_decision(self, event: StreamInputEvent, decision: TurnDecision, now: float) -> TurnDecision | None:
         if decision.response_mode != "spam_quip":
@@ -455,6 +556,26 @@ def _stream_spam_quip_cooldown_seconds(event: StreamInputEvent, default: float) 
         return max(0.0, float(raw_value))
     except (TypeError, ValueError):
         return default
+
+
+def _stream_max_speech_seconds_per_minute(event: StreamInputEvent, default: float) -> float:
+    controls = event.metadata.get("twitch_controls")
+    if not isinstance(controls, dict):
+        return default
+    raw_value = controls.get("max_speech_seconds_per_minute")
+    if raw_value is None:
+        return default
+    try:
+        return max(0.0, float(raw_value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _estimate_speech_seconds(text: str) -> float:
+    words = len((text or "").split())
+    if words <= 0:
+        return 0.0
+    return round(max(0.8, words / 2.6), 3)
 
 
 def _metadata_without_canned_response(metadata: dict) -> dict:

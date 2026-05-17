@@ -270,6 +270,9 @@ class DashboardService:
             "spam_quip_cooldown_seconds": int(
                 config.get("twitch_spam_quip_cooldown_seconds", settings.twitch_spam_quip_cooldown_seconds)
             ),
+            "max_speech_seconds_per_minute": int(
+                config.get("twitch_max_speech_seconds_per_minute", settings.twitch_max_speech_seconds_per_minute)
+            ),
         }
 
     def save_twitch_runtime_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -315,6 +318,18 @@ class DashboardService:
                 updated,
                 "twitch_spam_quip_cooldown_seconds",
                 max(0, int(payload.get("spam_quip_cooldown_seconds", settings.twitch_spam_quip_cooldown_seconds))),
+            )
+        if "twitch_max_speech_seconds_per_minute" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "twitch_max_speech_seconds_per_minute",
+                max(0, int(payload.get("twitch_max_speech_seconds_per_minute", settings.twitch_max_speech_seconds_per_minute))),
+            )
+        elif "max_speech_seconds_per_minute" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "twitch_max_speech_seconds_per_minute",
+                max(0, int(payload.get("max_speech_seconds_per_minute", settings.twitch_max_speech_seconds_per_minute))),
             )
         app_toml.parent.mkdir(parents=True, exist_ok=True)
         app_toml.write_text(updated, encoding="utf-8")

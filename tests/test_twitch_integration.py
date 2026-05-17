@@ -393,6 +393,7 @@ class TwitchIntegrationTest(unittest.TestCase):
                 ambient_chat_enabled=False,
                 min_speech_gap_seconds=9,
                 spam_quip_cooldown_seconds=45,
+                max_speech_seconds_per_minute=18,
             ),
             client=client,  # type: ignore[arg-type]
             trust_store=_FakeTrustStore(),  # type: ignore[arg-type]
@@ -411,6 +412,7 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertEqual(client.events[0].metadata["twitch_controls"]["ambient_chat_enabled"], False)
         self.assertEqual(client.events[0].metadata["twitch_controls"]["min_speech_gap_seconds"], 9)
         self.assertEqual(client.events[0].metadata["twitch_controls"]["spam_quip_cooldown_seconds"], 45)
+        self.assertEqual(client.events[0].metadata["twitch_controls"]["max_speech_seconds_per_minute"], 18)
 
     def test_worker_ignores_non_chat_irc_lines(self) -> None:
         client = _FakeClient()
@@ -505,12 +507,19 @@ class TwitchIntegrationTest(unittest.TestCase):
                         "twitch_voice_enabled": True,
                         "twitch_min_speech_gap_seconds": 7,
                         "twitch_spam_quip_cooldown_seconds": 33,
+                        "twitch_max_speech_seconds_per_minute": 22,
                     },
                 ),
             ):
                 service = DashboardService()
                 result = service.save_twitch_runtime_settings(
-                    {"dry_run": False, "voice_enabled": True, "min_speech_gap_seconds": 7, "spam_quip_cooldown_seconds": 33}
+                    {
+                        "dry_run": False,
+                        "voice_enabled": True,
+                        "min_speech_gap_seconds": 7,
+                        "spam_quip_cooldown_seconds": 33,
+                        "max_speech_seconds_per_minute": 22,
+                    }
                 )
                 saved_text = path.read_text(encoding="utf-8")
 
@@ -519,10 +528,12 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertIn("twitch_voice_enabled = true", saved_text)
         self.assertIn("twitch_min_speech_gap_seconds = 7", saved_text)
         self.assertIn("twitch_spam_quip_cooldown_seconds = 33", saved_text)
+        self.assertIn("twitch_max_speech_seconds_per_minute = 22", saved_text)
         self.assertEqual(result["settings"]["dry_run"], False)
         self.assertEqual(result["settings"]["voice_enabled"], True)
         self.assertEqual(result["settings"]["min_speech_gap_seconds"], 7)
         self.assertEqual(result["settings"]["spam_quip_cooldown_seconds"], 33)
+        self.assertEqual(result["settings"]["max_speech_seconds_per_minute"], 22)
 
 
 if __name__ == "__main__":

@@ -504,6 +504,13 @@ class Settings:
         _setting("SHANA_TWITCH_SPAM_QUIP_COOLDOWN_SECONDS", _config_value(APP_CONFIG, "twitch_spam_quip_cooldown_seconds", default=60)),
         default=60,
     )
+    twitch_max_speech_seconds_per_minute: int = _as_int(
+        _setting(
+            "SHANA_TWITCH_MAX_SPEECH_SECONDS_PER_MINUTE",
+            _config_value(APP_CONFIG, "twitch_max_speech_seconds_per_minute", default=20),
+        ),
+        default=20,
+    )
 
     stt_provider: str = str(
         _setting(

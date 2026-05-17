@@ -58,6 +58,20 @@ class _FakeAudioConversation:
         )
 
 
+class _FakeLongConversation:
+    def respond(self, **_kwargs):
+        return AssistantResponse(
+            spoken_text="one two three four five six seven eight nine ten",
+            emotion="happy",
+            audio_path="audio.wav",
+            audio_content_type="audio/wav",
+            motions=[],
+            tool_calls=[],
+            tool_results=[],
+            memory_candidates=[],
+        )
+
+
 class _FakeClock:
     def __init__(self, value: float = 0.0) -> None:
         self.value = value
@@ -352,6 +366,49 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual(first.decision.decision, "reply")
         self.assertEqual(second.decision.decision, "acknowledge")
         self.assertEqual(len(conversation.calls), 2)
+
+    def test_twitch_speech_budget_defers_when_minute_budget_is_full(self) -> None:
+        clock = _FakeClock(100.0)
+        conversation = _FakeLongConversation()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            brain._pacer._now = clock  # type: ignore[attr-defined]
+            controls = {
+                "voice_enabled": True,
+                "min_speech_gap_seconds": 0,
+                "max_speech_seconds_per_minute": 6,
+            }
+            first = brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana first",
+                    priority=5,
+                    actor=StreamActor(source="twitch", platform_id="u1"),
+                    metadata={"twitch_controls": controls},
+                ),
+                synthesize_speech=True,
+            )
+            clock.value = 101.0
+            second = brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana second",
+                    priority=5,
+                    actor=StreamActor(source="twitch", platform_id="u2"),
+                    metadata={"twitch_controls": controls},
+                ),
+                synthesize_speech=True,
+            )
+
+        self.assertEqual(first.decision.decision, "reply")
+        self.assertEqual(second.decision.decision, "defer")
+        self.assertEqual(second.decision.reason, "stream_speech_budget_deferred")
+        self.assertEqual(second.output_events, [])
+        self.assertIn("ambient", brain.pending_queue()["slots"])
+        self.assertEqual(second.decision.metadata["max_speech_seconds_per_minute"], 6.0)
 
     def test_stream_route_delegates_to_brain(self) -> None:
         from gamma.api.routes import stream_event

@@ -985,6 +985,7 @@
     lines.push('Self-goal proposals: ' + (controls.self_goal_proposals_enabled ? 'On' : 'Off'));
     lines.push('LLM safety review: ' + (controls.llm_safety_review_enabled ? 'On' : 'Off'));
     lines.push('Speech gap: ' + (typeof controls.min_speech_gap_seconds === 'undefined' ? 'n/a' : controls.min_speech_gap_seconds + ' sec'));
+    lines.push('Speech budget: ' + (typeof controls.max_speech_seconds_per_minute === 'undefined' ? 'n/a' : controls.max_speech_seconds_per_minute + ' sec/min'));
     lines.push('Spam quip gap: ' + (typeof controls.spam_quip_cooldown_seconds === 'undefined' ? 'n/a' : controls.spam_quip_cooldown_seconds + ' sec'));
     if (worker.stdout_path) lines.push('Stdout: ' + worker.stdout_path);
     if (worker.stderr_path) lines.push('Stderr: ' + worker.stderr_path);
@@ -1010,6 +1011,8 @@
     });
     var minGap = document.getElementById('twitchMinSpeechGapSeconds');
     if (minGap) minGap.value = typeof settings.min_speech_gap_seconds === 'undefined' ? 5 : settings.min_speech_gap_seconds;
+    var speechBudget = document.getElementById('twitchMaxSpeechSecondsPerMinute');
+    if (speechBudget) speechBudget.value = typeof settings.max_speech_seconds_per_minute === 'undefined' ? 20 : settings.max_speech_seconds_per_minute;
     var spamGap = document.getElementById('twitchSpamQuipCooldownSeconds');
     if (spamGap) spamGap.value = typeof settings.spam_quip_cooldown_seconds === 'undefined' ? 60 : settings.spam_quip_cooldown_seconds;
   }
@@ -2224,6 +2227,7 @@
       self_goal_proposals_enabled: !!document.getElementById('twitchSelfGoalProposalsEnabled').checked,
       llm_safety_review_enabled: !!document.getElementById('twitchLlmSafetyReviewEnabled').checked,
       min_speech_gap_seconds: Math.max(0, Number(document.getElementById('twitchMinSpeechGapSeconds').value || 0)),
+      max_speech_seconds_per_minute: Math.max(0, Number(document.getElementById('twitchMaxSpeechSecondsPerMinute').value || 0)),
       spam_quip_cooldown_seconds: Math.max(0, Number(document.getElementById('twitchSpamQuipCooldownSeconds').value || 0))
     };
     try {

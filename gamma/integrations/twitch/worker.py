@@ -35,6 +35,7 @@ class TwitchWorkerConfig:
     llm_safety_review_enabled: bool = True
     min_speech_gap_seconds: int = 5
     spam_quip_cooldown_seconds: int = 60
+    max_speech_seconds_per_minute: int = 20
 
     @classmethod
     def from_settings(cls) -> "TwitchWorkerConfig":
@@ -64,13 +65,14 @@ class TwitchWorkerConfig:
             llm_safety_review_enabled=bool(getattr(settings, "twitch_llm_safety_review_enabled", True)),
             min_speech_gap_seconds=max(0, int(getattr(settings, "twitch_min_speech_gap_seconds", 5))),
             spam_quip_cooldown_seconds=max(0, int(getattr(settings, "twitch_spam_quip_cooldown_seconds", 60))),
+            max_speech_seconds_per_minute=max(0, int(getattr(settings, "twitch_max_speech_seconds_per_minute", 20))),
         )
 
     @property
     def normalized_channel(self) -> str:
         return self.channel.lstrip("#").strip().lower()
 
-    def controls(self) -> dict[str, bool]:
+    def controls(self) -> dict[str, bool | int]:
         return {
             "dry_run": self.dry_run,
             "voice_enabled": self.voice_enabled,
@@ -82,6 +84,7 @@ class TwitchWorkerConfig:
             "llm_safety_review_enabled": self.llm_safety_review_enabled,
             "min_speech_gap_seconds": self.min_speech_gap_seconds,
             "spam_quip_cooldown_seconds": self.spam_quip_cooldown_seconds,
+            "max_speech_seconds_per_minute": self.max_speech_seconds_per_minute,
         }
 
 

@@ -121,6 +121,14 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(response["record"], save_payload)
         method.assert_called_once_with(save_payload)
 
+    def test_twitch_replay_route(self) -> None:
+        payload = {"jsonl": '{"kind":"chat_message","text":"Shana hi"}'}
+        result = {"ok": True, "count": 1, "results": []}
+        with patch.object(self.mock_service, "run_twitch_replay", return_value=result) as method:
+            response = anyio.run(main.run_twitch_replay, _JsonRequest(payload))
+        self.assertEqual(response, result)
+        method.assert_called_once_with(payload)
+
     def test_memory_clear_routes(self) -> None:
         with patch.object(self.mock_service, "clear_recent_memory", return_value={"ok": True, "cleared_total": 1}) as method:
             response = anyio.run(main.clear_recent_memory, _JsonRequest({"minutes": 10}))

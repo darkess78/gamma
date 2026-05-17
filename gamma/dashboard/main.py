@@ -246,6 +246,19 @@ async def save_twitch_viewer_trust(request: Request) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.post("/api/twitch/replay")
+async def run_twitch_replay(request: Request) -> dict:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="object payload is required")
+    try:
+        return get_dashboard_service().run_twitch_replay(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.post("/api/memory/clear")
 def clear_memory() -> dict:
     return get_dashboard_service().clear_memory()

@@ -121,6 +121,26 @@
       </section>
       <section class="panel wide">
         <div class="panel-head">
+          <h2>Twitch Replay</h2>
+        </div>
+        <div class="provider-actions">
+          <div class="action-group" style="grid-column: 1 / -1;">
+            <div class="action-title">JSONL Events</div>
+            <div class="action-buttons action-stack">
+              <textarea id="twitchReplayJsonl" class="text-area" placeholder='{"kind":"chat_message","platform_user_id":"u1","display_name":"viewer1","text":"Shana what are you doing?"}'></textarea>
+              <input id="twitchReplaySessionId" class="text-input" placeholder="session id" value="twitch-replay">
+              <label class="checkbox-row"><input id="twitchReplayFastMode" type="checkbox" checked> Fast mode</label>
+              <label class="checkbox-row"><input id="twitchReplaySpeech" type="checkbox"> Synthesize speech</label>
+              <div class="action-buttons">
+                <button class="secondary" onclick="runTwitchReplay()">Run Replay</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="render" id="twitchReplayResult">No replay run yet.</div>
+      </section>
+      <section class="panel wide">
+        <div class="panel-head">
           <h2>Provider Controls</h2>
         </div>
         <div class="provider-actions">

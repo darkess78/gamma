@@ -9,7 +9,7 @@ from unittest.mock import patch
 from gamma.integrations.twitch.models import TwitchChatMessage
 from gamma.integrations.twitch.irc import chat_message_from_irc, parse_irc_line
 from gamma.integrations.twitch.normalize import normalize_chat_message
-from gamma.integrations.twitch.replay import replay_jsonl
+from gamma.integrations.twitch.replay import replay_jsonl, replay_jsonl_text
 from gamma.integrations.twitch.sanitize import classify_chat_text, safe_username_alias
 from gamma.integrations.twitch.trust import ViewerTrustStore
 from gamma.integrations.twitch.worker import TwitchIrcWorker, TwitchWorkerConfig
@@ -137,6 +137,17 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertEqual(len(client.events), 2)
         self.assertEqual(client.events[0].kind, "chat_message")
         self.assertEqual(client.events[1].text, "A spam or scam message was posted in chat.")
+
+    def test_replay_jsonl_text_posts_normalized_events(self) -> None:
+        client = _FakeClient()
+
+        results = replay_jsonl_text(
+            '{"kind":"chat_message","platform_user_id":"u1","display_name":"viewer","text":"Shana hi"}\n',
+            client=client,
+        )
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(client.events[0].text, "Shana hi")
 
     def test_follow_replay_event_is_first_class_stream_event(self) -> None:
         client = _FakeClient()

@@ -21,6 +21,8 @@ import psutil
 
 from ..config import app_local_config_path, load_app_file_config, load_desired_tts_selection, settings
 from ..errors import ConfigurationError
+from ..integrations.twitch.client import GammaStreamClient
+from ..integrations.twitch.replay import replay_jsonl_text
 from ..integrations.twitch.trust import VALID_TRUST_LEVELS, ViewerTrustStore
 from ..integrations.twitch.worker import TwitchWorkerConfig
 from ..llm.router_adapter import RouterLLMAdapter
@@ -273,6 +275,20 @@ class DashboardService:
             "record": self._viewer_trust_record_payload(record),
             "items": self.twitch_viewer_trust(platform=platform)["items"],
         }
+
+    def run_twitch_replay(self, payload: dict[str, Any]) -> dict[str, Any]:
+        text = str(payload.get("jsonl") or "").strip()
+        if not text:
+            raise ValueError("jsonl is required")
+        results = replay_jsonl_text(
+            text,
+            client=GammaStreamClient(base_url=settings.shana_base_url),
+            owner_user_id=settings.twitch_owner_user_id or None,
+            synthesize_speech=bool(payload.get("synthesize_speech", False)),
+            fast_mode=bool(payload.get("fast_mode", True)),
+            session_id=str(payload.get("session_id") or "twitch-replay"),
+        )
+        return {"ok": True, "count": len(results), "results": results}
 
     def _viewer_trust_record_payload(self, record) -> dict[str, Any]:
         return {

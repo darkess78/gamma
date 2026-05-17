@@ -945,6 +945,20 @@
     }).join('\n\n');
   }
 
+  function humanTwitchReplayResult(payload) {
+    if (!payload || !payload.ok) return 'No replay run yet.';
+    var lines = ['Replay events posted: ' + payload.count];
+    var results = Array.isArray(payload.results) ? payload.results : [];
+    for (var i = 0; i < Math.min(results.length, 8); i += 1) {
+      var result = results[i] || {};
+      var input = result.input_event || {};
+      var decision = result.decision || {};
+      lines.push((i + 1) + '. ' + (input.kind || 'event') + ' -> ' + (decision.decision || 'n/a') + ' / ' + (decision.reason || 'n/a'));
+    }
+    if (results.length > 8) lines.push('...');
+    return lines.join('\n');
+  }
+
   function humanMemoryStats(stats) {
     var lines = [
       'Backend: ' + (stats.backend || 'n/a'),
@@ -1987,6 +2001,31 @@
       renderBlockIfChanged('twitchViewerTrust', result, humanTwitchViewerTrust(result), 'twitchViewerTrust');
     } catch (error) {
       renderBlockIfChanged('twitchViewerTrust', { error: String(error) }, 'Viewer trust save failed.\n' + String(error), 'twitchViewerTrust');
+    }
+  }
+
+  async function runTwitchReplay() {
+    var payload = {
+      jsonl: document.getElementById('twitchReplayJsonl').value,
+      session_id: document.getElementById('twitchReplaySessionId').value.trim() || 'twitch-replay',
+      fast_mode: !!document.getElementById('twitchReplayFastMode').checked,
+      synthesize_speech: !!document.getElementById('twitchReplaySpeech').checked
+    };
+    try {
+      renderBlockIfChanged('twitchReplayResult', { status: 'running' }, 'Running replay...', 'twitchReplayResult');
+      var response = await fetch('/api/twitch/replay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      var result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.detail || ('HTTP ' + response.status));
+      }
+      renderBlockIfChanged('twitchReplayResult', result, humanTwitchReplayResult(result), 'twitchReplayResult');
+      scheduleStatusRefreshes();
+    } catch (error) {
+      renderBlockIfChanged('twitchReplayResult', { error: String(error) }, 'Replay failed.\n' + String(error), 'twitchReplayResult');
     }
   }
 

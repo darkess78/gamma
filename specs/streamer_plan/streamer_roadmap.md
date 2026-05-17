@@ -49,12 +49,12 @@ Inputs
 | Output speech filtering | Present | `gamma/safety/`, `gamma/persona/boundaries.md` |
 | Basic tool routing | Partial | `gamma/tools/` |
 | Vision as structured context | Partial | `gamma/vision/` |
-| Event router across multiple input sources | Missing | No dedicated orchestration layer yet |
+| Event router across multiple input sources | Partial | `gamma/stream/` has normalized events and a stream brain; Twitch/EventSub ingestion still missing |
 | Ranked chat and stream-event ingestion | Missing | No Twitch/EventSub/donation pipeline yet |
 | Avatar runtime and expression bridge | Very early | `gamma/avatar_events/` models only |
-| OBS / overlay / subtitle control | Missing | No real stream-control adapter yet |
+| OBS / overlay / subtitle control | Partial | Stream output events/logging exist; synced subtitle/overlay adapters still missing |
 | Game/plugin bridge | Missing | `gamma/integrations/` is effectively empty |
-| Offline replay / eval harness | Missing | No regression framework for stream-event playback |
+| Offline replay / eval harness | Partial | Stream traces/replay scaffolding exist; deterministic Twitch replay still missing |
 
 ## Stage Map
 
@@ -102,12 +102,12 @@ Success criteria:
 Goal: decide what deserves attention and what action to take.
 
 Status:
-- missing
+- partially present
 
 Must add:
-- event router for mic, owner commands, chat, donations, moderator messages, and game state
-- priority ranking for events
-- turn decision layer:
+- Twitch/EventSub ingestion for chat, follows, raids, redeems, bits/donations, and subs/resubs
+- stronger priority ranking for events
+- richer turn decision layer:
   - reply
   - ignore
   - acknowledge briefly
@@ -181,12 +181,15 @@ STREAMER LAYER
 - voice input and output
 - live voice transport
 - basic safety and tool hooks
+- normalized stream event schema
+- initial stream brain
+- stream output events and trace/replay scaffolding
 
 ### Next Milestone
-- event router
-- message ranking and fusion
-- stream-facing output events
-- explicit turn-decision policy
+- implement the Twitch module spec in `specs/streamer_plan/twitch_stream_module.md`
+- message ranking and fusion for public chat
+- synced subtitles and stop-speech controls
+- stronger explicit turn-decision policy
 
 ### Later Milestone
 - avatar runtime

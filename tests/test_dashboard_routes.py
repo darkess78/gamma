@@ -108,6 +108,18 @@ class DashboardRoutesTest(unittest.TestCase):
                 self.assertEqual(response, payload)
                 method.assert_called_once_with()
 
+        settings_payload = {"dry_run": True, "voice_enabled": False}
+        with patch.object(self.mock_service, "twitch_runtime_settings", return_value=settings_payload) as method:
+            response = main.twitch_settings()
+        self.assertEqual(response["settings"], settings_payload)
+        method.assert_called_once_with()
+
+        save_payload = {"dry_run": False, "voice_enabled": True}
+        with patch.object(self.mock_service, "save_twitch_runtime_settings", return_value={"ok": True, "settings": save_payload}) as method:
+            response = anyio.run(main.save_twitch_settings, _JsonRequest(save_payload))
+        self.assertEqual(response["settings"], save_payload)
+        method.assert_called_once_with(save_payload)
+
     def test_twitch_viewer_trust_routes(self) -> None:
         trust_payload = {"items": [{"platform_user_id": "u1", "trust_level": "trusted"}], "trust_levels": ["trusted"]}
         with patch.object(self.mock_service, "twitch_viewer_trust", return_value=trust_payload) as method:

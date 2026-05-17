@@ -53,6 +53,7 @@
   var subtitlePopup = null;
   var subtitleState = { transcript: '', reply: '', partial: '' };
   var pendingMemoryDeleteItems = [];
+  var dashboardActiveTab = localStorage.getItem('gammaDashboardActiveTab') || 'overview';
 
   function postClientLog(kind, detail) {
     try {
@@ -360,6 +361,39 @@
 
   function updateStamp(text) {
     document.getElementById('stamp').textContent = text;
+  }
+
+  function switchDashboardTab(tabName) {
+    dashboardActiveTab = tabName || 'overview';
+    try {
+      localStorage.setItem('gammaDashboardActiveTab', dashboardActiveTab);
+    } catch (error) {
+    }
+    applyDashboardTabVisibility();
+  }
+
+  function applyDashboardTabVisibility() {
+    var panels = document.querySelectorAll('[data-dashboard-tab]');
+    if (!document.querySelector('[data-tab-target="' + dashboardActiveTab + '"]')) {
+      dashboardActiveTab = 'overview';
+    }
+    panels.forEach(function (panel) {
+      var tabs = String(panel.getAttribute('data-dashboard-tab') || '').split(/\s+/);
+      panel.classList.toggle('tab-hidden', tabs.indexOf(dashboardActiveTab) === -1);
+    });
+    document.querySelectorAll('[data-tab-target]').forEach(function (button) {
+      var isActive = button.getAttribute('data-tab-target') === dashboardActiveTab;
+      button.classList.toggle('active', isActive);
+      button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+  }
+
+  function updateStatusChip(elementId, text, tone) {
+    var el = document.getElementById(elementId);
+    if (!el) return;
+    el.textContent = text;
+    el.classList.remove('good', 'warn', 'bad');
+    if (tone) el.classList.add(tone);
   }
 
   function setSectionOpen(sectionId, isOpen) {
@@ -923,15 +957,45 @@
   function humanTwitchWorker(worker) {
     worker = worker || {};
     var process = worker.process || {};
+    var controls = worker.controls || {};
     var lines = [
       'Configured: ' + (worker.configured ? 'Yes' : 'No'),
       'Running: ' + (process.running ? 'Yes' : 'No'),
       'Channel: ' + (worker.channel || 'n/a')
     ];
     if (process.pid) lines.push('PID: ' + process.pid);
+    lines.push('');
+    lines.push('Controls:');
+    lines.push('Dry run: ' + (controls.dry_run ? 'On' : 'Off'));
+    lines.push('Voice: ' + (controls.voice_enabled ? 'On' : 'Off'));
+    lines.push('Subtitles: ' + (controls.subtitles_enabled ? 'On' : 'Off'));
+    lines.push('Ambient chat: ' + (controls.ambient_chat_enabled ? 'On' : 'Off'));
+    lines.push('Mention replies: ' + (controls.mention_replies_enabled ? 'On' : 'Off'));
+    lines.push('Spam quips: ' + (controls.spam_quips_enabled ? 'On' : 'Off'));
+    lines.push('Self-goal proposals: ' + (controls.self_goal_proposals_enabled ? 'On' : 'Off'));
+    lines.push('LLM safety review: ' + (controls.llm_safety_review_enabled ? 'On' : 'Off'));
     if (worker.stdout_path) lines.push('Stdout: ' + worker.stdout_path);
     if (worker.stderr_path) lines.push('Stderr: ' + worker.stderr_path);
     return lines.join('\n');
+  }
+
+  function renderTwitchSettings(settings) {
+    settings = settings || {};
+    var map = {
+      twitchDryRun: 'dry_run',
+      twitchVoiceEnabled: 'voice_enabled',
+      twitchSubtitlesEnabled: 'subtitles_enabled',
+      twitchAmbientChatEnabled: 'ambient_chat_enabled',
+      twitchMentionRepliesEnabled: 'mention_replies_enabled',
+      twitchSpamQuipsEnabled: 'spam_quips_enabled',
+      twitchSelfGoalProposalsEnabled: 'self_goal_proposals_enabled',
+      twitchLlmSafetyReviewEnabled: 'llm_safety_review_enabled'
+    };
+    Object.keys(map).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.checked = !!settings[map[id]];
+    });
   }
 
   function humanTwitchViewerTrust(payload) {
@@ -1566,6 +1630,18 @@
       api_health: health
     }, humanBackendHealth(data, health), 'backendHealth');
 
+    var backendOk = !!health.ok;
+    updateStatusChip(
+      'stickyShanaStatus',
+      'Shana: ' + (process.running ? 'running' + (process.pid ? ' #' + process.pid : '') : 'stopped'),
+      process.running ? 'good' : 'bad'
+    );
+    updateStatusChip(
+      'stickyBackendStatus',
+      'Backend: ' + (backendOk ? 'healthy' : 'unavailable'),
+      backendOk ? 'good' : 'warn'
+    );
+
     if (machine && machine.refresh_interval_seconds) {
       runtimePollMs = Math.max(1000, Number(machine.refresh_interval_seconds) * 1000);
     }
@@ -1724,6 +1800,12 @@
     var twitchProcess = twitchWorker.process || {};
     if (twitchStartButton) twitchStartButton.disabled = !twitchWorker.configured || !!twitchProcess.running;
     if (twitchStopButton) twitchStopButton.disabled = !twitchProcess.running;
+    renderTwitchSettings(twitchWorker.controls || {});
+    updateStatusChip(
+      'stickyTwitchStatus',
+      'Twitch: ' + (twitchProcess.running ? 'running' : (twitchWorker.configured ? 'stopped' : 'not configured')),
+      twitchProcess.running ? 'good' : (twitchWorker.configured ? 'warn' : 'bad')
+    );
 
     if (!sectionHashes.ttsProfileEditorStatusSaved) {
       renderBlockIfChanged(
@@ -1777,6 +1859,7 @@
     setTextIfChanged('stdoutLog', process.running ? (logs.stdout_tail || '') : 'Shana is not running. Log panel shows only the current supervised run.', 'stdoutLog');
     setTextIfChanged('stderrLog', process.running ? (logs.stderr_tail || '') : 'Shana is not running. Log panel shows only the current supervised run.', 'stderrLog');
     updateStamp('Last refreshed: ' + new Date().toLocaleString());
+    applyDashboardTabVisibility();
   }
 
   function scheduleStatusRefreshes() {
@@ -2026,6 +2109,35 @@
       scheduleStatusRefreshes();
     } catch (error) {
       renderBlockIfChanged('twitchReplayResult', { error: String(error) }, 'Replay failed.\n' + String(error), 'twitchReplayResult');
+    }
+  }
+
+  async function saveTwitchSettings() {
+    var payload = {
+      dry_run: !!document.getElementById('twitchDryRun').checked,
+      voice_enabled: !!document.getElementById('twitchVoiceEnabled').checked,
+      subtitles_enabled: !!document.getElementById('twitchSubtitlesEnabled').checked,
+      ambient_chat_enabled: !!document.getElementById('twitchAmbientChatEnabled').checked,
+      mention_replies_enabled: !!document.getElementById('twitchMentionRepliesEnabled').checked,
+      spam_quips_enabled: !!document.getElementById('twitchSpamQuipsEnabled').checked,
+      self_goal_proposals_enabled: !!document.getElementById('twitchSelfGoalProposalsEnabled').checked,
+      llm_safety_review_enabled: !!document.getElementById('twitchLlmSafetyReviewEnabled').checked
+    };
+    try {
+      var response = await fetch('/api/twitch/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      var result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.detail || ('HTTP ' + response.status));
+      }
+      renderTwitchSettings(result.settings || payload);
+      renderBlockIfChanged('twitchSettingsStatus', result, result.detail || 'Twitch controls saved.', 'twitchSettingsStatus');
+      await loadStatus();
+    } catch (error) {
+      renderBlockIfChanged('twitchSettingsStatus', { error: String(error) }, 'Twitch controls save failed.\n' + String(error), 'twitchSettingsStatus');
     }
   }
 
@@ -3085,6 +3197,7 @@
   };
 
   window.toggleViewMode = toggleViewMode;
+  window.switchDashboardTab = switchDashboardTab;
   window.action = action;
   window.loadStatus = loadStatus;
   window.toggleSection = toggleSection;
@@ -3108,8 +3221,10 @@
   window.ttsPlayerLoadLatest = ttsPlayerLoadLatest;
   window.ttsPlayerClear = ttsPlayerClear;
   window.ttsArtifactDelete = ttsArtifactDelete;
+  window.saveTwitchSettings = saveTwitchSettings;
 
   postClientLog('script_boot', { viewMode: viewMode });
+  applyDashboardTabVisibility();
   setViewMode(viewMode);
   loadLiveControlDefaults();
   initSectionState('ttsProfileEditorPanel', false);

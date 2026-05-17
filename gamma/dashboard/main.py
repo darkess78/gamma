@@ -220,6 +220,19 @@ def twitch_worker_status() -> dict:
     return get_dashboard_service().twitch_worker_status()
 
 
+@app.get("/api/twitch/settings")
+def twitch_settings() -> dict:
+    return {"settings": get_dashboard_service().twitch_runtime_settings()}
+
+
+@app.post("/api/twitch/settings")
+async def save_twitch_settings(request: Request) -> dict:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="object payload is required")
+    return get_dashboard_service().save_twitch_runtime_settings(payload)
+
+
 @app.post("/api/twitch/worker/start")
 def start_twitch_worker() -> dict:
     return get_dashboard_service().start_twitch_worker()

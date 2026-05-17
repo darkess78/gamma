@@ -246,6 +246,58 @@ class DashboardService:
             "configured": configured,
             "channel": settings.twitch_channel.lstrip("#").strip().lower() if settings.twitch_channel else "",
             "worker": "twitch_irc",
+            "controls": self.twitch_runtime_settings(),
+        }
+
+    def twitch_runtime_settings(self) -> dict[str, bool]:
+        config = load_app_file_config()
+        return {
+            "dry_run": bool(config.get("twitch_dry_run", settings.twitch_dry_run)),
+            "voice_enabled": bool(config.get("twitch_voice_enabled", settings.twitch_voice_enabled)),
+            "subtitles_enabled": bool(config.get("twitch_subtitles_enabled", settings.twitch_subtitles_enabled)),
+            "ambient_chat_enabled": bool(config.get("twitch_ambient_chat_enabled", settings.twitch_ambient_chat_enabled)),
+            "mention_replies_enabled": bool(config.get("twitch_mention_replies_enabled", settings.twitch_mention_replies_enabled)),
+            "spam_quips_enabled": bool(config.get("twitch_spam_quips_enabled", settings.twitch_spam_quips_enabled)),
+            "self_goal_proposals_enabled": bool(
+                config.get("twitch_self_goal_proposals_enabled", settings.twitch_self_goal_proposals_enabled)
+            ),
+            "llm_safety_review_enabled": bool(
+                config.get("twitch_llm_safety_review_enabled", settings.twitch_llm_safety_review_enabled)
+            ),
+        }
+
+    def save_twitch_runtime_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        bool_keys = [
+            "twitch_dry_run",
+            "twitch_voice_enabled",
+            "twitch_subtitles_enabled",
+            "twitch_ambient_chat_enabled",
+            "twitch_mention_replies_enabled",
+            "twitch_spam_quips_enabled",
+            "twitch_self_goal_proposals_enabled",
+            "twitch_llm_safety_review_enabled",
+        ]
+        app_toml = app_local_config_path()
+        existing = app_toml.read_text(encoding="utf-8") if app_toml.exists() else ""
+        updated = existing
+        for key in bool_keys:
+            short_key = key.removeprefix("twitch_")
+            if key in payload:
+                updated = self._upsert_toml_bool(updated, key, bool(payload.get(key)))
+            elif short_key in payload:
+                updated = self._upsert_toml_bool(updated, key, bool(payload.get(short_key)))
+        app_toml.parent.mkdir(parents=True, exist_ok=True)
+        app_toml.write_text(updated, encoding="utf-8")
+        self._latest_provider_action = {
+            "action": "twitch_runtime_settings_save",
+            "status": "ok",
+            "detail": "Twitch runtime settings saved. Restart the Twitch worker to apply ingestion-side changes.",
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+        return {
+            "ok": True,
+            "settings": self.twitch_runtime_settings(),
+            "detail": "Twitch runtime settings saved. Restart the Twitch worker to apply ingestion-side changes.",
         }
 
     def twitch_viewer_trust(self, *, platform: str = "twitch", limit: int = 100) -> dict[str, Any]:

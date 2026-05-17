@@ -13,6 +13,7 @@ def normalize_chat_message(
     owner_user_id: str | None = None,
     trust_level: TrustLevel = "new_viewer",
     session_id: str | None = "twitch",
+    twitch_controls: dict[str, Any] | None = None,
 ) -> StreamInputEvent:
     platform_user_id = _clean_optional(message.platform_user_id)
     display_name = _clean_optional(message.display_name)
@@ -32,6 +33,8 @@ def normalize_chat_message(
         "safe_prompt_text": safety.safe_prompt_text,
         "safe_display_name": safe_username_alias(display_name),
     }
+    if twitch_controls is not None:
+        metadata["twitch_controls"] = dict(twitch_controls)
     return StreamInputEvent(
         kind="chat_message",
         text=safety.safe_prompt_text,
@@ -62,6 +65,7 @@ def normalize_replay_event(
             owner_user_id=owner_user_id,
             trust_level=trust_level,
             session_id=session_id,
+            twitch_controls=event.metadata.get("twitch_controls") if isinstance(event.metadata.get("twitch_controls"), dict) else None,
         )
     actor = StreamActor(
         source="twitch",

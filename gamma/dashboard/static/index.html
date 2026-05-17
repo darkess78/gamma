@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shana Control</title>
-  <link rel="stylesheet" href="/static/dashboard.css?v=20260424b">
+  <link rel="stylesheet" href="/static/dashboard.css?v=20260517a">
 </head>
 <body>
   <div class="wrap">
@@ -31,14 +31,29 @@
         <button onclick="action('/api/shana/restart')">Restart Shana</button>
         <button class="danger" onclick="action('/api/shana/stop')">Stop Shana</button>
       </div>
+      <div class="toolbar-status">
+        <span class="status-chip" id="stickyShanaStatus">Shana: ...</span>
+        <span class="status-chip" id="stickyBackendStatus">Backend: ...</span>
+        <span class="status-chip" id="stickyTwitchStatus">Twitch: ...</span>
+      </div>
       <div class="toolbar-group toolbar-group-right">
         <button class="ghost" onclick="action('/api/dashboard/stop', { redirectUrl: null })">Stop Dashboard</button>
         <button class="ghost danger-outline" onclick="action('/api/all/stop', { redirectUrl: null })">Stop All</button>
         <button class="ghost" onclick="loadStatus()">Refresh</button>
       </div>
     </div>
+    <nav class="tabbar" aria-label="Dashboard sections">
+      <button class="tab-button" type="button" data-tab-target="overview" onclick="switchDashboardTab('overview')">Overview</button>
+      <button class="tab-button" type="button" data-tab-target="providers" onclick="switchDashboardTab('providers')">Providers</button>
+      <button class="tab-button" type="button" data-tab-target="voice" onclick="switchDashboardTab('voice')">Voice</button>
+      <button class="tab-button" type="button" data-tab-target="vision" onclick="switchDashboardTab('vision')">Vision</button>
+      <button class="tab-button" type="button" data-tab-target="memory" onclick="switchDashboardTab('memory')">Memory</button>
+      <button class="tab-button" type="button" data-tab-target="stream" onclick="switchDashboardTab('stream')">Stream</button>
+      <button class="tab-button" type="button" data-tab-target="settings" onclick="switchDashboardTab('settings')">Settings</button>
+      <button class="tab-button" type="button" data-tab-target="logs" onclick="switchDashboardTab('logs')">Logs</button>
+    </nav>
     <div class="grid">
-      <section class="panel">
+      <section class="panel" data-dashboard-tab="overview">
         <h2>Shana Process</h2>
         <div class="metrics">
           <div class="metric"><div class="label">Running</div><div class="value" id="running">...</div></div>
@@ -47,7 +62,7 @@
           <div class="metric"><div class="label">RSS</div><div class="value" id="procMem">...</div></div>
         </div>
       </section>
-      <section class="panel">
+      <section class="panel" data-dashboard-tab="overview">
         <h2>Machine</h2>
         <div class="metrics">
           <div class="metric"><div class="label">CPU</div><div class="value" id="hostCpu">...</div></div>
@@ -57,25 +72,25 @@
         </div>
         <div class="render" id="machineMeta"></div>
       </section>
-      <section class="panel panel-fill">
+      <section class="panel panel-fill" data-dashboard-tab="overview">
         <div class="panel-head">
           <h2>Backend Health</h2>
         </div>
         <div class="render" id="backendHealth">...</div>
       </section>
-      <section class="panel panel-fill">
+      <section class="panel panel-fill" data-dashboard-tab="providers">
         <div class="panel-head">
           <h2>Providers</h2>
         </div>
         <div class="render" id="providers">...</div>
       </section>
-      <section class="panel wide panel-fill">
+      <section class="panel wide panel-fill" data-dashboard-tab="overview">
         <div class="panel-head">
           <h2>Last Action</h2>
         </div>
         <div class="render" id="providerActions">No provider action has been run yet.</div>
       </section>
-      <section class="panel wide">
+      <section class="panel wide" data-dashboard-tab="stream">
         <div class="panel-head">
           <h2>Twitch Worker</h2>
         </div>
@@ -87,10 +102,27 @@
               <button id="twitchWorkerStopButton" class="ghost danger-outline" onclick="action('/api/twitch/worker/stop')">Stop Worker</button>
             </div>
           </div>
+          <div class="action-group">
+            <div class="action-title">Runtime Controls</div>
+            <div class="action-buttons action-stack">
+              <label class="checkbox-row"><input id="twitchDryRun" type="checkbox"> Dry run</label>
+              <label class="checkbox-row"><input id="twitchVoiceEnabled" type="checkbox"> Voice</label>
+              <label class="checkbox-row"><input id="twitchSubtitlesEnabled" type="checkbox"> Subtitles</label>
+              <label class="checkbox-row"><input id="twitchAmbientChatEnabled" type="checkbox"> Ambient chat</label>
+              <label class="checkbox-row"><input id="twitchMentionRepliesEnabled" type="checkbox"> Mention replies</label>
+              <label class="checkbox-row"><input id="twitchSpamQuipsEnabled" type="checkbox"> Spam quips</label>
+              <label class="checkbox-row"><input id="twitchSelfGoalProposalsEnabled" type="checkbox"> Self-goal proposals</label>
+              <label class="checkbox-row"><input id="twitchLlmSafetyReviewEnabled" type="checkbox"> LLM safety review</label>
+              <div class="action-buttons">
+                <button class="secondary" onclick="saveTwitchSettings()">Save Controls</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="render" id="twitchWorkerStatus">...</div>
+        <div class="render compact-render" id="twitchSettingsStatus">Twitch controls load with worker status.</div>
       </section>
-      <section class="panel wide">
+      <section class="panel wide" data-dashboard-tab="stream">
         <div class="panel-head">
           <h2>Viewer Trust</h2>
         </div>
@@ -119,7 +151,7 @@
         </div>
         <div class="render" id="twitchViewerTrust">...</div>
       </section>
-      <section class="panel wide">
+      <section class="panel wide" data-dashboard-tab="stream">
         <div class="panel-head">
           <h2>Twitch Replay</h2>
         </div>
@@ -139,7 +171,7 @@
         </div>
         <div class="render" id="twitchReplayResult">No replay run yet.</div>
       </section>
-      <section class="panel wide">
+      <section class="panel wide" data-dashboard-tab="providers">
         <div class="panel-head">
           <h2>Provider Controls</h2>
         </div>
@@ -238,7 +270,7 @@
           <div class="render" id="ttsProfileEditorStatus">Edit the active TTS profile, then save to update config/voices.local.toml.</div>
         </div>
       </section>
-      <section class="panel wide">
+      <section class="panel wide" data-dashboard-tab="voice providers">
         <div class="panel-head">
           <button type="button" class="collapse-toggle collapse-toggle-panel" onclick="toggleSection('ttsAudioPanel')">
             <span>TTS Audio Player</span>
@@ -280,7 +312,7 @@
           <div id="ttsArtifactList" class="tts-artifacts"><span style="color:var(--muted);font-size:13px;">No recent audio files.</span></div>
         </div>
       </section>
-      <section class="panel wide">
+      <section class="panel wide" data-dashboard-tab="voice">
         <div class="panel-head">
           <button type="button" class="collapse-toggle collapse-toggle-panel" onclick="toggleSection('browserVoicePanel')">
             <span>Browser Voice</span>
@@ -345,7 +377,7 @@
         <audio id="voicePlayback" controls preload="none"></audio>
         </div>
       </section>
-      <section class="panel wide">
+      <section class="panel wide" data-dashboard-tab="vision">
         <div class="panel-head">
           <button type="button" class="collapse-toggle collapse-toggle-panel" onclick="toggleSection('visionPanel')">
             <span>Vision</span>
@@ -396,20 +428,20 @@
         <div class="render vision-history" id="visionHistory">No recent vision history.</div>
         </div>
       </section>
-      <section class="panel panel-fill">
+      <section class="panel panel-fill" data-dashboard-tab="memory">
         <div class="panel-head">
           <h2>Memory Stats</h2>
           <button class="ghost danger-outline" onclick="clearRecentMemory()">Clear Recent Memory</button>
         </div>
         <div class="render" id="memoryStats">...</div>
       </section>
-      <section class="panel panel-fill">
+      <section class="panel panel-fill" data-dashboard-tab="memory">
         <div class="panel-head">
           <h2>Known People</h2>
         </div>
         <div class="render" id="knownPeople">...</div>
       </section>
-      <section class="panel full-width panel-fill">
+      <section class="panel full-width panel-fill" data-dashboard-tab="settings">
         <div class="panel-head">
           <h2>Assistant Safety & Emotion Settings</h2>
         </div>
@@ -472,19 +504,19 @@
         </div>
         <div class="render" id="assistantSettingsStatus">No assistant settings changes yet.</div>
       </section>
-      <section class="panel wide panel-fill">
+      <section class="panel wide panel-fill" data-dashboard-tab="memory">
         <div class="panel-head">
           <h2>Latest Memories</h2>
         </div>
         <div class="render" id="recentMemories">No stored memories yet.</div>
       </section>
-      <section class="panel wide panel-fill">
+      <section class="panel wide panel-fill" data-dashboard-tab="overview">
         <div class="panel-head">
           <h2>Recent Timings</h2>
         </div>
         <div class="render" id="recentTimings">...</div>
       </section>
-      <section class="panel wide">
+      <section class="panel wide" data-dashboard-tab="logs">
         <div class="panel-head">
           <button type="button" class="collapse-toggle collapse-toggle-panel" onclick="toggleSection('stdoutPanel')">
             <span>Shana Stdout</span>
@@ -495,7 +527,7 @@
           <pre id="stdoutLog">...</pre>
         </div>
       </section>
-      <section class="panel wide">
+      <section class="panel wide" data-dashboard-tab="logs">
         <div class="panel-head">
           <button type="button" class="collapse-toggle collapse-toggle-panel" onclick="toggleSection('stderrPanel')">
             <span>Shana Stderr</span>
@@ -524,6 +556,6 @@
       <div id="memoryDeleteList" class="memory-delete-list">No recent memory entries available.</div>
     </div>
   </div>
-  <script src="/static/dashboard.js?v=20260418a"></script>
+  <script src="/static/dashboard.js?v=20260517a"></script>
 </body>
 </html>

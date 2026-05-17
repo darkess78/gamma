@@ -22,6 +22,14 @@ class TwitchWorkerConfig:
     owner_user_id: str | None = None
     host: str = "irc.chat.twitch.tv"
     port: int = 6697
+    dry_run: bool = True
+    voice_enabled: bool = False
+    subtitles_enabled: bool = True
+    ambient_chat_enabled: bool = True
+    mention_replies_enabled: bool = True
+    spam_quips_enabled: bool = True
+    self_goal_proposals_enabled: bool = True
+    llm_safety_review_enabled: bool = True
 
     @classmethod
     def from_settings(cls) -> "TwitchWorkerConfig":
@@ -41,11 +49,31 @@ class TwitchWorkerConfig:
             owner_user_id=settings.twitch_owner_user_id or None,
             host=settings.twitch_irc_host,
             port=settings.twitch_irc_port,
+            dry_run=bool(getattr(settings, "twitch_dry_run", True)),
+            voice_enabled=bool(getattr(settings, "twitch_voice_enabled", False)),
+            subtitles_enabled=bool(getattr(settings, "twitch_subtitles_enabled", True)),
+            ambient_chat_enabled=bool(getattr(settings, "twitch_ambient_chat_enabled", True)),
+            mention_replies_enabled=bool(getattr(settings, "twitch_mention_replies_enabled", True)),
+            spam_quips_enabled=bool(getattr(settings, "twitch_spam_quips_enabled", True)),
+            self_goal_proposals_enabled=bool(getattr(settings, "twitch_self_goal_proposals_enabled", True)),
+            llm_safety_review_enabled=bool(getattr(settings, "twitch_llm_safety_review_enabled", True)),
         )
 
     @property
     def normalized_channel(self) -> str:
         return self.channel.lstrip("#").strip().lower()
+
+    def controls(self) -> dict[str, bool]:
+        return {
+            "dry_run": self.dry_run,
+            "voice_enabled": self.voice_enabled,
+            "subtitles_enabled": self.subtitles_enabled,
+            "ambient_chat_enabled": self.ambient_chat_enabled,
+            "mention_replies_enabled": self.mention_replies_enabled,
+            "spam_quips_enabled": self.spam_quips_enabled,
+            "self_goal_proposals_enabled": self.self_goal_proposals_enabled,
+            "llm_safety_review_enabled": self.llm_safety_review_enabled,
+        }
 
 
 class TwitchIrcWorker:
@@ -55,13 +83,13 @@ class TwitchIrcWorker:
         config: TwitchWorkerConfig,
         client: GammaStreamClient | None = None,
         trust_store: ViewerTrustStore | None = None,
-        synthesize_speech: bool = False,
+        synthesize_speech: bool | None = None,
         fast_mode: bool = True,
     ) -> None:
         self.config = config
         self.client = client or GammaStreamClient()
         self.trust_store = trust_store or ViewerTrustStore()
-        self.synthesize_speech = synthesize_speech
+        self.synthesize_speech = config.voice_enabled if synthesize_speech is None else synthesize_speech
         self.fast_mode = fast_mode
 
     def handle_line(self, line: str) -> dict | None:
@@ -78,6 +106,7 @@ class TwitchIrcWorker:
             owner_user_id=self.config.owner_user_id,
             trust_level=trust_level,
             session_id=f"twitch:{self.config.normalized_channel}",
+            twitch_controls=self.config.controls(),
         )
         return self.client.post_event(
             event,
@@ -123,7 +152,7 @@ def _iter_socket_lines(sock: ssl.SSLSocket) -> Iterable[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the Twitch IRC ingestion worker.")
-    parser.add_argument("--synthesize-speech", action="store_true")
+    parser.add_argument("--synthesize-speech", action="store_true", default=None)
     parser.add_argument("--slow-mode", action="store_true")
     args = parser.parse_args()
     worker = TwitchIrcWorker(

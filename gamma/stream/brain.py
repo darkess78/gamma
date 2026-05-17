@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from ..conversation.service import ConversationService
 from ..errors import ConversationError
+from ..schemas.response import AssistantResponse
 from .actions import ActionPlanner
 from .models import (
     ActionPlan,
@@ -49,7 +50,31 @@ class StreamBrain:
         action_plan = ActionPlan()
         turn_id = uuid4().hex
 
-        if decision.should_call_conversation:
+        if _twitch_control_enabled(event, "dry_run", False) and _would_twitch_dry_run_suppress(decision):
+            decision = TurnDecision(
+                decision="defer",
+                reason="twitch_dry_run_suppressed_output",
+                should_call_conversation=False,
+                response_mode=decision.response_mode,
+                requires_moderation_review=decision.requires_moderation_review,
+                metadata={
+                    **decision.metadata,
+                    "dry_run": True,
+                    "would_decision": decision.decision,
+                    "would_reason": decision.reason,
+                    "would_call_conversation": decision.should_call_conversation,
+                    "would_emit_canned_response": bool(_canned_response_from_decision(decision)),
+                },
+            )
+
+        canned_response = _canned_response_from_decision(decision)
+        if canned_response:
+            response = AssistantResponse(
+                spoken_text=canned_response,
+                emotion=str(decision.metadata.get("canned_emotion") or "teasing"),
+            )
+            output_events = output_events_from_response(input_event=event, turn_id=turn_id, response=response)
+        elif decision.should_call_conversation:
             text = (event.text or "").strip()
             if not text:
                 raise ConversationError("stream event text must not be empty for reply decisions.")
@@ -86,6 +111,8 @@ class StreamBrain:
     def decide(self, event: StreamInputEvent) -> TurnDecision:
         text = (event.text or "").strip()
         lowered = text.lower()
+        input_safety = _input_safety(event)
+        safety_category = str(input_safety.get("category") or "")
 
         if event.kind == "moderator_action":
             return TurnDecision(
@@ -147,7 +174,50 @@ class StreamBrain:
                 response_mode="brief_ack",
             )
         if event.kind == "chat_message":
-            if event.priority > 0 or "gamma" in lowered or "shana" in lowered:
+            if input_safety.get("should_drop"):
+                return TurnDecision(
+                    decision="ignore",
+                    reason=f"twitch_input_dropped_{safety_category or 'unsafe'}",
+                    metadata={"event_kind": event.kind, "input_safety": input_safety},
+                )
+            if safety_category == "spam_or_scam":
+                if _twitch_control_enabled(event, "spam_quips_enabled", True):
+                    return TurnDecision(
+                        decision="acknowledge",
+                        reason="twitch_spam_quip_allowed",
+                        response_mode="spam_quip",
+                        metadata={
+                            "event_kind": event.kind,
+                            "input_safety": input_safety,
+                            "canned_response": "Nice try. I am not buying views from your bargain-bin website.",
+                            "canned_emotion": "teasing",
+                        },
+                    )
+                return TurnDecision(
+                    decision="ignore",
+                    reason="twitch_spam_quips_disabled",
+                    metadata={"event_kind": event.kind, "input_safety": input_safety},
+                )
+            if safety_category == "prompt_injection":
+                return TurnDecision(
+                    decision="ignore",
+                    reason="twitch_prompt_injection_summarized",
+                    metadata={"event_kind": event.kind, "input_safety": input_safety},
+                )
+            direct_mention = "gamma" in lowered or "shana" in lowered
+            if direct_mention and not _twitch_control_enabled(event, "mention_replies_enabled", True):
+                return TurnDecision(
+                    decision="ignore",
+                    reason="twitch_mention_replies_disabled",
+                    metadata={"event_kind": event.kind, "input_safety": input_safety},
+                )
+            if direct_mention or event.priority >= 5:
+                if not direct_mention and not _twitch_control_enabled(event, "ambient_chat_enabled", True):
+                    return TurnDecision(
+                        decision="ignore",
+                        reason="twitch_ambient_chat_disabled",
+                        metadata={"event_kind": event.kind, "input_safety": input_safety},
+                    )
                 return TurnDecision(
                     decision="reply",
                     reason="chat_message_addresses_assistant_or_has_priority",
@@ -157,3 +227,28 @@ class StreamBrain:
             return TurnDecision(decision="ignore", reason="ambient_chat_not_addressed_to_gamma", metadata={"event_kind": event.kind})
 
         return TurnDecision(decision="ignore", reason="unhandled_event_kind", metadata={"event_kind": event.kind})
+
+
+def _input_safety(event: StreamInputEvent) -> dict:
+    value = event.metadata.get("input_safety")
+    return value if isinstance(value, dict) else {}
+
+
+def _twitch_control_enabled(event: StreamInputEvent, key: str, default: bool) -> bool:
+    controls = event.metadata.get("twitch_controls")
+    if not isinstance(controls, dict) or key not in controls:
+        return default
+    return bool(controls[key])
+
+
+def _canned_response_from_decision(decision: TurnDecision) -> str | None:
+    value = decision.metadata.get("canned_response")
+    if not value:
+        return None
+    return str(value).strip() or None
+
+
+def _would_twitch_dry_run_suppress(decision: TurnDecision) -> bool:
+    if decision.decision in {"ignore", "moderation_escalation"}:
+        return False
+    return decision.should_call_conversation or bool(_canned_response_from_decision(decision))

@@ -464,6 +464,38 @@ class Settings:
         _setting("SHANA_TWITCH_IRC_PORT", _config_value(APP_CONFIG, "twitch_irc_port", default=6697)),
         default=6697,
     )
+    twitch_dry_run: bool = _as_bool(
+        _setting("SHANA_TWITCH_DRY_RUN", _config_value(APP_CONFIG, "twitch_dry_run", default=True)),
+        default=True,
+    )
+    twitch_voice_enabled: bool = _as_bool(
+        _setting("SHANA_TWITCH_VOICE_ENABLED", _config_value(APP_CONFIG, "twitch_voice_enabled", default=False)),
+        default=False,
+    )
+    twitch_subtitles_enabled: bool = _as_bool(
+        _setting("SHANA_TWITCH_SUBTITLES_ENABLED", _config_value(APP_CONFIG, "twitch_subtitles_enabled", default=True)),
+        default=True,
+    )
+    twitch_ambient_chat_enabled: bool = _as_bool(
+        _setting("SHANA_TWITCH_AMBIENT_CHAT_ENABLED", _config_value(APP_CONFIG, "twitch_ambient_chat_enabled", default=True)),
+        default=True,
+    )
+    twitch_mention_replies_enabled: bool = _as_bool(
+        _setting("SHANA_TWITCH_MENTION_REPLIES_ENABLED", _config_value(APP_CONFIG, "twitch_mention_replies_enabled", default=True)),
+        default=True,
+    )
+    twitch_spam_quips_enabled: bool = _as_bool(
+        _setting("SHANA_TWITCH_SPAM_QUIPS_ENABLED", _config_value(APP_CONFIG, "twitch_spam_quips_enabled", default=True)),
+        default=True,
+    )
+    twitch_self_goal_proposals_enabled: bool = _as_bool(
+        _setting("SHANA_TWITCH_SELF_GOAL_PROPOSALS_ENABLED", _config_value(APP_CONFIG, "twitch_self_goal_proposals_enabled", default=True)),
+        default=True,
+    )
+    twitch_llm_safety_review_enabled: bool = _as_bool(
+        _setting("SHANA_TWITCH_LLM_SAFETY_REVIEW_ENABLED", _config_value(APP_CONFIG, "twitch_llm_safety_review_enabled", default=True)),
+        default=True,
+    )
 
     stt_provider: str = str(
         _setting(

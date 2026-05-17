@@ -29,7 +29,7 @@
       <div class="toolbar-group">
         <button class="secondary" onclick="action('/api/shana/start')">Start Shana</button>
         <button onclick="action('/api/shana/restart')">Restart Shana</button>
-        <button class="danger" onclick="action('/api/shana/stop')">Stop Shana</button>
+        <button class="danger" onclick="action('/api/shana/stop')">Shutdown Shana</button>
       </div>
       <div class="toolbar-status">
         <span class="status-chip" id="stickyShanaStatus">Shana: ...</span>
@@ -37,8 +37,8 @@
         <span class="status-chip" id="stickyTwitchStatus">Twitch: ...</span>
       </div>
       <div class="toolbar-group toolbar-group-right">
-        <button class="ghost" onclick="action('/api/dashboard/stop', { redirectUrl: null })">Stop Dashboard</button>
-        <button class="ghost danger-outline" onclick="action('/api/all/stop', { redirectUrl: null })">Stop All</button>
+        <button class="ghost" onclick="action('/api/dashboard/stop', { redirectUrl: null })">Shutdown Dashboard</button>
+        <button class="ghost danger-outline" onclick="action('/api/all/stop', { redirectUrl: null })">Shutdown All</button>
         <button class="ghost" onclick="loadStatus()">Refresh</button>
       </div>
     </div>
@@ -99,8 +99,8 @@
             <div class="action-title">IRC Ingestion</div>
             <div class="action-buttons">
               <button id="twitchWorkerStartButton" class="secondary" onclick="action('/api/twitch/worker/start')">Start Worker</button>
-              <button id="twitchWorkerStopButton" class="ghost danger-outline" onclick="action('/api/twitch/worker/stop')">Stop Worker</button>
-              <button class="danger" onclick="stopStreamSpeech()">Stop Shana</button>
+              <button id="twitchWorkerStopButton" class="ghost danger-outline" onclick="action('/api/twitch/worker/stop')">Stop Twitch Worker</button>
+              <button class="danger" onclick="stopStreamSpeech()">Stop Speech</button>
             </div>
           </div>
           <div class="action-group">
@@ -123,7 +123,7 @@
         </div>
         <div class="render" id="twitchWorkerStatus">...</div>
         <div class="render compact-render" id="twitchSettingsStatus">Twitch controls load with worker status.</div>
-        <div class="render compact-render" id="streamStopStatus">Stream stop has not been requested.</div>
+        <div class="render compact-render" id="streamStopStatus">Speech stop has not been requested.</div>
       </section>
       <section class="panel wide" data-dashboard-tab="stream">
         <div class="panel-head">

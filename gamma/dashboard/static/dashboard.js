@@ -2242,7 +2242,7 @@
 
   async function stopStreamSpeech() {
     try {
-      renderBlockIfChanged('streamStopStatus', { status: 'running' }, 'Stopping stream speech...', 'streamStopStatus');
+      renderBlockIfChanged('streamStopStatus', { status: 'running' }, 'Stopping speech and clearing subtitles...', 'streamStopStatus');
       var response = await fetch('/api/stream/stop', { method: 'POST' });
       var result = await response.json();
       if (!response.ok) {
@@ -2251,7 +2251,7 @@
       renderBlockIfChanged('streamStopStatus', result, humanStreamStopResult(result), 'streamStopStatus');
       await loadStreamActivity();
     } catch (error) {
-      renderBlockIfChanged('streamStopStatus', { error: String(error) }, 'Stop Shana failed.\n' + String(error), 'streamStopStatus');
+      renderBlockIfChanged('streamStopStatus', { error: String(error) }, 'Stop speech failed.\n' + String(error), 'streamStopStatus');
     }
   }
 
@@ -2259,7 +2259,7 @@
     var decision = result && result.decision ? result.decision : {};
     var outputs = result && Array.isArray(result.output_events) ? result.output_events : [];
     return [
-      'Stop requested.',
+      'Speech stop requested.',
       'Decision: ' + (decision.reason || 'n/a'),
       'Output events: ' + outputs.length
     ].join('\n');

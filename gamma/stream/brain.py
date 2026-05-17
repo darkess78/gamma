@@ -27,6 +27,7 @@ from .models import (
     output_events_from_response,
 )
 from .output import StreamOutputDispatcher
+from .self_goals import StreamSelfGoalStore
 from .temp_memory import StreamTempMemoryStore
 from .trace import StreamTraceStore
 
@@ -55,6 +56,7 @@ class StreamBrain:
         output_dispatcher: StreamOutputDispatcher | None = None,
         safety_reviewer: StreamSafetyReviewer | None = None,
         temp_memory_store: StreamTempMemoryStore | None = None,
+        self_goal_store: StreamSelfGoalStore | None = None,
     ) -> None:
         self._conversation = conversation or ConversationService()
         self._trace_store = trace_store or StreamTraceStore()
@@ -63,6 +65,7 @@ class StreamBrain:
         self._pacer = StreamSpeechPacer()
         self._safety_reviewer = safety_reviewer or SpeechLLMReviewer()
         self._temp_memory_store = temp_memory_store or StreamTempMemoryStore()
+        self._self_goal_store = self_goal_store or StreamSelfGoalStore()
 
     def handle_event(
         self,
@@ -162,6 +165,7 @@ class StreamBrain:
             safety_decision=safety_decision,
             timing_ms={"stream_brain_ms": round((time.perf_counter() - started_at) * 1000, 1)},
         )
+        self._maybe_propose_self_goal(event, result)
         self._record_temp_memory(result)
         self._trace_store.append(result)
         return result
@@ -169,6 +173,27 @@ class StreamBrain:
     def _record_temp_memory(self, result: StreamTurnResult) -> None:
         try:
             self._temp_memory_store.record_turn(result)
+        except Exception:
+            pass
+
+    def _maybe_propose_self_goal(self, event: StreamInputEvent, result: StreamTurnResult) -> None:
+        if event.kind != "conversation_lull":
+            return
+        if not _twitch_control_enabled(event, "self_goal_proposals_enabled", True):
+            return
+        if not result.decision.metadata.get("would_reply"):
+            return
+        try:
+            self._self_goal_store.propose(
+                title="Keep chat warm during quiet moments",
+                description="When the stream is quiet, propose a short safe question or observation for chat instead of letting silence stretch.",
+                source="stream_brain",
+                metadata={
+                    "event_id": event.event_id,
+                    "trace_id": result.trace_id,
+                    "idle_policy_reason": event.metadata.get("idle_policy_reason"),
+                },
+            )
         except Exception:
             pass
 

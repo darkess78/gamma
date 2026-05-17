@@ -206,6 +206,16 @@
             </div>
             <div class="render" id="streamTempMemoryFeed">No temporary stream memory loaded yet.</div>
           </div>
+          <div>
+            <div class="action-title">Self-Goals</div>
+            <div class="action-buttons">
+              <input id="streamSelfGoalId" class="text-input" placeholder="goal id">
+              <button class="secondary" onclick="setStreamSelfGoalStatus('approve')">Approve</button>
+              <button class="ghost" onclick="setStreamSelfGoalStatus('reject')">Reject</button>
+              <button class="ghost danger-outline" onclick="clearStreamSelfGoals()">Clear Goals</button>
+            </div>
+            <div class="render" id="streamSelfGoalFeed">No self-goals loaded yet.</div>
+          </div>
         </div>
       </section>
       <section class="panel wide" data-dashboard-tab="providers">

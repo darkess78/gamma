@@ -80,12 +80,17 @@ class StreamOutputTest(unittest.TestCase):
 
     def test_stream_output_routes_delegate_to_service(self) -> None:
         from gamma.api.routes import stream_recent_outputs, stream_temp_memory, stream_temp_memory_clear
+        from gamma.api.routes import stream_self_goal_approve, stream_self_goal_reject, stream_self_goals, stream_self_goals_clear
         from gamma.dashboard.main import (
             dashboard_stream_pending_queue,
             dashboard_stream_recent_outputs,
             dashboard_stream_stop,
             dashboard_stream_temp_memory,
             dashboard_stream_temp_memory_clear,
+            dashboard_stream_self_goal_approve,
+            dashboard_stream_self_goal_reject,
+            dashboard_stream_self_goals,
+            dashboard_stream_self_goals_clear,
         )
 
         api_service = Mock()
@@ -142,6 +147,44 @@ class StreamOutputTest(unittest.TestCase):
 
         self.assertEqual(dashboard_clear_result["deleted"], 2)
         dashboard_service.clear_stream_temp_memory.assert_called_once_with(bucket="chat_mood")
+
+        goal_store = Mock()
+        goal_record = Mock()
+        goal_record.as_payload.return_value = {"id": 7, "status": "approved"}
+        goal_store.list_goals.return_value = {"items": [{"id": 7, "status": "proposed"}]}
+        goal_store.set_status.return_value = goal_record
+        goal_store.clear.return_value = {"ok": True, "cleared": 1}
+        with patch("gamma.api.routes.get_stream_self_goal_store", return_value=goal_store):
+            goals_result = stream_self_goals(status="proposed", limit=5)
+            approve_result = stream_self_goal_approve(7)
+            reject_result = stream_self_goal_reject(7)
+            clear_goals_result = stream_self_goals_clear()
+
+        self.assertEqual(goals_result["items"][0]["id"], 7)
+        self.assertEqual(approve_result["status"], "approved")
+        self.assertEqual(reject_result["status"], "approved")
+        self.assertEqual(clear_goals_result["cleared"], 1)
+        goal_store.list_goals.assert_called_once_with(status="proposed", limit=5)
+        self.assertEqual(goal_store.set_status.call_count, 2)
+        goal_store.clear.assert_called_once_with()
+
+        dashboard_service.stream_self_goals.return_value = {"items": [{"id": 8}]}
+        dashboard_service.set_stream_self_goal_status.return_value = {"id": 8, "status": "approved"}
+        dashboard_service.clear_stream_self_goals.return_value = {"ok": True, "cleared": 1}
+        with patch("gamma.dashboard.main.get_dashboard_service", return_value=dashboard_service):
+            dashboard_goals = dashboard_stream_self_goals(status="proposed", limit=2)
+            dashboard_approve = dashboard_stream_self_goal_approve(8)
+            dashboard_reject = dashboard_stream_self_goal_reject(8)
+            dashboard_clear_goals = dashboard_stream_self_goals_clear()
+
+        self.assertEqual(dashboard_goals["items"][0]["id"], 8)
+        self.assertEqual(dashboard_approve["status"], "approved")
+        self.assertEqual(dashboard_reject["status"], "approved")
+        self.assertEqual(dashboard_clear_goals["cleared"], 1)
+        dashboard_service.stream_self_goals.assert_called_once_with(status="proposed", limit=2)
+        dashboard_service.set_stream_self_goal_status.assert_any_call(8, status="approve")
+        dashboard_service.set_stream_self_goal_status.assert_any_call(8, status="reject")
+        dashboard_service.clear_stream_self_goals.assert_called_once_with()
 
 
 if __name__ == "__main__":

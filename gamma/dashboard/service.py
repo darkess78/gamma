@@ -1013,6 +1013,20 @@ class DashboardService:
             raise RuntimeError("clear stream temp memory returned a non-object payload")
         return payload
 
+    def stream_self_goals(self, *, status: str | None = None, limit: int = 100) -> dict[str, Any]:
+        query = f"?limit={max(1, min(limit, 1000))}"
+        if status:
+            query += f"&status={urllib.parse.quote(status)}"
+        return self._probe_json(settings.shana_base_url + "/v1/stream/self-goals" + query, raw_payload=True)
+
+    def set_stream_self_goal_status(self, goal_id: int, *, status: str) -> dict[str, Any]:
+        if status not in {"approve", "reject"}:
+            raise ValueError("unsupported self-goal status action")
+        return self._post_remote_json(f"/v1/stream/self-goals/{goal_id}/{status}", {})
+
+    def clear_stream_self_goals(self) -> dict[str, Any]:
+        return self._post_remote_json("/v1/stream/self-goals/clear", {})
+
     def stop_stream_speech(self, *, reason: str = "operator_stop") -> dict[str, Any]:
         return self._post_remote_json(f"/v1/stream/stop?reason={urllib.parse.quote(reason)}", {})
 

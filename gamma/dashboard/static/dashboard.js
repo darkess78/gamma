@@ -1158,6 +1158,18 @@
     }).join('\n\n');
   }
 
+  function humanStreamSelfGoals(payload) {
+    var items = payload && Array.isArray(payload.items) ? payload.items : [];
+    if (!items.length) return 'No stream self-goals.';
+    return items.slice(0, 12).map(function (item) {
+      return [
+        '#' + item.id + ' / ' + (item.status || 'status') + ' / ' + (item.title || 'goal'),
+        '  ' + oneLine(item.description || '', 220),
+        '  updated: ' + fmtLocalDateTime(item.updated_at)
+      ].join('\n');
+    }).join('\n\n');
+  }
+
   function oneLine(value, maxLength) {
     var text = String(value || '').replace(/\s+/g, ' ').trim();
     if (text.length <= maxLength) return text;
@@ -2349,6 +2361,15 @@
     } catch (error) {
       renderBlockIfChanged('streamTempMemoryFeed', { error: String(error) }, 'Temp memory load failed.\n' + String(error), 'streamTempMemoryFeed');
     }
+
+    try {
+      var goalResponse = await fetch('/api/stream/self-goals?limit=30', { cache: 'no-store' });
+      var goalPayload = await goalResponse.json();
+      if (!goalResponse.ok) throw new Error(goalPayload.detail || ('self-goals HTTP ' + goalResponse.status));
+      renderBlockIfChanged('streamSelfGoalFeed', goalPayload, humanStreamSelfGoals(goalPayload), 'streamSelfGoalFeed');
+    } catch (error) {
+      renderBlockIfChanged('streamSelfGoalFeed', { error: String(error) }, 'Self-goals load failed.\n' + String(error), 'streamSelfGoalFeed');
+    }
   }
 
   async function clearStreamTempMemory() {
@@ -2360,6 +2381,36 @@
       await loadStreamActivity();
     } catch (error) {
       renderBlockIfChanged('streamTempMemoryFeed', { error: String(error) }, 'Temp memory clear failed.\n' + String(error), 'streamTempMemoryFeed');
+    }
+  }
+
+  async function setStreamSelfGoalStatus(actionName) {
+    var input = document.getElementById('streamSelfGoalId');
+    var goalId = input ? String(input.value || '').trim() : '';
+    if (!goalId) {
+      renderBlockIfChanged('streamSelfGoalFeed', { error: 'missing-goal-id' }, 'Enter a self-goal id first.', 'streamSelfGoalFeed');
+      return;
+    }
+    try {
+      var response = await fetch('/api/stream/self-goals/' + encodeURIComponent(goalId) + '/' + actionName, { method: 'POST' });
+      var payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || ('self-goal HTTP ' + response.status));
+      renderBlockIfChanged('streamSelfGoalFeed', payload, 'Goal #' + payload.id + ' is now ' + payload.status + '.', 'streamSelfGoalFeed');
+      await loadStreamActivity();
+    } catch (error) {
+      renderBlockIfChanged('streamSelfGoalFeed', { error: String(error) }, 'Self-goal update failed.\n' + String(error), 'streamSelfGoalFeed');
+    }
+  }
+
+  async function clearStreamSelfGoals() {
+    try {
+      var response = await fetch('/api/stream/self-goals/clear', { method: 'POST' });
+      var payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || ('self-goals clear HTTP ' + response.status));
+      renderBlockIfChanged('streamSelfGoalFeed', payload, 'Self-goals cleared. Count: ' + (payload.cleared || 0), 'streamSelfGoalFeed');
+      await loadStreamActivity();
+    } catch (error) {
+      renderBlockIfChanged('streamSelfGoalFeed', { error: String(error) }, 'Self-goals clear failed.\n' + String(error), 'streamSelfGoalFeed');
     }
   }
 
@@ -3447,6 +3498,8 @@
   window.saveTwitchSettings = saveTwitchSettings;
   window.loadStreamActivity = loadStreamActivity;
   window.clearStreamTempMemory = clearStreamTempMemory;
+  window.setStreamSelfGoalStatus = setStreamSelfGoalStatus;
+  window.clearStreamSelfGoals = clearStreamSelfGoals;
   window.stopStreamSpeech = stopStreamSpeech;
 
   postClientLog('script_boot', { viewMode: viewMode });

@@ -460,6 +460,26 @@ def dashboard_stream_temp_memory_clear(bucket: str | None = None) -> dict:
     return get_dashboard_service().clear_stream_temp_memory(bucket=bucket)
 
 
+@app.get("/api/stream/self-goals")
+def dashboard_stream_self_goals(status: str | None = None, limit: int = 100) -> dict:
+    return get_dashboard_service().stream_self_goals(status=status, limit=limit)
+
+
+@app.post("/api/stream/self-goals/{goal_id}/approve")
+def dashboard_stream_self_goal_approve(goal_id: int) -> dict:
+    return get_dashboard_service().set_stream_self_goal_status(goal_id, status="approve")
+
+
+@app.post("/api/stream/self-goals/{goal_id}/reject")
+def dashboard_stream_self_goal_reject(goal_id: int) -> dict:
+    return get_dashboard_service().set_stream_self_goal_status(goal_id, status="reject")
+
+
+@app.post("/api/stream/self-goals/clear")
+def dashboard_stream_self_goals_clear() -> dict:
+    return get_dashboard_service().clear_stream_self_goals()
+
+
 @app.post("/api/stream/stop")
 def dashboard_stream_stop() -> dict:
     return get_dashboard_service().stop_stream_speech(reason="dashboard_stop")

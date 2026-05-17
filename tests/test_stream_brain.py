@@ -12,6 +12,7 @@ from gamma.schemas.response import AssistantResponse, ToolCall, ToolExecutionRes
 from gamma.stream.actions import ActionPlanner
 from gamma.stream.brain import StreamBrain
 from gamma.stream.models import StreamActor, StreamInputEvent, StreamTurnResult, TurnDecision
+from gamma.stream.self_goals import StreamSelfGoalStore
 from gamma.stream.temp_memory import StreamTempMemoryStore
 from gamma.stream.trace import StreamTraceStore
 
@@ -190,6 +191,30 @@ class StreamBrainTest(unittest.TestCase):
         self.assertTrue(result.decision.metadata["dry_run"])
         self.assertTrue(result.decision.metadata["would_reply"])
         self.assertEqual(conversation.calls, [])
+
+    def test_conversation_lull_proposes_self_goal_for_dashboard_approval(self) -> None:
+        conversation = _FakeConversation()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            goal_store = StreamSelfGoalStore(database_url=f"sqlite:///{Path(temp_dir) / 'goals.db'}")
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+                self_goal_store=goal_store,
+            )
+            brain.handle_event(
+                StreamInputEvent(
+                    kind="conversation_lull",
+                    session_id="live-1",
+                    metadata={
+                        "idle_policy_decision": "reply",
+                        "idle_policy_reason": "conversation_lull_after_target_silence",
+                    },
+                )
+            )
+            goals = goal_store.list_goals()
+
+        self.assertEqual(goals["items"][0]["status"], "proposed")
+        self.assertIn("quiet", goals["items"][0]["description"])
 
     def test_stream_brain_adds_action_plan_for_existing_tool_calls(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

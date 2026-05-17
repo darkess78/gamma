@@ -13,6 +13,7 @@ from ..stream.brain import StreamBrain
 from ..stream.models import StreamInputEvent, StreamTurnResult
 from ..stream.output import StreamOutputLogService
 from ..stream.replay import StreamEvalReport, StreamReplayService
+from ..stream.self_goals import StreamSelfGoalStore
 from ..stream.temp_memory import StreamTempMemoryStore
 from ..system.lazy_singleton import LazySingleton
 from ..system.status import SystemStatusService
@@ -28,6 +29,7 @@ stream_brain = LazySingleton[StreamBrain]()
 stream_replay_service = LazySingleton[StreamReplayService]()
 stream_output_log_service = LazySingleton[StreamOutputLogService]()
 stream_temp_memory_store = LazySingleton[StreamTempMemoryStore]()
+stream_self_goal_store = LazySingleton[StreamSelfGoalStore]()
 
 
 def get_conversation_service() -> ConversationService:
@@ -60,6 +62,10 @@ def get_stream_output_log_service() -> StreamOutputLogService:
 
 def get_stream_temp_memory_store() -> StreamTempMemoryStore:
     return stream_temp_memory_store.get(StreamTempMemoryStore)
+
+
+def get_stream_self_goal_store() -> StreamSelfGoalStore:
+    return stream_self_goal_store.get(StreamSelfGoalStore)
 
 
 def _cancel_active_live_turns(*, reason: str) -> dict:
@@ -258,6 +264,46 @@ def stream_temp_memory_clear(bucket: str | None = None) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except GammaError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/v1/stream/self-goals")
+def stream_self_goals(status: str | None = None, limit: int = 100) -> dict:
+    try:
+        return get_stream_self_goal_store().list_goals(status=status, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except GammaError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/v1/stream/self-goals/{goal_id}/approve")
+def stream_self_goal_approve(goal_id: int) -> dict:
+    try:
+        return get_stream_self_goal_store().set_status(goal_id, status="approved").as_payload()
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"unknown goal_id: {goal_id}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/v1/stream/self-goals/{goal_id}/reject")
+def stream_self_goal_reject(goal_id: int) -> dict:
+    try:
+        return get_stream_self_goal_store().set_status(goal_id, status="rejected").as_payload()
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"unknown goal_id: {goal_id}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/v1/stream/self-goals/clear")
+def stream_self_goals_clear() -> dict:
+    try:
+        return get_stream_self_goal_store().clear()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

@@ -139,7 +139,7 @@ class StreamBrain:
                 should_call_conversation=True,
                 response_mode="spoken",
             )
-        if event.kind in {"donation", "redeem"}:
+        if event.kind in {"donation", "redeem", "follow"}:
             return TurnDecision(
                 decision="acknowledge",
                 reason="support_events_receive_acknowledgement",
@@ -147,10 +147,10 @@ class StreamBrain:
                 response_mode="brief_ack",
             )
         if event.kind == "chat_message":
-            if event.priority > 0 or "gamma" in lowered:
+            if event.priority > 0 or "gamma" in lowered or "shana" in lowered:
                 return TurnDecision(
                     decision="reply",
-                    reason="chat_message_addresses_gamma_or_has_priority",
+                    reason="chat_message_addresses_assistant_or_has_priority",
                     should_call_conversation=True,
                     response_mode="chat",
                 )

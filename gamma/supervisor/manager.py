@@ -158,6 +158,102 @@ class ProcessManager:
             "stderr_path": str(self.stderr_log(name)),
         }
 
+    def start_module(self, name: str, module: str, args: list[str] | None = None) -> dict[str, Any]:
+        existing = self.find_module_process(name, module)
+        if existing:
+            return {"ok": True, "detail": "already-running", "process": self.process_payload(existing)}
+
+        python_executable = self._resolve_background_python()
+        stdout_log = self.stdout_log(name)
+        stderr_log = self.stderr_log(name)
+        stdout_log.write_text("", encoding="utf-8")
+        stderr_log.write_text("", encoding="utf-8")
+        command = [python_executable, "-m", module, *(args or [])]
+        with stdout_log.open("ab") as stdout_handle, stderr_log.open("ab") as stderr_handle:
+            process = subprocess.Popen(
+                command,
+                cwd=settings.project_root,
+                stdout=stdout_handle,
+                stderr=stderr_handle,
+                start_new_session=os.name != "nt",
+                creationflags=(
+                    subprocess.CREATE_NEW_PROCESS_GROUP
+                    | subprocess.DETACHED_PROCESS
+                    | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                    if os.name == "nt"
+                    else 0
+                ),
+            )
+        self.pid_file(name).write_text(str(process.pid), encoding="utf-8")
+        time.sleep(0.5)
+        found = self.find_module_process(name, module)
+        return {
+            "ok": True,
+            "detail": "started",
+            "process": self.process_payload(found),
+            "stdout_path": str(stdout_log),
+            "stderr_path": str(stderr_log),
+        }
+
+    def stop_module(self, name: str, module: str) -> dict[str, Any]:
+        processes = self.find_module_processes(name, module)
+        if not processes:
+            self.clear_pid_file(name)
+            return {"ok": True, "detail": "not-running"}
+        stopped_pids: list[int] = []
+        for process in processes:
+            try:
+                process.terminate()
+                process.wait(timeout=10)
+            except psutil.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+            except psutil.Error:
+                continue
+            stopped_pids.append(process.pid)
+        self.clear_pid_file(name)
+        return {"ok": True, "detail": "stopped", "pids": stopped_pids}
+
+    def module_status(self, name: str, module: str) -> dict[str, Any]:
+        process = self.find_module_process(name, module)
+        return {
+            "service": name,
+            "module": module,
+            "process": self.process_payload(process),
+            "stdout_path": str(self.stdout_log(name)),
+            "stderr_path": str(self.stderr_log(name)),
+        }
+
+    def find_module_process(self, name: str, module: str) -> psutil.Process | None:
+        processes = self.find_module_processes(name, module)
+        return processes[0] if processes else None
+
+    def find_module_processes(self, name: str, module: str) -> list[psutil.Process]:
+        matches: dict[int, psutil.Process] = {}
+        pid = self.read_pid_file(name)
+        if pid is not None:
+            try:
+                process = psutil.Process(pid)
+                if self.looks_like_module_process(process, module):
+                    matches[process.pid] = process
+            except psutil.Error:
+                self.clear_pid_file(name)
+
+        target = f"-m {module}".lower()
+        for process in psutil.process_iter(["pid", "name", "cmdline"]):
+            try:
+                cmdline = " ".join(process.cmdline()).lower()
+                if target in cmdline:
+                    self.pid_file(name).write_text(str(process.pid), encoding="utf-8")
+                    matches[process.pid] = process
+            except psutil.Error:
+                continue
+        return sorted(matches.values(), key=lambda process: process.pid)
+
+    def looks_like_module_process(self, process: psutil.Process, module: str) -> bool:
+        cmdline = " ".join(process.cmdline()).lower()
+        return f"-m {module}".lower() in cmdline
+
     def find_process(self, name: str) -> psutil.Process | None:
         processes = self.find_processes(name)
         return processes[0] if processes else None

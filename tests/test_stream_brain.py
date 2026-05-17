@@ -156,7 +156,7 @@ class StreamBrainTest(unittest.TestCase):
             input_event=input_event,
             decision=TurnDecision(
                 decision="reply",
-                reason="chat_message_addresses_gamma_or_has_priority",
+                reason="chat_message_addresses_assistant_or_has_priority",
                 should_call_conversation=True,
                 response_mode="chat",
             ),

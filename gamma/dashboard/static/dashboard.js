@@ -920,6 +920,20 @@
     return lines.join('\n');
   }
 
+  function humanTwitchWorker(worker) {
+    worker = worker || {};
+    var process = worker.process || {};
+    var lines = [
+      'Configured: ' + (worker.configured ? 'Yes' : 'No'),
+      'Running: ' + (process.running ? 'Yes' : 'No'),
+      'Channel: ' + (worker.channel || 'n/a')
+    ];
+    if (process.pid) lines.push('PID: ' + process.pid);
+    if (worker.stdout_path) lines.push('Stdout: ' + worker.stdout_path);
+    if (worker.stderr_path) lines.push('Stderr: ' + worker.stderr_path);
+    return lines.join('\n');
+  }
+
   function humanMemoryStats(stats) {
     var lines = [
       'Backend: ' + (stats.backend || 'n/a'),
@@ -1678,6 +1692,14 @@
       'providerActions'
     );
 
+    var twitchWorker = data.twitch && data.twitch.worker ? data.twitch.worker : {};
+    renderBlockIfChanged('twitchWorkerStatus', twitchWorker, humanTwitchWorker(twitchWorker), 'twitchWorkerStatus');
+    var twitchStartButton = document.getElementById('twitchWorkerStartButton');
+    var twitchStopButton = document.getElementById('twitchWorkerStopButton');
+    var twitchProcess = twitchWorker.process || {};
+    if (twitchStartButton) twitchStartButton.disabled = !twitchWorker.configured || !!twitchProcess.running;
+    if (twitchStopButton) twitchStopButton.disabled = !twitchProcess.running;
+
     if (!sectionHashes.ttsProfileEditorStatusSaved) {
       renderBlockIfChanged(
         'ttsProfileEditorStatus',
@@ -1770,10 +1792,26 @@
       latestData.shana = latestData.shana || {};
       latestData.shana.process = latestData.shana.process || {};
       latestData.shana.process.running = false;
+      if (path === '/api/all/stop') {
+        latestData.twitch = latestData.twitch || {};
+        latestData.twitch.worker = latestData.twitch.worker || {};
+        latestData.twitch.worker.process = latestData.twitch.worker.process || {};
+        latestData.twitch.worker.process.running = false;
+      }
     } else if (path === '/api/shana/restart') {
       latestData.shana = latestData.shana || {};
       latestData.shana.process = latestData.shana.process || {};
       latestData.shana.process.running = true;
+    } else if (path === '/api/twitch/worker/start') {
+      latestData.twitch = latestData.twitch || {};
+      latestData.twitch.worker = latestData.twitch.worker || {};
+      latestData.twitch.worker.process = latestData.twitch.worker.process || {};
+      latestData.twitch.worker.process.running = true;
+    } else if (path === '/api/twitch/worker/stop') {
+      latestData.twitch = latestData.twitch || {};
+      latestData.twitch.worker = latestData.twitch.worker || {};
+      latestData.twitch.worker.process = latestData.twitch.worker.process || {};
+      latestData.twitch.worker.process.running = false;
     }
 
     renderPanels(latestData);

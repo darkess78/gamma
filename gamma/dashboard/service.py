@@ -20,6 +20,8 @@ from typing import Any
 import psutil
 
 from ..config import app_local_config_path, load_app_file_config, load_desired_tts_selection, settings
+from ..errors import ConfigurationError
+from ..integrations.twitch.worker import TwitchWorkerConfig
 from ..llm.router_adapter import RouterLLMAdapter
 from ..memory.service import MemoryService
 from ..persona.emotion_service import EmotionMemoryService
@@ -31,6 +33,9 @@ from ..voice.voice_profiles import get_voice_profile, list_voice_profiles, profi
 
 
 class DashboardService:
+    TWITCH_WORKER_SERVICE = "twitch_worker"
+    TWITCH_WORKER_MODULE = "gamma.integrations.twitch.worker"
+
     def __init__(self) -> None:
         self._memory = MemoryService()
         self._emotion_memory = EmotionMemoryService()
@@ -114,6 +119,9 @@ class DashboardService:
                 "emotion_memory": self._emotion_memory.dashboard_payload(),
                 "settings": self.assistant_runtime_settings(),
             },
+            "twitch": {
+                "worker": self.twitch_worker_status(),
+            },
             "provider_actions": self._latest_provider_action,
             "timings": self._recent_timings(),
             "llm_routing": route_info,
@@ -193,15 +201,47 @@ class DashboardService:
 
     def stop_all(self) -> dict[str, Any]:
         shana_result = self._process_manager.stop("shana")
+        twitch_result = self.stop_twitch_worker()
         tts_results = self._stop_all_tts_servers()
         self._schedule_stop("dashboard")
         tts_ok = all(bool(result.get("ok")) for result in tts_results.values())
         return {
-            "ok": bool(shana_result.get("ok", False)) and tts_ok,
+            "ok": bool(shana_result.get("ok", False)) and bool(twitch_result.get("ok", False)) and tts_ok,
             "detail": "all-stop-scheduled",
             "shana": shana_result,
+            "twitch_worker": twitch_result,
             "tts": tts_results,
             "dashboard_url": settings.dashboard_base_url,
+        }
+
+    def start_twitch_worker(self) -> dict[str, Any]:
+        try:
+            config = TwitchWorkerConfig.from_settings()
+        except ConfigurationError as exc:
+            return {
+                "ok": False,
+                "detail": str(exc),
+                "auth_required": True,
+                "process": {"running": False},
+            }
+        result = self._process_manager.start_module(self.TWITCH_WORKER_SERVICE, self.TWITCH_WORKER_MODULE)
+        return {
+            **result,
+            "channel": config.normalized_channel,
+            "worker": "twitch_irc",
+        }
+
+    def stop_twitch_worker(self) -> dict[str, Any]:
+        return self._process_manager.stop_module(self.TWITCH_WORKER_SERVICE, self.TWITCH_WORKER_MODULE)
+
+    def twitch_worker_status(self) -> dict[str, Any]:
+        status = self._process_manager.module_status(self.TWITCH_WORKER_SERVICE, self.TWITCH_WORKER_MODULE)
+        configured = bool(settings.twitch_channel and settings.twitch_bot_username and settings.twitch_oauth_token)
+        return {
+            **status,
+            "configured": configured,
+            "channel": settings.twitch_channel.lstrip("#").strip().lower() if settings.twitch_channel else "",
+            "worker": "twitch_irc",
         }
 
     def clear_memory(self) -> dict[str, Any]:

@@ -18,6 +18,7 @@ StreamEventKind = Literal[
     "mic_transcript",
     "owner_command",
     "chat_message",
+    "follow",
     "moderator_action",
     "donation",
     "redeem",

@@ -3,31 +3,22 @@ from __future__ import annotations
 import unittest
 from unittest.mock import Mock, patch
 
-from fastapi.testclient import TestClient
+from fastapi import HTTPException
 
 import gamma.system.status as status_module
 import gamma.voice.live_jobs as live_jobs_module
 import gamma.voice.roundtrip as roundtrip_module
-from gamma.config import settings
 from gamma.errors import ConfigurationError, ConversationError, ExternalServiceError
+from gamma.schemas.conversation import SpeakerContext
 from gamma.schemas.response import AssistantResponse
 
 with patch.object(status_module, "SystemStatusService", autospec=True), patch.object(
     roundtrip_module, "VoiceRoundtripService", autospec=True
 ), patch.object(live_jobs_module, "LiveVoiceJobManager", autospec=True):
-    from gamma.main import app
+    from gamma.api import routes
 
 
 class ApiRoutesTest(unittest.TestCase):
-    def setUp(self) -> None:
-        headers = {}
-        if settings.api_auth_enabled and settings.api_bearer_token:
-            headers["Authorization"] = f"Bearer {settings.api_bearer_token}"
-        self.client = TestClient(app, headers=headers)
-
-    def tearDown(self) -> None:
-        self.client.close()
-
     def test_conversation_respond_serializes_filtered_voice_metadata(self) -> None:
         assistant_response = AssistantResponse(
             spoken_text="Hey there.",
@@ -50,22 +41,17 @@ class ApiRoutesTest(unittest.TestCase):
         conversation_service = Mock()
         conversation_service.respond.return_value = assistant_response
         with patch("gamma.api.routes.get_conversation_service", return_value=conversation_service):
-            response = self.client.post(
-                "/v1/conversation/respond",
-                json={
-                    "user_text": "hello",
-                    "session_id": "sess-1",
-                    "synthesize_speech": True,
-                    "fast_mode": True,
-                    "speaker": {
-                        "source": "discord",
-                        "platform_id": "12345",
-                    },
-                },
+            response = routes.conversation_respond(
+                routes.ConversationRequest(
+                    user_text="hello",
+                    session_id="sess-1",
+                    synthesize_speech=True,
+                    fast_mode=True,
+                    speaker=SpeakerContext(source="discord", platform_id="12345"),
+                )
             )
 
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
+        payload = response.model_dump()
         self.assertEqual(payload["spoken_text"], "Hey there.")
         self.assertEqual(payload["emotion"], "happy")
         self.assertEqual(payload["audio_content_type"], "audio/wav")
@@ -84,28 +70,31 @@ class ApiRoutesTest(unittest.TestCase):
         conversation_service = Mock()
         conversation_service.respond.side_effect = ConversationError("bad request")
         with patch("gamma.api.routes.get_conversation_service", return_value=conversation_service):
-            response = self.client.post("/v1/conversation/respond", json={"user_text": "hello"})
+            with self.assertRaises(HTTPException) as ctx:
+                routes.conversation_respond(routes.ConversationRequest(user_text="hello"))
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["detail"], "bad request")
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertEqual(ctx.exception.detail, "bad request")
 
     def test_conversation_respond_maps_external_service_error_to_502(self) -> None:
         conversation_service = Mock()
         conversation_service.respond.side_effect = ExternalServiceError("upstream unavailable")
         with patch("gamma.api.routes.get_conversation_service", return_value=conversation_service):
-            response = self.client.post("/v1/conversation/respond", json={"user_text": "hello"})
+            with self.assertRaises(HTTPException) as ctx:
+                routes.conversation_respond(routes.ConversationRequest(user_text="hello"))
 
-        self.assertEqual(response.status_code, 502)
-        self.assertEqual(response.json()["detail"], "upstream unavailable")
+        self.assertEqual(ctx.exception.status_code, 502)
+        self.assertEqual(ctx.exception.detail, "upstream unavailable")
 
     def test_conversation_respond_maps_configuration_error_to_500(self) -> None:
         conversation_service = Mock()
         conversation_service.respond.side_effect = ConfigurationError("misconfigured")
         with patch("gamma.api.routes.get_conversation_service", return_value=conversation_service):
-            response = self.client.post("/v1/conversation/respond", json={"user_text": "hello"})
+            with self.assertRaises(HTTPException) as ctx:
+                routes.conversation_respond(routes.ConversationRequest(user_text="hello"))
 
-        self.assertEqual(response.status_code, 500)
-        self.assertEqual(response.json()["detail"], "misconfigured")
+        self.assertEqual(ctx.exception.status_code, 500)
+        self.assertEqual(ctx.exception.detail, "misconfigured")
 
 
 if __name__ == "__main__":

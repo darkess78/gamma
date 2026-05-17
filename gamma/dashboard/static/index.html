@@ -77,6 +77,21 @@
       </section>
       <section class="panel wide">
         <div class="panel-head">
+          <h2>Twitch Worker</h2>
+        </div>
+        <div class="provider-actions">
+          <div class="action-group">
+            <div class="action-title">IRC Ingestion</div>
+            <div class="action-buttons">
+              <button id="twitchWorkerStartButton" class="secondary" onclick="action('/api/twitch/worker/start')">Start Worker</button>
+              <button id="twitchWorkerStopButton" class="ghost danger-outline" onclick="action('/api/twitch/worker/stop')">Stop Worker</button>
+            </div>
+          </div>
+        </div>
+        <div class="render" id="twitchWorkerStatus">...</div>
+      </section>
+      <section class="panel wide">
+        <div class="panel-head">
           <h2>Provider Controls</h2>
         </div>
         <div class="provider-actions">

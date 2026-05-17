@@ -215,6 +215,21 @@ def stop_all() -> dict:
     return get_dashboard_service().stop_all()
 
 
+@app.get("/api/twitch/worker/status")
+def twitch_worker_status() -> dict:
+    return get_dashboard_service().twitch_worker_status()
+
+
+@app.post("/api/twitch/worker/start")
+def start_twitch_worker() -> dict:
+    return get_dashboard_service().start_twitch_worker()
+
+
+@app.post("/api/twitch/worker/stop")
+def stop_twitch_worker() -> dict:
+    return get_dashboard_service().stop_twitch_worker()
+
+
 @app.post("/api/memory/clear")
 def clear_memory() -> dict:
     return get_dashboard_service().clear_memory()

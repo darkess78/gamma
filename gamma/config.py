@@ -445,6 +445,25 @@ class Settings:
         ),
         default=False,
     )
+    twitch_channel: str = str(
+        _setting("SHANA_TWITCH_CHANNEL", _config_value(APP_CONFIG, "twitch_channel", default=""))
+    ).strip()
+    twitch_bot_username: str = str(
+        _setting("SHANA_TWITCH_BOT_USERNAME", _config_value(APP_CONFIG, "twitch_bot_username", default=""))
+    ).strip()
+    twitch_oauth_token: str = str(
+        _setting("SHANA_TWITCH_OAUTH_TOKEN", _config_value(APP_CONFIG, "twitch_oauth_token", default=""))
+    ).strip()
+    twitch_owner_user_id: str = str(
+        _setting("SHANA_TWITCH_OWNER_USER_ID", _config_value(APP_CONFIG, "twitch_owner_user_id", default=""))
+    ).strip()
+    twitch_irc_host: str = str(
+        _setting("SHANA_TWITCH_IRC_HOST", _config_value(APP_CONFIG, "twitch_irc_host", default="irc.chat.twitch.tv"))
+    ).strip() or "irc.chat.twitch.tv"
+    twitch_irc_port: int = _as_int(
+        _setting("SHANA_TWITCH_IRC_PORT", _config_value(APP_CONFIG, "twitch_irc_port", default=6697)),
+        default=6697,
+    )
 
     stt_provider: str = str(
         _setting(

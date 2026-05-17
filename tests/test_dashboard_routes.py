@@ -1,19 +1,57 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
-from fastapi.testclient import TestClient
+import anyio
 
 from gamma.config import settings
 from gamma.dashboard import main
 from gamma.dashboard.service import DashboardService
 from gamma.schemas.response import AssistantResponse, VisionAnalysis
 from gamma.schemas.voice import VoiceRoundtripResponse
+
+
+class _JsonRequest:
+    def __init__(self, payload: dict, *, content_type: str = "application/json") -> None:
+        self._payload = payload
+        self.headers = {"content-type": content_type}
+
+    async def json(self) -> dict:
+        return self._payload
+
+
+class _FakeWebSocket:
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+        self.accepted = False
+        self.closed = False
+
+    async def accept(self) -> None:
+        self.accepted = True
+
+    async def send_json(self, payload: dict) -> None:
+        self.sent.append(payload)
+
+    async def close(self, *args, **kwargs) -> None:
+        self.closed = True
+
+
+class _FakeUploadFile:
+    def __init__(self, filename: str, content: bytes, content_type: str) -> None:
+        self.filename = filename
+        self._content = content
+        self.content_type = content_type
+
+    async def read(self) -> bytes:
+        return self._content
+
+
+def _upload_file(filename: str, content: bytes, content_type: str) -> _FakeUploadFile:
+    return _FakeUploadFile(filename, content, content_type)
 
 
 class DashboardRoutesTest(unittest.TestCase):
@@ -25,25 +63,21 @@ class DashboardRoutesTest(unittest.TestCase):
         self._http_auth_patcher.start()
         self._ws_auth_patcher.start()
         self._service_patcher.start()
-        self.client = TestClient(main.app)
 
     def tearDown(self) -> None:
-        self.client.close()
         self._ws_auth_patcher.stop()
         self._http_auth_patcher.stop()
         self._service_patcher.stop()
 
     def test_status_routes(self) -> None:
         with patch.object(self.mock_service, "build_status", return_value={"ok": True}) as build_status:
-            response = self.client.get("/api/status")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"ok": True})
+            response = main.status()
+        self.assertEqual(response, {"ok": True})
         build_status.assert_called_once_with()
 
         with patch.object(self.mock_service, "build_runtime_status", return_value={"runtime": "ok"}) as runtime_status:
-            response = self.client.get("/api/status/runtime")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"runtime": "ok"})
+            response = main.runtime_status()
+        self.assertEqual(response, {"runtime": "ok"})
         runtime_status.assert_called_once_with()
 
     def test_toolbar_actions(self) -> None:
@@ -57,24 +91,34 @@ class DashboardRoutesTest(unittest.TestCase):
         for path, (method_name, payload) in action_map.items():
             with self.subTest(path=path):
                 with patch.object(self.mock_service, method_name, return_value=payload) as method:
-                    response = self.client.post(path)
-                self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.json(), payload)
+                    response = getattr(main, method_name)()
+                self.assertEqual(response, payload)
+                method.assert_called_once_with()
+
+    def test_twitch_worker_routes(self) -> None:
+        action_map = {
+            "twitch_worker_status": {"process": {"running": False}, "configured": False},
+            "start_twitch_worker": {"ok": False, "auth_required": True},
+            "stop_twitch_worker": {"ok": True, "detail": "not-running"},
+        }
+        for method_name, payload in action_map.items():
+            with self.subTest(method_name=method_name):
+                with patch.object(self.mock_service, method_name, return_value=payload) as method:
+                    response = getattr(main, method_name)()
+                self.assertEqual(response, payload)
                 method.assert_called_once_with()
 
     def test_memory_clear_routes(self) -> None:
         with patch.object(self.mock_service, "clear_recent_memory", return_value={"ok": True, "cleared_total": 1}) as method:
-            response = self.client.post("/api/memory/clear-recent", json={"minutes": 10})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["cleared_total"], 1)
+            response = anyio.run(main.clear_recent_memory, _JsonRequest({"minutes": 10}))
+        self.assertEqual(response["cleared_total"], 1)
         method.assert_called_once_with(minutes=10)
 
         payload = {"ok": True, "cleared_total": 2}
         items = [{"id": 4, "kind": "episodic"}, {"id": 2, "kind": "profile_fact"}]
         with patch.object(self.mock_service, "clear_selected_memory", return_value=payload) as method:
-            response = self.client.post("/api/memory/clear-selected", json={"items": items})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["cleared_total"], 2)
+            response = anyio.run(main.clear_selected_memory, _JsonRequest({"items": items}))
+        self.assertEqual(response["cleared_total"], 2)
         method.assert_called_once_with(items)
 
     def test_provider_test_buttons(self) -> None:
@@ -89,9 +133,8 @@ class DashboardRoutesTest(unittest.TestCase):
         for path, (method_name, payload) in action_map.items():
             with self.subTest(path=path):
                 with patch.object(self.mock_service, method_name, return_value=payload) as method:
-                    response = self.client.post(path)
-                self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.json(), payload)
+                    response = getattr(main, method_name)()
+                self.assertEqual(response, payload)
                 method.assert_called_once_with()
 
     def test_assistant_settings_routes(self) -> None:
@@ -106,46 +149,40 @@ class DashboardRoutesTest(unittest.TestCase):
             "llm_router_persona_heavy_hosted_fallback_enabled": True,
         }
         with patch.object(self.mock_service, "assistant_runtime_settings", return_value=settings_payload) as method:
-            response = self.client.get("/api/assistant/settings")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["settings"], settings_payload)
+            response = main.assistant_settings()
+        self.assertEqual(response["settings"], settings_payload)
         method.assert_called_once_with()
 
         save_payload = {"ok": True, "settings": settings_payload, "detail": "saved"}
         with patch.object(self.mock_service, "save_assistant_runtime_settings", return_value=save_payload) as method:
-            response = self.client.post("/api/assistant/settings", json=settings_payload)
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["settings"], settings_payload)
+            response = anyio.run(main.save_assistant_settings, _JsonRequest(settings_payload))
+        self.assertEqual(response["settings"], settings_payload)
         method.assert_called_once_with(settings_payload)
 
     def test_tts_provider_profile_and_save_routes(self) -> None:
         with patch.object(self.mock_service, "set_tts_provider", return_value={"ok": True, "provider": "stub"}) as method:
-            response = self.client.post("/api/providers/tts/select", json={"provider": "stub"})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["provider"], "stub")
+            response = anyio.run(main.select_tts_provider, _JsonRequest({"provider": "stub"}))
+        self.assertEqual(response["provider"], "stub")
         method.assert_called_once_with("stub")
 
         with patch.object(self.mock_service, "set_tts_profile", return_value={"ok": True, "profile": "test"}) as method:
-            response = self.client.post("/api/providers/tts/profile", json={"profile": "test"})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["profile"], "test")
+            response = anyio.run(main.select_tts_profile, _JsonRequest({"profile": "test"}))
+        self.assertEqual(response["profile"], "test")
         method.assert_called_once_with("test")
 
         payload = {"id": "new_profile", "provider": "stub", "values": {}}
         with patch.object(self.mock_service, "save_tts_profile", return_value={"ok": True, "profile": payload}) as method:
-            response = self.client.post("/api/providers/tts/profile/save", json=payload)
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["profile"], payload)
+            response = anyio.run(main.save_tts_profile, _JsonRequest(payload))
+        self.assertEqual(response["profile"], payload)
         method.assert_called_once_with(payload)
 
     def test_tts_synthesize_route(self) -> None:
         with patch.object(self.mock_service, "synthesize_text", return_value={"ok": True, "filename": "tts-test.wav"}) as method:
-            response = self.client.post(
-                "/api/providers/tts/synthesize",
-                files={"text_file": ("sample.txt", b"hello from dashboard", "text/plain")},
+            response = anyio.run(
+                main.tts_synthesize_file,
+                _upload_file("sample.txt", b"hello from dashboard", "text/plain"),
             )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["filename"], "tts-test.wav")
+        self.assertEqual(response["filename"], "tts-test.wav")
         method.assert_called_once_with("hello from dashboard")
 
     def test_audio_routes_respect_extension_media_type(self) -> None:
@@ -153,12 +190,11 @@ class DashboardRoutesTest(unittest.TestCase):
         test_path = settings.audio_output_dir / "dashboard-test.mp3"
         test_path.write_bytes(b"fake audio")
         try:
-            response = self.client.get(f"/api/audio/{test_path.name}")
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.headers["content-type"], "audio/mpeg")
+            response = main.serve_audio(test_path.name)
+            self.assertEqual(response.media_type, "audio/mpeg")
 
-            delete_response = self.client.delete(f"/api/audio/{test_path.name}")
-            self.assertEqual(delete_response.status_code, 200)
+            delete_response = main.delete_audio(test_path.name)
+            self.assertEqual(delete_response["ok"], True)
             self.assertFalse(test_path.exists())
         finally:
             test_path.unlink(missing_ok=True)
@@ -174,41 +210,38 @@ class DashboardRoutesTest(unittest.TestCase):
         roundtrip_service = Mock()
         roundtrip_service.run = AsyncMock(return_value=payload)
         with patch.object(main, "get_voice_roundtrip_service", return_value=roundtrip_service):
-            response = self.client.post(
-                "/api/voice/roundtrip",
-                files={"audio_file": ("clip.wav", b"RIFF....", "audio/wav")},
-                data={"session_id": "abc", "synthesize_speech": "true"},
+            response = anyio.run(
+                main.dashboard_voice_roundtrip,
+                _upload_file("clip.wav", b"RIFF....", "audio/wav"),
+                "abc",
+                True,
             )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["transcript"], "hello")
+        self.assertEqual(response.transcript, "hello")
         self.assertEqual(roundtrip_service.run.await_count, 1)
 
     def test_vision_routes(self) -> None:
         analysis = VisionAnalysis(summary="Image summary")
         with patch.object(self.mock_service, "analyze_remote_image", return_value=analysis) as method:
-            response = self.client.post(
-                "/api/vision/analyze",
-                files={"image_file": ("image.png", b"png", "image/png")},
-                data={"user_text": "what is this?", "vision_mode": "photo"},
+            response = anyio.run(
+                main.dashboard_vision_analyze,
+                _upload_file("image.png", b"png", "image/png"),
+                "what is this?",
+                "photo",
             )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["summary"], "Image summary")
+        self.assertEqual(response.summary, "Image summary")
         self.assertEqual(method.call_args.kwargs["vision_mode"], "photo")
 
         assistant_response = AssistantResponse(spoken_text="Looks good.")
         with patch.object(self.mock_service, "respond_remote_image", return_value=assistant_response) as method:
-            response = self.client.post(
-                "/api/vision/respond",
-                files={"image_file": ("image.png", b"png", "image/png")},
-                data={
-                    "user_text": "ask gamma",
-                    "vision_mode": "screen",
-                    "session_id": "sess-1",
-                    "synthesize_speech": "false",
-                },
+            response = anyio.run(
+                main.dashboard_vision_respond,
+                _upload_file("image.png", b"png", "image/png"),
+                "ask gamma",
+                "screen",
+                "sess-1",
+                False,
             )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["spoken_text"], "Looks good.")
+        self.assertEqual(response.spoken_text, "Looks good.")
         self.assertEqual(method.call_args.kwargs["vision_mode"], "screen")
 
     def test_live_voice_websocket(self) -> None:
@@ -220,9 +253,9 @@ class DashboardRoutesTest(unittest.TestCase):
         live_voice_session = Mock()
         live_voice_session.handle = AsyncMock(side_effect=fake_handle)
         with patch.object(main, "get_live_voice_session", return_value=live_voice_session):
-            with self.client.websocket_connect("/api/voice/live") as websocket:
-                payload = websocket.receive_json()
-        self.assertEqual(payload, {"type": "ready"})
+            websocket = _FakeWebSocket()
+            anyio.run(main.dashboard_live_voice, websocket)
+        self.assertEqual(websocket.sent, [{"type": "ready"}])
         self.assertEqual(live_voice_session.handle.await_count, 1)
 
     def test_router_capability_status_includes_hosted_and_local_scopes(self) -> None:

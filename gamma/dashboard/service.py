@@ -24,7 +24,7 @@ from ..errors import ConfigurationError
 from ..integrations.twitch.client import GammaStreamClient
 from ..integrations.twitch.replay import replay_jsonl_text
 from ..integrations.twitch.trust import VALID_TRUST_LEVELS, ViewerTrustStore
-from ..integrations.twitch.worker import TwitchWorkerConfig
+from ..integrations.twitch.worker import TwitchWorkerConfig, read_twitch_worker_state
 from ..llm.router_adapter import RouterLLMAdapter
 from ..memory.service import MemoryService
 from ..persona.emotion_service import EmotionMemoryService
@@ -247,6 +247,7 @@ class DashboardService:
             "channel": settings.twitch_channel.lstrip("#").strip().lower() if settings.twitch_channel else "",
             "worker": "twitch_irc",
             "controls": self.twitch_runtime_settings(),
+            "state": read_twitch_worker_state(),
         }
 
     def twitch_runtime_settings(self) -> dict[str, bool]:

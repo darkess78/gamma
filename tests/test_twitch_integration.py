@@ -12,7 +12,7 @@ from gamma.integrations.twitch.normalize import normalize_chat_message
 from gamma.integrations.twitch.replay import replay_jsonl, replay_jsonl_text
 from gamma.integrations.twitch.sanitize import classify_chat_text, safe_username_alias
 from gamma.integrations.twitch.trust import ViewerTrustStore
-from gamma.integrations.twitch.worker import TwitchIrcWorker, TwitchWorkerConfig
+from gamma.integrations.twitch.worker import TwitchIrcWorker, TwitchWorkerConfig, read_twitch_worker_state
 from gamma.dashboard.service import DashboardService
 from gamma.errors import ConfigurationError
 from gamma.stream.brain import StreamBrain
@@ -301,23 +301,30 @@ class TwitchIntegrationTest(unittest.TestCase):
 
     def test_worker_posts_normalized_privmsg(self) -> None:
         client = _FakeClient()
-        worker = TwitchIrcWorker(
-            config=TwitchWorkerConfig(
-                channel="#Shana",
-                bot_username="bot",
-                oauth_token="oauth:test",
-                owner_user_id="owner-1",
-            ),
-            client=client,  # type: ignore[arg-type]
-            trust_store=_FakeTrustStore(),  # type: ignore[arg-type]
-        )
-        line = (
-            "@badges=;display-name=Owner;id=m1;user-id=owner-1 "
-            ":owner!owner@owner.tmi.twitch.tv PRIVMSG #shana :Shana test"
-        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_path = Path(temp_dir) / "state.json"
+            worker = TwitchIrcWorker(
+                config=TwitchWorkerConfig(
+                    channel="#Shana",
+                    bot_username="bot",
+                    oauth_token="oauth:test",
+                    owner_user_id="owner-1",
+                ),
+                client=client,  # type: ignore[arg-type]
+                trust_store=_FakeTrustStore(),  # type: ignore[arg-type]
+                state_path=state_path,
+            )
+            line = (
+                "@badges=;display-name=Owner;id=m1;user-id=owner-1 "
+                ":owner!owner@owner.tmi.twitch.tv PRIVMSG #shana :Shana test"
+            )
 
-        result = worker.handle_line(line)
+            result = worker.handle_line(line)
+            state = read_twitch_worker_state(state_path)
 
+        self.assertEqual(state["status"], "connected")
+        self.assertEqual(state["message_count"], 1)
+        self.assertEqual(state["channel"], "shana")
         self.assertIsNotNone(result)
         self.assertEqual(client.events[0].session_id, "twitch:shana")
         self.assertEqual(client.events[0].actor.roles, ["owner"])

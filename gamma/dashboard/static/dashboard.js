@@ -958,12 +958,22 @@
     worker = worker || {};
     var process = worker.process || {};
     var controls = worker.controls || {};
+    var state = worker.state || {};
     var lines = [
       'Configured: ' + (worker.configured ? 'Yes' : 'No'),
       'Running: ' + (process.running ? 'Yes' : 'No'),
       'Channel: ' + (worker.channel || 'n/a')
     ];
     if (process.pid) lines.push('PID: ' + process.pid);
+    if (state.status || state.updated_at) {
+      lines.push('');
+      lines.push('IRC State:');
+      lines.push('Status: ' + (state.status || 'n/a') + ' / connected: ' + (state.connected ? 'yes' : 'no'));
+      lines.push('Updated: ' + fmtLocalDateTime(state.updated_at));
+      if (typeof state.reconnects !== 'undefined') lines.push('Reconnects: ' + state.reconnects);
+      if (typeof state.message_count !== 'undefined') lines.push('Messages posted: ' + state.message_count);
+      if (state.detail) lines.push('Detail: ' + state.detail);
+    }
     lines.push('');
     lines.push('Controls:');
     lines.push('Dry run: ' + (controls.dry_run ? 'On' : 'Off'));

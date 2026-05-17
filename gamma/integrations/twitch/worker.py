@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import socket
 import ssl
+import time
 from dataclasses import dataclass
-from typing import Iterable
+from pathlib import Path
+from typing import Any, Iterable
 
 from ...config import settings
 from ...errors import ConfigurationError
@@ -85,12 +88,15 @@ class TwitchIrcWorker:
         trust_store: ViewerTrustStore | None = None,
         synthesize_speech: bool | None = None,
         fast_mode: bool = True,
+        state_path: Path | None = None,
     ) -> None:
         self.config = config
         self.client = client or GammaStreamClient()
         self.trust_store = trust_store or ViewerTrustStore()
         self.synthesize_speech = config.voice_enabled if synthesize_speech is None else synthesize_speech
         self.fast_mode = fast_mode
+        self.state_path = state_path or twitch_worker_state_path()
+        self._message_count = 0
 
     def handle_line(self, line: str) -> dict | None:
         irc_message = parse_irc_line(line)
@@ -108,16 +114,39 @@ class TwitchIrcWorker:
             session_id=f"twitch:{self.config.normalized_channel}",
             twitch_controls=self.config.controls(),
         )
-        return self.client.post_event(
+        result = self.client.post_event(
             event,
             synthesize_speech=self.synthesize_speech,
             fast_mode=self.fast_mode,
         )
+        self._message_count += 1
+        self._write_state(status="connected", connected=True, last_message_kind="chat_message")
+        return result
 
-    def run_forever(self) -> None:
+    def run_forever(self, *, max_reconnects: int | None = None) -> None:
+        reconnects = 0
+        while True:
+            try:
+                self._write_state(status="connecting", connected=False, reconnects=reconnects)
+                self._run_once()
+                reconnects += 1
+                self._write_state(status="disconnected", connected=False, detail="IRC socket closed.", reconnects=reconnects)
+            except KeyboardInterrupt:
+                self._write_state(status="stopped", connected=False, detail="Interrupted.", reconnects=reconnects)
+                raise
+            except Exception as exc:
+                reconnects += 1
+                self._write_state(status="reconnecting", connected=False, detail=str(exc), reconnects=reconnects)
+            if max_reconnects is not None and reconnects >= max_reconnects:
+                self._write_state(status="stopped", connected=False, detail="Reconnect limit reached.", reconnects=reconnects)
+                return
+            time.sleep(min(60.0, 2.0 ** min(reconnects, 5)))
+
+    def _run_once(self) -> None:
         with socket.create_connection((self.config.host, self.config.port), timeout=30) as raw_socket:
             with ssl.create_default_context().wrap_socket(raw_socket, server_hostname=self.config.host) as irc:
                 self._authenticate(irc)
+                self._write_state(status="connected", connected=True, reconnects=0)
                 for line in _iter_socket_lines(irc):
                     if line.startswith("PING "):
                         irc.sendall(line.replace("PING", "PONG", 1).encode("utf-8") + b"\r\n")
@@ -136,6 +165,35 @@ class TwitchIrcWorker:
         ]
         irc.sendall(("\r\n".join(commands) + "\r\n").encode("utf-8"))
 
+    def _write_state(self, *, status: str, connected: bool, **extra: Any) -> None:
+        payload = {
+            "status": status,
+            "connected": connected,
+            "channel": self.config.normalized_channel,
+            "host": self.config.host,
+            "port": self.config.port,
+            "message_count": self._message_count,
+            "updated_at": _utc_now(),
+            **extra,
+        }
+        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        self.state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def twitch_worker_state_path() -> Path:
+    return settings.data_dir / "runtime" / "twitch_worker" / "state.json"
+
+
+def read_twitch_worker_state(path: Path | None = None) -> dict[str, Any]:
+    state_path = path or twitch_worker_state_path()
+    if not state_path.exists():
+        return {}
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
 
 def _iter_socket_lines(sock: ssl.SSLSocket) -> Iterable[str]:
     buffer = ""
@@ -148,6 +206,10 @@ def _iter_socket_lines(sock: ssl.SSLSocket) -> Iterable[str]:
             line, buffer = buffer.split("\r\n", 1)
             if line:
                 yield line
+
+
+def _utc_now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def main() -> None:

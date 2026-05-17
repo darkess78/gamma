@@ -141,6 +141,55 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertNotIn("buy_views", result.assistant_response.spoken_text)
         self.assertEqual([item.type for item in result.output_events], ["emotion_changed", "subtitle_line"])
 
+    def test_spam_quip_cooldown_suppresses_repeated_spam_reactions(self) -> None:
+        conversation = _FakeConversation()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            first = brain.handle_event(
+                normalize_chat_message(
+                    TwitchChatMessage(text="buy viewers at https://badsite.example", platform_user_id="spam1", display_name="spam_bot_1")
+                )
+            )
+            second = brain.handle_event(
+                normalize_chat_message(
+                    TwitchChatMessage(text="cheap viewers at https://badsite.example", platform_user_id="spam2", display_name="spam_bot_2")
+                )
+            )
+
+        self.assertEqual(first.decision.response_mode, "spam_quip")
+        self.assertEqual(second.decision.decision, "ignore")
+        self.assertEqual(second.decision.reason, "twitch_spam_quip_cooldown_active")
+        self.assertEqual(conversation.calls, [])
+        self.assertIsNone(second.assistant_response)
+
+    def test_spam_quip_cooldown_can_be_disabled_per_event(self) -> None:
+        conversation = _FakeConversation()
+        controls = {"spam_quip_cooldown_seconds": 0, "min_speech_gap_seconds": 0}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            first = brain.handle_event(
+                normalize_chat_message(
+                    TwitchChatMessage(text="buy viewers at https://badsite.example", platform_user_id="spam1", display_name="spam_bot_1"),
+                    twitch_controls=controls,
+                )
+            )
+            second = brain.handle_event(
+                normalize_chat_message(
+                    TwitchChatMessage(text="cheap viewers at https://badsite.example", platform_user_id="spam2", display_name="spam_bot_2"),
+                    twitch_controls=controls,
+                )
+            )
+
+        self.assertEqual(first.decision.response_mode, "spam_quip")
+        self.assertEqual(second.decision.response_mode, "spam_quip")
+        self.assertIsNotNone(second.assistant_response)
+
     def test_prompt_injection_summary_is_ignored_without_llm_call(self) -> None:
         conversation = _FakeConversation()
         event = normalize_chat_message(
@@ -343,6 +392,7 @@ class TwitchIntegrationTest(unittest.TestCase):
                 voice_enabled=True,
                 ambient_chat_enabled=False,
                 min_speech_gap_seconds=9,
+                spam_quip_cooldown_seconds=45,
             ),
             client=client,  # type: ignore[arg-type]
             trust_store=_FakeTrustStore(),  # type: ignore[arg-type]
@@ -360,6 +410,7 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertEqual(client.events[0].metadata["twitch_controls"]["dry_run"], False)
         self.assertEqual(client.events[0].metadata["twitch_controls"]["ambient_chat_enabled"], False)
         self.assertEqual(client.events[0].metadata["twitch_controls"]["min_speech_gap_seconds"], 9)
+        self.assertEqual(client.events[0].metadata["twitch_controls"]["spam_quip_cooldown_seconds"], 45)
 
     def test_worker_ignores_non_chat_irc_lines(self) -> None:
         client = _FakeClient()
@@ -449,20 +500,29 @@ class TwitchIntegrationTest(unittest.TestCase):
                 patch("gamma.dashboard.service.app_local_config_path", return_value=path),
                 patch(
                     "gamma.dashboard.service.load_app_file_config",
-                    return_value={"twitch_dry_run": False, "twitch_voice_enabled": True, "twitch_min_speech_gap_seconds": 7},
+                    return_value={
+                        "twitch_dry_run": False,
+                        "twitch_voice_enabled": True,
+                        "twitch_min_speech_gap_seconds": 7,
+                        "twitch_spam_quip_cooldown_seconds": 33,
+                    },
                 ),
             ):
                 service = DashboardService()
-                result = service.save_twitch_runtime_settings({"dry_run": False, "voice_enabled": True, "min_speech_gap_seconds": 7})
+                result = service.save_twitch_runtime_settings(
+                    {"dry_run": False, "voice_enabled": True, "min_speech_gap_seconds": 7, "spam_quip_cooldown_seconds": 33}
+                )
                 saved_text = path.read_text(encoding="utf-8")
 
         self.assertTrue(result["ok"])
         self.assertIn("twitch_dry_run = false", saved_text)
         self.assertIn("twitch_voice_enabled = true", saved_text)
         self.assertIn("twitch_min_speech_gap_seconds = 7", saved_text)
+        self.assertIn("twitch_spam_quip_cooldown_seconds = 33", saved_text)
         self.assertEqual(result["settings"]["dry_run"], False)
         self.assertEqual(result["settings"]["voice_enabled"], True)
         self.assertEqual(result["settings"]["min_speech_gap_seconds"], 7)
+        self.assertEqual(result["settings"]["spam_quip_cooldown_seconds"], 33)
 
 
 if __name__ == "__main__":

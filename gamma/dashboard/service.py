@@ -267,6 +267,9 @@ class DashboardService:
                 config.get("twitch_llm_safety_review_enabled", settings.twitch_llm_safety_review_enabled)
             ),
             "min_speech_gap_seconds": int(config.get("twitch_min_speech_gap_seconds", settings.twitch_min_speech_gap_seconds)),
+            "spam_quip_cooldown_seconds": int(
+                config.get("twitch_spam_quip_cooldown_seconds", settings.twitch_spam_quip_cooldown_seconds)
+            ),
         }
 
     def save_twitch_runtime_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -300,6 +303,18 @@ class DashboardService:
                 updated,
                 "twitch_min_speech_gap_seconds",
                 max(0, int(payload.get("min_speech_gap_seconds", settings.twitch_min_speech_gap_seconds))),
+            )
+        if "twitch_spam_quip_cooldown_seconds" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "twitch_spam_quip_cooldown_seconds",
+                max(0, int(payload.get("twitch_spam_quip_cooldown_seconds", settings.twitch_spam_quip_cooldown_seconds))),
+            )
+        elif "spam_quip_cooldown_seconds" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "twitch_spam_quip_cooldown_seconds",
+                max(0, int(payload.get("spam_quip_cooldown_seconds", settings.twitch_spam_quip_cooldown_seconds))),
             )
         app_toml.parent.mkdir(parents=True, exist_ok=True)
         app_toml.write_text(updated, encoding="utf-8")

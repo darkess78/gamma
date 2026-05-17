@@ -94,6 +94,7 @@ twitch_spam_quips_enabled = true
 twitch_self_goal_proposals_enabled = true
 twitch_llm_safety_review_enabled = true
 twitch_min_speech_gap_seconds = 5
+twitch_spam_quip_cooldown_seconds = 60
 speech_filter_level = "strict"
 speech_filter_hard_block_enabled = true
 speech_filter_heuristic_enabled = true

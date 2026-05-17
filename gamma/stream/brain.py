@@ -21,6 +21,7 @@ from .trace import StreamTraceStore
 
 
 DEFAULT_STREAM_SPEECH_GAP_SECONDS = 5.0
+DEFAULT_SPAM_QUIP_COOLDOWN_SECONDS = 60.0
 HIGH_PRIORITY_BYPASS_THRESHOLD = 20
 
 
@@ -286,10 +287,18 @@ class StreamBrain:
 
 
 class StreamSpeechPacer:
-    def __init__(self, *, now=time.monotonic, default_min_gap_seconds: float = DEFAULT_STREAM_SPEECH_GAP_SECONDS) -> None:
+    def __init__(
+        self,
+        *,
+        now=time.monotonic,
+        default_min_gap_seconds: float = DEFAULT_STREAM_SPEECH_GAP_SECONDS,
+        default_spam_quip_cooldown_seconds: float = DEFAULT_SPAM_QUIP_COOLDOWN_SECONDS,
+    ) -> None:
         self._now = now
         self._default_min_gap_seconds = default_min_gap_seconds
+        self._default_spam_quip_cooldown_seconds = default_spam_quip_cooldown_seconds
         self._last_spoken_at: float | None = None
+        self._last_spam_quip_at: float | None = None
         self._pending: dict[str, dict] = {}
 
     def apply(self, event: StreamInputEvent, decision: TurnDecision) -> TurnDecision:
@@ -298,8 +307,11 @@ class StreamSpeechPacer:
         if not _is_paced_stream_event(event):
             self.mark_spoken()
             return decision
-        min_gap = _stream_min_gap_seconds(event, self._default_min_gap_seconds)
         now = self._now()
+        spam_cooldown_decision = self._spam_quip_cooldown_decision(event, decision, now)
+        if spam_cooldown_decision is not None:
+            return spam_cooldown_decision
+        min_gap = _stream_min_gap_seconds(event, self._default_min_gap_seconds)
         if self._last_spoken_at is not None:
             elapsed = now - self._last_spoken_at
             if elapsed < min_gap and event.priority < HIGH_PRIORITY_BYPASS_THRESHOLD:
@@ -322,6 +334,8 @@ class StreamSpeechPacer:
                     },
                 )
         self.mark_spoken(now)
+        if decision.response_mode == "spam_quip":
+            self._last_spam_quip_at = now
         return decision
 
     def mark_spoken(self, now: float | None = None) -> None:
@@ -361,6 +375,29 @@ class StreamSpeechPacer:
         self._pending[slot] = item
         return item
 
+    def _spam_quip_cooldown_decision(self, event: StreamInputEvent, decision: TurnDecision, now: float) -> TurnDecision | None:
+        if decision.response_mode != "spam_quip":
+            return None
+        cooldown = _stream_spam_quip_cooldown_seconds(event, self._default_spam_quip_cooldown_seconds)
+        if self._last_spam_quip_at is None or cooldown <= 0:
+            return None
+        elapsed = now - self._last_spam_quip_at
+        if elapsed >= cooldown:
+            return None
+        return TurnDecision(
+            decision="ignore",
+            reason="twitch_spam_quip_cooldown_active",
+            should_call_conversation=False,
+            response_mode="none",
+            metadata={
+                **_metadata_without_canned_response(decision.metadata),
+                "would_decision": decision.decision,
+                "would_reason": decision.reason,
+                "cooldown_seconds": cooldown,
+                "elapsed_seconds": round(elapsed, 3),
+            },
+        )
+
 
 def _input_safety(event: StreamInputEvent) -> dict:
     value = event.metadata.get("input_safety")
@@ -385,6 +422,26 @@ def _stream_min_gap_seconds(event: StreamInputEvent, default: float) -> float:
         return max(0.0, float(raw_value))
     except (TypeError, ValueError):
         return default
+
+
+def _stream_spam_quip_cooldown_seconds(event: StreamInputEvent, default: float) -> float:
+    controls = event.metadata.get("twitch_controls")
+    if not isinstance(controls, dict):
+        return default
+    raw_value = controls.get("spam_quip_cooldown_seconds")
+    if raw_value is None:
+        return default
+    try:
+        return max(0.0, float(raw_value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _metadata_without_canned_response(metadata: dict) -> dict:
+    cleaned = dict(metadata)
+    cleaned.pop("canned_response", None)
+    cleaned.pop("canned_emotion", None)
+    return cleaned
 
 
 def _canned_response_from_decision(decision: TurnDecision) -> str | None:

@@ -123,6 +123,16 @@ def _as_int(value: Any, *, default: int) -> int:
     return int(value)
 
 
+def _as_csv(value: Any, *, default: tuple[str, ...] = ()) -> tuple[str, ...]:
+    if value is None or value == "":
+        return default
+    if isinstance(value, (list, tuple)):
+        raw_items = value
+    else:
+        raw_items = str(value).split(",")
+    return tuple(item.strip() for item in raw_items if str(item).strip())
+
+
 def _as_path(value: Any, *, default: Path) -> Path:
     if value is None or value == "":
         return default
@@ -457,6 +467,13 @@ class Settings:
     twitch_owner_user_id: str = str(
         _setting("SHANA_TWITCH_OWNER_USER_ID", _config_value(APP_CONFIG, "twitch_owner_user_id", default=""))
     ).strip()
+    twitch_ignored_bots: tuple[str, ...] = _as_csv(
+        _setting(
+            "SHANA_TWITCH_IGNORED_BOTS",
+            _config_value(APP_CONFIG, "twitch_ignored_bots", default="Nightbot,StreamElements,Streamlabs"),
+        ),
+        default=("Nightbot", "StreamElements", "Streamlabs"),
+    )
     twitch_irc_host: str = str(
         _setting("SHANA_TWITCH_IRC_HOST", _config_value(APP_CONFIG, "twitch_irc_host", default="irc.chat.twitch.tv"))
     ).strip() or "irc.chat.twitch.tv"

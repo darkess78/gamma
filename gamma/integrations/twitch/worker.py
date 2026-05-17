@@ -36,6 +36,7 @@ class TwitchWorkerConfig:
     min_speech_gap_seconds: int = 5
     spam_quip_cooldown_seconds: int = 60
     max_speech_seconds_per_minute: int = 20
+    ignored_bots: tuple[str, ...] = ("Nightbot", "StreamElements", "Streamlabs")
 
     @classmethod
     def from_settings(cls) -> "TwitchWorkerConfig":
@@ -66,6 +67,7 @@ class TwitchWorkerConfig:
             min_speech_gap_seconds=max(0, int(getattr(settings, "twitch_min_speech_gap_seconds", 5))),
             spam_quip_cooldown_seconds=max(0, int(getattr(settings, "twitch_spam_quip_cooldown_seconds", 60))),
             max_speech_seconds_per_minute=max(0, int(getattr(settings, "twitch_max_speech_seconds_per_minute", 20))),
+            ignored_bots=tuple(getattr(settings, "twitch_ignored_bots", ("Nightbot", "StreamElements", "Streamlabs"))),
         )
 
     @property
@@ -112,6 +114,9 @@ class TwitchIrcWorker:
         chat_message = chat_message_from_irc(irc_message)
         if chat_message is None:
             return None
+        if self._is_ignored_bot(chat_message.display_name):
+            self._write_state(status="connected", connected=True, last_message_kind="ignored_bot")
+            return {"ignored": True, "reason": "ignored_bot", "display_name": chat_message.display_name}
         trust_level = self.trust_store.trust_level_for(
             platform="twitch",
             platform_user_id=chat_message.platform_user_id,
@@ -131,6 +136,12 @@ class TwitchIrcWorker:
         self._message_count += 1
         self._write_state(status="connected", connected=True, last_message_kind="chat_message")
         return result
+
+    def _is_ignored_bot(self, display_name: str | None) -> bool:
+        normalized = (display_name or "").strip().lower()
+        if not normalized:
+            return False
+        return normalized in {name.strip().lower() for name in self.config.ignored_bots if name.strip()}
 
     def run_forever(self, *, max_reconnects: int | None = None) -> None:
         reconnects = 0

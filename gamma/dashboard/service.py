@@ -248,6 +248,7 @@ class DashboardService:
             "configured": configured,
             "channel": settings.twitch_channel.lstrip("#").strip().lower() if settings.twitch_channel else "",
             "worker": "twitch_irc",
+            "ignored_bots": list(settings.twitch_ignored_bots),
             "controls": self.twitch_runtime_settings(),
             "state": read_twitch_worker_state(),
         }

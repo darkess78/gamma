@@ -427,6 +427,30 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertIsNone(result)
         self.assertEqual(client.events, [])
 
+    def test_worker_ignores_configured_bot_display_names(self) -> None:
+        client = _FakeClient()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            worker = TwitchIrcWorker(
+                config=TwitchWorkerConfig(
+                    channel="shana",
+                    bot_username="bot",
+                    oauth_token="oauth:test",
+                    ignored_bots=("Nightbot",),
+                ),
+                client=client,  # type: ignore[arg-type]
+                trust_store=_FakeTrustStore(),  # type: ignore[arg-type]
+                state_path=Path(temp_dir) / "state.json",
+            )
+            result = worker.handle_line(
+                "@badges=;display-name=Nightbot;id=m1;user-id=bot1 "
+                ":nightbot!nightbot@nightbot.tmi.twitch.tv PRIVMSG #shana :regular automated reminder"
+            )
+            state = read_twitch_worker_state(Path(temp_dir) / "state.json")
+
+        self.assertEqual(result["reason"], "ignored_bot")
+        self.assertEqual(client.events, [])
+        self.assertEqual(state["last_message_kind"], "ignored_bot")
+
     def test_worker_config_requires_credentials(self) -> None:
         with patch("gamma.integrations.twitch.worker.settings") as mock_settings:
             mock_settings.twitch_channel = ""

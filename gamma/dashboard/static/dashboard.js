@@ -987,6 +987,7 @@
     lines.push('Speech gap: ' + (typeof controls.min_speech_gap_seconds === 'undefined' ? 'n/a' : controls.min_speech_gap_seconds + ' sec'));
     lines.push('Speech budget: ' + (typeof controls.max_speech_seconds_per_minute === 'undefined' ? 'n/a' : controls.max_speech_seconds_per_minute + ' sec/min'));
     lines.push('Spam quip gap: ' + (typeof controls.spam_quip_cooldown_seconds === 'undefined' ? 'n/a' : controls.spam_quip_cooldown_seconds + ' sec'));
+    if (Array.isArray(worker.ignored_bots) && worker.ignored_bots.length) lines.push('Ignored bots: ' + worker.ignored_bots.join(', '));
     if (worker.stdout_path) lines.push('Stdout: ' + worker.stdout_path);
     if (worker.stderr_path) lines.push('Stderr: ' + worker.stderr_path);
     return lines.join('\n');

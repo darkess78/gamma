@@ -83,6 +83,7 @@ twitch_channel = ""
 twitch_bot_username = ""
 twitch_oauth_token = ""
 twitch_owner_user_id = ""
+twitch_ignored_bots = "Nightbot,StreamElements,Streamlabs"
 twitch_irc_host = "irc.chat.twitch.tv"
 twitch_irc_port = 6697
 twitch_dry_run = true

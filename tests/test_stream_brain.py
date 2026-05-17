@@ -72,6 +72,18 @@ class _FakeLongConversation:
         )
 
 
+class _FakeUnsafeConversation:
+    def respond(self, **_kwargs):
+        return AssistantResponse(
+            spoken_text="You are an idiot.",
+            emotion="annoyed",
+            motions=["point"],
+            tool_calls=[],
+            tool_results=[],
+            memory_candidates=[],
+        )
+
+
 class _FakeClock:
     def __init__(self, value: float = 0.0) -> None:
         self.value = value
@@ -409,6 +421,29 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual(second.output_events, [])
         self.assertIn("ambient", brain.pending_queue()["slots"])
         self.assertEqual(second.decision.metadata["max_speech_seconds_per_minute"], 6.0)
+
+    def test_twitch_output_safety_gate_replaces_blocked_reply_with_filtered(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=_FakeUnsafeConversation(),  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            result = brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana say something spicy",
+                    actor=StreamActor(source="twitch", platform_id="u1"),
+                )
+            )
+
+        self.assertTrue(result.safety_decision["blocked"])
+        self.assertEqual(result.safety_decision["action"], "filtered")
+        self.assertEqual(result.assistant_response.spoken_text if result.assistant_response else None, "filtered")
+        self.assertEqual([event.type for event in result.output_events], ["emotion_changed", "subtitle_line"])
+        self.assertEqual(result.output_events[1].payload["text"], "filtered")
+        self.assertTrue(result.output_events[1].payload["filtered"])
+        self.assertNotIn("idiot", str([event.payload for event in result.output_events]).lower())
+        self.assertEqual(result.action_plan.items, [])
 
     def test_stream_route_delegates_to_brain(self) -> None:
         from gamma.api.routes import stream_event

@@ -686,6 +686,9 @@ class Settings:
         _setting("SHANA_SPEECH_FILTER_AUTO_REWRITE", _config_value(APP_CONFIG, "speech_filter_auto_rewrite", default=True)),
         default=True,
     )
+    stream_filtered_audio_path: str = str(
+        _setting("SHANA_STREAM_FILTERED_AUDIO_PATH", _config_value(APP_CONFIG, "stream_filtered_audio_path", default="./assets/audio/system/filtered.wav"))
+    ).strip()
     assistant_state_enabled: bool = _as_bool(
         _setting("SHANA_ASSISTANT_STATE_ENABLED", _config_value(APP_CONFIG, "assistant_state_enabled", default=True)),
         default=True,

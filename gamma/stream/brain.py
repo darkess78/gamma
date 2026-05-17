@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from uuid import uuid4
 
+from ..config import settings
 from ..conversation.service import ConversationService
 from ..errors import ConversationError
 from ..schemas.response import AssistantResponse
+from ..safety.speech_filter import SpeechSafetyFilter
 from .actions import ActionPlanner
 from .models import (
     ActionPlan,
@@ -42,6 +45,7 @@ class StreamBrain:
         self._action_planner = action_planner or ActionPlanner()
         self._output_dispatcher = output_dispatcher or StreamOutputDispatcher()
         self._pacer = StreamSpeechPacer()
+        self._speech_filter = SpeechSafetyFilter(settings.speech_filter_level)
 
     def handle_event(
         self,
@@ -83,7 +87,6 @@ class StreamBrain:
                 spoken_text=canned_response,
                 emotion=str(decision.metadata.get("canned_emotion") or "teasing"),
             )
-            output_events = output_events_from_response(input_event=event, turn_id=turn_id, response=response)
         elif decision.should_call_conversation:
             text = (event.text or "").strip()
             if not text:
@@ -97,14 +100,21 @@ class StreamBrain:
                 brief_mode=brief_mode,
                 micro_mode=micro_mode,
             )
-            output_events = output_events_from_response(input_event=event, turn_id=turn_id, response=response)
             action_plan = self._action_planner.plan_from_response(response)
+        safety_decision = self._review_stream_output(event, response) if response else {}
+        if safety_decision.get("blocked"):
+            response = _filtered_stream_response()
+            action_plan = ActionPlan()
         budget_decision = self._pacer.apply_budget(event, decision, response.spoken_text if response else "")
         if budget_decision is not None:
             decision = budget_decision
             response = None
             action_plan = ActionPlan()
             output_events = []
+        elif response is not None:
+            output_events = output_events_from_response(input_event=event, turn_id=turn_id, response=response)
+            if safety_decision.get("blocked"):
+                output_events = _mark_filtered_output_events(output_events, safety_decision)
         output_events = _filter_stream_output_events(event, output_events)
         output_dispatch = self._output_dispatcher.dispatch(output_events) if output_events else None
 
@@ -115,10 +125,45 @@ class StreamBrain:
             assistant_response=response,
             output_events=output_events,
             output_dispatch=output_dispatch.model_dump() if output_dispatch else {},
+            safety_decision=safety_decision,
             timing_ms={"stream_brain_ms": round((time.perf_counter() - started_at) * 1000, 1)},
         )
         self._trace_store.append(result)
         return result
+
+    def _review_stream_output(self, event: StreamInputEvent, response: AssistantResponse | None) -> dict:
+        if response is None or not _is_public_stream_event(event):
+            return {}
+        review = self._speech_filter.apply(response.spoken_text)
+        speech_filter = response.tts_metadata.get("speech_filter") if isinstance(response.tts_metadata, dict) else None
+        if isinstance(speech_filter, dict) and speech_filter.get("blocked"):
+            return {
+                "action": "filtered",
+                "blocked": True,
+                "source": "conversation_speech_filter",
+                "matched_rules": speech_filter.get("matched_rules", []),
+                "layers": speech_filter.get("layers", []),
+                "filter_action": speech_filter.get("action"),
+                "safe_output": "filtered",
+            }
+        if review.blocked:
+            return {
+                "action": "filtered",
+                "blocked": True,
+                "source": "stream_output_gate",
+                "matched_rules": review.matched_rules,
+                "layers": review.layers,
+                "filter_action": review.action,
+                "safe_output": "filtered",
+            }
+        return {
+            "action": "allow",
+            "blocked": False,
+            "source": "stream_output_gate",
+            "matched_rules": review.matched_rules,
+            "layers": review.layers,
+            "filter_action": review.action,
+        }
 
     def record_result(self, result: StreamTurnResult) -> None:
         if result.output_events and not result.output_dispatch:
@@ -530,6 +575,44 @@ def _filter_stream_output_events(event: StreamInputEvent, output_events: list[St
             continue
         filtered.append(output_event)
     return filtered
+
+
+def _mark_filtered_output_events(output_events: list[StreamOutputEvent], safety_decision: dict) -> list[StreamOutputEvent]:
+    marked: list[StreamOutputEvent] = []
+    for output_event in output_events:
+        payload = dict(output_event.payload)
+        payload["filtered"] = True
+        payload["safety_action"] = safety_decision.get("action")
+        marked.append(output_event.model_copy(update={"payload": payload}))
+    return marked
+
+
+def _filtered_stream_response() -> AssistantResponse:
+    audio_path = _filtered_audio_path()
+    return AssistantResponse(
+        spoken_text="filtered",
+        emotion="concerned",
+        audio_path=str(audio_path) if audio_path else None,
+        audio_content_type="audio/wav" if audio_path else None,
+        motions=[],
+        tool_calls=[],
+        tool_results=[],
+        memory_candidates=[],
+    )
+
+
+def _filtered_audio_path() -> Path | None:
+    raw_path = settings.stream_filtered_audio_path
+    if not raw_path:
+        return None
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = settings.project_root / path
+    return path if path.exists() else None
+
+
+def _is_public_stream_event(event: StreamInputEvent) -> bool:
+    return event.actor.source == "twitch" or event.kind in {"chat_message", "follow", "donation", "redeem"}
 
 
 def _stream_min_gap_seconds(event: StreamInputEvent, default: float) -> float:

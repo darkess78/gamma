@@ -149,6 +149,25 @@ class ConversationPipelineTest(unittest.TestCase):
             session_id=None,
         )
 
+    def test_speech_filter_metadata_is_present_without_tts(self) -> None:
+        service = ConversationService()
+        service._llm = _FakeLLMAdapter(["[happy] You are an idiot."])
+        service._remember_assistant_state = Mock()
+
+        with patch("gamma.conversation.service.build_system_prompt", return_value="prompt"), patch.object(
+            service, "_append_timing_log", return_value=None
+        ):
+            response = service.respond(
+                user_text="this message is long enough to use the standard metadata path",
+                synthesize_speech=False,
+                fast_mode=True,
+                speaker_ctx=SpeakerContext(source="discord", platform_id="unknown-user"),
+            )
+
+        self.assertEqual(response.spoken_text, "I’m not going to say that. Let’s keep it safe and respectful.")
+        self.assertEqual(response.tts_metadata["speech_filter"]["blocked"], True)
+        self.assertTrue(response.tts_metadata["speech_filter"]["matched_rules"])
+
     def test_assistant_feeling_state_is_persisted(self) -> None:
         service = ConversationService()
         service._llm = _FakeLLMAdapter(["[teasing] Fine, I guess."])

@@ -102,6 +102,7 @@ speech_filter_heuristic_enabled = true
 speech_filter_llm_enabled = false
 speech_filter_llm_model = ""
 speech_filter_auto_rewrite = true
+stream_filtered_audio_path = "./assets/audio/system/filtered.wav"
 assistant_state_enabled = true
 assistant_emotion_decay_turns = 3
 assistant_emotion_episode_threshold = 0.65

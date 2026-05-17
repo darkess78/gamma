@@ -146,6 +146,14 @@ class ConversationService:
                     emotion="neutral",
                     internal_summary="Refused a request for private identifying information.",
                 )
+                speech_filter_metadata = {
+                    "level": settings.speech_filter_level,
+                    "blocked": True,
+                    "matched_rules": privacy_decision.matched_rules,
+                    "action": "privacy_refusal",
+                    "layers": ["privacy_guard"],
+                }
+                response.tts_metadata["speech_filter"] = speech_filter_metadata
                 timing = {
                     "privacy_guard_ms": round((time.perf_counter() - started_at) * 1000, 1),
                     "total_ms": round((time.perf_counter() - started_at) * 1000, 1),
@@ -156,13 +164,7 @@ class ConversationService:
                     response.audio_path = tts_result.audio_path
                     response.audio_content_type = tts_result.content_type
                     response.tts_metadata = dict(tts_result.metadata or {})
-                    response.tts_metadata["speech_filter"] = {
-                        "level": settings.speech_filter_level,
-                        "blocked": True,
-                        "matched_rules": privacy_decision.matched_rules,
-                        "action": "privacy_refusal",
-                        "layers": ["privacy_guard"],
-                    }
+                    response.tts_metadata["speech_filter"] = speech_filter_metadata
                     timing["tts_ms"] = round((time.perf_counter() - tts_started) * 1000, 1)
                     timing["total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
                 else:
@@ -293,6 +295,14 @@ class ConversationService:
                     memory_candidates=[],
                     vision=vision_analysis,
                 )
+                speech_filter_metadata = {
+                    "level": settings.speech_filter_level,
+                    "blocked": safe_spoken.blocked,
+                    "matched_rules": safe_spoken.matched_rules,
+                    "action": safe_spoken.action,
+                    "layers": safe_spoken.layers,
+                }
+                response.tts_metadata["speech_filter"] = speech_filter_metadata
                 if synthesize_speech:
                     tts_started = time.perf_counter()
                     tts_result = self._tts_service().synthesize(
@@ -303,13 +313,7 @@ class ConversationService:
                     response.audio_path = tts_result.audio_path
                     response.audio_content_type = tts_result.content_type
                     response.tts_metadata = dict(tts_result.metadata or {})
-                    response.tts_metadata["speech_filter"] = {
-                        "level": settings.speech_filter_level,
-                        "blocked": safe_spoken.blocked,
-                        "matched_rules": safe_spoken.matched_rules,
-                        "action": safe_spoken.action,
-                        "layers": safe_spoken.layers,
-                    }
+                    response.tts_metadata["speech_filter"] = speech_filter_metadata
                     timing["tts_ms"] = round((time.perf_counter() - tts_started) * 1000, 1)
                 else:
                     timing["tts_ms"] = 0.0
@@ -401,19 +405,21 @@ class ConversationService:
                 memory_candidates=memory_candidates,
                 vision=vision_analysis,
             )
+            speech_filter_metadata = {
+                "level": settings.speech_filter_level,
+                "blocked": safe_spoken.blocked,
+                "matched_rules": safe_spoken.matched_rules,
+                "action": safe_spoken.action,
+                "layers": safe_spoken.layers,
+            }
+            response.tts_metadata["speech_filter"] = speech_filter_metadata
             if synthesize_speech:
                 tts_started = time.perf_counter()
                 tts_result = self._tts_service().synthesize(final_reply_text, emotion=response.emotion, styles=response.voice_styles)
                 response.audio_path = tts_result.audio_path
                 response.audio_content_type = tts_result.content_type
                 response.tts_metadata = dict(tts_result.metadata or {})
-                response.tts_metadata["speech_filter"] = {
-                    "level": settings.speech_filter_level,
-                    "blocked": safe_spoken.blocked,
-                    "matched_rules": safe_spoken.matched_rules,
-                    "action": safe_spoken.action,
-                    "layers": safe_spoken.layers,
-                }
+                response.tts_metadata["speech_filter"] = speech_filter_metadata
                 timing["tts_ms"] = round((time.perf_counter() - tts_started) * 1000, 1)
             else:
                 timing["tts_ms"] = 0.0

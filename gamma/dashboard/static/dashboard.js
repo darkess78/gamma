@@ -1142,6 +1142,22 @@
     }).join('\n\n');
   }
 
+  function humanStreamTempMemory(payload) {
+    var items = payload && Array.isArray(payload.items) ? payload.items : [];
+    if (!items.length) return 'No temporary stream memory.';
+    return items.slice(0, 12).map(function (item) {
+      var metadata = item.metadata || {};
+      var decision = metadata.last_decision || metadata.decision || '';
+      var reason = metadata.last_reason || metadata.reason || '';
+      return [
+        (item.bucket || 'bucket') + ' / ' + (item.key || 'key'),
+        '  value: ' + oneLine(item.value || '', 180),
+        '  updated: ' + fmtLocalDateTime(item.updated_at),
+        decision ? ('  decision: ' + decision + ' / ' + (reason || 'n/a')) : ''
+      ].filter(Boolean).join('\n');
+    }).join('\n\n');
+  }
+
   function oneLine(value, maxLength) {
     var text = String(value || '').replace(/\s+/g, ' ').trim();
     if (text.length <= maxLength) return text;
@@ -2324,6 +2340,27 @@
     } catch (error) {
       renderBlockIfChanged('streamQueueFeed', { error: String(error) }, 'Stream queue load failed.\n' + String(error), 'streamQueueFeed');
     }
+
+    try {
+      var memoryResponse = await fetch('/api/stream/temp-memory?limit=30', { cache: 'no-store' });
+      var memoryPayload = await memoryResponse.json();
+      if (!memoryResponse.ok) throw new Error(memoryPayload.detail || ('temp memory HTTP ' + memoryResponse.status));
+      renderBlockIfChanged('streamTempMemoryFeed', memoryPayload, humanStreamTempMemory(memoryPayload), 'streamTempMemoryFeed');
+    } catch (error) {
+      renderBlockIfChanged('streamTempMemoryFeed', { error: String(error) }, 'Temp memory load failed.\n' + String(error), 'streamTempMemoryFeed');
+    }
+  }
+
+  async function clearStreamTempMemory() {
+    try {
+      var response = await fetch('/api/stream/temp-memory', { method: 'DELETE' });
+      var payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || ('temp memory clear HTTP ' + response.status));
+      renderBlockIfChanged('streamTempMemoryFeed', payload, 'Temp memory cleared. Deleted: ' + (payload.deleted || 0), 'streamTempMemoryFeed');
+      await loadStreamActivity();
+    } catch (error) {
+      renderBlockIfChanged('streamTempMemoryFeed', { error: String(error) }, 'Temp memory clear failed.\n' + String(error), 'streamTempMemoryFeed');
+    }
   }
 
   function onTtsSynthesizeFileChange() {
@@ -3409,6 +3446,7 @@
   window.ttsArtifactDelete = ttsArtifactDelete;
   window.saveTwitchSettings = saveTwitchSettings;
   window.loadStreamActivity = loadStreamActivity;
+  window.clearStreamTempMemory = clearStreamTempMemory;
   window.stopStreamSpeech = stopStreamSpeech;
 
   postClientLog('script_boot', { viewMode: viewMode });

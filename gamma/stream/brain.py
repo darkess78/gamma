@@ -27,6 +27,7 @@ from .models import (
     output_events_from_response,
 )
 from .output import StreamOutputDispatcher
+from .temp_memory import StreamTempMemoryStore
 from .trace import StreamTraceStore
 
 
@@ -53,6 +54,7 @@ class StreamBrain:
         action_planner: ActionPlanner | None = None,
         output_dispatcher: StreamOutputDispatcher | None = None,
         safety_reviewer: StreamSafetyReviewer | None = None,
+        temp_memory_store: StreamTempMemoryStore | None = None,
     ) -> None:
         self._conversation = conversation or ConversationService()
         self._trace_store = trace_store or StreamTraceStore()
@@ -60,6 +62,7 @@ class StreamBrain:
         self._output_dispatcher = output_dispatcher or StreamOutputDispatcher()
         self._pacer = StreamSpeechPacer()
         self._safety_reviewer = safety_reviewer or SpeechLLMReviewer()
+        self._temp_memory_store = temp_memory_store or StreamTempMemoryStore()
 
     def handle_event(
         self,
@@ -159,8 +162,15 @@ class StreamBrain:
             safety_decision=safety_decision,
             timing_ms={"stream_brain_ms": round((time.perf_counter() - started_at) * 1000, 1)},
         )
+        self._record_temp_memory(result)
         self._trace_store.append(result)
         return result
+
+    def _record_temp_memory(self, result: StreamTurnResult) -> None:
+        try:
+            self._temp_memory_store.record_turn(result)
+        except Exception:
+            pass
 
     def _review_stream_output(self, event: StreamInputEvent, response: AssistantResponse | None) -> dict:
         if response is None or not _is_public_stream_event(event):

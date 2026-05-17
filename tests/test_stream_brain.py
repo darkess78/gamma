@@ -12,6 +12,7 @@ from gamma.schemas.response import AssistantResponse, ToolCall, ToolExecutionRes
 from gamma.stream.actions import ActionPlanner
 from gamma.stream.brain import StreamBrain
 from gamma.stream.models import StreamActor, StreamInputEvent, StreamTurnResult, TurnDecision
+from gamma.stream.temp_memory import StreamTempMemoryStore
 from gamma.stream.trace import StreamTraceStore
 
 
@@ -464,6 +465,29 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual(subtitles[0].payload["timing"], "estimated")
         self.assertTrue(subtitles[-1].payload["is_final"])
         self.assertEqual(subtitles[-1].payload["hold_ms"], 1200)
+
+    def test_twitch_events_record_temp_stream_memory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = StreamTempMemoryStore(database_url=f"sqlite:///{Path(temp_dir) / 'stream.db'}")
+            brain = StreamBrain(
+                conversation=_FakeConversation(),  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+                temp_memory_store=store,
+            )
+            brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana remember this stream topic for now",
+                    actor=StreamActor(source="twitch", platform_id="u1", display_name="Viewer"),
+                    metadata={"safe_prompt_text": "Shana remember this stream topic for now"},
+                )
+            )
+            payload = store.list_records(limit=10)
+
+        buckets = {item["bucket"] for item in payload["items"]}
+        self.assertIn("event_history", buckets)
+        self.assertIn("chat_mood", buckets)
+        self.assertTrue(any("stream topic" in item["value"] for item in payload["items"]))
 
     def test_twitch_output_safety_gate_replaces_blocked_reply_with_filtered(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -13,6 +13,7 @@ from ..stream.brain import StreamBrain
 from ..stream.models import StreamInputEvent, StreamTurnResult
 from ..stream.output import StreamOutputLogService
 from ..stream.replay import StreamEvalReport, StreamReplayService
+from ..stream.temp_memory import StreamTempMemoryStore
 from ..system.lazy_singleton import LazySingleton
 from ..system.status import SystemStatusService
 from ..voice.live_runtime import LiveTurnRuntime, SubprocessLiveTurnRuntime
@@ -26,6 +27,7 @@ live_turn_runtime = LazySingleton[LiveTurnRuntime]()
 stream_brain = LazySingleton[StreamBrain]()
 stream_replay_service = LazySingleton[StreamReplayService]()
 stream_output_log_service = LazySingleton[StreamOutputLogService]()
+stream_temp_memory_store = LazySingleton[StreamTempMemoryStore]()
 
 
 def get_conversation_service() -> ConversationService:
@@ -54,6 +56,10 @@ def get_stream_replay_service() -> StreamReplayService:
 
 def get_stream_output_log_service() -> StreamOutputLogService:
     return stream_output_log_service.get(StreamOutputLogService)
+
+
+def get_stream_temp_memory_store() -> StreamTempMemoryStore:
+    return stream_temp_memory_store.get(StreamTempMemoryStore)
 
 
 def _cancel_active_live_turns(*, reason: str) -> dict:
@@ -226,6 +232,30 @@ def stream_recent_outputs(limit: int = 50) -> dict[str, list[dict]]:
 def stream_pending_queue() -> dict:
     try:
         return get_stream_brain().pending_queue()
+    except GammaError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/v1/stream/temp-memory")
+def stream_temp_memory(bucket: str | None = None, limit: int = 100) -> dict:
+    try:
+        return get_stream_temp_memory_store().list_records(bucket=bucket, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except GammaError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.delete("/v1/stream/temp-memory")
+def stream_temp_memory_clear(bucket: str | None = None) -> dict:
+    try:
+        return get_stream_temp_memory_store().clear(bucket=bucket)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except GammaError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:

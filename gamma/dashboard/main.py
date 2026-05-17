@@ -450,6 +450,16 @@ def dashboard_stream_pending_queue() -> dict:
     return get_dashboard_service().stream_pending_queue()
 
 
+@app.get("/api/stream/temp-memory")
+def dashboard_stream_temp_memory(bucket: str | None = None, limit: int = 100) -> dict:
+    return get_dashboard_service().stream_temp_memory(bucket=bucket, limit=limit)
+
+
+@app.delete("/api/stream/temp-memory")
+def dashboard_stream_temp_memory_clear(bucket: str | None = None) -> dict:
+    return get_dashboard_service().clear_stream_temp_memory(bucket=bucket)
+
+
 @app.post("/api/stream/stop")
 def dashboard_stream_stop() -> dict:
     return get_dashboard_service().stop_stream_speech(reason="dashboard_stop")

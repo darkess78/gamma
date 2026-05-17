@@ -989,6 +989,30 @@ class DashboardService:
         url = settings.shana_base_url + "/v1/stream/queue"
         return self._probe_json(url, raw_payload=True)
 
+    def stream_temp_memory(self, *, bucket: str | None = None, limit: int = 100) -> dict[str, Any]:
+        query = f"?limit={max(1, min(limit, 1000))}"
+        if bucket:
+            query += f"&bucket={urllib.parse.quote(bucket)}"
+        return self._probe_json(settings.shana_base_url + "/v1/stream/temp-memory" + query, raw_payload=True)
+
+    def clear_stream_temp_memory(self, *, bucket: str | None = None) -> dict[str, Any]:
+        path = "/v1/stream/temp-memory"
+        if bucket:
+            path += f"?bucket={urllib.parse.quote(bucket)}"
+        url = settings.shana_base_url + path
+        request = urllib.request.Request(url, headers=self._api_headers(), method="DELETE")
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"clear stream temp memory failed: http-{exc.code} {detail}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"clear stream temp memory failed: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise RuntimeError("clear stream temp memory returned a non-object payload")
+        return payload
+
     def stop_stream_speech(self, *, reason: str = "operator_stop") -> dict[str, Any]:
         return self._post_remote_json(f"/v1/stream/stop?reason={urllib.parse.quote(reason)}", {})
 

@@ -79,8 +79,14 @@ class StreamOutputTest(unittest.TestCase):
         self.assertEqual(recent[0]["output_event"]["payload"]["text"], "Two")
 
     def test_stream_output_routes_delegate_to_service(self) -> None:
-        from gamma.api.routes import stream_recent_outputs
-        from gamma.dashboard.main import dashboard_stream_pending_queue, dashboard_stream_recent_outputs, dashboard_stream_stop
+        from gamma.api.routes import stream_recent_outputs, stream_temp_memory, stream_temp_memory_clear
+        from gamma.dashboard.main import (
+            dashboard_stream_pending_queue,
+            dashboard_stream_recent_outputs,
+            dashboard_stream_stop,
+            dashboard_stream_temp_memory,
+            dashboard_stream_temp_memory_clear,
+        )
 
         api_service = Mock()
         api_service.recent_outputs.return_value = [{"output_event": {"type": "subtitle_line"}}]
@@ -110,6 +116,32 @@ class StreamOutputTest(unittest.TestCase):
 
         self.assertEqual(stop_result["decision"]["reason"], "stream_stop_requested")
         dashboard_service.stop_stream_speech.assert_called_once_with(reason="dashboard_stop")
+
+        temp_store = Mock()
+        temp_store.list_records.return_value = {"items": [{"bucket": "chat_mood"}]}
+        temp_store.clear.return_value = {"ok": True, "deleted": 1, "bucket": None}
+        with patch("gamma.api.routes.get_stream_temp_memory_store", return_value=temp_store):
+            temp_result = stream_temp_memory(limit=5)
+            clear_result = stream_temp_memory_clear()
+
+        self.assertEqual(temp_result["items"][0]["bucket"], "chat_mood")
+        self.assertEqual(clear_result["deleted"], 1)
+        temp_store.list_records.assert_called_once_with(bucket=None, limit=5)
+        temp_store.clear.assert_called_once_with(bucket=None)
+
+        dashboard_service.stream_temp_memory.return_value = {"items": [{"bucket": "event_history"}]}
+        with patch("gamma.dashboard.main.get_dashboard_service", return_value=dashboard_service):
+            dashboard_temp_result = dashboard_stream_temp_memory(bucket="chat_mood", limit=3)
+
+        self.assertEqual(dashboard_temp_result["items"][0]["bucket"], "event_history")
+        dashboard_service.stream_temp_memory.assert_called_once_with(bucket="chat_mood", limit=3)
+
+        dashboard_service.clear_stream_temp_memory.return_value = {"ok": True, "deleted": 2}
+        with patch("gamma.dashboard.main.get_dashboard_service", return_value=dashboard_service):
+            dashboard_clear_result = dashboard_stream_temp_memory_clear(bucket="chat_mood")
+
+        self.assertEqual(dashboard_clear_result["deleted"], 2)
+        dashboard_service.clear_stream_temp_memory.assert_called_once_with(bucket="chat_mood")
 
 
 if __name__ == "__main__":

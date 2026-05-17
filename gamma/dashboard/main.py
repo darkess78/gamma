@@ -230,6 +230,22 @@ def stop_twitch_worker() -> dict:
     return get_dashboard_service().stop_twitch_worker()
 
 
+@app.get("/api/twitch/viewer-trust")
+def twitch_viewer_trust(limit: int = 100) -> dict:
+    return get_dashboard_service().twitch_viewer_trust(limit=limit)
+
+
+@app.post("/api/twitch/viewer-trust")
+async def save_twitch_viewer_trust(request: Request) -> dict:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="object payload is required")
+    try:
+        return get_dashboard_service().save_twitch_viewer_trust(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/memory/clear")
 def clear_memory() -> dict:
     return get_dashboard_service().clear_memory()

@@ -108,6 +108,19 @@ class DashboardRoutesTest(unittest.TestCase):
                 self.assertEqual(response, payload)
                 method.assert_called_once_with()
 
+    def test_twitch_viewer_trust_routes(self) -> None:
+        trust_payload = {"items": [{"platform_user_id": "u1", "trust_level": "trusted"}], "trust_levels": ["trusted"]}
+        with patch.object(self.mock_service, "twitch_viewer_trust", return_value=trust_payload) as method:
+            response = main.twitch_viewer_trust(limit=12)
+        self.assertEqual(response, trust_payload)
+        method.assert_called_once_with(limit=12)
+
+        save_payload = {"platform_user_id": "u1", "trust_level": "trusted"}
+        with patch.object(self.mock_service, "save_twitch_viewer_trust", return_value={"ok": True, "record": save_payload}) as method:
+            response = anyio.run(main.save_twitch_viewer_trust, _JsonRequest(save_payload))
+        self.assertEqual(response["record"], save_payload)
+        method.assert_called_once_with(save_payload)
+
     def test_memory_clear_routes(self) -> None:
         with patch.object(self.mock_service, "clear_recent_memory", return_value={"ok": True, "cleared_total": 1}) as method:
             response = anyio.run(main.clear_recent_memory, _JsonRequest({"minutes": 10}))

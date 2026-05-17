@@ -21,6 +21,7 @@ import psutil
 
 from ..config import app_local_config_path, load_app_file_config, load_desired_tts_selection, settings
 from ..errors import ConfigurationError
+from ..integrations.twitch.trust import VALID_TRUST_LEVELS, ViewerTrustStore
 from ..integrations.twitch.worker import TwitchWorkerConfig
 from ..llm.router_adapter import RouterLLMAdapter
 from ..memory.service import MemoryService
@@ -39,6 +40,7 @@ class DashboardService:
     def __init__(self) -> None:
         self._memory = MemoryService()
         self._emotion_memory = EmotionMemoryService()
+        self._viewer_trust = ViewerTrustStore()
         self._process_manager = ProcessManager()
         self._system_status = SystemStatusService()
         self._metrics_lock = threading.Lock()
@@ -243,6 +245,50 @@ class DashboardService:
             "channel": settings.twitch_channel.lstrip("#").strip().lower() if settings.twitch_channel else "",
             "worker": "twitch_irc",
         }
+
+    def twitch_viewer_trust(self, *, platform: str = "twitch", limit: int = 100) -> dict[str, Any]:
+        return {
+            "items": [self._viewer_trust_record_payload(record) for record in self._viewer_trust.list_records(platform=platform, limit=limit)],
+            "trust_levels": sorted(VALID_TRUST_LEVELS),
+        }
+
+    def save_twitch_viewer_trust(self, payload: dict[str, Any]) -> dict[str, Any]:
+        platform = str(payload.get("platform") or "twitch").strip().lower()
+        platform_user_id = str(payload.get("platform_user_id") or "").strip()
+        if not platform_user_id:
+            raise ValueError("platform_user_id is required")
+        trust_level = str(payload.get("trust_level") or "normal").strip().lower()
+        if trust_level not in VALID_TRUST_LEVELS:
+            raise ValueError("unsupported trust_level")
+        record = self._viewer_trust.upsert(
+            platform=platform,
+            platform_user_id=platform_user_id,
+            display_name=self._optional_string(payload.get("display_name")),
+            trust_level=trust_level,  # type: ignore[arg-type]
+            notes=self._optional_string(payload.get("notes")),
+            pronunciation_alias=self._optional_string(payload.get("pronunciation_alias")),
+        )
+        return {
+            "ok": True,
+            "record": self._viewer_trust_record_payload(record),
+            "items": self.twitch_viewer_trust(platform=platform)["items"],
+        }
+
+    def _viewer_trust_record_payload(self, record) -> dict[str, Any]:
+        return {
+            "platform": record.platform,
+            "platform_user_id": record.platform_user_id,
+            "display_name": record.display_name,
+            "trust_level": record.trust_level,
+            "notes": record.notes,
+            "pronunciation_alias": record.pronunciation_alias,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+
+    def _optional_string(self, value: object) -> str | None:
+        text = str(value or "").strip()
+        return text or None
 
     def clear_memory(self) -> dict[str, Any]:
         result = self._memory.clear_all()

@@ -92,6 +92,35 @@
       </section>
       <section class="panel wide">
         <div class="panel-head">
+          <h2>Viewer Trust</h2>
+        </div>
+        <div class="provider-actions">
+          <div class="action-group" style="grid-column: 1 / -1;">
+            <div class="action-title">Twitch Viewer</div>
+            <div class="action-buttons action-stack">
+              <input id="twitchTrustUserId" class="text-input" placeholder="Twitch user id">
+              <input id="twitchTrustDisplayName" class="text-input" placeholder="display name">
+              <select id="twitchTrustLevel" class="text-input">
+                <option value="trusted">trusted</option>
+                <option value="regular">regular</option>
+                <option value="normal">normal</option>
+                <option value="new_viewer">new_viewer</option>
+                <option value="suspicious">suspicious</option>
+                <option value="blocked">blocked</option>
+              </select>
+              <input id="twitchTrustAlias" class="text-input" placeholder="pronunciation alias">
+              <textarea id="twitchTrustNotes" class="text-area" placeholder="operator notes"></textarea>
+              <div class="action-buttons">
+                <button class="secondary" onclick="saveTwitchViewerTrust()">Save Trust</button>
+                <button class="ghost" onclick="loadTwitchViewerTrust()">Refresh</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="render" id="twitchViewerTrust">...</div>
+      </section>
+      <section class="panel wide">
+        <div class="panel-head">
           <h2>Provider Controls</h2>
         </div>
         <div class="provider-actions">

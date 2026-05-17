@@ -934,6 +934,17 @@
     return lines.join('\n');
   }
 
+  function humanTwitchViewerTrust(payload) {
+    var items = payload && Array.isArray(payload.items) ? payload.items : [];
+    if (!items.length) return 'No viewer trust overrides saved.';
+    return items.map(function (item) {
+      var name = item.display_name ? (' / ' + item.display_name) : '';
+      var alias = item.pronunciation_alias ? (' / say: ' + item.pronunciation_alias) : '';
+      var notes = item.notes ? ('\n  notes: ' + item.notes) : '';
+      return item.platform_user_id + name + ' -> ' + item.trust_level + alias + notes;
+    }).join('\n\n');
+  }
+
   function humanMemoryStats(stats) {
     var lines = [
       'Backend: ' + (stats.backend || 'n/a'),
@@ -1941,6 +1952,44 @@
     btn.disabled = false;
   }
 
+  async function loadTwitchViewerTrust() {
+    try {
+      var response = await fetch('/api/twitch/viewer-trust?limit=50', { cache: 'no-store' });
+      var payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || ('HTTP ' + response.status));
+      }
+      renderBlockIfChanged('twitchViewerTrust', payload, humanTwitchViewerTrust(payload), 'twitchViewerTrust');
+    } catch (error) {
+      renderBlockIfChanged('twitchViewerTrust', { error: String(error) }, 'Viewer trust load failed.\n' + String(error), 'twitchViewerTrust');
+    }
+  }
+
+  async function saveTwitchViewerTrust() {
+    var payload = {
+      platform: 'twitch',
+      platform_user_id: document.getElementById('twitchTrustUserId').value.trim(),
+      display_name: document.getElementById('twitchTrustDisplayName').value.trim(),
+      trust_level: document.getElementById('twitchTrustLevel').value,
+      pronunciation_alias: document.getElementById('twitchTrustAlias').value.trim(),
+      notes: document.getElementById('twitchTrustNotes').value.trim()
+    };
+    try {
+      var response = await fetch('/api/twitch/viewer-trust', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      var result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.detail || ('HTTP ' + response.status));
+      }
+      renderBlockIfChanged('twitchViewerTrust', result, humanTwitchViewerTrust(result), 'twitchViewerTrust');
+    } catch (error) {
+      renderBlockIfChanged('twitchViewerTrust', { error: String(error) }, 'Viewer trust save failed.\n' + String(error), 'twitchViewerTrust');
+    }
+  }
+
   function onTtsSynthesizeFileChange() {
     var input = document.getElementById('ttsSynthesizeFileInput');
     var btn = document.getElementById('ttsSynthesizeButton');
@@ -2063,6 +2112,7 @@
       postClientLog('load_ok', { hasShana: !!data.shana, hasMachine: !!data.machine });
       latestData = data;
       renderPanels(data);
+      loadTwitchViewerTrust();
     } catch (error) {
       postClientLog('load_exception', { error: String(error) });
       updateStamp('Load failed');

@@ -13,6 +13,7 @@ from gamma.integrations.twitch.replay import replay_jsonl
 from gamma.integrations.twitch.sanitize import classify_chat_text, safe_username_alias
 from gamma.integrations.twitch.trust import ViewerTrustStore
 from gamma.integrations.twitch.worker import TwitchIrcWorker, TwitchWorkerConfig
+from gamma.dashboard.service import DashboardService
 from gamma.errors import ConfigurationError
 from gamma.stream.brain import StreamBrain
 from gamma.stream.models import StreamInputEvent
@@ -254,6 +255,24 @@ class TwitchIntegrationTest(unittest.TestCase):
 
         self.assertEqual(client.events[0].metadata["trust_level"], "trusted")
         self.assertEqual(client.events[0].priority, 1)
+
+    def test_dashboard_service_saves_viewer_trust(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("gamma.integrations.twitch.trust.settings.database_url", f"sqlite:///{Path(temp_dir) / 'trust.db'}"):
+                service = DashboardService()
+                result = service.save_twitch_viewer_trust(
+                    {
+                        "platform_user_id": "u1",
+                        "display_name": "Viewer",
+                        "trust_level": "regular",
+                        "notes": "recurring chatter",
+                    }
+                )
+                listing = service.twitch_viewer_trust()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["record"]["trust_level"], "regular")
+        self.assertEqual(listing["items"][0]["platform_user_id"], "u1")
 
 
 if __name__ == "__main__":

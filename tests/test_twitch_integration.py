@@ -342,6 +342,7 @@ class TwitchIntegrationTest(unittest.TestCase):
                 dry_run=False,
                 voice_enabled=True,
                 ambient_chat_enabled=False,
+                min_speech_gap_seconds=9,
             ),
             client=client,  # type: ignore[arg-type]
             trust_store=_FakeTrustStore(),  # type: ignore[arg-type]
@@ -358,6 +359,7 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertEqual(result["synthesize_speech"], True)
         self.assertEqual(client.events[0].metadata["twitch_controls"]["dry_run"], False)
         self.assertEqual(client.events[0].metadata["twitch_controls"]["ambient_chat_enabled"], False)
+        self.assertEqual(client.events[0].metadata["twitch_controls"]["min_speech_gap_seconds"], 9)
 
     def test_worker_ignores_non_chat_irc_lines(self) -> None:
         client = _FakeClient()
@@ -447,18 +449,20 @@ class TwitchIntegrationTest(unittest.TestCase):
                 patch("gamma.dashboard.service.app_local_config_path", return_value=path),
                 patch(
                     "gamma.dashboard.service.load_app_file_config",
-                    return_value={"twitch_dry_run": False, "twitch_voice_enabled": True},
+                    return_value={"twitch_dry_run": False, "twitch_voice_enabled": True, "twitch_min_speech_gap_seconds": 7},
                 ),
             ):
                 service = DashboardService()
-                result = service.save_twitch_runtime_settings({"dry_run": False, "voice_enabled": True})
+                result = service.save_twitch_runtime_settings({"dry_run": False, "voice_enabled": True, "min_speech_gap_seconds": 7})
                 saved_text = path.read_text(encoding="utf-8")
 
         self.assertTrue(result["ok"])
         self.assertIn("twitch_dry_run = false", saved_text)
         self.assertIn("twitch_voice_enabled = true", saved_text)
+        self.assertIn("twitch_min_speech_gap_seconds = 7", saved_text)
         self.assertEqual(result["settings"]["dry_run"], False)
         self.assertEqual(result["settings"]["voice_enabled"], True)
+        self.assertEqual(result["settings"]["min_speech_gap_seconds"], 7)
 
 
 if __name__ == "__main__":

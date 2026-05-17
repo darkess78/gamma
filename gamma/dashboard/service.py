@@ -250,7 +250,7 @@ class DashboardService:
             "state": read_twitch_worker_state(),
         }
 
-    def twitch_runtime_settings(self) -> dict[str, bool]:
+    def twitch_runtime_settings(self) -> dict[str, Any]:
         config = load_app_file_config()
         return {
             "dry_run": bool(config.get("twitch_dry_run", settings.twitch_dry_run)),
@@ -265,6 +265,7 @@ class DashboardService:
             "llm_safety_review_enabled": bool(
                 config.get("twitch_llm_safety_review_enabled", settings.twitch_llm_safety_review_enabled)
             ),
+            "min_speech_gap_seconds": int(config.get("twitch_min_speech_gap_seconds", settings.twitch_min_speech_gap_seconds)),
         }
 
     def save_twitch_runtime_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -287,6 +288,18 @@ class DashboardService:
                 updated = self._upsert_toml_bool(updated, key, bool(payload.get(key)))
             elif short_key in payload:
                 updated = self._upsert_toml_bool(updated, key, bool(payload.get(short_key)))
+        if "twitch_min_speech_gap_seconds" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "twitch_min_speech_gap_seconds",
+                max(0, int(payload.get("twitch_min_speech_gap_seconds", settings.twitch_min_speech_gap_seconds))),
+            )
+        elif "min_speech_gap_seconds" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "twitch_min_speech_gap_seconds",
+                max(0, int(payload.get("min_speech_gap_seconds", settings.twitch_min_speech_gap_seconds))),
+            )
         app_toml.parent.mkdir(parents=True, exist_ok=True)
         app_toml.write_text(updated, encoding="utf-8")
         self._latest_provider_action = {

@@ -496,6 +496,10 @@ class Settings:
         _setting("SHANA_TWITCH_LLM_SAFETY_REVIEW_ENABLED", _config_value(APP_CONFIG, "twitch_llm_safety_review_enabled", default=True)),
         default=True,
     )
+    twitch_min_speech_gap_seconds: int = _as_int(
+        _setting("SHANA_TWITCH_MIN_SPEECH_GAP_SECONDS", _config_value(APP_CONFIG, "twitch_min_speech_gap_seconds", default=5)),
+        default=5,
+    )
 
     stt_provider: str = str(
         _setting(

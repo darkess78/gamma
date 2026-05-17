@@ -984,6 +984,7 @@
     lines.push('Spam quips: ' + (controls.spam_quips_enabled ? 'On' : 'Off'));
     lines.push('Self-goal proposals: ' + (controls.self_goal_proposals_enabled ? 'On' : 'Off'));
     lines.push('LLM safety review: ' + (controls.llm_safety_review_enabled ? 'On' : 'Off'));
+    lines.push('Speech gap: ' + (typeof controls.min_speech_gap_seconds === 'undefined' ? 'n/a' : controls.min_speech_gap_seconds + ' sec'));
     if (worker.stdout_path) lines.push('Stdout: ' + worker.stdout_path);
     if (worker.stderr_path) lines.push('Stderr: ' + worker.stderr_path);
     return lines.join('\n');
@@ -1006,6 +1007,8 @@
       if (!el) return;
       el.checked = !!settings[map[id]];
     });
+    var minGap = document.getElementById('twitchMinSpeechGapSeconds');
+    if (minGap) minGap.value = typeof settings.min_speech_gap_seconds === 'undefined' ? 5 : settings.min_speech_gap_seconds;
   }
 
   function humanTwitchViewerTrust(payload) {
@@ -2196,7 +2199,8 @@
       mention_replies_enabled: !!document.getElementById('twitchMentionRepliesEnabled').checked,
       spam_quips_enabled: !!document.getElementById('twitchSpamQuipsEnabled').checked,
       self_goal_proposals_enabled: !!document.getElementById('twitchSelfGoalProposalsEnabled').checked,
-      llm_safety_review_enabled: !!document.getElementById('twitchLlmSafetyReviewEnabled').checked
+      llm_safety_review_enabled: !!document.getElementById('twitchLlmSafetyReviewEnabled').checked,
+      min_speech_gap_seconds: Math.max(0, Number(document.getElementById('twitchMinSpeechGapSeconds').value || 0))
     };
     try {
       var response = await fetch('/api/twitch/settings', {

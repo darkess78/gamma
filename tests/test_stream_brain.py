@@ -40,6 +40,14 @@ class _FakeToolConversation:
         )
 
 
+class _FakeClock:
+    def __init__(self, value: float = 0.0) -> None:
+        self.value = value
+
+    def __call__(self) -> float:
+        return self.value
+
+
 class StreamBrainTest(unittest.TestCase):
     def test_mic_transcript_becomes_reply_and_output_events(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
@@ -147,6 +155,70 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual(plan.items[0].risk_tier, "high")
         self.assertEqual(plan.items[0].requires_approval, True)
         self.assertEqual(plan.items[0].status, "executed")
+
+    def test_twitch_speech_pacing_defers_second_low_priority_reply(self) -> None:
+        clock = _FakeClock(100.0)
+        conversation = _FakeConversation()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            brain._pacer._now = clock  # type: ignore[attr-defined]
+            first = brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana hello",
+                    priority=5,
+                    actor=StreamActor(source="twitch", platform_id="u1"),
+                )
+            )
+            clock.value = 102.0
+            second = brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana again",
+                    priority=5,
+                    actor=StreamActor(source="twitch", platform_id="u2"),
+                )
+            )
+
+        self.assertEqual(first.decision.decision, "reply")
+        self.assertEqual(second.decision.decision, "defer")
+        self.assertEqual(second.decision.reason, "stream_speech_pacing_deferred")
+        self.assertEqual(second.decision.metadata["would_decision"], "reply")
+        self.assertEqual(len(conversation.calls), 1)
+
+    def test_twitch_high_priority_event_bypasses_speech_pacing(self) -> None:
+        clock = _FakeClock(100.0)
+        conversation = _FakeConversation()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            brain._pacer._now = clock  # type: ignore[attr-defined]
+            first = brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana hello",
+                    priority=5,
+                    actor=StreamActor(source="twitch", platform_id="u1"),
+                )
+            )
+            clock.value = 101.0
+            second = brain.handle_event(
+                StreamInputEvent(
+                    kind="follow",
+                    text="Viewer followed the channel.",
+                    priority=20,
+                    actor=StreamActor(source="twitch", platform_id="u2"),
+                )
+            )
+
+        self.assertEqual(first.decision.decision, "reply")
+        self.assertEqual(second.decision.decision, "acknowledge")
+        self.assertEqual(len(conversation.calls), 2)
 
     def test_stream_route_delegates_to_brain(self) -> None:
         from gamma.api.routes import stream_event

@@ -18,6 +18,10 @@ from .output import StreamOutputDispatcher
 from .trace import StreamTraceStore
 
 
+DEFAULT_STREAM_SPEECH_GAP_SECONDS = 5.0
+HIGH_PRIORITY_BYPASS_THRESHOLD = 20
+
+
 class StreamBrain:
     """Policy boundary between public/live events and the conversation service."""
 
@@ -33,6 +37,7 @@ class StreamBrain:
         self._trace_store = trace_store or StreamTraceStore()
         self._action_planner = action_planner or ActionPlanner()
         self._output_dispatcher = output_dispatcher or StreamOutputDispatcher()
+        self._pacer = StreamSpeechPacer()
 
     def handle_event(
         self,
@@ -67,6 +72,7 @@ class StreamBrain:
                 },
             )
 
+        decision = self._pacer.apply(event, decision)
         canned_response = _canned_response_from_decision(decision)
         if canned_response:
             response = AssistantResponse(
@@ -229,6 +235,45 @@ class StreamBrain:
         return TurnDecision(decision="ignore", reason="unhandled_event_kind", metadata={"event_kind": event.kind})
 
 
+class StreamSpeechPacer:
+    def __init__(self, *, now=time.monotonic, default_min_gap_seconds: float = DEFAULT_STREAM_SPEECH_GAP_SECONDS) -> None:
+        self._now = now
+        self._default_min_gap_seconds = default_min_gap_seconds
+        self._last_spoken_at: float | None = None
+
+    def apply(self, event: StreamInputEvent, decision: TurnDecision) -> TurnDecision:
+        if not _decision_would_speak(decision):
+            return decision
+        if not _is_paced_stream_event(event):
+            self.mark_spoken()
+            return decision
+        min_gap = _stream_min_gap_seconds(event, self._default_min_gap_seconds)
+        now = self._now()
+        if self._last_spoken_at is not None:
+            elapsed = now - self._last_spoken_at
+            if elapsed < min_gap and event.priority < HIGH_PRIORITY_BYPASS_THRESHOLD:
+                return TurnDecision(
+                    decision="defer",
+                    reason="stream_speech_pacing_deferred",
+                    should_call_conversation=False,
+                    response_mode=decision.response_mode,
+                    requires_moderation_review=decision.requires_moderation_review,
+                    metadata={
+                        **decision.metadata,
+                        "would_decision": decision.decision,
+                        "would_reason": decision.reason,
+                        "min_gap_seconds": min_gap,
+                        "elapsed_seconds": round(elapsed, 3),
+                        "priority": event.priority,
+                    },
+                )
+        self.mark_spoken(now)
+        return decision
+
+    def mark_spoken(self, now: float | None = None) -> None:
+        self._last_spoken_at = self._now() if now is None else now
+
+
 def _input_safety(event: StreamInputEvent) -> dict:
     value = event.metadata.get("input_safety")
     return value if isinstance(value, dict) else {}
@@ -239,6 +284,19 @@ def _twitch_control_enabled(event: StreamInputEvent, key: str, default: bool) ->
     if not isinstance(controls, dict) or key not in controls:
         return default
     return bool(controls[key])
+
+
+def _stream_min_gap_seconds(event: StreamInputEvent, default: float) -> float:
+    controls = event.metadata.get("twitch_controls")
+    if not isinstance(controls, dict):
+        return default
+    raw_value = controls.get("min_speech_gap_seconds")
+    if raw_value is None:
+        return default
+    try:
+        return max(0.0, float(raw_value))
+    except (TypeError, ValueError):
+        return default
 
 
 def _canned_response_from_decision(decision: TurnDecision) -> str | None:
@@ -252,3 +310,17 @@ def _would_twitch_dry_run_suppress(decision: TurnDecision) -> bool:
     if decision.decision in {"ignore", "moderation_escalation"}:
         return False
     return decision.should_call_conversation or bool(_canned_response_from_decision(decision))
+
+
+def _decision_would_speak(decision: TurnDecision) -> bool:
+    if decision.decision not in {"reply", "acknowledge"}:
+        return False
+    return decision.should_call_conversation or bool(_canned_response_from_decision(decision))
+
+
+def _is_paced_stream_event(event: StreamInputEvent) -> bool:
+    if event.actor.source != "twitch":
+        return False
+    if event.kind in {"chat_message", "follow", "donation", "redeem"}:
+        return True
+    return False

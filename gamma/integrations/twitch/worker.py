@@ -33,6 +33,7 @@ class TwitchWorkerConfig:
     spam_quips_enabled: bool = True
     self_goal_proposals_enabled: bool = True
     llm_safety_review_enabled: bool = True
+    min_speech_gap_seconds: int = 5
 
     @classmethod
     def from_settings(cls) -> "TwitchWorkerConfig":
@@ -60,6 +61,7 @@ class TwitchWorkerConfig:
             spam_quips_enabled=bool(getattr(settings, "twitch_spam_quips_enabled", True)),
             self_goal_proposals_enabled=bool(getattr(settings, "twitch_self_goal_proposals_enabled", True)),
             llm_safety_review_enabled=bool(getattr(settings, "twitch_llm_safety_review_enabled", True)),
+            min_speech_gap_seconds=max(0, int(getattr(settings, "twitch_min_speech_gap_seconds", 5))),
         )
 
     @property
@@ -76,6 +78,7 @@ class TwitchWorkerConfig:
             "spam_quips_enabled": self.spam_quips_enabled,
             "self_goal_proposals_enabled": self.self_goal_proposals_enabled,
             "llm_safety_review_enabled": self.llm_safety_review_enabled,
+            "min_speech_gap_seconds": self.min_speech_gap_seconds,
         }
 
 

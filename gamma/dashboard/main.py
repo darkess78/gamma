@@ -445,6 +445,11 @@ def dashboard_stream_recent_outputs(limit: int = 50) -> dict:
     return get_dashboard_service().stream_recent_outputs(limit=limit)
 
 
+@app.get("/api/stream/queue")
+def dashboard_stream_pending_queue() -> dict:
+    return get_dashboard_service().stream_pending_queue()
+
+
 @app.post("/api/vision/analyze", response_model=VisionAnalysis)
 async def dashboard_vision_analyze(
     image_file: UploadFile = File(...),

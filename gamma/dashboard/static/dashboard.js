@@ -1095,6 +1095,26 @@
     }).join('\n\n');
   }
 
+  function humanStreamQueue(payload) {
+    var slots = payload && payload.slots ? payload.slots : {};
+    var names = Object.keys(slots);
+    if (!names.length) return 'No pending stream speech.';
+    return names.sort().map(function (slotName) {
+      var item = slots[slotName] || {};
+      var actor = item.actor || {};
+      var speaker = actor.display_name || actor.platform_id || actor.source || 'unknown';
+      var replaced = item.replaced_event_id ? ('\n  replaced: ' + item.replaced_event_id) : '';
+      return [
+        slotName + ' / ' + (item.kind || 'event') + ' / ' + speaker,
+        '  queued: ' + fmtLocalDateTime(item.queued_at),
+        '  decision: ' + (item.decision || 'n/a') + ' / ' + (item.reason || 'n/a'),
+        '  gap: ' + (typeof item.elapsed_seconds === 'undefined' ? 'n/a' : item.elapsed_seconds + 's')
+          + ' of ' + (typeof item.min_gap_seconds === 'undefined' ? 'n/a' : item.min_gap_seconds + 's'),
+        '  text: ' + oneLine(item.text || 'n/a', 180)
+      ].join('\n') + replaced;
+    }).join('\n\n');
+  }
+
   function oneLine(value, maxLength) {
     var text = String(value || '').replace(/\s+/g, ' ').trim();
     if (text.length <= maxLength) return text;
@@ -2239,6 +2259,15 @@
       renderBlockIfChanged('streamOutputFeed', outputPayload, humanStreamOutputs(outputPayload), 'streamOutputFeed');
     } catch (error) {
       renderBlockIfChanged('streamOutputFeed', { error: String(error) }, 'Stream output load failed.\n' + String(error), 'streamOutputFeed');
+    }
+
+    try {
+      var queueResponse = await fetch('/api/stream/queue', { cache: 'no-store' });
+      var queuePayload = await queueResponse.json();
+      if (!queueResponse.ok) throw new Error(queuePayload.detail || ('queue HTTP ' + queueResponse.status));
+      renderBlockIfChanged('streamQueueFeed', queuePayload, humanStreamQueue(queuePayload), 'streamQueueFeed');
+    } catch (error) {
+      renderBlockIfChanged('streamQueueFeed', { error: String(error) }, 'Stream queue load failed.\n' + String(error), 'streamQueueFeed');
     }
   }
 

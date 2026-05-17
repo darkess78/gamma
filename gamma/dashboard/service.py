@@ -929,6 +929,10 @@ class DashboardService:
         url = settings.shana_base_url + f"/v1/stream/outputs/recent?limit={max(1, min(limit, 200))}"
         return self._probe_json(url, raw_payload=True)
 
+    def stream_pending_queue(self) -> dict[str, Any]:
+        url = settings.shana_base_url + "/v1/stream/queue"
+        return self._probe_json(url, raw_payload=True)
+
     def live_idle_settings(self) -> dict[str, Any]:
         return self.assistant_runtime_settings()
 

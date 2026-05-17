@@ -69,7 +69,7 @@ class StreamOutputTest(unittest.TestCase):
 
     def test_stream_output_routes_delegate_to_service(self) -> None:
         from gamma.api.routes import stream_recent_outputs
-        from gamma.dashboard.main import dashboard_stream_recent_outputs
+        from gamma.dashboard.main import dashboard_stream_pending_queue, dashboard_stream_recent_outputs
 
         api_service = Mock()
         api_service.recent_outputs.return_value = [{"output_event": {"type": "subtitle_line"}}]
@@ -85,6 +85,13 @@ class StreamOutputTest(unittest.TestCase):
         self.assertEqual(dashboard_result["items"][0]["output_event"]["type"], "subtitle_line")
         api_service.recent_outputs.assert_called_once_with(limit=4)
         dashboard_service.stream_recent_outputs.assert_called_once_with(limit=4)
+
+        dashboard_service.stream_pending_queue.return_value = {"slots": {"ambient": {"event_id": "event-1"}}}
+        with patch("gamma.dashboard.main.get_dashboard_service", return_value=dashboard_service):
+            queue_result = dashboard_stream_pending_queue()
+
+        self.assertEqual(queue_result["slots"]["ambient"]["event_id"], "event-1")
+        dashboard_service.stream_pending_queue.assert_called_once_with()
 
 
 if __name__ == "__main__":

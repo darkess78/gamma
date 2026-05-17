@@ -188,6 +188,81 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual(second.decision.reason, "stream_speech_pacing_deferred")
         self.assertEqual(second.decision.metadata["would_decision"], "reply")
         self.assertEqual(len(conversation.calls), 1)
+        queue = brain.pending_queue()
+        self.assertEqual(queue["slots"]["ambient"]["event_id"], second.input_event.event_id)
+        self.assertEqual(queue["slots"]["ambient"]["kind"], "chat_message")
+
+    def test_twitch_pending_queue_replaces_ambient_slot(self) -> None:
+        clock = _FakeClock(100.0)
+        conversation = _FakeConversation()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            brain._pacer._now = clock  # type: ignore[attr-defined]
+            brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana first",
+                    priority=5,
+                    actor=StreamActor(source="twitch", platform_id="u1"),
+                )
+            )
+            clock.value = 101.0
+            first_deferred = brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana second",
+                    priority=5,
+                    actor=StreamActor(source="twitch", platform_id="u2"),
+                )
+            )
+            clock.value = 102.0
+            second_deferred = brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana third",
+                    priority=5,
+                    actor=StreamActor(source="twitch", platform_id="u3"),
+                )
+            )
+
+        queue = brain.pending_queue()
+        self.assertEqual(queue["slots"]["ambient"]["event_id"], second_deferred.input_event.event_id)
+        self.assertEqual(queue["slots"]["ambient"]["replaced_event_id"], first_deferred.input_event.event_id)
+        self.assertEqual(second_deferred.decision.metadata["replaced_event_id"], first_deferred.input_event.event_id)
+
+    def test_twitch_pending_queue_uses_high_priority_slot_for_redeem(self) -> None:
+        clock = _FakeClock(100.0)
+        conversation = _FakeConversation()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            brain._pacer._now = clock  # type: ignore[attr-defined]
+            brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana hello",
+                    priority=5,
+                    actor=StreamActor(source="twitch", platform_id="u1"),
+                )
+            )
+            clock.value = 101.0
+            deferred = brain.handle_event(
+                StreamInputEvent(
+                    kind="redeem",
+                    text="Say hi",
+                    priority=10,
+                    actor=StreamActor(source="twitch", platform_id="u2"),
+                )
+            )
+
+        self.assertEqual(deferred.decision.decision, "defer")
+        self.assertEqual(deferred.decision.metadata["pending_slot"], "high_priority")
+        self.assertEqual(brain.pending_queue()["slots"]["high_priority"]["kind"], "redeem")
 
     def test_twitch_high_priority_event_bypasses_speech_pacing(self) -> None:
         clock = _FakeClock(100.0)
@@ -248,6 +323,18 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual(call.args[0].kind, "chat_message")
         self.assertEqual(call.kwargs["synthesize_speech"], False)
         self.assertEqual(call.kwargs["fast_mode"], True)
+
+    def test_stream_queue_route_delegates_to_brain(self) -> None:
+        from gamma.api.routes import stream_pending_queue
+
+        stream_brain = Mock()
+        stream_brain.pending_queue.return_value = {"slots": {"ambient": {"event_id": "event-1"}}}
+
+        with patch("gamma.api.routes.get_stream_brain", return_value=stream_brain):
+            result = stream_pending_queue()
+
+        self.assertEqual(result["slots"]["ambient"]["event_id"], "event-1")
+        stream_brain.pending_queue.assert_called_once_with()
 
 
 if __name__ == "__main__":

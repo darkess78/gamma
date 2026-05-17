@@ -114,6 +114,9 @@ class StreamBrain:
             result.output_dispatch = self._output_dispatcher.dispatch(result.output_events).model_dump()
         self._trace_store.append(result)
 
+    def pending_queue(self) -> dict:
+        return self._pacer.pending_snapshot()
+
     def decide(self, event: StreamInputEvent) -> TurnDecision:
         text = (event.text or "").strip()
         lowered = text.lower()
@@ -240,6 +243,7 @@ class StreamSpeechPacer:
         self._now = now
         self._default_min_gap_seconds = default_min_gap_seconds
         self._last_spoken_at: float | None = None
+        self._pending: dict[str, dict] = {}
 
     def apply(self, event: StreamInputEvent, decision: TurnDecision) -> TurnDecision:
         if not _decision_would_speak(decision):
@@ -252,6 +256,7 @@ class StreamSpeechPacer:
         if self._last_spoken_at is not None:
             elapsed = now - self._last_spoken_at
             if elapsed < min_gap and event.priority < HIGH_PRIORITY_BYPASS_THRESHOLD:
+                pending = self._store_pending(event=event, decision=decision, min_gap=min_gap, elapsed=elapsed)
                 return TurnDecision(
                     decision="defer",
                     reason="stream_speech_pacing_deferred",
@@ -265,6 +270,8 @@ class StreamSpeechPacer:
                         "min_gap_seconds": min_gap,
                         "elapsed_seconds": round(elapsed, 3),
                         "priority": event.priority,
+                        "pending_slot": pending["slot"],
+                        "replaced_event_id": pending.get("replaced_event_id"),
                     },
                 )
         self.mark_spoken(now)
@@ -272,6 +279,37 @@ class StreamSpeechPacer:
 
     def mark_spoken(self, now: float | None = None) -> None:
         self._last_spoken_at = self._now() if now is None else now
+
+    def pending_snapshot(self) -> dict:
+        return {
+            "updated_at": _utc_now(),
+            "slots": {
+                slot: dict(item)
+                for slot, item in sorted(self._pending.items())
+            },
+        }
+
+    def _store_pending(self, *, event: StreamInputEvent, decision: TurnDecision, min_gap: float, elapsed: float) -> dict:
+        slot = _pending_slot(event)
+        replaced = self._pending.get(slot)
+        item = {
+            "slot": slot,
+            "queued_at": _utc_now(),
+            "event_id": event.event_id,
+            "kind": event.kind,
+            "text": event.text,
+            "priority": event.priority,
+            "actor": event.actor.model_dump(),
+            "decision": decision.decision,
+            "reason": decision.reason,
+            "response_mode": decision.response_mode,
+            "min_gap_seconds": min_gap,
+            "elapsed_seconds": round(elapsed, 3),
+        }
+        if replaced:
+            item["replaced_event_id"] = replaced.get("event_id")
+        self._pending[slot] = item
+        return item
 
 
 def _input_safety(event: StreamInputEvent) -> dict:
@@ -324,3 +362,13 @@ def _is_paced_stream_event(event: StreamInputEvent) -> bool:
     if event.kind in {"chat_message", "follow", "donation", "redeem"}:
         return True
     return False
+
+
+def _pending_slot(event: StreamInputEvent) -> str:
+    if event.kind in {"follow", "donation", "redeem"} or event.priority >= 10:
+        return "high_priority"
+    return "ambient"
+
+
+def _utc_now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

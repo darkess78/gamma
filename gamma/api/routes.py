@@ -196,6 +196,16 @@ def stream_recent_outputs(limit: int = 50) -> dict[str, list[dict]]:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@router.get("/v1/stream/queue")
+def stream_pending_queue() -> dict:
+    try:
+        return get_stream_brain().pending_queue()
+    except GammaError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @router.post("/v1/conversation/respond-with-image", response_model=AssistantResponse)
 async def conversation_respond_with_image(
     user_text: str = Form(...),

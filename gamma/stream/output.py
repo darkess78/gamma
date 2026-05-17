@@ -101,7 +101,11 @@ class JsonlStreamOutputAdapter(StreamOutputAdapter):
         if event.type == "avatar_motion":
             return AvatarEvent(event_type="motion", payload=dict(event.payload)).model_dump()
         if event.type == "subtitle_line":
-            return {"subtitle": event.payload.get("text", "")}
+            return {"subtitle": event.payload.get("text", ""), "clear": bool(event.payload.get("clear", False))}
+        if event.type == "speech_ended":
+            return {"speech": "ended", **dict(event.payload)}
+        if event.type == "overlay_update":
+            return {"overlay": dict(event.payload)}
         return dict(event.payload)
 
     def _rotate_if_needed(self) -> None:

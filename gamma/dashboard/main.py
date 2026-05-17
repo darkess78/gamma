@@ -450,6 +450,11 @@ def dashboard_stream_pending_queue() -> dict:
     return get_dashboard_service().stream_pending_queue()
 
 
+@app.post("/api/stream/stop")
+def dashboard_stream_stop() -> dict:
+    return get_dashboard_service().stop_stream_speech(reason="dashboard_stop")
+
+
 @app.post("/api/vision/analyze", response_model=VisionAnalysis)
 async def dashboard_vision_analyze(
     image_file: UploadFile = File(...),

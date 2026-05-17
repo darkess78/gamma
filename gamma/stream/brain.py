@@ -9,7 +9,9 @@ from ..schemas.response import AssistantResponse
 from .actions import ActionPlanner
 from .models import (
     ActionPlan,
+    StreamActor,
     StreamInputEvent,
+    StreamOutputEvent,
     StreamTurnResult,
     TurnDecision,
     output_events_from_response,
@@ -116,6 +118,51 @@ class StreamBrain:
 
     def pending_queue(self) -> dict:
         return self._pacer.pending_snapshot()
+
+    def stop_stream(self, *, reason: str = "operator_stop") -> StreamTurnResult:
+        started_at = time.perf_counter()
+        self._pacer.clear_pending()
+        input_event = StreamInputEvent(
+            kind="system",
+            text="Stop stream speech requested.",
+            actor=StreamActor(source="dashboard", roles=["operator"]),
+            metadata={"control": "stop_shana", "reason": reason},
+        )
+        turn_id = uuid4().hex
+        output_events = [
+            StreamOutputEvent(
+                input_event_id=input_event.event_id,
+                turn_id=turn_id,
+                type="speech_ended",
+                payload={"reason": reason, "interrupted": True, "clear_pending": True},
+            ),
+            StreamOutputEvent(
+                input_event_id=input_event.event_id,
+                turn_id=turn_id,
+                type="subtitle_line",
+                payload={"text": "", "clear": True},
+            ),
+            StreamOutputEvent(
+                input_event_id=input_event.event_id,
+                turn_id=turn_id,
+                type="overlay_update",
+                payload={"target": "subtitles", "text": "", "clear": True},
+            ),
+        ]
+        output_dispatch = self._output_dispatcher.dispatch(output_events)
+        result = StreamTurnResult(
+            input_event=input_event,
+            decision=TurnDecision(
+                decision="ignore",
+                reason="stream_stop_requested",
+                metadata={"reason": reason, "cleared_pending_queue": True},
+            ),
+            output_events=output_events,
+            output_dispatch=output_dispatch.model_dump(),
+            timing_ms={"stream_brain_ms": round((time.perf_counter() - started_at) * 1000, 1)},
+        )
+        self._trace_store.append(result)
+        return result
 
     def decide(self, event: StreamInputEvent) -> TurnDecision:
         text = (event.text or "").strip()
@@ -288,6 +335,9 @@ class StreamSpeechPacer:
                 for slot, item in sorted(self._pending.items())
             },
         }
+
+    def clear_pending(self) -> None:
+        self._pending.clear()
 
     def _store_pending(self, *, event: StreamInputEvent, decision: TurnDecision, min_gap: float, elapsed: float) -> dict:
         slot = _pending_slot(event)

@@ -206,6 +206,16 @@ def stream_pending_queue() -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@router.post("/v1/stream/stop", response_model=StreamTurnResult)
+def stream_stop(reason: str = "operator_stop") -> StreamTurnResult:
+    try:
+        return get_stream_brain().stop_stream(reason=reason)
+    except GammaError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @router.post("/v1/conversation/respond-with-image", response_model=AssistantResponse)
 async def conversation_respond_with_image(
     user_text: str = Form(...),

@@ -2240,6 +2240,31 @@
     }
   }
 
+  async function stopStreamSpeech() {
+    try {
+      renderBlockIfChanged('streamStopStatus', { status: 'running' }, 'Stopping stream speech...', 'streamStopStatus');
+      var response = await fetch('/api/stream/stop', { method: 'POST' });
+      var result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.detail || ('HTTP ' + response.status));
+      }
+      renderBlockIfChanged('streamStopStatus', result, humanStreamStopResult(result), 'streamStopStatus');
+      await loadStreamActivity();
+    } catch (error) {
+      renderBlockIfChanged('streamStopStatus', { error: String(error) }, 'Stop Shana failed.\n' + String(error), 'streamStopStatus');
+    }
+  }
+
+  function humanStreamStopResult(result) {
+    var decision = result && result.decision ? result.decision : {};
+    var outputs = result && Array.isArray(result.output_events) ? result.output_events : [];
+    return [
+      'Stop requested.',
+      'Decision: ' + (decision.reason || 'n/a'),
+      'Output events: ' + outputs.length
+    ].join('\n');
+  }
+
   async function loadStreamActivity() {
     try {
       var traceResponse = await fetch('/api/stream/traces/recent?limit=30', { cache: 'no-store' });
@@ -3354,6 +3379,7 @@
   window.ttsArtifactDelete = ttsArtifactDelete;
   window.saveTwitchSettings = saveTwitchSettings;
   window.loadStreamActivity = loadStreamActivity;
+  window.stopStreamSpeech = stopStreamSpeech;
 
   postClientLog('script_boot', { viewMode: viewMode });
   applyDashboardTabVisibility();

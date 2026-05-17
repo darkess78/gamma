@@ -37,9 +37,20 @@ class StreamOutputTest(unittest.TestCase):
 
         self.assertTrue(subtitle_record.ok)
         self.assertTrue(emotion_record.ok)
-        self.assertEqual(recent[0]["adapter_payload"], {"subtitle": "Hello."})
+        self.assertEqual(recent[0]["adapter_payload"], {"subtitle": "Hello.", "clear": False})
         self.assertEqual(recent[1]["adapter_payload"]["event_type"], "emotion_changed")
         self.assertEqual(recent[1]["adapter_payload"]["payload"], {"emotion": "happy"})
+
+    def test_jsonl_adapter_marks_clear_subtitle_and_speech_stop_payloads(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            adapter = JsonlStreamOutputAdapter(Path(temp_dir) / "outputs.jsonl")
+            adapter.handle(StreamOutputEvent(input_event_id="in-1", turn_id="turn-1", type="subtitle_line", payload={"text": "", "clear": True}))
+            adapter.handle(StreamOutputEvent(input_event_id="in-1", turn_id="turn-1", type="speech_ended", payload={"interrupted": True}))
+            recent = adapter.read_recent(limit=2)
+
+        self.assertEqual(recent[0]["adapter_payload"], {"subtitle": "", "clear": True})
+        self.assertEqual(recent[1]["adapter_payload"]["speech"], "ended")
+        self.assertTrue(recent[1]["adapter_payload"]["interrupted"])
 
     def test_stream_brain_dispatches_output_events(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -69,7 +80,7 @@ class StreamOutputTest(unittest.TestCase):
 
     def test_stream_output_routes_delegate_to_service(self) -> None:
         from gamma.api.routes import stream_recent_outputs
-        from gamma.dashboard.main import dashboard_stream_pending_queue, dashboard_stream_recent_outputs
+        from gamma.dashboard.main import dashboard_stream_pending_queue, dashboard_stream_recent_outputs, dashboard_stream_stop
 
         api_service = Mock()
         api_service.recent_outputs.return_value = [{"output_event": {"type": "subtitle_line"}}]
@@ -92,6 +103,13 @@ class StreamOutputTest(unittest.TestCase):
 
         self.assertEqual(queue_result["slots"]["ambient"]["event_id"], "event-1")
         dashboard_service.stream_pending_queue.assert_called_once_with()
+
+        dashboard_service.stop_stream_speech.return_value = {"decision": {"reason": "stream_stop_requested"}}
+        with patch("gamma.dashboard.main.get_dashboard_service", return_value=dashboard_service):
+            stop_result = dashboard_stream_stop()
+
+        self.assertEqual(stop_result["decision"]["reason"], "stream_stop_requested")
+        dashboard_service.stop_stream_speech.assert_called_once_with(reason="dashboard_stop")
 
 
 if __name__ == "__main__":

@@ -100,6 +100,7 @@
             <div class="action-buttons">
               <button id="twitchWorkerStartButton" class="secondary" onclick="action('/api/twitch/worker/start')">Start Worker</button>
               <button id="twitchWorkerStopButton" class="ghost danger-outline" onclick="action('/api/twitch/worker/stop')">Stop Worker</button>
+              <button class="danger" onclick="stopStreamSpeech()">Stop Shana</button>
             </div>
           </div>
           <div class="action-group">
@@ -122,6 +123,7 @@
         </div>
         <div class="render" id="twitchWorkerStatus">...</div>
         <div class="render compact-render" id="twitchSettingsStatus">Twitch controls load with worker status.</div>
+        <div class="render compact-render" id="streamStopStatus">Stream stop has not been requested.</div>
       </section>
       <section class="panel wide" data-dashboard-tab="stream">
         <div class="panel-head">

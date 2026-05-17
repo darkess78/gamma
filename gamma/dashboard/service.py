@@ -8,6 +8,7 @@ import subprocess
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 import wave
@@ -932,6 +933,9 @@ class DashboardService:
     def stream_pending_queue(self) -> dict[str, Any]:
         url = settings.shana_base_url + "/v1/stream/queue"
         return self._probe_json(url, raw_payload=True)
+
+    def stop_stream_speech(self, *, reason: str = "operator_stop") -> dict[str, Any]:
+        return self._post_remote_json(f"/v1/stream/stop?reason={urllib.parse.quote(reason)}", {})
 
     def live_idle_settings(self) -> dict[str, Any]:
         return self.assistant_runtime_settings()

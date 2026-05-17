@@ -336,6 +336,59 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual(result["slots"]["ambient"]["event_id"], "event-1")
         stream_brain.pending_queue.assert_called_once_with()
 
+    def test_stop_stream_clears_pending_queue_and_emits_clear_events(self) -> None:
+        clock = _FakeClock(100.0)
+        conversation = _FakeConversation()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            brain._pacer._now = clock  # type: ignore[attr-defined]
+            brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana hello",
+                    priority=5,
+                    actor=StreamActor(source="twitch", platform_id="u1"),
+                )
+            )
+            clock.value = 101.0
+            brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana again",
+                    priority=5,
+                    actor=StreamActor(source="twitch", platform_id="u2"),
+                )
+            )
+
+            self.assertIn("ambient", brain.pending_queue()["slots"])
+            result = brain.stop_stream(reason="test_stop")
+
+        self.assertEqual(result.decision.reason, "stream_stop_requested")
+        self.assertEqual(brain.pending_queue()["slots"], {})
+        self.assertEqual([event.type for event in result.output_events], ["speech_ended", "subtitle_line", "overlay_update"])
+        self.assertTrue(result.output_events[0].payload["interrupted"])
+        self.assertTrue(result.output_events[1].payload["clear"])
+
+    def test_stream_stop_route_delegates_to_brain(self) -> None:
+        from gamma.api.routes import stream_stop
+
+        input_event = StreamInputEvent(kind="system", text="stop")
+        turn_result = StreamTurnResult(
+            input_event=input_event,
+            decision=TurnDecision(decision="ignore", reason="stream_stop_requested"),
+        )
+        stream_brain = Mock()
+        stream_brain.stop_stream.return_value = turn_result
+
+        with patch("gamma.api.routes.get_stream_brain", return_value=stream_brain):
+            result = stream_stop(reason="test")
+
+        self.assertEqual(result.decision.reason, "stream_stop_requested")
+        stream_brain.stop_stream.assert_called_once_with(reason="test")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -418,7 +418,7 @@ class StreamBrain:
                 should_call_conversation=True,
                 response_mode="spoken",
             )
-        if event.kind in {"donation", "redeem", "follow"}:
+        if event.kind in {"donation", "redeem", "follow", "raid", "bits", "subscription"}:
             return TurnDecision(
                 decision="acknowledge",
                 reason="support_events_receive_acknowledgement",
@@ -808,7 +808,15 @@ def _filtered_audio_path() -> Path | None:
 
 
 def _is_public_stream_event(event: StreamInputEvent) -> bool:
-    return event.actor.source == "twitch" or event.kind in {"chat_message", "follow", "donation", "redeem"}
+    return event.actor.source == "twitch" or event.kind in {
+        "chat_message",
+        "follow",
+        "raid",
+        "donation",
+        "bits",
+        "subscription",
+        "redeem",
+    }
 
 
 def _fast_stream_safety_review(text: str) -> dict:
@@ -926,13 +934,13 @@ def _decision_would_speak(decision: TurnDecision) -> bool:
 def _is_paced_stream_event(event: StreamInputEvent) -> bool:
     if event.actor.source != "twitch":
         return False
-    if event.kind in {"chat_message", "follow", "donation", "redeem"}:
+    if event.kind in {"chat_message", "follow", "raid", "donation", "bits", "subscription", "redeem"}:
         return True
     return False
 
 
 def _pending_slot(event: StreamInputEvent) -> str:
-    if event.kind in {"follow", "donation", "redeem"} or event.priority >= 10:
+    if event.kind in {"follow", "raid", "donation", "bits", "subscription", "redeem"} or event.priority >= 10:
         return "high_priority"
     return "ambient"
 

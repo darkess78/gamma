@@ -208,7 +208,15 @@ class StreamTempMemoryStore:
 
 
 def _is_public_stream_result(result: StreamTurnResult) -> bool:
-    return result.input_event.actor.source == "twitch" or result.input_event.kind in {"chat_message", "follow", "donation", "redeem"}
+    return result.input_event.actor.source == "twitch" or result.input_event.kind in {
+        "chat_message",
+        "follow",
+        "raid",
+        "donation",
+        "bits",
+        "subscription",
+        "redeem",
+    }
 
 
 def _safe_stream_text(result: StreamTurnResult) -> str:

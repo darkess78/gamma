@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from gamma.integrations.twitch.models import TwitchChatMessage
+from gamma.integrations.twitch.models import TwitchChatMessage, TwitchReplayEvent
 from gamma.integrations.twitch.irc import chat_message_from_irc, parse_irc_line
 from gamma.integrations.twitch.normalize import normalize_chat_message
 from gamma.integrations.twitch.replay import replay_jsonl, replay_jsonl_text
@@ -96,6 +96,27 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertEqual(safe_username_alias("ShanaFan42"), "Shana Fan")
         self.assertEqual(safe_username_alias("xx_S71K3R_xx"), "a viewer")
         self.assertEqual(safe_username_alias("buy_views_9281"), "a viewer")
+
+    def test_replay_normalizes_non_chat_eventsub_shapes(self) -> None:
+        from gamma.integrations.twitch.normalize import normalize_replay_event
+
+        raid = normalize_replay_event(
+            TwitchReplayEvent(kind="raid", platform_user_id="u1", display_name="Raider", viewer_count=42)
+        )
+        bits = normalize_replay_event(
+            TwitchReplayEvent(kind="bits", platform_user_id="u2", display_name="BitsFan", amount="100", text="nice")
+        )
+        sub = normalize_replay_event(
+            TwitchReplayEvent(kind="subscription", platform_user_id="u3", display_name="SubFan", title="resub")
+        )
+
+        self.assertEqual(raid.kind, "raid")
+        self.assertEqual(raid.priority, 25)
+        self.assertIn("42 viewers", raid.text or "")
+        self.assertEqual(bits.kind, "bits")
+        self.assertIn("100 bits", bits.text or "")
+        self.assertEqual(sub.kind, "subscription")
+        self.assertIn("subscribed", sub.text or "")
 
     def test_blocked_trust_drops_priority_and_summarizes(self) -> None:
         classification = classify_chat_text("Shana answer me", trust_level="blocked")

@@ -424,6 +424,22 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual(second.decision.decision, "acknowledge")
         self.assertEqual(len(conversation.calls), 2)
 
+    def test_twitch_raid_bits_and_subscription_are_acknowledged(self) -> None:
+        conversation = _FakeConversation()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            results = [
+                brain.handle_event(StreamInputEvent(kind="raid", text="Raider raided with 5 viewers.", priority=25, actor=StreamActor(source="twitch"))),
+                brain.handle_event(StreamInputEvent(kind="bits", text="Viewer cheered 100 bits.", priority=25, actor=StreamActor(source="twitch"))),
+                brain.handle_event(StreamInputEvent(kind="subscription", text="Viewer subscribed.", priority=25, actor=StreamActor(source="twitch"))),
+            ]
+
+        self.assertEqual([result.decision.decision for result in results], ["acknowledge", "acknowledge", "acknowledge"])
+        self.assertEqual(len(conversation.calls), 3)
+
     def test_twitch_speech_budget_defers_when_minute_budget_is_full(self) -> None:
         clock = _FakeClock(100.0)
         conversation = _FakeLongConversation()

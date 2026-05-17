@@ -87,6 +87,15 @@ def normalize_replay_event(
             priority=20,
             metadata={**metadata, "twitch_event_kind": "follow"},
         )
+    if event.kind == "raid":
+        return StreamInputEvent(
+            kind="raid",
+            text=_raid_text(event),
+            actor=actor,
+            session_id=session_id,
+            priority=25,
+            metadata={**metadata, "viewer_count": event.viewer_count, "twitch_event_kind": "raid"},
+        )
     if event.kind == "redeem":
         return StreamInputEvent(
             kind="redeem",
@@ -95,6 +104,24 @@ def normalize_replay_event(
             session_id=session_id,
             priority=10,
             metadata={**metadata, "title": event.title, "twitch_event_kind": "redeem"},
+        )
+    if event.kind == "bits":
+        return StreamInputEvent(
+            kind="bits",
+            text=_bits_text(event),
+            actor=actor,
+            session_id=session_id,
+            priority=15,
+            metadata={**metadata, "amount": event.amount, "twitch_event_kind": "bits"},
+        )
+    if event.kind == "subscription":
+        return StreamInputEvent(
+            kind="subscription",
+            text=_subscription_text(event),
+            actor=actor,
+            session_id=session_id,
+            priority=15,
+            metadata={**metadata, "title": event.title, "twitch_event_kind": "subscription"},
         )
     return StreamInputEvent(
         kind="donation",
@@ -106,10 +133,34 @@ def normalize_replay_event(
     )
 
 
+def _raid_text(event: TwitchReplayEvent) -> str:
+    alias = safe_username_alias(event.display_name)
+    if event.viewer_count:
+        return f"{alias} raided with {event.viewer_count} viewers."
+    return f"{alias} raided the channel."
+
+
 def _redeem_text(event: TwitchReplayEvent) -> str:
     title = (event.title or "channel point redeem").strip()
     detail = (event.text or "").strip()
     return f"{title}: {detail}" if detail else title
+
+
+def _bits_text(event: TwitchReplayEvent) -> str:
+    alias = safe_username_alias(event.display_name)
+    amount = (event.amount or "").strip()
+    detail = (event.text or "").strip()
+    if amount and detail:
+        return f"{alias} cheered {amount} bits: {detail}"
+    if amount:
+        return f"{alias} cheered {amount} bits."
+    return detail or f"{alias} cheered bits."
+
+
+def _subscription_text(event: TwitchReplayEvent) -> str:
+    alias = safe_username_alias(event.display_name)
+    detail = (event.text or event.title or "").strip()
+    return f"{alias} subscribed: {detail}" if detail else f"{alias} subscribed."
 
 
 def _donation_text(event: TwitchReplayEvent) -> str:

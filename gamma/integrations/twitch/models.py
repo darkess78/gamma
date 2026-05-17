@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-TwitchReplayKind = Literal["chat_message", "follow", "redeem", "donation"]
+TwitchReplayKind = Literal["chat_message", "follow", "raid", "redeem", "donation", "bits", "subscription"]
 TrustLevel = Literal["owner", "trusted", "regular", "normal", "new_viewer", "suspicious", "blocked"]
 
 
@@ -26,6 +26,7 @@ class TwitchReplayEvent(BaseModel):
     message_id: str | None = None
     title: str | None = None
     amount: str | None = None
+    viewer_count: int | None = None
     badges: dict[str, Any] = Field(default_factory=dict)
     tags: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -37,4 +38,3 @@ class TwitchSafetyClassification(BaseModel):
     should_drop: bool = False
     priority_delta: int = 0
     reasons: list[str] = Field(default_factory=list)
-

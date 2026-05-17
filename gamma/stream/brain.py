@@ -121,9 +121,12 @@ class StreamBrain:
     def pending_queue(self) -> dict:
         return self._pacer.pending_snapshot()
 
-    def stop_stream(self, *, reason: str = "operator_stop") -> StreamTurnResult:
+    def stop_stream(self, *, reason: str = "operator_stop", live_cancellations: dict | None = None) -> StreamTurnResult:
         started_at = time.perf_counter()
         self._pacer.clear_pending()
+        metadata = {"reason": reason, "cleared_pending_queue": True}
+        if live_cancellations is not None:
+            metadata["live_cancellations"] = live_cancellations
         input_event = StreamInputEvent(
             kind="system",
             text="Stop stream speech requested.",
@@ -157,7 +160,7 @@ class StreamBrain:
             decision=TurnDecision(
                 decision="ignore",
                 reason="stream_stop_requested",
-                metadata={"reason": reason, "cleared_pending_queue": True},
+                metadata=metadata,
             ),
             output_events=output_events,
             output_dispatch=output_dispatch.model_dump(),

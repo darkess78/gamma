@@ -93,6 +93,10 @@ class _FakeJobManager:
         self.calls.append(("cancel_job", {"turn_id": turn_id, "reason": reason}))
         return LiveVoiceJobResponse(turn_id=turn_id, status="cancelled", cancel_reason=reason)
 
+    def cancel_active_jobs(self, *, reason: str = "interrupted"):
+        self.calls.append(("cancel_active_jobs", {"reason": reason}))
+        return [LiveVoiceJobResponse(turn_id="turn-1", status="cancelled", cancel_reason=reason)]
+
     def get_recent_history(self, *, limit: int = 20):
         self.calls.append(("get_recent_history", {"limit": limit}))
         return [{"turn_id": "turn-1"}]
@@ -183,13 +187,15 @@ class LiveVoiceRuntimeTest(unittest.TestCase):
         )
         fetched = runtime.get_turn("turn-1")
         cancelled = runtime.cancel_turn("turn-1", reason="test")
+        active_cancelled = runtime.cancel_active_turns(reason="active-test")
         history = runtime.get_recent_history(limit=5)
 
         self.assertEqual(started.status, "queued")
         self.assertEqual(fetched.status, "completed")
         self.assertEqual(cancelled.cancel_reason, "test")
+        self.assertEqual(active_cancelled[0].cancel_reason, "active-test")
         self.assertEqual(history, [{"turn_id": "turn-1"}])
-        self.assertEqual([name for name, _payload in manager.calls], ["start_job", "get_job", "cancel_job", "get_recent_history"])
+        self.assertEqual([name for name, _payload in manager.calls], ["start_job", "get_job", "cancel_job", "cancel_active_jobs", "get_recent_history"])
 
 
 if __name__ == "__main__":

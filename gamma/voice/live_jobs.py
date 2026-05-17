@@ -201,6 +201,19 @@ class LiveVoiceJobManager:
         )
         return self.get_job(turn_id)
 
+    def cancel_active_jobs(self, *, reason: str = "interrupted") -> list[LiveVoiceJobResponse]:
+        self._prune_finished_jobs()
+        with self._lock:
+            jobs = list(self._jobs.values())
+        cancelled: list[LiveVoiceJobResponse] = []
+        for job in jobs:
+            self._refresh_job(job)
+            current = self._read_status(job.status_path)
+            if current.get("status") in {"completed", "cancelled", "failed"}:
+                continue
+            cancelled.append(self.cancel_job(job.turn_id, reason=reason))
+        return cancelled
+
     def _spawn_worker(
         self,
         *,

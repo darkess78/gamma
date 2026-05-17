@@ -424,11 +424,12 @@ class StreamBrainTest(unittest.TestCase):
             self.assertIn("ambient", brain.pending_queue()["slots"])
             result = brain.stop_stream(reason="test_stop")
 
-        self.assertEqual(result.decision.reason, "stream_stop_requested")
-        self.assertEqual(brain.pending_queue()["slots"], {})
-        self.assertEqual([event.type for event in result.output_events], ["speech_ended", "subtitle_line", "overlay_update"])
-        self.assertTrue(result.output_events[0].payload["interrupted"])
-        self.assertTrue(result.output_events[1].payload["clear"])
+            self.assertEqual(result.decision.reason, "stream_stop_requested")
+            self.assertEqual(brain.pending_queue()["slots"], {})
+            self.assertEqual([event.type for event in result.output_events], ["speech_ended", "subtitle_line", "overlay_update"])
+            self.assertTrue(result.output_events[0].payload["interrupted"])
+            self.assertTrue(result.output_events[1].payload["clear"])
+            self.assertEqual(result.decision.metadata["cleared_pending_queue"], True)
 
     def test_stream_stop_route_delegates_to_brain(self) -> None:
         from gamma.api.routes import stream_stop
@@ -440,12 +441,21 @@ class StreamBrainTest(unittest.TestCase):
         )
         stream_brain = Mock()
         stream_brain.stop_stream.return_value = turn_result
+        live_runtime = Mock()
+        live_runtime.cancel_active_turns.return_value = []
 
-        with patch("gamma.api.routes.get_stream_brain", return_value=stream_brain):
+        with (
+            patch("gamma.api.routes.get_stream_brain", return_value=stream_brain),
+            patch("gamma.api.routes.get_live_turn_runtime", return_value=live_runtime),
+        ):
             result = stream_stop(reason="test")
 
         self.assertEqual(result.decision.reason, "stream_stop_requested")
-        stream_brain.stop_stream.assert_called_once_with(reason="test")
+        live_runtime.cancel_active_turns.assert_called_once_with(reason="stream_stop:test")
+        stream_brain.stop_stream.assert_called_once_with(
+            reason="test",
+            live_cancellations={"cancel_reason": "stream_stop:test", "cancelled_count": 0, "cancelled_turns": []},
+        )
 
 
 if __name__ == "__main__":

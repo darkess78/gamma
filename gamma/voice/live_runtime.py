@@ -38,6 +38,10 @@ class LiveTurnRuntime(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def cancel_active_turns(self, *, reason: str = "interrupted") -> list[LiveVoiceJobResponse]:
+        raise NotImplementedError
+
+    @abstractmethod
     def get_recent_history(self, *, limit: int = 20) -> list[dict[str, Any]]:
         raise NotImplementedError
 
@@ -68,6 +72,9 @@ class SubprocessLiveTurnRuntime(LiveTurnRuntime):
 
     def cancel_turn(self, turn_id: str, *, reason: str = "interrupted") -> LiveVoiceJobResponse:
         return self._manager.cancel_job(turn_id, reason=reason)
+
+    def cancel_active_turns(self, *, reason: str = "interrupted") -> list[LiveVoiceJobResponse]:
+        return self._manager.cancel_active_jobs(reason=reason)
 
     def get_recent_history(self, *, limit: int = 20) -> list[dict[str, Any]]:
         return self._manager.get_recent_history(limit=limit)

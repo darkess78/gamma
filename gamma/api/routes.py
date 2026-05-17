@@ -56,6 +56,32 @@ def get_stream_output_log_service() -> StreamOutputLogService:
     return stream_output_log_service.get(StreamOutputLogService)
 
 
+def _cancel_active_live_turns(*, reason: str) -> dict:
+    cancel_reason = f"stream_stop:{reason}"
+    try:
+        cancelled = get_live_turn_runtime().cancel_active_turns(reason=cancel_reason)
+    except Exception as exc:
+        return {
+            "cancel_reason": cancel_reason,
+            "cancelled_count": 0,
+            "cancelled_turns": [],
+            "error": str(exc),
+        }
+    return {
+        "cancel_reason": cancel_reason,
+        "cancelled_count": len(cancelled),
+        "cancelled_turns": [
+            {
+                "turn_id": turn.turn_id,
+                "status": turn.status,
+                "cancel_reason": turn.cancel_reason,
+                "cancel_latency_ms": turn.cancel_latency_ms,
+            }
+            for turn in cancelled
+        ],
+    }
+
+
 @router.get("/")
 def root() -> dict[str, str]:
     return {"message": "gamma backend scaffold"}
@@ -209,7 +235,8 @@ def stream_pending_queue() -> dict:
 @router.post("/v1/stream/stop", response_model=StreamTurnResult)
 def stream_stop(reason: str = "operator_stop") -> StreamTurnResult:
     try:
-        return get_stream_brain().stop_stream(reason=reason)
+        live_cancellations = _cancel_active_live_turns(reason=reason)
+        return get_stream_brain().stop_stream(reason=reason, live_cancellations=live_cancellations)
     except GammaError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:

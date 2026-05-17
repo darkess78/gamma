@@ -441,6 +441,30 @@ class StreamBrainTest(unittest.TestCase):
         self.assertIn("ambient", brain.pending_queue()["slots"])
         self.assertEqual(second.decision.metadata["max_speech_seconds_per_minute"], 6.0)
 
+    def test_twitch_audio_subtitles_use_estimated_cumulative_timing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=_FakeLongConversation(),  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            result = brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana give me a longer line",
+                    actor=StreamActor(source="twitch", platform_id="u1"),
+                    metadata={"twitch_controls": {"voice_enabled": True, "min_speech_gap_seconds": 0}},
+                ),
+                synthesize_speech=True,
+            )
+
+        subtitles = [event for event in result.output_events if event.type == "subtitle_line"]
+        self.assertGreater(len(subtitles), 1)
+        self.assertEqual(subtitles[0].payload["text"], "one two three four")
+        self.assertEqual(subtitles[-1].payload["text"], "one two three four five six seven eight nine ten")
+        self.assertEqual(subtitles[0].payload["timing"], "estimated")
+        self.assertTrue(subtitles[-1].payload["is_final"])
+        self.assertEqual(subtitles[-1].payload["hold_ms"], 1200)
+
     def test_twitch_output_safety_gate_replaces_blocked_reply_with_filtered(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             brain = StreamBrain(

@@ -171,6 +171,26 @@
         </div>
         <div class="render" id="twitchReplayResult">No replay run yet.</div>
       </section>
+      <section class="panel full-width panel-fill" data-dashboard-tab="stream">
+        <div class="panel-head">
+          <h2>Stream Activity</h2>
+          <button class="ghost" onclick="loadStreamActivity()">Refresh Activity</button>
+        </div>
+        <div class="stream-activity-grid">
+          <div>
+            <div class="action-title">Recent Decisions</div>
+            <div class="render" id="streamTraceFeed">No stream traces loaded yet.</div>
+          </div>
+          <div>
+            <div class="action-title">Safety Log</div>
+            <div class="render" id="streamSafetyFeed">No safety events loaded yet.</div>
+          </div>
+          <div>
+            <div class="action-title">Outputs</div>
+            <div class="render" id="streamOutputFeed">No stream output events loaded yet.</div>
+          </div>
+        </div>
+      </section>
       <section class="panel wide" data-dashboard-tab="providers">
         <div class="panel-head">
           <h2>Provider Controls</h2>

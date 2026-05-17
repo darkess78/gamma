@@ -1023,6 +1023,71 @@
     return lines.join('\n');
   }
 
+  function humanStreamTraces(payload) {
+    var items = payload && Array.isArray(payload.items) ? payload.items : [];
+    if (!items.length) return 'No recent stream traces.';
+    return items.slice(-12).reverse().map(function (item) {
+      var input = item.input_event || {};
+      var actor = input.actor || {};
+      var decision = item.decision || {};
+      var text = input.text ? ('\n  text: ' + oneLine(input.text, 160)) : '';
+      var speaker = actor.display_name || actor.platform_id || actor.source || 'unknown';
+      var when = fmtLocalDateTime(item.recorded_at || input.occurred_at);
+      return [
+        when + ' / ' + (input.kind || 'event') + ' / ' + speaker,
+        '  decision: ' + (decision.decision || 'n/a') + ' / ' + (decision.reason || 'n/a'),
+        '  mode: ' + (decision.response_mode || 'n/a') + ' / priority: ' + (typeof input.priority === 'undefined' ? 'n/a' : input.priority)
+      ].join('\n') + text;
+    }).join('\n\n');
+  }
+
+  function humanStreamSafety(payload) {
+    var items = payload && Array.isArray(payload.items) ? payload.items : [];
+    var safetyItems = [];
+    items.forEach(function (item) {
+      var input = item.input_event || {};
+      var metadata = input.metadata || {};
+      var safety = metadata.input_safety || item.safety_decision || {};
+      if (!safety || (!safety.category && !safety.action && !safety.reasons)) return;
+      safetyItems.push({ item: item, input: input, safety: safety });
+    });
+    if (!safetyItems.length) return 'No recent safety-classified stream events.';
+    return safetyItems.slice(-12).reverse().map(function (entry) {
+      var item = entry.item;
+      var input = entry.input;
+      var safety = entry.safety;
+      var reasons = Array.isArray(safety.reasons) && safety.reasons.length ? safety.reasons.join(', ') : 'n/a';
+      var decision = item.decision || {};
+      return [
+        fmtLocalDateTime(item.recorded_at || input.occurred_at) + ' / ' + (safety.category || safety.action || 'classified'),
+        '  decision: ' + (decision.decision || 'n/a') + ' / ' + (decision.reason || 'n/a'),
+        '  drop: ' + (safety.should_drop ? 'yes' : 'no') + ' / reasons: ' + reasons,
+        '  safe text: ' + oneLine(safety.safe_prompt_text || input.text || 'n/a', 180)
+      ].join('\n');
+    }).join('\n\n');
+  }
+
+  function humanStreamOutputs(payload) {
+    var items = payload && Array.isArray(payload.items) ? payload.items : [];
+    if (!items.length) return 'No recent stream output events.';
+    return items.slice(-12).reverse().map(function (item) {
+      var event = item.output_event || {};
+      var payload = event.payload || {};
+      var adapterPayload = item.adapter_payload || {};
+      var detail = payload.text || payload.emotion || payload.motion || adapterPayload.subtitle || '';
+      return [
+        fmtLocalDateTime(item.recorded_at || event.occurred_at) + ' / ' + (event.type || 'output'),
+        '  detail: ' + oneLine(detail || pretty(payload || adapterPayload), 180)
+      ].join('\n');
+    }).join('\n\n');
+  }
+
+  function oneLine(value, maxLength) {
+    var text = String(value || '').replace(/\s+/g, ' ').trim();
+    if (text.length <= maxLength) return text;
+    return text.slice(0, Math.max(0, maxLength - 3)) + '...';
+  }
+
   function humanMemoryStats(stats) {
     var lines = [
       'Backend: ' + (stats.backend || 'n/a'),
@@ -2141,6 +2206,28 @@
     }
   }
 
+  async function loadStreamActivity() {
+    try {
+      var traceResponse = await fetch('/api/stream/traces/recent?limit=30', { cache: 'no-store' });
+      var tracePayload = await traceResponse.json();
+      if (!traceResponse.ok) throw new Error(tracePayload.detail || ('traces HTTP ' + traceResponse.status));
+      renderBlockIfChanged('streamTraceFeed', tracePayload, humanStreamTraces(tracePayload), 'streamTraceFeed');
+      renderBlockIfChanged('streamSafetyFeed', tracePayload, humanStreamSafety(tracePayload), 'streamSafetyFeed');
+    } catch (error) {
+      renderBlockIfChanged('streamTraceFeed', { error: String(error) }, 'Stream trace load failed.\n' + String(error), 'streamTraceFeed');
+      renderBlockIfChanged('streamSafetyFeed', { error: String(error) }, 'Safety log load failed.\n' + String(error), 'streamSafetyFeed');
+    }
+
+    try {
+      var outputResponse = await fetch('/api/stream/outputs/recent?limit=30', { cache: 'no-store' });
+      var outputPayload = await outputResponse.json();
+      if (!outputResponse.ok) throw new Error(outputPayload.detail || ('outputs HTTP ' + outputResponse.status));
+      renderBlockIfChanged('streamOutputFeed', outputPayload, humanStreamOutputs(outputPayload), 'streamOutputFeed');
+    } catch (error) {
+      renderBlockIfChanged('streamOutputFeed', { error: String(error) }, 'Stream output load failed.\n' + String(error), 'streamOutputFeed');
+    }
+  }
+
   function onTtsSynthesizeFileChange() {
     var input = document.getElementById('ttsSynthesizeFileInput');
     var btn = document.getElementById('ttsSynthesizeButton');
@@ -2264,6 +2351,7 @@
       latestData = data;
       renderPanels(data);
       loadTwitchViewerTrust();
+      loadStreamActivity();
     } catch (error) {
       postClientLog('load_exception', { error: String(error) });
       updateStamp('Load failed');
@@ -3222,6 +3310,7 @@
   window.ttsPlayerClear = ttsPlayerClear;
   window.ttsArtifactDelete = ttsArtifactDelete;
   window.saveTwitchSettings = saveTwitchSettings;
+  window.loadStreamActivity = loadStreamActivity;
 
   postClientLog('script_boot', { viewMode: viewMode });
   applyDashboardTabVisibility();

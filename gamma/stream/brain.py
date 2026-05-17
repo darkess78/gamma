@@ -98,6 +98,7 @@ class StreamBrain:
             )
             output_events = output_events_from_response(input_event=event, turn_id=turn_id, response=response)
             action_plan = self._action_planner.plan_from_response(response)
+        output_events = _filter_stream_output_events(event, output_events)
         output_dispatch = self._output_dispatcher.dispatch(output_events) if output_events else None
 
         result = StreamTurnResult(
@@ -409,6 +410,22 @@ def _twitch_control_enabled(event: StreamInputEvent, key: str, default: bool) ->
     if not isinstance(controls, dict) or key not in controls:
         return default
     return bool(controls[key])
+
+
+def _filter_stream_output_events(event: StreamInputEvent, output_events: list[StreamOutputEvent]) -> list[StreamOutputEvent]:
+    controls = event.metadata.get("twitch_controls")
+    if event.actor.source != "twitch" or not isinstance(controls, dict):
+        return output_events
+    subtitles_enabled = bool(controls.get("subtitles_enabled", True))
+    voice_enabled = bool(controls.get("voice_enabled", True))
+    filtered: list[StreamOutputEvent] = []
+    for output_event in output_events:
+        if output_event.type == "subtitle_line" and not subtitles_enabled:
+            continue
+        if output_event.type in {"speech_started", "speech_chunk", "speech_ended"} and not voice_enabled:
+            continue
+        filtered.append(output_event)
+    return filtered
 
 
 def _stream_min_gap_seconds(event: StreamInputEvent, default: float) -> float:

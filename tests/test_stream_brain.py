@@ -40,6 +40,24 @@ class _FakeToolConversation:
         )
 
 
+class _FakeAudioConversation:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def respond(self, **kwargs):
+        self.calls.append(kwargs)
+        return AssistantResponse(
+            spoken_text="Audio reply.",
+            emotion="happy",
+            audio_path="audio.wav",
+            audio_content_type="audio/wav",
+            motions=[],
+            tool_calls=[],
+            tool_results=[],
+            memory_candidates=[],
+        )
+
+
 class _FakeClock:
     def __init__(self, value: float = 0.0) -> None:
         self.value = value
@@ -155,6 +173,46 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual(plan.items[0].risk_tier, "high")
         self.assertEqual(plan.items[0].requires_approval, True)
         self.assertEqual(plan.items[0].status, "executed")
+
+    def test_twitch_subtitle_toggle_suppresses_subtitle_output_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=_FakeConversation(),  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            result = brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana hello",
+                    priority=5,
+                    actor=StreamActor(source="twitch", platform_id="u1"),
+                    metadata={"twitch_controls": {"subtitles_enabled": False}},
+                )
+        )
+
+        self.assertEqual(result.decision.decision, "reply")
+        self.assertEqual([event.type for event in result.output_events], ["emotion_changed", "avatar_motion"])
+
+    def test_twitch_voice_toggle_suppresses_speech_output_events_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=_FakeAudioConversation(),  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            result = brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana hello",
+                    priority=5,
+                    actor=StreamActor(source="twitch", platform_id="u1"),
+                    metadata={"twitch_controls": {"voice_enabled": False, "subtitles_enabled": True}},
+                ),
+                synthesize_speech=True,
+            )
+
+        self.assertEqual(result.decision.decision, "reply")
+        self.assertEqual([event.type for event in result.output_events], ["emotion_changed", "subtitle_line"])
+        self.assertEqual(result.assistant_response.audio_path if result.assistant_response else None, "audio.wav")
 
     def test_twitch_speech_pacing_defers_second_low_priority_reply(self) -> None:
         clock = _FakeClock(100.0)

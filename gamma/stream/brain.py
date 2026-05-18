@@ -83,22 +83,25 @@ class StreamBrain:
         action_plan = ActionPlan()
         turn_id = uuid4().hex
 
-        if _twitch_control_enabled(event, "dry_run", False) and _would_twitch_dry_run_suppress(decision):
+        dry_run_enabled = _twitch_control_enabled(event, "dry_run", False)
+        if dry_run_enabled and _would_twitch_dry_run_suppress(decision):
             decision = TurnDecision(
-                decision="defer",
-                reason="twitch_dry_run_suppressed_output",
-                should_call_conversation=False,
+                decision=decision.decision,
+                reason=decision.reason,
+                should_call_conversation=decision.should_call_conversation,
                 response_mode=decision.response_mode,
                 requires_moderation_review=decision.requires_moderation_review,
                 metadata={
                     **decision.metadata,
                     "dry_run": True,
+                    "dry_run_voice_suppressed": True,
                     "would_decision": decision.decision,
                     "would_reason": decision.reason,
                     "would_call_conversation": decision.should_call_conversation,
                     "would_emit_canned_response": bool(_canned_response_from_decision(decision)),
                 },
             )
+            synthesize_speech = False
 
         decision = self._pacer.apply(event, decision)
         canned_response = _canned_response_from_decision(decision)

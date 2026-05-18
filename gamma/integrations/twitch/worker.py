@@ -187,10 +187,15 @@ class TwitchIrcWorker:
         with socket.create_connection((self.config.host, self.config.port), timeout=30) as raw_socket:
             with ssl.create_default_context().wrap_socket(raw_socket, server_hostname=self.config.host) as irc:
                 self._authenticate(irc)
+                irc.settimeout(30.0)
                 self._write_state(status="connected", connected=True, reconnects=0)
                 for line in _iter_socket_lines(irc):
+                    if not line:
+                        self._write_state(status="connected", connected=True, reconnects=0, last_message_kind="heartbeat")
+                        continue
                     if line.startswith("PING "):
                         irc.sendall(line.replace("PING", "PONG", 1).encode("utf-8") + b"\r\n")
+                        self._write_state(status="connected", connected=True, reconnects=0, last_message_kind="ping")
                         continue
                     self.handle_line(line)
 
@@ -239,7 +244,11 @@ def read_twitch_worker_state(path: Path | None = None) -> dict[str, Any]:
 def _iter_socket_lines(sock: ssl.SSLSocket) -> Iterable[str]:
     buffer = ""
     while True:
-        chunk = sock.recv(4096)
+        try:
+            chunk = sock.recv(4096)
+        except socket.timeout:
+            yield ""
+            continue
         if not chunk:
             return
         buffer += chunk.decode("utf-8", errors="replace")

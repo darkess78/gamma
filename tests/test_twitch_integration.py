@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import tempfile
 import unittest
 import anyio
@@ -14,7 +15,7 @@ from gamma.integrations.twitch.normalize import normalize_chat_message
 from gamma.integrations.twitch.replay import replay_jsonl, replay_jsonl_text
 from gamma.integrations.twitch.sanitize import classify_chat_text, safe_username_alias
 from gamma.integrations.twitch.trust import ViewerTrustStore
-from gamma.integrations.twitch.worker import TwitchIrcWorker, TwitchWorkerConfig, read_twitch_worker_state
+from gamma.integrations.twitch.worker import TwitchIrcWorker, TwitchWorkerConfig, _iter_socket_lines, read_twitch_worker_state
 from gamma.dashboard.service import DashboardService
 from gamma.errors import ConfigurationError
 from gamma.stream.brain import StreamBrain
@@ -66,6 +67,19 @@ class _FakeTrustStore:
 
     def trust_level_for(self, *, platform: str, platform_user_id: str | None, default: str = "new_viewer"):
         return self.levels.get(platform_user_id or "", default)
+
+
+class _TimeoutThenLineSocket:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def recv(self, _size: int) -> bytes:
+        self.calls += 1
+        if self.calls == 1:
+            raise socket.timeout()
+        if self.calls == 2:
+            return b"PING :tmi.twitch.tv\r\n"
+        return b""
 
 
 class TwitchIntegrationTest(unittest.TestCase):
@@ -438,7 +452,7 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertEqual(result.decision.reason, "twitch_mention_replies_disabled")
         self.assertEqual(conversation.calls, [])
 
-    def test_twitch_dry_run_records_would_reply_without_generation(self) -> None:
+    def test_twitch_dry_run_records_reply_without_speech_synthesis(self) -> None:
         conversation = _FakeConversation()
         event = normalize_chat_message(
             TwitchChatMessage(text="Shana hello", platform_user_id="u1", display_name="Viewer"),
@@ -451,11 +465,13 @@ class TwitchIntegrationTest(unittest.TestCase):
             )
             result = brain.handle_event(event)
 
-        self.assertEqual(result.decision.decision, "defer")
-        self.assertEqual(result.decision.reason, "twitch_dry_run_suppressed_output")
+        self.assertEqual(result.decision.decision, "reply")
+        self.assertEqual(result.decision.reason, "chat_message_addresses_assistant_or_has_priority")
+        self.assertTrue(result.decision.metadata["dry_run"])
+        self.assertTrue(result.decision.metadata["dry_run_voice_suppressed"])
         self.assertEqual(result.decision.metadata["would_decision"], "reply")
-        self.assertEqual(conversation.calls, [])
-        self.assertEqual(result.output_events, [])
+        self.assertEqual(conversation.calls[0]["synthesize_speech"], False)
+        self.assertEqual([event.type for event in result.output_events], ["emotion_changed", "subtitle_line"])
 
     def test_ambient_chat_toggle_suppresses_priority_only_chat(self) -> None:
         conversation = _FakeConversation()
@@ -660,6 +676,11 @@ class TwitchIntegrationTest(unittest.TestCase):
 
         self.assertIsNone(result)
         self.assertEqual(client.events, [])
+
+    def test_socket_line_iterator_emits_idle_heartbeat_on_timeout(self) -> None:
+        lines = list(_iter_socket_lines(_TimeoutThenLineSocket()))  # type: ignore[arg-type]
+
+        self.assertEqual(lines, ["", "PING :tmi.twitch.tv"])
 
     def test_worker_ignores_configured_bot_display_names(self) -> None:
         client = _FakeClient()

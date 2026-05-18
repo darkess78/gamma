@@ -134,6 +134,23 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertTrue(payload["filtered_audio"]["exists"])
         self.assertEqual(payload["filtered_audio"]["resolved_path"], str(audio_path))
 
+    def test_twitch_status_reports_missing_config(self) -> None:
+        service = DashboardService()
+        with (
+            patch.object(settings, "twitch_channel", ""),
+            patch.object(settings, "twitch_bot_username", ""),
+            patch.object(settings, "twitch_oauth_token", ""),
+            patch.object(settings, "twitch_client_id", ""),
+            patch.object(settings, "twitch_broadcaster_user_id", ""),
+        ):
+            irc = service.twitch_worker_status()
+            eventsub = service.twitch_eventsub_status()
+
+        self.assertIn("twitch_channel", irc["missing_config"])
+        self.assertIn("twitch_bot_username", irc["missing_config"])
+        self.assertIn("twitch_client_id", eventsub["missing_config"])
+        self.assertIn("twitch_broadcaster_user_id", eventsub["missing_config"])
+
     def test_twitch_viewer_trust_routes(self) -> None:
         trust_payload = {"items": [{"platform_user_id": "u1", "trust_level": "trusted"}], "trust_levels": ["trusted"]}
         with patch.object(self.mock_service, "twitch_viewer_trust", return_value=trust_payload) as method:

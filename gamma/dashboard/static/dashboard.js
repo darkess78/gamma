@@ -964,6 +964,7 @@
       'Running: ' + (process.running ? 'Yes' : 'No'),
       'Channel: ' + (worker.channel || 'n/a')
     ];
+    if (Array.isArray(worker.missing_config) && worker.missing_config.length) lines.push('Missing config: ' + worker.missing_config.join(', '));
     if (process.pid) lines.push('PID: ' + process.pid);
     if (state.status || state.updated_at) {
       lines.push('');
@@ -1053,6 +1054,7 @@
       'Running: ' + (process.running ? 'Yes' : 'No'),
       'Broadcaster ID: ' + (eventsub.broadcaster_user_id || 'n/a')
     ];
+    if (Array.isArray(eventsub.missing_config) && eventsub.missing_config.length) lines.push('Missing config: ' + eventsub.missing_config.join(', '));
     if (process.pid) lines.push('PID: ' + process.pid);
     if (state.status || state.updated_at) {
       lines.push('');

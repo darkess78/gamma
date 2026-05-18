@@ -235,6 +235,7 @@ class DashboardService:
                 "detail": str(exc),
                 "auth_required": True,
                 "process": {"running": False},
+                "missing_config": self._missing_twitch_irc_config(),
             }
         result = self._process_manager.start_module(self.TWITCH_WORKER_SERVICE, self.TWITCH_WORKER_MODULE)
         return {
@@ -255,6 +256,7 @@ class DashboardService:
                 "detail": str(exc),
                 "auth_required": True,
                 "process": {"running": False},
+                "missing_config": self._missing_twitch_eventsub_config(),
             }
         result = self._process_manager.start_module(self.TWITCH_EVENTSUB_SERVICE, self.TWITCH_EVENTSUB_MODULE)
         return {
@@ -268,10 +270,12 @@ class DashboardService:
 
     def twitch_eventsub_status(self) -> dict[str, Any]:
         status = self._process_manager.module_status(self.TWITCH_EVENTSUB_SERVICE, self.TWITCH_EVENTSUB_MODULE)
-        configured = bool(settings.twitch_client_id and settings.twitch_oauth_token and settings.twitch_broadcaster_user_id)
+        missing = self._missing_twitch_eventsub_config()
+        configured = not missing
         return {
             **status,
             "configured": configured,
+            "missing_config": missing,
             "enabled": bool(settings.twitch_eventsub_enabled),
             "broadcaster_user_id": settings.twitch_broadcaster_user_id,
             "worker": "twitch_eventsub",
@@ -280,16 +284,38 @@ class DashboardService:
 
     def twitch_worker_status(self) -> dict[str, Any]:
         status = self._process_manager.module_status(self.TWITCH_WORKER_SERVICE, self.TWITCH_WORKER_MODULE)
-        configured = bool(settings.twitch_channel and settings.twitch_bot_username and settings.twitch_oauth_token)
+        missing = self._missing_twitch_irc_config()
+        configured = not missing
         return {
             **status,
             "configured": configured,
+            "missing_config": missing,
             "channel": settings.twitch_channel.lstrip("#").strip().lower() if settings.twitch_channel else "",
             "worker": "twitch_irc",
             "ignored_bots": list(settings.twitch_ignored_bots),
             "controls": self.twitch_runtime_settings(),
             "state": read_twitch_worker_state(),
         }
+
+    def _missing_twitch_irc_config(self) -> list[str]:
+        missing = []
+        if not settings.twitch_channel:
+            missing.append("twitch_channel")
+        if not settings.twitch_bot_username:
+            missing.append("twitch_bot_username")
+        if not settings.twitch_oauth_token:
+            missing.append("twitch_oauth_token")
+        return missing
+
+    def _missing_twitch_eventsub_config(self) -> list[str]:
+        missing = []
+        if not settings.twitch_client_id:
+            missing.append("twitch_client_id")
+        if not settings.twitch_oauth_token:
+            missing.append("twitch_oauth_token")
+        if not settings.twitch_broadcaster_user_id:
+            missing.append("twitch_broadcaster_user_id")
+        return missing
 
     def stream_ready_status(self) -> dict[str, Any]:
         filtered_audio_path = self._resolve_path(settings.stream_filtered_audio_path)

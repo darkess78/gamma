@@ -972,7 +972,12 @@
       lines.push('Status: ' + (state.status || 'n/a') + ' / connected: ' + (state.connected ? 'yes' : 'no'));
       lines.push('Updated: ' + fmtLocalDateTime(state.updated_at));
       if (typeof state.reconnects !== 'undefined') lines.push('Reconnects: ' + state.reconnects);
-      if (typeof state.message_count !== 'undefined') lines.push('Messages posted: ' + state.message_count);
+      if (typeof state.message_count !== 'undefined') lines.push('Messages ingested: ' + state.message_count);
+      if (state.last_message_kind) lines.push('Last message kind: ' + humanizeKey(state.last_message_kind));
+      if (state.last_actor_display_name) lines.push('Last actor: ' + state.last_actor_display_name);
+      if (state.last_posted_event_kind) lines.push('Last posted event: ' + humanizeKey(state.last_posted_event_kind));
+      if (state.last_message_id) lines.push('Last message id: ' + state.last_message_id);
+      if (state.last_post_error) lines.push('Last post error: ' + state.last_post_error);
       if (state.detail) lines.push('Detail: ' + state.detail);
     }
     lines.push('');
@@ -1146,15 +1151,28 @@
     return items.slice(-12).reverse().map(function (item) {
       var input = item.input_event || {};
       var actor = input.actor || {};
+      var metadata = input.metadata || {};
       var decision = item.decision || {};
+      var decisionMeta = decision.metadata || {};
+      var response = item.assistant_response || {};
+      var outputs = Array.isArray(item.output_events) ? item.output_events : [];
+      var outputTypes = outputs.map(function (event) { return event.type || 'output'; }).join(', ') || 'none';
       var text = input.text ? ('\n  text: ' + oneLine(input.text, 160)) : '';
       var speaker = actor.display_name || actor.platform_id || actor.source || 'unknown';
       var when = fmtLocalDateTime(item.recorded_at || input.occurred_at);
-      return [
+      var lines = [
         when + ' / ' + (input.kind || 'event') + ' / ' + speaker,
         '  decision: ' + (decision.decision || 'n/a') + ' / ' + (decision.reason || 'n/a'),
-        '  mode: ' + (decision.response_mode || 'n/a') + ' / priority: ' + (typeof input.priority === 'undefined' ? 'n/a' : input.priority)
-      ].join('\n') + text;
+        '  mode: ' + (decision.response_mode || 'n/a') + ' / priority: ' + (typeof input.priority === 'undefined' ? 'n/a' : input.priority),
+        '  outputs: ' + outputTypes
+      ];
+      if (decisionMeta.dry_run) lines.push('  dry run: yes / voice suppressed: ' + (decisionMeta.dry_run_voice_suppressed ? 'yes' : 'no'));
+      if (decisionMeta.would_decision) lines.push('  would: ' + decisionMeta.would_decision + ' / ' + (decisionMeta.would_reason || 'n/a'));
+      if (metadata.input_safety && Array.isArray(metadata.input_safety.reasons) && metadata.input_safety.reasons.length) {
+        lines.push('  input safety: ' + (metadata.input_safety.category || 'classified') + ' / ' + metadata.input_safety.reasons.join(', '));
+      }
+      if (response.spoken_text) lines.push('  reply: ' + oneLine(response.spoken_text, 180));
+      return lines.join('\n') + text;
     }).join('\n\n');
   }
 
@@ -1194,10 +1212,13 @@
       var payload = event.payload || {};
       var adapterPayload = item.adapter_payload || {};
       var detail = payload.text || payload.emotion || payload.motion || adapterPayload.subtitle || '';
-      return [
+      var lines = [
         fmtLocalDateTime(item.recorded_at || event.occurred_at) + ' / ' + (event.type || 'output'),
         '  detail: ' + oneLine(detail || pretty(payload || adapterPayload), 180)
-      ].join('\n');
+      ];
+      if (event.input_event_id) lines.push('  input: ' + event.input_event_id);
+      if (event.turn_id) lines.push('  turn: ' + event.turn_id);
+      return lines.join('\n');
     }).join('\n\n');
   }
 

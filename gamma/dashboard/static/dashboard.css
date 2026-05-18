@@ -439,30 +439,45 @@ pre {
 }
 
 .twitch-worker-actions {
-  grid-template-columns: minmax(260px, 1.15fr) minmax(220px, 0.85fr) minmax(240px, 0.9fr) minmax(320px, 1.15fr) minmax(160px, 0.55fr);
+  grid-template-columns: minmax(300px, 1.15fr) minmax(220px, 0.8fr) minmax(240px, 0.9fr) minmax(340px, 1.15fr);
   align-items: stretch;
 }
 
 .twitch-worker-actions .action-group {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
 
-.twitch-worker-actions .action-buttons:not(.action-stack) {
-  align-content: flex-start;
+.twitch-worker-actions .action-title {
+  min-height: 16px;
 }
 
-.twitch-save-group {
-  display: flex;
-  flex-direction: column;
-}
-
-.twitch-save-group .action-buttons {
+.twitch-worker-actions .action-stack {
   flex: 1;
-  align-items: flex-end;
+  align-content: start;
 }
 
-.twitch-save-group button {
+.twitch-worker-actions .checkbox-row {
+  min-height: 32px;
+}
+
+.twitch-process-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  flex: 1;
+}
+
+.twitch-process-buttons button {
   width: 100%;
+  min-height: 38px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.twitch-process-buttons .danger {
+  grid-column: 1 / -1;
 }
 
 .action-grid {
@@ -515,7 +530,33 @@ pre {
 }
 
 .stream-tile .action-buttons {
+  margin: 0;
+}
+
+.stream-tile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
   margin-bottom: 10px;
+}
+
+.stream-tile-head .action-title {
+  margin-bottom: 0;
+}
+
+.stream-tile-head .action-buttons {
+  justify-content: flex-end;
+}
+
+.stream-tile-head .text-input {
+  max-width: 130px;
+  min-height: 38px;
+}
+
+.stream-tile-head button {
+  min-height: 38px;
 }
 
 .stream-activity-grid .render,
@@ -1166,6 +1207,20 @@ audio {
   }
   .twitch-worker-actions {
     grid-template-columns: 1fr;
+  }
+  .twitch-process-buttons {
+    grid-template-columns: 1fr;
+  }
+  .stream-tile-head,
+  .stream-tile-head-stack {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .stream-tile-head .action-buttons {
+    justify-content: flex-start;
+  }
+  .stream-tile-head .text-input {
+    max-width: none;
   }
   .stream-status-grid > #twitchWorkerStatus,
   .stream-status-grid > #streamReadyStatus,

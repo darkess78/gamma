@@ -512,6 +512,13 @@
               <label class="checkbox-row" title="Run a model-based reviewer over candidate speech when the local heuristic is not enough."><input id="assistantLlmEnabled" type="checkbox"> LLM reviewer enabled</label>
               <label class="checkbox-row" title="If a reply is risky, try to rewrite it into a safer form instead of only blocking it."><input id="assistantAutoRewrite" type="checkbox"> Auto rewrite enabled</label>
                 <input class="text-input" id="assistantLlmModel" placeholder="LLM reviewer model (optional)" title="Optional model override for the speech-review pass. Leave blank to use the configured default reviewer model.">
+                <input class="text-input" id="assistantLlmTemperature" type="number" min="0" max="1" step="0.05" placeholder="Reviewer temperature" title="Reviewer sampling temperature. Keep this near 0 for consistent safety decisions.">
+                <input class="text-input" id="assistantSafetyReviewTimeout" type="number" min="0.05" step="0.05" placeholder="Review timeout seconds" title="How long stream output waits for the LLM safety reviewer before applying the timeout action.">
+                <select class="text-input" id="assistantSafetyReviewTimeoutAction" title="What stream output should do if LLM safety review times out.">
+                  <option value="skip">Timeout: Skip speech</option>
+                  <option value="defer">Timeout: Defer speech</option>
+                  <option value="hold">Timeout: Hold speech</option>
+                </select>
                 <select class="text-input" id="assistantRouterProfile" title="Select the top-level LLM routing policy. This changes how aggressively Gamma prefers local, hosted, or low-latency paths.">
                   <option value="balanced">Router: Balanced</option>
                   <option value="local_only">Router: Local Only</option>

@@ -712,6 +712,12 @@ class Settings:
     speech_filter_llm_model: str = str(
         _setting("SHANA_SPEECH_FILTER_LLM_MODEL", _config_value(APP_CONFIG, "speech_filter_llm_model", default=""))
     )
+    speech_filter_llm_temperature: float = float(
+        _setting(
+            "SHANA_SPEECH_FILTER_LLM_TEMPERATURE",
+            _config_value(APP_CONFIG, "speech_filter_llm_temperature", default=0.0),
+        )
+    )
     speech_filter_auto_rewrite: bool = _as_bool(
         _setting("SHANA_SPEECH_FILTER_AUTO_REWRITE", _config_value(APP_CONFIG, "speech_filter_auto_rewrite", default=True)),
         default=True,

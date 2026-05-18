@@ -1091,7 +1091,16 @@ class DashboardService:
             "speech_filter_heuristic_enabled": bool(config.get("speech_filter_heuristic_enabled", settings.speech_filter_heuristic_enabled)),
             "speech_filter_llm_enabled": bool(config.get("speech_filter_llm_enabled", settings.speech_filter_llm_enabled)),
             "speech_filter_llm_model": str(config.get("speech_filter_llm_model", settings.speech_filter_llm_model)),
+            "speech_filter_llm_temperature": float(
+                config.get("speech_filter_llm_temperature", settings.speech_filter_llm_temperature)
+            ),
             "speech_filter_auto_rewrite": bool(config.get("speech_filter_auto_rewrite", settings.speech_filter_auto_rewrite)),
+            "stream_safety_review_timeout_seconds": float(
+                config.get("stream_safety_review_timeout_seconds", settings.stream_safety_review_timeout_seconds)
+            ),
+            "stream_safety_review_timeout_action": str(
+                config.get("stream_safety_review_timeout_action", settings.stream_safety_review_timeout_action)
+            ),
             "llm_router_profile": str(config.get("llm_router_profile", settings.llm_router_profile)),
             "llm_router_allow_hosted_escalation": bool(
                 config.get("llm_router_allow_hosted_escalation", settings.llm_router_allow_hosted_escalation)
@@ -1163,6 +1172,17 @@ class DashboardService:
                 updated = self._upsert_toml_bool(updated, key, bool(payload.get(key)))
         if "speech_filter_llm_model" in payload:
             updated = self._upsert_toml_string(updated, "speech_filter_llm_model", str(payload.get("speech_filter_llm_model", "")).strip())
+        if "speech_filter_llm_temperature" in payload:
+            temperature = max(0.0, min(1.0, float(payload.get("speech_filter_llm_temperature", settings.speech_filter_llm_temperature))))
+            updated = self._upsert_toml_number(updated, "speech_filter_llm_temperature", temperature)
+        if "stream_safety_review_timeout_seconds" in payload:
+            timeout_seconds = max(0.05, float(payload.get("stream_safety_review_timeout_seconds", settings.stream_safety_review_timeout_seconds)))
+            updated = self._upsert_toml_number(updated, "stream_safety_review_timeout_seconds", timeout_seconds)
+        if "stream_safety_review_timeout_action" in payload:
+            timeout_action = str(payload.get("stream_safety_review_timeout_action", settings.stream_safety_review_timeout_action)).strip().lower()
+            if timeout_action not in {"skip", "defer", "hold"}:
+                raise ValueError("unsupported stream_safety_review_timeout_action")
+            updated = self._upsert_toml_string(updated, "stream_safety_review_timeout_action", timeout_action)
         if "llm_router_profile" in payload:
             profile = str(payload.get("llm_router_profile", settings.llm_router_profile)).strip().lower()
             if profile not in {"balanced", "local_only", "low_latency_voice", "high_quality", "offline_safe"}:

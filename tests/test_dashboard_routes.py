@@ -335,6 +335,9 @@ class DashboardRoutesTest(unittest.TestCase):
     def test_assistant_settings_routes(self) -> None:
         settings_payload = {
             "speech_filter_level": "strict",
+            "speech_filter_llm_temperature": 0.1,
+            "stream_safety_review_timeout_seconds": 1.5,
+            "stream_safety_review_timeout_action": "skip",
             "assistant_state_enabled": True,
             "llm_router_profile": "balanced",
             "llm_router_allow_hosted_escalation": True,
@@ -473,8 +476,49 @@ class DashboardRoutesTest(unittest.TestCase):
         service = DashboardService()
         payload = service.assistant_runtime_settings()
         self.assertIn("speech_filter_level", payload)
+        self.assertIn("speech_filter_llm_temperature", payload)
+        self.assertIn("stream_safety_review_timeout_seconds", payload)
+        self.assertIn("stream_safety_review_timeout_action", payload)
         self.assertIn("llm_router_profile", payload)
         self.assertIn("assistant_state_enabled", payload)
+
+    def test_dashboard_service_saves_assistant_safety_tuning(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "app.local.toml"
+            with (
+                patch("gamma.dashboard.service.app_local_config_path", return_value=path),
+                patch(
+                    "gamma.dashboard.service.load_app_file_config",
+                    return_value={
+                        "speech_filter_heuristic_enabled": False,
+                        "speech_filter_llm_enabled": True,
+                        "speech_filter_llm_model": "llama3.2:3b",
+                        "speech_filter_llm_temperature": 0.15,
+                        "stream_safety_review_timeout_seconds": 1.25,
+                        "stream_safety_review_timeout_action": "defer",
+                    },
+                ),
+            ):
+                service = DashboardService()
+                result = service.save_assistant_runtime_settings(
+                    {
+                        "speech_filter_heuristic_enabled": False,
+                        "speech_filter_llm_enabled": True,
+                        "speech_filter_llm_model": "llama3.2:3b",
+                        "speech_filter_llm_temperature": 0.15,
+                        "stream_safety_review_timeout_seconds": 1.25,
+                        "stream_safety_review_timeout_action": "defer",
+                    }
+                )
+                saved = path.read_text(encoding="utf-8")
+
+        self.assertTrue(result["ok"])
+        self.assertIn("speech_filter_heuristic_enabled = false", saved)
+        self.assertIn("speech_filter_llm_enabled = true", saved)
+        self.assertIn('speech_filter_llm_model = "llama3.2:3b"', saved)
+        self.assertIn("speech_filter_llm_temperature = 0.15", saved)
+        self.assertIn("stream_safety_review_timeout_seconds = 1.25", saved)
+        self.assertIn('stream_safety_review_timeout_action = "defer"', saved)
 
     def test_dashboard_file_helpers_read_only_recent_entries(self) -> None:
         service = DashboardService()

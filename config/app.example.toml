@@ -106,6 +106,7 @@ speech_filter_hard_block_enabled = true
 speech_filter_heuristic_enabled = true
 speech_filter_llm_enabled = false
 speech_filter_llm_model = ""
+speech_filter_llm_temperature = 0.0
 speech_filter_auto_rewrite = true
 stream_filtered_audio_path = "./assets/audio/system/filtered.wav"
 stream_safety_review_timeout_seconds = 2.0

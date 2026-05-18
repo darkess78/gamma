@@ -39,7 +39,14 @@ class SpeechLLMReviewer:
             "Text: \"You should hurt yourself.\" -> {\"action\":\"block\",\"reason\":\"self-harm encouragement\",\"confidence\":1.0}\n"
             "Now classify the provided text.\n"
         )
-        payload = {"model": self._model, "system": prompt, "prompt": text, "stream": False, "options": {"temperature": 0}}
+        temperature = max(0.0, min(1.0, float(settings.speech_filter_llm_temperature or 0.0)))
+        payload = {
+            "model": self._model,
+            "system": prompt,
+            "prompt": text,
+            "stream": False,
+            "options": {"temperature": temperature},
+        }
         req = request.Request(
             settings.local_llm_endpoint.rstrip("/") + "/api/generate",
             data=json.dumps(payload).encode("utf-8"),

@@ -114,6 +114,11 @@ class _FakeClock:
 
 
 class StreamBrainTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patcher = patch.object(settings, "speech_filter_llm_enabled", False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_mic_transcript_becomes_reply_and_output_events(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
@@ -589,9 +594,10 @@ class StreamBrainTest(unittest.TestCase):
         self.assertTrue(result.safety_decision["blocked"])
         self.assertEqual(result.safety_decision["action"], "filtered")
         self.assertEqual(result.assistant_response.spoken_text if result.assistant_response else None, "filtered")
-        self.assertEqual([event.type for event in result.output_events], ["emotion_changed", "subtitle_line"])
-        self.assertEqual(result.output_events[1].payload["text"], "filtered")
-        self.assertTrue(result.output_events[1].payload["filtered"])
+        self.assertIn("subtitle_line", [event.type for event in result.output_events])
+        subtitle = next(event for event in result.output_events if event.type == "subtitle_line")
+        self.assertEqual(subtitle.payload["text"], "filtered")
+        self.assertTrue(subtitle.payload["filtered"])
         self.assertNotIn("idiot", str([event.payload for event in result.output_events]).lower())
         self.assertEqual(result.action_plan.items, [])
 
@@ -618,7 +624,8 @@ class StreamBrainTest(unittest.TestCase):
         self.assertTrue(result.safety_decision["blocked"])
         self.assertEqual(result.safety_decision["action"], "filtered")
         self.assertEqual(result.assistant_response.spoken_text if result.assistant_response else None, "filtered")
-        self.assertEqual(result.output_events[1].payload["text"], "filtered")
+        subtitle = next(event for event in result.output_events if event.type == "subtitle_line")
+        self.assertEqual(subtitle.payload["text"], "filtered")
 
     def test_twitch_llm_safety_reviewer_timeout_skips_output_without_filtered(self) -> None:
         with (

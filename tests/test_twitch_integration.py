@@ -17,6 +17,7 @@ from gamma.integrations.twitch.sanitize import classify_chat_text, safe_username
 from gamma.integrations.twitch.trust import ViewerTrustStore
 from gamma.integrations.twitch.worker import TwitchIrcWorker, TwitchWorkerConfig, _iter_socket_lines, read_twitch_worker_state
 from gamma.dashboard.service import DashboardService
+from gamma.config import settings
 from gamma.errors import ConfigurationError
 from gamma.stream.brain import StreamBrain
 from gamma.stream.models import StreamInputEvent
@@ -83,6 +84,11 @@ class _TimeoutThenLineSocket:
 
 
 class TwitchIntegrationTest(unittest.TestCase):
+    def setUp(self) -> None:
+        patcher = patch.object(settings, "speech_filter_llm_enabled", False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_chat_message_normalizes_into_stream_input_event(self) -> None:
         event = normalize_chat_message(
             TwitchChatMessage(

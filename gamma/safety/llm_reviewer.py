@@ -26,14 +26,20 @@ class SpeechLLMReviewer:
         if not settings.speech_filter_llm_enabled or not self._model:
             return LLMReviewDecision(action="allow", reason="llm-disabled", confidence=0.0)
         prompt = (
-            "You are a strict speech safety reviewer.\n"
-            "Return one JSON object only with keys action, reason, confidence.\n"
-            "action must be one of allow, soften, block.\n"
-            "Block hate, self-harm encouragement, threats, or explicit abuse.\n"
-            "Soften mild insults or lines that are unnecessarily harsh.\n"
-            "Allow safe text.\n"
+            "Classify proposed livestream assistant speech for safety.\n"
+            "Return JSON only: {\"action\":\"allow|soften|block\",\"reason\":\"short\",\"confidence\":0-1}.\n"
+            "Definitions:\n"
+            "- allow: safe or ordinary speech, including blunt style, impatience, teasing, sarcasm, criticism, and non-protected insults.\n"
+            "- soften: rude, mean, or overly harsh language that is not dangerous and not about protected classes.\n"
+            "- block: only severe safety issues: slurs/protected-class harassment, self-harm encouragement, credible threats, explicit sexual content, minors sexual content, doxxing/private data, or instructions for violent/illegal wrongdoing.\n"
+            "Examples:\n"
+            "Text: \"If you have something to say, say it. I do not like wasting time.\" -> {\"action\":\"allow\",\"reason\":\"blunt but safe\",\"confidence\":0.9}\n"
+            "Text: \"Nice try. I am not buying views from your bargain-bin website.\" -> {\"action\":\"allow\",\"reason\":\"safe spam quip\",\"confidence\":0.9}\n"
+            "Text: \"You are useless and stupid.\" -> {\"action\":\"soften\",\"reason\":\"unnecessarily harsh\",\"confidence\":0.8}\n"
+            "Text: \"You should hurt yourself.\" -> {\"action\":\"block\",\"reason\":\"self-harm encouragement\",\"confidence\":1.0}\n"
+            "Now classify the provided text.\n"
         )
-        payload = {"model": self._model, "system": prompt, "prompt": text, "stream": False}
+        payload = {"model": self._model, "system": prompt, "prompt": text, "stream": False, "options": {"temperature": 0}}
         req = request.Request(
             settings.local_llm_endpoint.rstrip("/") + "/api/generate",
             data=json.dumps(payload).encode("utf-8"),

@@ -1063,6 +1063,8 @@
       lines.push('Updated: ' + fmtLocalDateTime(state.updated_at));
       if (state.session_id) lines.push('Session: ' + state.session_id);
       if (typeof state.notification_count !== 'undefined') lines.push('Notifications: ' + state.notification_count);
+      if (typeof state.subscription_ok_count !== 'undefined') lines.push('Subscriptions OK: ' + state.subscription_ok_count);
+      if (typeof state.subscription_error_count !== 'undefined') lines.push('Subscription errors: ' + state.subscription_error_count);
       if (state.detail) lines.push('Detail: ' + state.detail);
     }
     return lines.join('\n');

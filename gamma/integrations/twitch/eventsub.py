@@ -137,6 +137,8 @@ class TwitchEventSubWorker:
                     connected=True,
                     session_id=session_id,
                     subscriptions=subscriptions,
+                    subscription_ok_count=sum(1 for subscription in subscriptions if subscription.get("ok")),
+                    subscription_error_count=sum(1 for subscription in subscriptions if not subscription.get("ok")),
                     reconnects=reconnects,
                 )
                 continue
@@ -168,7 +170,11 @@ class TwitchEventSubWorker:
                 "condition": spec["condition"],
                 "transport": {"method": "websocket", "session_id": session_id},
             }
-            results.append(self._create_subscription(body))
+            try:
+                result = self._create_subscription(body)
+                results.append({"ok": True, "type": spec["type"], "version": spec["version"], "response": result})
+            except Exception as exc:
+                results.append({"ok": False, "type": spec["type"], "version": spec["version"], "error": str(exc)})
         return results
 
     def _create_subscription(self, body: dict[str, Any]) -> dict[str, Any]:

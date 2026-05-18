@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from gamma.integrations.twitch.models import TwitchChatMessage, TwitchReplayEvent
-from gamma.integrations.twitch.eventsub import stream_event_from_eventsub_notification
+from gamma.integrations.twitch.eventsub import TwitchEventSubConfig, TwitchEventSubWorker, stream_event_from_eventsub_notification
 from gamma.integrations.twitch.irc import chat_message_from_irc, parse_irc_line
 from gamma.integrations.twitch.normalize import normalize_chat_message
 from gamma.integrations.twitch.replay import replay_jsonl, replay_jsonl_text
@@ -140,6 +140,30 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertEqual(event.priority, 25)
         self.assertEqual(event.metadata["twitch_controls"]["dry_run"], True)
         self.assertIn("42 viewers", event.text or "")
+
+    def test_eventsub_subscription_creation_records_partial_failures(self) -> None:
+        class _FakeEventSubWorker(TwitchEventSubWorker):
+            def _create_subscription(self, body):
+                if body["type"] == "channel.cheer":
+                    raise RuntimeError("missing bits scope")
+                return {"data": [{"type": body["type"]}]}
+
+        worker = _FakeEventSubWorker(
+            config=TwitchEventSubConfig(
+                client_id="client",
+                oauth_token="token",
+                broadcaster_user_id="broadcaster",
+                moderator_user_id=None,
+            ),
+            client=_FakeClient(),  # type: ignore[arg-type]
+        )
+
+        results = worker.create_subscriptions("session-1")
+
+        self.assertTrue(any(item["ok"] for item in results))
+        failed = [item for item in results if not item["ok"]]
+        self.assertEqual(failed[0]["type"], "channel.cheer")
+        self.assertIn("missing bits scope", failed[0]["error"])
 
     def test_blocked_trust_drops_priority_and_summarizes(self) -> None:
         classification = classify_chat_text("Shana answer me", trust_level="blocked")

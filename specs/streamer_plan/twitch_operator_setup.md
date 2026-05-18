@@ -51,7 +51,7 @@ EventSub features need a user access token with these scopes:
 - Subscriptions and resubs: `channel:read:subscriptions`
 - Channel point redeems: `channel:read:redemptions` or `channel:manage:redemptions`
 
-If a subscription fails, check the EventSub dashboard status first. Twitch will reject individual subscriptions when the token lacks the required scope.
+If a subscription fails, check the EventSub dashboard status first. The worker keeps running when individual subscriptions fail, and the status panel shows subscription success/error counts. Twitch will reject individual subscriptions when the token lacks the required scope.
 
 ## Local Runtime Requirements
 - Shana API running.

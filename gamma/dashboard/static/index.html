@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shana Control</title>
-  <link rel="stylesheet" href="/static/dashboard.css?v=20260517a">
+  <link rel="stylesheet" href="/static/dashboard.css?v=20260518b">
 </head>
 <body>
   <div class="wrap">
@@ -90,13 +90,13 @@
         </div>
         <div class="render" id="providerActions">No provider action has been run yet.</div>
       </section>
-      <section class="panel wide" data-dashboard-tab="stream">
+      <section class="panel full-width stream-worker-panel" data-dashboard-tab="stream">
         <div class="panel-head">
           <h2>Twitch Worker</h2>
         </div>
-        <div class="provider-actions">
+        <div class="provider-actions twitch-worker-actions">
           <div class="action-group">
-            <div class="action-title">IRC Ingestion</div>
+            <div class="action-title">Worker Processes</div>
             <div class="action-buttons">
               <button id="twitchWorkerStartButton" class="secondary" onclick="action('/api/twitch/worker/start')">Start Worker</button>
               <button id="twitchWorkerStopButton" class="ghost danger-outline" onclick="action('/api/twitch/worker/stop')">Stop Twitch Worker</button>
@@ -106,22 +106,35 @@
             </div>
           </div>
           <div class="action-group">
-            <div class="action-title">Runtime Controls</div>
+            <div class="action-title">Stream Mode</div>
             <div class="action-buttons action-stack">
               <label class="checkbox-row"><input id="twitchDryRun" type="checkbox"> Dry run</label>
               <label class="checkbox-row"><input id="twitchVoiceEnabled" type="checkbox"> Voice</label>
               <label class="checkbox-row"><input id="twitchSubtitlesEnabled" type="checkbox"> Subtitles</label>
+              <label class="checkbox-row"><input id="twitchLlmSafetyReviewEnabled" type="checkbox"> LLM safety review</label>
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">Reply Sources</div>
+            <div class="action-buttons action-stack">
               <label class="checkbox-row"><input id="twitchAmbientChatEnabled" type="checkbox"> Ambient chat</label>
               <label class="checkbox-row"><input id="twitchMentionRepliesEnabled" type="checkbox"> Mention replies</label>
               <label class="checkbox-row"><input id="twitchSpamQuipsEnabled" type="checkbox"> Spam quips</label>
               <label class="checkbox-row"><input id="twitchSelfGoalProposalsEnabled" type="checkbox"> Self-goal proposals</label>
-              <label class="checkbox-row"><input id="twitchLlmSafetyReviewEnabled" type="checkbox"> LLM safety review</label>
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">Timing Limits</div>
+            <div class="action-buttons action-stack">
               <label class="range-row">Speech gap <input id="twitchMinSpeechGapSeconds" type="number" min="0" step="1" class="text-input"><span>sec</span></label>
               <label class="range-row">Speech budget <input id="twitchMaxSpeechSecondsPerMinute" type="number" min="0" step="1" class="text-input"><span>sec/min</span></label>
               <label class="range-row">Spam quip gap <input id="twitchSpamQuipCooldownSeconds" type="number" min="0" step="1" class="text-input"><span>sec</span></label>
-              <div class="action-buttons">
-                <button class="secondary" onclick="saveTwitchSettings()">Save Controls</button>
-              </div>
+            </div>
+          </div>
+          <div class="action-group twitch-save-group">
+            <div class="action-title">Apply</div>
+            <div class="action-buttons">
+              <button class="secondary" onclick="saveTwitchSettings()">Save Controls</button>
             </div>
           </div>
         </div>

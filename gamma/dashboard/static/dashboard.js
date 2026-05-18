@@ -455,6 +455,14 @@
     setViewMode(checked ? 'json' : 'human');
   }
 
+  function updateStickyTabOffset() {
+    var toolbar = document.querySelector('.toolbar');
+    if (!toolbar) return;
+    var rect = toolbar.getBoundingClientRect();
+    var margin = 14;
+    document.documentElement.style.setProperty('--tabbar-top', Math.ceil(rect.height + margin) + 'px');
+  }
+
   function renderBlock(elementId, rawValue, humanText) {
     var el = document.getElementById(elementId);
     if (viewMode === 'json') {
@@ -3846,6 +3854,11 @@
   loadVisionHistory();
   updateVisionImageMeta();
   renderVisionHistory();
+  updateStickyTabOffset();
+  window.addEventListener('resize', updateStickyTabOffset);
+  if (window.ResizeObserver) {
+    new ResizeObserver(updateStickyTabOffset).observe(document.querySelector('.toolbar'));
+  }
   [
     'ttsEditorPiperModelPath',
     'ttsEditorPiperConfigPath',

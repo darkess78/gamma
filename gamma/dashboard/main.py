@@ -287,6 +287,14 @@ async def run_twitch_replay(request: Request) -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.post("/api/twitch/replay/dry-run")
+def run_twitch_dry_run_replay() -> dict:
+    try:
+        return get_dashboard_service().run_twitch_dry_run_replay()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.post("/api/memory/clear")
 def clear_memory() -> dict:
     return get_dashboard_service().clear_memory()

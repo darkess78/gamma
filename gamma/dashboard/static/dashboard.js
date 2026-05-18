@@ -1032,7 +1032,9 @@
 
   function humanTwitchReplayResult(payload) {
     if (!payload || !payload.ok) return 'No replay run yet.';
-    var lines = ['Replay events posted: ' + payload.count];
+    var lines = [];
+    if (payload.scenario) lines.push('Scenario: ' + humanizeKey(payload.scenario));
+    lines.push('Replay events posted: ' + payload.count);
     var results = Array.isArray(payload.results) ? payload.results : [];
     for (var i = 0; i < Math.min(results.length, 8); i += 1) {
       var result = results[i] || {};
@@ -1079,14 +1081,25 @@
     var lines = [];
     lines.push('Mode: ' + humanizeKey(payload.mode || 'unknown'));
     lines.push('Preflight: ' + (payload.ok ? 'Pass' : 'Blocked') + ' / blockers: ' + (payload.blocker_count || 0) + ' / warnings: ' + (payload.warning_count || 0));
+    if (payload.next_step) lines.push('Next: ' + payload.next_step);
     var checks = Array.isArray(payload.checks) ? payload.checks : [];
     if (checks.length) {
       lines.push('');
       lines.push('Checks:');
       checks.forEach(function (check) {
         var marker = check.status === 'ok' ? 'OK' : (check.status === 'block' ? 'BLOCK' : 'WARN');
-        lines.push(marker + ' - ' + (check.label || check.id || 'check') + ': ' + (check.detail || 'n/a'));
+        var stale = check.stale ? ' / stale' : '';
+        lines.push(marker + stale + ' - ' + (check.label || check.id || 'check') + ': ' + (check.detail || 'n/a'));
       });
+      lines.push('');
+      lines.push('Dry-Run Checklist:');
+      lines.push('1. Fix blockers.');
+      lines.push('2. Run Dry-Run Replay.');
+      lines.push('3. Start IRC worker.');
+      lines.push('4. Start EventSub.');
+      lines.push('5. Verify Stream Activity, Safety Log, and queue.');
+      lines.push('6. Press Stop Speech and confirm subtitles clear.');
+      lines.push('7. Disable dry run only after the checks stay clean.');
       lines.push('');
       lines.push('Controls:');
     }
@@ -2322,6 +2335,21 @@
     }
   }
 
+  async function runTwitchDryRunReplay() {
+    try {
+      renderBlockIfChanged('twitchReplayResult', { status: 'running' }, 'Running dry-run replay...', 'twitchReplayResult');
+      var response = await fetch('/api/twitch/replay/dry-run', { method: 'POST' });
+      var result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.detail || ('HTTP ' + response.status));
+      }
+      renderBlockIfChanged('twitchReplayResult', result, humanTwitchReplayResult(result), 'twitchReplayResult');
+      scheduleStatusRefreshes();
+    } catch (error) {
+      renderBlockIfChanged('twitchReplayResult', { error: String(error) }, 'Dry-run replay failed.\n' + String(error), 'twitchReplayResult');
+    }
+  }
+
   async function saveTwitchSettings() {
     var payload = {
       dry_run: !!document.getElementById('twitchDryRun').checked,
@@ -3551,6 +3579,8 @@
   window.ttsPlayerLoadLatest = ttsPlayerLoadLatest;
   window.ttsPlayerClear = ttsPlayerClear;
   window.ttsArtifactDelete = ttsArtifactDelete;
+  window.runTwitchReplay = runTwitchReplay;
+  window.runTwitchDryRunReplay = runTwitchDryRunReplay;
   window.saveTwitchSettings = saveTwitchSettings;
   window.loadStreamActivity = loadStreamActivity;
   window.clearStreamTempMemory = clearStreamTempMemory;

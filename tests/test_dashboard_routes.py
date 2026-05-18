@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -133,7 +134,7 @@ class DashboardRoutesTest(unittest.TestCase):
             ):
                 payload = DashboardService().stream_ready_status()
 
-        self.assertIn(payload["mode"], {"dry_run_ready", "live_voice_ready", "live_subtitle_ready", "not_ready"})
+        self.assertIn(payload["mode"], {"offline_replay_ready", "twitch_connect_ready", "dry_run_connected", "voice_ready", "not_ready"})
         self.assertTrue(payload["safety_gate"]["enabled"])
         self.assertTrue(payload["filtered_audio"]["exists"])
         self.assertEqual(payload["filtered_audio"]["resolved_path"], str(audio_path))
@@ -161,6 +162,46 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(checks["irc_config"]["status"], "block")
         self.assertEqual(checks["eventsub_config"]["status"], "block")
         self.assertEqual(checks["api_auth"]["status"], "block")
+
+    def test_stream_ready_status_reports_twitch_connect_ready(self) -> None:
+        service = DashboardService()
+        with (
+            patch.object(settings, "twitch_channel", "shana"),
+            patch.object(settings, "twitch_bot_username", "bot"),
+            patch.object(settings, "twitch_oauth_token", "oauth:test"),
+            patch.object(settings, "twitch_client_id", "client"),
+            patch.object(settings, "twitch_broadcaster_user_id", "broadcaster"),
+            patch.object(settings, "twitch_dry_run", True),
+            patch.object(DashboardService, "_probe_json", return_value={"ok": True}),
+            patch.object(service._process_manager, "module_status", return_value={"process": {"running": False}}),
+        ):
+            payload = service.stream_ready_status()
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["mode"], "twitch_connect_ready")
+        self.assertIn("Start the IRC and EventSub workers", payload["next_step"])
+
+    def test_stream_ready_status_marks_stale_worker_state(self) -> None:
+        service = DashboardService()
+        stale_at = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat().replace("+00:00", "Z")
+        with (
+            patch.object(settings, "twitch_channel", "shana"),
+            patch.object(settings, "twitch_bot_username", "bot"),
+            patch.object(settings, "twitch_oauth_token", "oauth:test"),
+            patch.object(settings, "twitch_client_id", "client"),
+            patch.object(settings, "twitch_broadcaster_user_id", "broadcaster"),
+            patch.object(settings, "twitch_eventsub_enabled", True),
+            patch.object(DashboardService, "_probe_json", return_value={"ok": True}),
+            patch.object(service._process_manager, "module_status", return_value={"process": {"running": True}}),
+            patch("gamma.dashboard.service.read_twitch_worker_state", return_value={"connected": True, "updated_at": stale_at, "message_count": 2}),
+            patch("gamma.dashboard.service.read_twitch_eventsub_state", return_value={"connected": True, "updated_at": stale_at, "notification_count": 1}),
+        ):
+            payload = service.stream_ready_status()
+
+        checks = {check["id"]: check for check in payload["checks"]}
+        self.assertEqual(checks["irc_runtime"]["status"], "warn")
+        self.assertTrue(checks["irc_runtime"]["stale"])
+        self.assertGreater(checks["irc_runtime"]["evidence"]["age_seconds"], 120)
 
     def test_twitch_status_reports_missing_config(self) -> None:
         service = DashboardService()
@@ -199,6 +240,24 @@ class DashboardRoutesTest(unittest.TestCase):
             response = anyio.run(main.run_twitch_replay, _JsonRequest(payload))
         self.assertEqual(response, result)
         method.assert_called_once_with(payload)
+
+        dry_run_result = {"ok": True, "scenario": "dry_run_readiness", "count": 10, "results": []}
+        with patch.object(self.mock_service, "run_twitch_dry_run_replay", return_value=dry_run_result) as method:
+            response = main.run_twitch_dry_run_replay()
+        self.assertEqual(response, dry_run_result)
+        method.assert_called_once_with()
+
+    def test_twitch_dry_run_replay_uses_builtin_safe_settings(self) -> None:
+        service = DashboardService()
+        with patch("gamma.dashboard.service.replay_jsonl_text", return_value=[{"ok": True}]) as replay:
+            payload = service.run_twitch_dry_run_replay()
+
+        self.assertEqual(payload["scenario"], "dry_run_readiness")
+        self.assertEqual(payload["count"], 1)
+        _, kwargs = replay.call_args
+        self.assertEqual(kwargs["session_id"], "twitch-dry-run-readiness")
+        self.assertFalse(kwargs["synthesize_speech"])
+        self.assertTrue(kwargs["fast_mode"])
 
     def test_memory_clear_routes(self) -> None:
         with patch.object(self.mock_service, "clear_recent_memory", return_value={"ok": True, "cleared_total": 1}) as method:

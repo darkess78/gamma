@@ -42,6 +42,21 @@ class DashboardService:
     TWITCH_WORKER_MODULE = "gamma.integrations.twitch.worker"
     TWITCH_EVENTSUB_SERVICE = "twitch_eventsub"
     TWITCH_EVENTSUB_MODULE = "gamma.integrations.twitch.eventsub"
+    TWITCH_STATE_STALE_SECONDS = 120
+    TWITCH_DRY_RUN_SCENARIO = "\n".join(
+        [
+            json.dumps({"kind": "chat_message", "platform_user_id": "u1", "display_name": "ViewerOne", "text": "Shana what are you doing?"}),
+            json.dumps({"kind": "chat_message", "platform_user_id": "u2", "display_name": "TopicFan", "text": "what is happening with this boss fight chat?"}),
+            json.dumps({"kind": "chat_message", "platform_user_id": "u3", "display_name": "QuietViewer", "text": "lol"}),
+            json.dumps({"kind": "chat_message", "platform_user_id": "spam1", "display_name": "buy_views_9281", "text": "buy viewers at https://badsite.example"}),
+            json.dumps({"kind": "follow", "platform_user_id": "u4", "display_name": "NewViewer"}),
+            json.dumps({"kind": "raid", "platform_user_id": "u5", "display_name": "Raider", "viewer_count": 42}),
+            json.dumps({"kind": "bits", "platform_user_id": "u6", "display_name": "BitsFan", "amount": "100", "text": "nice stream"}),
+            json.dumps({"kind": "bits", "platform_user_id": "u7", "display_name": "UnsafeBits", "amount": "50", "text": "buy views at badsite.example"}),
+            json.dumps({"kind": "redeem", "platform_user_id": "u8", "display_name": "Redeemer", "title": "Say hi", "text": "Say hi to chat"}),
+            json.dumps({"kind": "redeem", "platform_user_id": "u9", "display_name": "MentionRedeemer", "title": "Ask Shana", "text": "Shana, say hi"}),
+        ]
+    )
 
     def __init__(self) -> None:
         self._memory = MemoryService()
@@ -326,6 +341,8 @@ class DashboardService:
         eventsub_process = self._process_manager.module_status(self.TWITCH_EVENTSUB_SERVICE, self.TWITCH_EVENTSUB_MODULE).get("process", {})
         irc_state = read_twitch_worker_state()
         eventsub_state = read_twitch_eventsub_state()
+        irc_runtime = self._worker_runtime_evidence(irc_process, irc_state, message_key="message_count")
+        eventsub_runtime = self._worker_runtime_evidence(eventsub_process, eventsub_state, message_key="notification_count")
         api_probe = self._probe_json(settings.shana_base_url + "/v1/system/status")
         checks = [
             self._stream_ready_check(
@@ -333,18 +350,21 @@ class DashboardService:
                 "Shana API",
                 "ok" if api_probe.get("ok") else "block",
                 "API is reachable." if api_probe.get("ok") else f"API is not reachable: {api_probe.get('detail', 'unknown')}",
+                evidence={"url": settings.shana_base_url, "detail": api_probe.get("detail", "")},
             ),
             self._stream_ready_check(
                 "irc_config",
                 "IRC config",
                 "ok" if not irc_missing else "block",
                 "IRC chat ingestion is configured." if not irc_missing else f"Missing: {', '.join(irc_missing)}",
+                evidence={"missing_config": irc_missing},
             ),
             self._stream_ready_check(
                 "eventsub_config",
                 "EventSub config",
                 "ok" if not eventsub_missing else "block",
                 "EventSub ingestion is configured." if not eventsub_missing else f"Missing: {', '.join(eventsub_missing)}",
+                evidence={"missing_config": eventsub_missing, "enabled": bool(settings.twitch_eventsub_enabled)},
             ),
             self._stream_ready_check(
                 "api_auth",
@@ -353,18 +373,21 @@ class DashboardService:
                 "API auth is disabled." if not settings.api_auth_enabled else (
                     "Worker API token is available." if settings.api_bearer_token else "API auth is enabled but api_bearer_token is missing."
                 ),
+                evidence={"api_auth_enabled": bool(settings.api_auth_enabled), "has_bearer_token": bool(settings.api_bearer_token)},
             ),
             self._stream_ready_check(
                 "filtered_audio",
                 "Filtered audio",
                 "ok" if filtered_audio_path and filtered_audio_path.exists() else "warn",
                 "Filtered fallback audio exists." if filtered_audio_path and filtered_audio_path.exists() else "Filtered fallback audio is missing; fallback becomes text-only.",
+                evidence={"path": str(filtered_audio_path) if filtered_audio_path else "", "exists": bool(filtered_audio_path and filtered_audio_path.exists())},
             ),
             self._stream_ready_check(
                 "dry_run",
                 "Dry run",
                 "ok" if controls.get("dry_run") else "warn",
                 "Dry run is on." if controls.get("dry_run") else "Dry run is off; live speech/output can happen.",
+                evidence={"dry_run": bool(controls.get("dry_run"))},
             ),
             self._stream_ready_check(
                 "voice",
@@ -373,45 +396,64 @@ class DashboardService:
                 "Voice is enabled while dry run is still on." if controls.get("voice_enabled") and controls.get("dry_run") else (
                     "Voice is enabled." if controls.get("voice_enabled") else "Voice is off."
                 ),
+                evidence={"voice_enabled": bool(controls.get("voice_enabled")), "subtitles_enabled": bool(controls.get("subtitles_enabled"))},
             ),
             self._stream_ready_check(
                 "subtitles",
                 "Subtitles",
                 "ok" if controls.get("subtitles_enabled") else "warn",
                 "Subtitles are enabled." if controls.get("subtitles_enabled") else "Subtitles are off.",
+                evidence={"subtitles_enabled": bool(controls.get("subtitles_enabled"))},
             ),
             self._stream_ready_check(
                 "safety_review",
                 "Safety review",
                 "ok" if not controls.get("llm_safety_review_enabled") or settings.speech_filter_llm_enabled else "warn",
                 "LLM safety review is available." if settings.speech_filter_llm_enabled else "LLM safety review is not globally enabled; heuristic safety still runs.",
+                evidence={
+                    "twitch_llm_safety_review_enabled": bool(controls.get("llm_safety_review_enabled")),
+                    "speech_filter_llm_enabled": bool(settings.speech_filter_llm_enabled),
+                },
             ),
             self._stream_ready_check(
                 "irc_runtime",
                 "IRC runtime",
-                "ok" if irc_process.get("running") and irc_state.get("connected") else "warn",
-                "IRC worker is connected." if irc_process.get("running") and irc_state.get("connected") else "IRC worker is not connected yet.",
+                self._worker_runtime_status(irc_process, irc_state, irc_runtime),
+                self._worker_runtime_detail("IRC worker", irc_process, irc_state, irc_runtime),
+                stale=irc_runtime["stale"],
+                evidence=irc_runtime,
             ),
             self._stream_ready_check(
                 "eventsub_runtime",
                 "EventSub runtime",
-                self._eventsub_runtime_check_status(eventsub_process, eventsub_state),
-                self._eventsub_runtime_check_detail(eventsub_process, eventsub_state),
+                self._eventsub_runtime_check_status(eventsub_process, eventsub_state, eventsub_runtime),
+                self._eventsub_runtime_check_detail(eventsub_process, eventsub_state, eventsub_runtime),
+                stale=eventsub_runtime["stale"],
+                evidence={
+                    **eventsub_runtime,
+                    "subscription_ok_count": int(eventsub_state.get("subscription_ok_count") or 0),
+                    "subscription_error_count": int(eventsub_state.get("subscription_error_count") or 0),
+                },
             ),
         ]
         blockers = [check for check in checks if check["status"] == "block"]
         warnings = [check for check in checks if check["status"] == "warn"]
         if blockers:
             mode = "not_ready"
+        elif not irc_missing and not eventsub_missing and not irc_process.get("running") and not eventsub_process.get("running"):
+            mode = "twitch_connect_ready"
+        elif irc_process.get("running") and irc_state.get("connected") and (not settings.twitch_eventsub_enabled or eventsub_state.get("connected")) and controls.get("dry_run"):
+            mode = "dry_run_connected"
         elif controls.get("dry_run"):
-            mode = "dry_run_ready"
+            mode = "offline_replay_ready"
         elif controls.get("voice_enabled"):
-            mode = "live_voice_ready"
+            mode = "voice_ready"
         else:
-            mode = "live_subtitle_ready"
+            mode = "offline_replay_ready"
         return {
             "mode": mode,
             "ok": not blockers,
+            "next_step": self._stream_ready_next_step(mode, checks),
             "blocker_count": len(blockers),
             "warning_count": len(warnings),
             "checks": checks,
@@ -428,33 +470,102 @@ class DashboardService:
             },
         }
 
-    def _stream_ready_check(self, check_id: str, label: str, status: str, detail: str) -> dict[str, str]:
+    def _stream_ready_check(
+        self,
+        check_id: str,
+        label: str,
+        status: str,
+        detail: str,
+        *,
+        stale: bool = False,
+        evidence: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         return {
             "id": check_id,
             "label": label,
             "status": status if status in {"ok", "warn", "block"} else "warn",
             "detail": detail,
+            "stale": stale,
+            "evidence": evidence or {},
         }
 
-    def _eventsub_runtime_check_status(self, process: dict[str, Any], state: dict[str, Any]) -> str:
+    def _eventsub_runtime_check_status(self, process: dict[str, Any], state: dict[str, Any], runtime: dict[str, Any]) -> str:
         if not settings.twitch_eventsub_enabled:
             return "warn"
         if not process.get("running"):
+            return "warn"
+        if runtime.get("stale"):
             return "warn"
         if state.get("subscription_error_count"):
             return "warn"
         return "ok" if state.get("connected") else "warn"
 
-    def _eventsub_runtime_check_detail(self, process: dict[str, Any], state: dict[str, Any]) -> str:
+    def _eventsub_runtime_check_detail(self, process: dict[str, Any], state: dict[str, Any], runtime: dict[str, Any]) -> str:
         if not settings.twitch_eventsub_enabled:
             return "EventSub is disabled in config."
         if not process.get("running"):
             return "EventSub worker is not running yet."
+        if runtime.get("stale"):
+            return f"EventSub worker state is stale at {runtime.get('age_seconds')} seconds old."
         if state.get("subscription_error_count"):
             return f"EventSub connected with {state.get('subscription_error_count')} subscription error(s)."
         if state.get("connected"):
             return "EventSub worker is connected."
         return "EventSub worker is running but not connected yet."
+
+    def _worker_runtime_status(self, process: dict[str, Any], state: dict[str, Any], runtime: dict[str, Any]) -> str:
+        if not process.get("running"):
+            return "warn"
+        if runtime.get("stale"):
+            return "warn"
+        return "ok" if state.get("connected") else "warn"
+
+    def _worker_runtime_detail(self, label: str, process: dict[str, Any], state: dict[str, Any], runtime: dict[str, Any]) -> str:
+        if not process.get("running"):
+            return f"{label} is not connected yet."
+        if runtime.get("stale"):
+            return f"{label} state is stale at {runtime.get('age_seconds')} seconds old."
+        if state.get("connected"):
+            return f"{label} is connected."
+        return f"{label} is running but not connected yet."
+
+    def _worker_runtime_evidence(self, process: dict[str, Any], state: dict[str, Any], *, message_key: str) -> dict[str, Any]:
+        age_seconds = self._state_age_seconds(state.get("updated_at"))
+        stale = bool(process.get("running") and age_seconds is not None and age_seconds > self.TWITCH_STATE_STALE_SECONDS)
+        return {
+            "running": bool(process.get("running")),
+            "connected": bool(state.get("connected")),
+            "status": state.get("status") or "",
+            "updated_at": state.get("updated_at") or "",
+            "age_seconds": age_seconds,
+            "stale": stale,
+            "reconnects": int(state.get("reconnects") or 0),
+            "last_message_kind": state.get("last_message_kind") or "",
+            message_key: int(state.get(message_key) or 0),
+        }
+
+    def _state_age_seconds(self, value: Any) -> int | None:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return max(0, int((datetime.now(timezone.utc) - parsed).total_seconds()))
+
+    def _stream_ready_next_step(self, mode: str, checks: list[dict[str, Any]]) -> str:
+        blockers = [check for check in checks if check["status"] == "block"]
+        if blockers:
+            return f"Fix blocker: {blockers[0]['label']}."
+        if mode == "offline_replay_ready":
+            return "Run Dry-Run Replay and inspect Stream Activity."
+        if mode == "twitch_connect_ready":
+            return "Start the IRC and EventSub workers from the Stream tab."
+        if mode == "dry_run_connected":
+            return "Watch Stream Activity with real Twitch traffic while dry run remains on."
+        if mode == "voice_ready":
+            return "Voice is enabled; keep monitoring safety, pacing, and Stop Speech before going live."
+        return "Review Stream readiness checks."
 
     def twitch_runtime_settings(self) -> dict[str, Any]:
         config = load_app_file_config()
@@ -599,6 +710,22 @@ class DashboardService:
             session_id=str(payload.get("session_id") or "twitch-replay"),
         )
         return {"ok": True, "count": len(results), "results": results}
+
+    def run_twitch_dry_run_replay(self) -> dict[str, Any]:
+        results = replay_jsonl_text(
+            self.TWITCH_DRY_RUN_SCENARIO,
+            client=GammaStreamClient(base_url=settings.shana_base_url),
+            owner_user_id=settings.twitch_owner_user_id or None,
+            synthesize_speech=False,
+            fast_mode=True,
+            session_id="twitch-dry-run-readiness",
+        )
+        return {
+            "ok": True,
+            "scenario": "dry_run_readiness",
+            "count": len(results),
+            "results": results,
+        }
 
     def _viewer_trust_record_payload(self, record) -> dict[str, Any]:
         return {

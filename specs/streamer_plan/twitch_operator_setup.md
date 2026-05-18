@@ -64,17 +64,28 @@ If a subscription fails, check the EventSub dashboard status first. The worker k
 ## Stream Readiness Checks
 Before turning voice on:
 - Keep `twitch_dry_run = true`.
+- Open the Stream tab and fix any readiness blockers.
+- Run `Run Dry-Run Replay` from Twitch Replay and confirm the scenario posts events.
+- Confirm Stream Activity shows mention, ambient, spam, follow, raid, bits, and redeem decisions.
+- Confirm Safety Log records filtered/skipped decisions for unsafe replay inputs.
+- Confirm redeems that do not mention Shana are deferred instead of forcing speech.
 - Start IRC worker and confirm Twitch chat appears in Stream Activity.
 - Start EventSub worker and confirm EventSub status becomes connected.
-- Run replay tests from the dashboard.
-- Confirm Safety Log records filtered/skipped decisions.
-- Confirm Stop Speech clears subtitles and cancels active live speech.
+- Watch for stale worker warnings; a running worker state older than two minutes needs investigation.
+- Press Stop Speech and confirm subtitles clear and active live speech is cancelled.
 - Confirm ignored bots do not create stream events.
 
 Only after those pass:
 - Turn on subtitles.
 - Turn on voice.
 - Reduce dry-run usage gradually.
+
+Readiness modes shown in the dashboard:
+- `not_ready`: fix blockers first.
+- `offline_replay_ready`: run the built-in dry-run replay before touching real Twitch.
+- `twitch_connect_ready`: config is present; start IRC and EventSub workers.
+- `dry_run_connected`: real Twitch workers are connected while dry-run remains on.
+- `voice_ready`: dry-run is off and voice is enabled; monitor safety and Stop Speech closely.
 
 ## Current Non-Goals
 - Shana does not post Twitch chat messages.

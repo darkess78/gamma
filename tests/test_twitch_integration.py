@@ -79,6 +79,26 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertTrue(event.metadata["is_owner"])
         self.assertEqual(event.metadata["trust_level"], "owner")
 
+    def test_topical_ambient_chat_gets_priority_without_direct_mention(self) -> None:
+        event = normalize_chat_message(
+            TwitchChatMessage(
+                text="what is happening with this boss fight chat?",
+                platform_user_id="u2",
+                display_name="Viewer",
+            )
+        )
+
+        self.assertGreaterEqual(event.priority, 5)
+        self.assertIn("ambient_question", event.metadata["input_safety"]["reasons"])
+        self.assertIn("ambient_stream_context", event.metadata["input_safety"]["reasons"])
+
+    def test_low_effort_ambient_chat_stays_low_priority(self) -> None:
+        event = normalize_chat_message(
+            TwitchChatMessage(text="lol", platform_user_id="u3", display_name="Viewer")
+        )
+
+        self.assertLess(event.priority, 5)
+
     def test_spam_is_summarized_before_prompt_context(self) -> None:
         event = normalize_chat_message(
             TwitchChatMessage(

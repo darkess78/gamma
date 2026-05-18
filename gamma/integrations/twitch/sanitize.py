@@ -24,6 +24,9 @@ _PROMPT_INJECTION_PHRASES = (
     "reveal your prompt",
     "act as",
 )
+_REACTION_WORDS = {"lol", "lmao", "haha", "hahaha", "wtf", "wow", "nice", "rip"}
+_STREAM_CONTEXT_WORDS = {"chat", "stream", "boss", "game", "run", "build", "clip"}
+_RUDE_WORDS = {"idiot", "stupid", "shut up", "trash"}
 
 
 def classify_chat_text(text: str, *, display_name: str | None = None, trust_level: TrustLevel = "new_viewer") -> TwitchSafetyClassification:
@@ -78,6 +81,10 @@ def classify_chat_text(text: str, *, display_name: str | None = None, trust_leve
     if "shana" in lowered or "gamma" in lowered:
         priority_delta += 5
         reasons.append("direct_mention")
+    else:
+        ambient_delta, ambient_reasons = _ambient_priority(raw, lowered)
+        priority_delta += ambient_delta
+        reasons.extend(ambient_reasons)
     if trust_level in {"trusted", "regular"}:
         priority_delta += 1
         reasons.append(f"trust_{trust_level}")
@@ -92,6 +99,30 @@ def classify_chat_text(text: str, *, display_name: str | None = None, trust_leve
         priority_delta=priority_delta,
         reasons=reasons,
     )
+
+
+def _ambient_priority(raw: str, lowered: str) -> tuple[int, list[str]]:
+    words = re.findall(r"[a-z0-9']+", lowered)
+    if not words:
+        return 0, []
+    delta = 0
+    reasons: list[str] = []
+    if "?" in raw and len(words) >= 4:
+        delta += 3
+        reasons.append("ambient_question")
+    if any(word in _REACTION_WORDS for word in words):
+        delta += 2
+        reasons.append("ambient_reaction")
+    if any(word in _STREAM_CONTEXT_WORDS for word in words):
+        delta += 2
+        reasons.append("ambient_stream_context")
+    if 6 <= len(words) <= 24:
+        delta += 1
+        reasons.append("ambient_reactable_length")
+    if any(word in lowered for word in _RUDE_WORDS):
+        delta -= 4
+        reasons.append("ambient_rude_tone")
+    return max(-5, min(delta, 6)), reasons
 
 
 def safe_username_alias(display_name: str | None, *, fallback: str = "a viewer") -> str:

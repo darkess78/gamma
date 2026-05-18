@@ -141,6 +141,30 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertEqual(event.metadata["twitch_controls"]["dry_run"], True)
         self.assertIn("42 viewers", event.text or "")
 
+    def test_eventsub_viewer_text_is_sanitized_before_prompt_text(self) -> None:
+        payload = {
+            "metadata": {"message_type": "notification"},
+            "payload": {
+                "subscription": {"type": "channel.cheer"},
+                "event": {
+                    "user_id": "u2",
+                    "user_name": "BitsFan",
+                    "bits": 100,
+                    "message": "buy viewers at https://badsite.example",
+                },
+            },
+        }
+
+        event = stream_event_from_eventsub_notification(payload)
+
+        self.assertIsNotNone(event)
+        assert event is not None
+        self.assertEqual(event.kind, "bits")
+        self.assertNotIn("https://badsite.example", event.text or "")
+        self.assertIn("A spam or scam message was posted in chat.", event.text or "")
+        self.assertEqual(event.metadata["input_safety"]["category"], "spam_or_scam")
+        self.assertEqual(event.metadata["raw_text"], "buy viewers at https://badsite.example")
+
     def test_eventsub_subscription_creation_records_partial_failures(self) -> None:
         class _FakeEventSubWorker(TwitchEventSubWorker):
             def _create_subscription(self, body):

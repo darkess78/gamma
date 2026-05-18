@@ -16,7 +16,7 @@ from ...config import settings
 from ...errors import ConfigurationError
 from ...stream.models import StreamActor, StreamInputEvent
 from .client import GammaStreamClient
-from .sanitize import safe_username_alias
+from .sanitize import classify_chat_text, safe_username_alias
 
 
 EVENTSUB_WEBSOCKET_URL = "wss://eventsub.wss.twitch.tv/ws"
@@ -232,22 +232,22 @@ def stream_event_from_eventsub_notification(payload: dict[str, Any], *, twitch_c
     if event_type == "channel.cheer":
         display_name = event.get("user_name")
         bits = event.get("bits")
-        message = str(event.get("message") or "").strip()
+        message, input_safety = _safe_viewer_detail(event.get("message"), display_name=display_name)
         text = f"{safe_username_alias(display_name)} cheered {bits} bits" + (f": {message}" if message else ".")
-        return _eventsub_stream_event("bits", display_name, event.get("user_id"), text, 15, {**metadata, "amount": str(bits or "")})
+        return _eventsub_stream_event("bits", display_name, event.get("user_id"), text, 15, {**metadata, "amount": str(bits or ""), **input_safety})
     if event_type in {"channel.subscribe", "channel.subscription.message"}:
         display_name = event.get("user_name")
         message = event.get("message")
-        text_message = message.get("text") if isinstance(message, dict) else ""
+        text_message, input_safety = _safe_viewer_detail(message.get("text") if isinstance(message, dict) else "", display_name=display_name)
         text = f"{safe_username_alias(display_name)} subscribed" + (f": {text_message}" if text_message else ".")
-        return _eventsub_stream_event("subscription", display_name, event.get("user_id"), text, 15, metadata)
+        return _eventsub_stream_event("subscription", display_name, event.get("user_id"), text, 15, {**metadata, **input_safety})
     if event_type == "channel.channel_points_custom_reward_redemption.add":
         display_name = event.get("user_name")
         reward = event.get("reward") if isinstance(event.get("reward"), dict) else {}
         title = str(reward.get("title") or "channel point redeem")
-        user_input = str(event.get("user_input") or "").strip()
+        user_input, input_safety = _safe_viewer_detail(event.get("user_input"), display_name=display_name)
         text = f"{title}: {user_input}" if user_input else title
-        return _eventsub_stream_event("redeem", display_name, event.get("user_id"), text, 10, {**metadata, "title": title})
+        return _eventsub_stream_event("redeem", display_name, event.get("user_id"), text, 10, {**metadata, "title": title, **input_safety})
     return None
 
 
@@ -267,14 +267,27 @@ def read_twitch_eventsub_state(path: Path | None = None) -> dict[str, Any]:
 
 
 def _eventsub_stream_event(kind: str, display_name: Any, platform_id: Any, text: str, priority: int, metadata: dict[str, Any]) -> StreamInputEvent:
+    safe_display_name = safe_username_alias(str(display_name) if display_name else None)
     return StreamInputEvent(
         kind=kind,  # type: ignore[arg-type]
         text=text,
         actor=StreamActor(source="twitch", platform_id=str(platform_id) if platform_id else None, display_name=str(display_name) if display_name else None),
         session_id="twitch:eventsub",
         priority=priority,
-        metadata=metadata,
+        metadata={**metadata, "safe_display_name": safe_display_name},
     )
+
+
+def _safe_viewer_detail(raw_text: Any, *, display_name: Any) -> tuple[str, dict[str, Any]]:
+    text = str(raw_text or "").strip()
+    if not text:
+        return "", {}
+    safety = classify_chat_text(text, display_name=str(display_name) if display_name else None)
+    return safety.safe_prompt_text, {
+        "raw_text": text,
+        "input_safety": safety.model_dump(),
+        "safe_prompt_text": safety.safe_prompt_text,
+    }
 
 
 def _subscription_specs(config: TwitchEventSubConfig) -> list[dict[str, Any]]:

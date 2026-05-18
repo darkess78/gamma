@@ -125,11 +125,13 @@
             </div>
           </div>
         </div>
-        <div class="render" id="twitchWorkerStatus">...</div>
-        <div class="render compact-render" id="twitchEventSubStatus">EventSub status has not loaded yet.</div>
-        <div class="render compact-render" id="twitchSettingsStatus">Twitch controls load with worker status.</div>
-        <div class="render compact-render" id="streamStopStatus">Speech stop has not been requested.</div>
-        <div class="render compact-render" id="streamReadyStatus">Stream readiness has not loaded yet.</div>
+        <div class="stream-status-grid">
+          <div class="render" id="twitchWorkerStatus">...</div>
+          <div class="render compact-render" id="twitchEventSubStatus">EventSub status has not loaded yet.</div>
+          <div class="render compact-render" id="twitchSettingsStatus">Twitch controls load with worker status.</div>
+          <div class="render compact-render" id="streamStopStatus">Speech stop has not been requested.</div>
+          <div class="render compact-render" id="streamReadyStatus">Stream readiness has not loaded yet.</div>
+        </div>
       </section>
       <section class="panel wide" data-dashboard-tab="stream">
         <div class="panel-head">
@@ -187,30 +189,30 @@
           <button class="ghost" onclick="loadStreamActivity()">Refresh Activity</button>
         </div>
         <div class="stream-activity-grid">
-          <div>
+          <div class="stream-tile stream-tile-queue">
             <div class="action-title">Speech Queue</div>
-            <div class="render" id="streamQueueFeed">No pending stream speech loaded yet.</div>
+            <div class="render stream-feed" id="streamQueueFeed">No pending stream speech loaded yet.</div>
           </div>
-          <div>
+          <div class="stream-tile stream-tile-wide">
             <div class="action-title">Recent Decisions</div>
-            <div class="render" id="streamTraceFeed">No stream traces loaded yet.</div>
+            <div class="render stream-feed" id="streamTraceFeed">No stream traces loaded yet.</div>
           </div>
-          <div>
+          <div class="stream-tile">
             <div class="action-title">Safety Log</div>
-            <div class="render" id="streamSafetyFeed">No safety events loaded yet.</div>
+            <div class="render stream-feed" id="streamSafetyFeed">No safety events loaded yet.</div>
           </div>
-          <div>
+          <div class="stream-tile">
             <div class="action-title">Outputs</div>
-            <div class="render" id="streamOutputFeed">No stream output events loaded yet.</div>
+            <div class="render stream-feed" id="streamOutputFeed">No stream output events loaded yet.</div>
           </div>
-          <div>
+          <div class="stream-tile">
             <div class="action-title">Temp Memory</div>
             <div class="action-buttons">
               <button class="ghost danger-outline" onclick="clearStreamTempMemory()">Clear Temp Memory</button>
             </div>
-            <div class="render" id="streamTempMemoryFeed">No temporary stream memory loaded yet.</div>
+            <div class="render stream-feed" id="streamTempMemoryFeed">No temporary stream memory loaded yet.</div>
           </div>
-          <div>
+          <div class="stream-tile">
             <div class="action-title">Self-Goals</div>
             <div class="action-buttons">
               <input id="streamSelfGoalId" class="text-input" placeholder="goal id">
@@ -218,7 +220,7 @@
               <button class="ghost" onclick="setStreamSelfGoalStatus('reject')">Reject</button>
               <button class="ghost danger-outline" onclick="clearStreamSelfGoals()">Clear Goals</button>
             </div>
-            <div class="render" id="streamSelfGoalFeed">No self-goals loaded yet.</div>
+            <div class="render stream-feed" id="streamSelfGoalFeed">No self-goals loaded yet.</div>
           </div>
         </div>
       </section>

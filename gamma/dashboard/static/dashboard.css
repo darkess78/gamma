@@ -442,7 +442,7 @@ pre {
 
 .stream-activity-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 16px;
   align-items: start;
 }
@@ -451,8 +451,168 @@ pre {
   min-width: 0;
 }
 
-.stream-activity-grid .render {
+.stream-status-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.stream-status-grid > #twitchWorkerStatus,
+.stream-status-grid > #streamReadyStatus {
+  grid-column: span 3;
+}
+
+.stream-status-grid > .compact-render {
+  grid-column: span 2;
+}
+
+.stream-tile {
+  grid-column: span 6;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.stream-tile-queue {
+  grid-column: span 4;
+}
+
+.stream-tile-wide {
+  grid-column: span 8;
+}
+
+.stream-tile .action-buttons {
+  margin-bottom: 10px;
+}
+
+.stream-activity-grid .render,
+.stream-feed {
   max-height: 460px;
+}
+
+.stream-feed {
+  white-space: normal;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.stream-feed.json-render {
+  display: block;
+  white-space: pre-wrap;
+}
+
+.stream-empty {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.stream-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.stream-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.stream-card-title {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.stream-card-subtitle,
+.stream-time {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.stream-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stream-badge-good {
+  border-color: rgba(51, 195, 179, 0.32);
+  color: #9df0e6;
+}
+
+.stream-badge-warn {
+  border-color: rgba(240, 178, 74, 0.36);
+  color: #ffd690;
+}
+
+.stream-badge-bad {
+  border-color: rgba(255, 95, 115, 0.36);
+  color: #ffb0ba;
+}
+
+.stream-badge-info {
+  border-color: rgba(79, 140, 255, 0.36);
+  color: #b8ceff;
+}
+
+.stream-quote,
+.stream-reply {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.42;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.13);
+  border: 1px solid rgba(255, 255, 255, 0.035);
+}
+
+.stream-reply {
+  border-color: rgba(51, 195, 179, 0.18);
+}
+
+.stream-kv {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.stream-kv div {
+  min-width: 0;
+}
+
+.stream-kv dt {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.stream-kv dd {
+  margin: 3px 0 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .assistant-settings-grid {
@@ -967,6 +1127,20 @@ audio {
     grid-template-columns: 1fr;
   }
   .stream-activity-grid {
+    grid-template-columns: 1fr;
+  }
+  .stream-status-grid {
+    grid-template-columns: 1fr;
+  }
+  .stream-status-grid > #twitchWorkerStatus,
+  .stream-status-grid > #streamReadyStatus,
+  .stream-status-grid > .compact-render,
+  .stream-tile,
+  .stream-tile-queue,
+  .stream-tile-wide {
+    grid-column: 1 / -1;
+  }
+  .stream-kv {
     grid-template-columns: 1fr;
   }
   .assistant-settings-grid .action-grid {

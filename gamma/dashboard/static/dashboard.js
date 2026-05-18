@@ -1074,11 +1074,22 @@
     payload = payload || {};
     worker = worker || {};
     var controls = worker.controls || {};
-    var process = worker.process || {};
     var safety = payload.safety_gate || {};
     var filteredAudio = payload.filtered_audio || {};
     var lines = [];
-    lines.push('Worker: ' + (process.running ? 'running' : (worker.configured ? 'stopped' : 'not configured')));
+    lines.push('Mode: ' + humanizeKey(payload.mode || 'unknown'));
+    lines.push('Preflight: ' + (payload.ok ? 'Pass' : 'Blocked') + ' / blockers: ' + (payload.blocker_count || 0) + ' / warnings: ' + (payload.warning_count || 0));
+    var checks = Array.isArray(payload.checks) ? payload.checks : [];
+    if (checks.length) {
+      lines.push('');
+      lines.push('Checks:');
+      checks.forEach(function (check) {
+        var marker = check.status === 'ok' ? 'OK' : (check.status === 'block' ? 'BLOCK' : 'WARN');
+        lines.push(marker + ' - ' + (check.label || check.id || 'check') + ': ' + (check.detail || 'n/a'));
+      });
+      lines.push('');
+      lines.push('Controls:');
+    }
     lines.push('Dry run: ' + (controls.dry_run ? 'On' : 'Off'));
     lines.push('Voice: ' + (controls.voice_enabled ? 'On' : 'Off') + ' / Subtitles: ' + (controls.subtitles_enabled ? 'On' : 'Off'));
     lines.push('Safety gate: ' + (safety.enabled ? 'On' : 'Off') + ' / LLM review: ' + (safety.llm_review_enabled ? 'On' : 'Off'));

@@ -127,12 +127,40 @@ class DashboardRoutesTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             audio_path = Path(temp_dir) / "filtered.wav"
             audio_path.write_bytes(b"RIFF")
-            with patch.object(settings, "stream_filtered_audio_path", str(audio_path)):
+            with (
+                patch.object(settings, "stream_filtered_audio_path", str(audio_path)),
+                patch.object(DashboardService, "_probe_json", return_value={"ok": True}),
+            ):
                 payload = DashboardService().stream_ready_status()
 
+        self.assertIn(payload["mode"], {"dry_run_ready", "live_voice_ready", "live_subtitle_ready", "not_ready"})
         self.assertTrue(payload["safety_gate"]["enabled"])
         self.assertTrue(payload["filtered_audio"]["exists"])
         self.assertEqual(payload["filtered_audio"]["resolved_path"], str(audio_path))
+        self.assertTrue(any(check["id"] == "filtered_audio" and check["status"] == "ok" for check in payload["checks"]))
+
+    def test_stream_ready_status_reports_blocking_preflight_issues(self) -> None:
+        service = DashboardService()
+        with (
+            patch.object(settings, "twitch_channel", ""),
+            patch.object(settings, "twitch_bot_username", ""),
+            patch.object(settings, "twitch_oauth_token", ""),
+            patch.object(settings, "twitch_client_id", ""),
+            patch.object(settings, "twitch_broadcaster_user_id", ""),
+            patch.object(settings, "api_auth_enabled", True),
+            patch.object(settings, "api_bearer_token", ""),
+            patch.object(DashboardService, "_probe_json", return_value={"ok": False, "detail": "unreachable"}),
+        ):
+            payload = service.stream_ready_status()
+
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["mode"], "not_ready")
+        self.assertGreaterEqual(payload["blocker_count"], 4)
+        checks = {check["id"]: check for check in payload["checks"]}
+        self.assertEqual(checks["api"]["status"], "block")
+        self.assertEqual(checks["irc_config"]["status"], "block")
+        self.assertEqual(checks["eventsub_config"]["status"], "block")
+        self.assertEqual(checks["api_auth"]["status"], "block")
 
     def test_twitch_status_reports_missing_config(self) -> None:
         service = DashboardService()

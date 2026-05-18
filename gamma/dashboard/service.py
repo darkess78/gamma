@@ -319,7 +319,102 @@ class DashboardService:
 
     def stream_ready_status(self) -> dict[str, Any]:
         filtered_audio_path = self._resolve_path(settings.stream_filtered_audio_path)
+        controls = self.twitch_runtime_settings()
+        irc_missing = self._missing_twitch_irc_config()
+        eventsub_missing = self._missing_twitch_eventsub_config()
+        irc_process = self._process_manager.module_status(self.TWITCH_WORKER_SERVICE, self.TWITCH_WORKER_MODULE).get("process", {})
+        eventsub_process = self._process_manager.module_status(self.TWITCH_EVENTSUB_SERVICE, self.TWITCH_EVENTSUB_MODULE).get("process", {})
+        irc_state = read_twitch_worker_state()
+        eventsub_state = read_twitch_eventsub_state()
+        api_probe = self._probe_json(settings.shana_base_url + "/v1/system/status")
+        checks = [
+            self._stream_ready_check(
+                "api",
+                "Shana API",
+                "ok" if api_probe.get("ok") else "block",
+                "API is reachable." if api_probe.get("ok") else f"API is not reachable: {api_probe.get('detail', 'unknown')}",
+            ),
+            self._stream_ready_check(
+                "irc_config",
+                "IRC config",
+                "ok" if not irc_missing else "block",
+                "IRC chat ingestion is configured." if not irc_missing else f"Missing: {', '.join(irc_missing)}",
+            ),
+            self._stream_ready_check(
+                "eventsub_config",
+                "EventSub config",
+                "ok" if not eventsub_missing else "block",
+                "EventSub ingestion is configured." if not eventsub_missing else f"Missing: {', '.join(eventsub_missing)}",
+            ),
+            self._stream_ready_check(
+                "api_auth",
+                "API auth",
+                "ok" if not settings.api_auth_enabled or settings.api_bearer_token else "block",
+                "API auth is disabled." if not settings.api_auth_enabled else (
+                    "Worker API token is available." if settings.api_bearer_token else "API auth is enabled but api_bearer_token is missing."
+                ),
+            ),
+            self._stream_ready_check(
+                "filtered_audio",
+                "Filtered audio",
+                "ok" if filtered_audio_path and filtered_audio_path.exists() else "warn",
+                "Filtered fallback audio exists." if filtered_audio_path and filtered_audio_path.exists() else "Filtered fallback audio is missing; fallback becomes text-only.",
+            ),
+            self._stream_ready_check(
+                "dry_run",
+                "Dry run",
+                "ok" if controls.get("dry_run") else "warn",
+                "Dry run is on." if controls.get("dry_run") else "Dry run is off; live speech/output can happen.",
+            ),
+            self._stream_ready_check(
+                "voice",
+                "Voice",
+                "warn" if controls.get("voice_enabled") and controls.get("dry_run") else "ok",
+                "Voice is enabled while dry run is still on." if controls.get("voice_enabled") and controls.get("dry_run") else (
+                    "Voice is enabled." if controls.get("voice_enabled") else "Voice is off."
+                ),
+            ),
+            self._stream_ready_check(
+                "subtitles",
+                "Subtitles",
+                "ok" if controls.get("subtitles_enabled") else "warn",
+                "Subtitles are enabled." if controls.get("subtitles_enabled") else "Subtitles are off.",
+            ),
+            self._stream_ready_check(
+                "safety_review",
+                "Safety review",
+                "ok" if not controls.get("llm_safety_review_enabled") or settings.speech_filter_llm_enabled else "warn",
+                "LLM safety review is available." if settings.speech_filter_llm_enabled else "LLM safety review is not globally enabled; heuristic safety still runs.",
+            ),
+            self._stream_ready_check(
+                "irc_runtime",
+                "IRC runtime",
+                "ok" if irc_process.get("running") and irc_state.get("connected") else "warn",
+                "IRC worker is connected." if irc_process.get("running") and irc_state.get("connected") else "IRC worker is not connected yet.",
+            ),
+            self._stream_ready_check(
+                "eventsub_runtime",
+                "EventSub runtime",
+                self._eventsub_runtime_check_status(eventsub_process, eventsub_state),
+                self._eventsub_runtime_check_detail(eventsub_process, eventsub_state),
+            ),
+        ]
+        blockers = [check for check in checks if check["status"] == "block"]
+        warnings = [check for check in checks if check["status"] == "warn"]
+        if blockers:
+            mode = "not_ready"
+        elif controls.get("dry_run"):
+            mode = "dry_run_ready"
+        elif controls.get("voice_enabled"):
+            mode = "live_voice_ready"
+        else:
+            mode = "live_subtitle_ready"
         return {
+            "mode": mode,
+            "ok": not blockers,
+            "blocker_count": len(blockers),
+            "warning_count": len(warnings),
+            "checks": checks,
             "safety_gate": {
                 "enabled": True,
                 "review_timeout_seconds": settings.stream_safety_review_timeout_seconds,
@@ -332,6 +427,34 @@ class DashboardService:
                 "exists": bool(filtered_audio_path and filtered_audio_path.exists()),
             },
         }
+
+    def _stream_ready_check(self, check_id: str, label: str, status: str, detail: str) -> dict[str, str]:
+        return {
+            "id": check_id,
+            "label": label,
+            "status": status if status in {"ok", "warn", "block"} else "warn",
+            "detail": detail,
+        }
+
+    def _eventsub_runtime_check_status(self, process: dict[str, Any], state: dict[str, Any]) -> str:
+        if not settings.twitch_eventsub_enabled:
+            return "warn"
+        if not process.get("running"):
+            return "warn"
+        if state.get("subscription_error_count"):
+            return "warn"
+        return "ok" if state.get("connected") else "warn"
+
+    def _eventsub_runtime_check_detail(self, process: dict[str, Any], state: dict[str, Any]) -> str:
+        if not settings.twitch_eventsub_enabled:
+            return "EventSub is disabled in config."
+        if not process.get("running"):
+            return "EventSub worker is not running yet."
+        if state.get("subscription_error_count"):
+            return f"EventSub connected with {state.get('subscription_error_count')} subscription error(s)."
+        if state.get("connected"):
+            return "EventSub worker is connected."
+        return "EventSub worker is running but not connected yet."
 
     def twitch_runtime_settings(self) -> dict[str, Any]:
         config = load_app_file_config()

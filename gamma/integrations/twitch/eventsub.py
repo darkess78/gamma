@@ -148,8 +148,30 @@ class TwitchEventSubWorker:
             if message_type == "notification":
                 event = stream_event_from_eventsub_notification(payload, twitch_controls=self.config.controls())
                 if event is not None:
-                    self.client.post_event(event, synthesize_speech=self.synthesize_speech, fast_mode=self.fast_mode)
+                    subscription = payload.get("payload", {}).get("subscription", {})
+                    evidence = _safe_notification_evidence(event=event, subscription=subscription if isinstance(subscription, dict) else {})
+                    try:
+                        self.client.post_event(event, synthesize_speech=self.synthesize_speech, fast_mode=self.fast_mode)
+                    except Exception as exc:
+                        self._write_state(
+                            status="connected",
+                            connected=True,
+                            last_message_kind="notification",
+                            last_post_error=str(exc),
+                            reconnects=reconnects,
+                            **evidence,
+                        )
+                        continue
                     self._notification_count += 1
+                    self._write_state(
+                        status="connected",
+                        connected=True,
+                        last_message_kind="notification",
+                        last_post_error="",
+                        reconnects=reconnects,
+                        **evidence,
+                    )
+                    continue
                 self._write_state(status="connected", connected=True, last_message_kind="notification", reconnects=reconnects)
                 continue
             if message_type == "revocation":
@@ -322,6 +344,14 @@ def _bearer_token(token: str) -> str:
 
 def _utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _safe_notification_evidence(*, event: StreamInputEvent, subscription: dict[str, Any]) -> dict[str, str]:
+    return {
+        "last_subscription_type": str(subscription.get("type") or event.metadata.get("twitch_event_kind") or ""),
+        "last_posted_event_kind": event.kind,
+        "last_actor_display_name": event.actor.display_name or "",
+    }
 
 
 def main() -> None:

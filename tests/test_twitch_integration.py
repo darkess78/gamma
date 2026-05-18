@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+import anyio
 from pathlib import Path
 from unittest.mock import patch
 
@@ -39,6 +40,24 @@ class _FakeClient:
     def post_event(self, event: StreamInputEvent, *, synthesize_speech: bool = False, fast_mode: bool = True):
         self.events.append(event)
         return {"input_event": event.model_dump(), "synthesize_speech": synthesize_speech, "fast_mode": fast_mode}
+
+
+class _FailingClient:
+    def post_event(self, event: StreamInputEvent, *, synthesize_speech: bool = False, fast_mode: bool = True):
+        raise RuntimeError("gamma api unavailable")
+
+
+class _FakeEventSubSocket:
+    def __init__(self, messages: list[dict]) -> None:
+        self.messages = [json.dumps(message) for message in messages]
+
+    async def __aiter__(self):
+        for message in self.messages:
+            yield message
+
+
+async def _run_eventsub_socket(worker: TwitchEventSubWorker, socket: _FakeEventSubSocket) -> None:
+    await worker._run_socket(socket, reconnects=0)
 
 
 class _FakeTrustStore:
@@ -208,6 +227,68 @@ class TwitchIntegrationTest(unittest.TestCase):
         failed = [item for item in results if not item["ok"]]
         self.assertEqual(failed[0]["type"], "channel.cheer")
         self.assertIn("missing bits scope", failed[0]["error"])
+
+    def test_eventsub_worker_records_notification_evidence(self) -> None:
+        client = _FakeClient()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_path = Path(temp_dir) / "state.json"
+            worker = TwitchEventSubWorker(
+                config=TwitchEventSubConfig(client_id="client", oauth_token="token", broadcaster_user_id="broadcaster"),
+                client=client,  # type: ignore[arg-type]
+                state_path=state_path,
+            )
+            socket = _FakeEventSubSocket(
+                [
+                    {
+                        "metadata": {"message_type": "notification"},
+                        "payload": {
+                            "subscription": {"type": "channel.raid"},
+                            "event": {
+                                "from_broadcaster_user_id": "u1",
+                                "from_broadcaster_user_name": "Raider",
+                                "viewers": 5,
+                            },
+                        },
+                    }
+                ]
+            )
+            anyio.run(_run_eventsub_socket, worker, socket)
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(state["last_subscription_type"], "channel.raid")
+        self.assertEqual(state["last_posted_event_kind"], "raid")
+        self.assertEqual(state["last_actor_display_name"], "Raider")
+        self.assertEqual(state["notification_count"], 1)
+
+    def test_eventsub_worker_records_post_error_and_keeps_running(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_path = Path(temp_dir) / "state.json"
+            worker = TwitchEventSubWorker(
+                config=TwitchEventSubConfig(client_id="client", oauth_token="token", broadcaster_user_id="broadcaster"),
+                client=_FailingClient(),  # type: ignore[arg-type]
+                state_path=state_path,
+            )
+            socket = _FakeEventSubSocket(
+                [
+                    {
+                        "metadata": {"message_type": "notification"},
+                        "payload": {
+                            "subscription": {"type": "channel.raid"},
+                            "event": {
+                                "from_broadcaster_user_id": "u1",
+                                "from_broadcaster_user_name": "Raider",
+                                "viewers": 5,
+                            },
+                        },
+                    }
+                ]
+            )
+            anyio.run(_run_eventsub_socket, worker, socket)
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+
+        self.assertIn("gamma api unavailable", state["last_post_error"])
+        self.assertEqual(state["last_posted_event_kind"], "raid")
+        self.assertEqual(state["notification_count"], 0)
 
     def test_blocked_trust_drops_priority_and_summarizes(self) -> None:
         classification = classify_chat_text("Shana answer me", trust_level="blocked")
@@ -492,6 +573,47 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertEqual(client.events[0].metadata["is_owner"], True)
         self.assertEqual(client.events[0].metadata["twitch_controls"]["dry_run"], True)
         self.assertEqual(result["synthesize_speech"], False)
+
+    def test_worker_records_safe_post_evidence_without_raw_text(self) -> None:
+        client = _FakeClient()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_path = Path(temp_dir) / "state.json"
+            worker = TwitchIrcWorker(
+                config=TwitchWorkerConfig(channel="#Shana", bot_username="bot", oauth_token="oauth:test"),
+                client=client,  # type: ignore[arg-type]
+                trust_store=_FakeTrustStore(),  # type: ignore[arg-type]
+                state_path=state_path,
+            )
+            worker.handle_line(
+                "@badges=;display-name=Viewer;id=m1;user-id=u1 "
+                ":viewer!viewer@viewer.tmi.twitch.tv PRIVMSG #shana :buy views at badsite.example"
+            )
+            state = read_twitch_worker_state(state_path)
+
+        self.assertEqual(state["last_posted_event_kind"], "chat_message")
+        self.assertEqual(state["last_actor_display_name"], "Viewer")
+        self.assertEqual(state["last_message_id"], "m1")
+        self.assertNotIn("badsite", json.dumps(state))
+
+    def test_worker_records_post_error_and_keeps_running(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_path = Path(temp_dir) / "state.json"
+            worker = TwitchIrcWorker(
+                config=TwitchWorkerConfig(channel="#Shana", bot_username="bot", oauth_token="oauth:test"),
+                client=_FailingClient(),  # type: ignore[arg-type]
+                trust_store=_FakeTrustStore(),  # type: ignore[arg-type]
+                state_path=state_path,
+            )
+            result = worker.handle_line(
+                "@badges=;display-name=Viewer;id=m1;user-id=u1 "
+                ":viewer!viewer@viewer.tmi.twitch.tv PRIVMSG #shana :Shana hello"
+            )
+            state = read_twitch_worker_state(state_path)
+
+        self.assertEqual(result["ok"], False)
+        self.assertIn("gamma api unavailable", state["last_post_error"])
+        self.assertEqual(state["last_posted_event_kind"], "chat_message")
+        self.assertEqual(state["message_count"], 0)
 
     def test_worker_uses_configured_voice_and_controls(self) -> None:
         client = _FakeClient()

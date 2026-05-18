@@ -68,6 +68,7 @@ class DashboardService:
         self._cached_machine_status: dict[str, Any] = {}
         self._cached_machine_status_at: str | None = None
         self._latest_provider_action: dict[str, Any] = {"status": "idle", "detail": "No provider action has been run yet."}
+        self._latest_twitch_replay_summary: dict[str, Any] = {}
         self._refresh_machine_status()
 
     def build_status(self) -> dict[str, Any]:
@@ -399,6 +400,13 @@ class DashboardService:
                 evidence={"voice_enabled": bool(controls.get("voice_enabled")), "subtitles_enabled": bool(controls.get("subtitles_enabled"))},
             ),
             self._stream_ready_check(
+                "voice_disabled_for_validation",
+                "Validation voice lock",
+                "warn" if controls.get("voice_enabled") else "ok",
+                "Twitch voice is off for dry-run validation." if not controls.get("voice_enabled") else "Twitch voice is enabled; keep it off during real dry-run validation.",
+                evidence={"voice_enabled": bool(controls.get("voice_enabled"))},
+            ),
+            self._stream_ready_check(
                 "subtitles",
                 "Subtitles",
                 "ok" if controls.get("subtitles_enabled") else "warn",
@@ -424,6 +432,13 @@ class DashboardService:
                 evidence=irc_runtime,
             ),
             self._stream_ready_check(
+                "irc_posting",
+                "IRC posting",
+                "warn" if irc_runtime.get("last_post_error") else "ok",
+                f"Last IRC post failed: {irc_runtime.get('last_post_error')}" if irc_runtime.get("last_post_error") else "No IRC post error recorded.",
+                evidence={"last_post_error": irc_runtime.get("last_post_error", "")},
+            ),
+            self._stream_ready_check(
                 "eventsub_runtime",
                 "EventSub runtime",
                 self._eventsub_runtime_check_status(eventsub_process, eventsub_state, eventsub_runtime),
@@ -434,6 +449,13 @@ class DashboardService:
                     "subscription_ok_count": int(eventsub_state.get("subscription_ok_count") or 0),
                     "subscription_error_count": int(eventsub_state.get("subscription_error_count") or 0),
                 },
+            ),
+            self._stream_ready_check(
+                "eventsub_posting",
+                "EventSub posting",
+                "warn" if eventsub_runtime.get("last_post_error") else "ok",
+                f"Last EventSub post failed: {eventsub_runtime.get('last_post_error')}" if eventsub_runtime.get("last_post_error") else "No EventSub post error recorded.",
+                evidence={"last_post_error": eventsub_runtime.get("last_post_error", "")},
             ),
         ]
         blockers = [check for check in checks if check["status"] == "block"]
@@ -457,6 +479,7 @@ class DashboardService:
             "blocker_count": len(blockers),
             "warning_count": len(warnings),
             "checks": checks,
+            "last_replay_summary": self._latest_twitch_replay_summary,
             "safety_gate": {
                 "enabled": True,
                 "review_timeout_seconds": settings.stream_safety_review_timeout_seconds,
@@ -541,6 +564,11 @@ class DashboardService:
             "stale": stale,
             "reconnects": int(state.get("reconnects") or 0),
             "last_message_kind": state.get("last_message_kind") or "",
+            "last_posted_event_kind": state.get("last_posted_event_kind") or "",
+            "last_actor_display_name": state.get("last_actor_display_name") or "",
+            "last_message_id": state.get("last_message_id") or "",
+            "last_subscription_type": state.get("last_subscription_type") or "",
+            "last_post_error": state.get("last_post_error") or "",
             message_key: int(state.get(message_key) or 0),
         }
 
@@ -709,7 +737,9 @@ class DashboardService:
             fast_mode=bool(payload.get("fast_mode", True)),
             session_id=str(payload.get("session_id") or "twitch-replay"),
         )
-        return {"ok": True, "count": len(results), "results": results}
+        summary = self._summarize_twitch_replay(results, scenario="custom")
+        self._latest_twitch_replay_summary = summary
+        return {"ok": True, "count": len(results), "results": results, "summary": summary}
 
     def run_twitch_dry_run_replay(self) -> dict[str, Any]:
         results = replay_jsonl_text(
@@ -720,11 +750,39 @@ class DashboardService:
             fast_mode=True,
             session_id="twitch-dry-run-readiness",
         )
+        summary = self._summarize_twitch_replay(results, scenario="dry_run_readiness")
+        self._latest_twitch_replay_summary = summary
         return {
             "ok": True,
             "scenario": "dry_run_readiness",
             "count": len(results),
             "results": results,
+            "summary": summary,
+        }
+
+    def _summarize_twitch_replay(self, results: list[Any], *, scenario: str) -> dict[str, Any]:
+        decisions_by_kind: dict[str, dict[str, int]] = {}
+        safety_categories: dict[str, int] = {}
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+            input_event = result.get("input_event") if isinstance(result.get("input_event"), dict) else {}
+            decision = result.get("decision") if isinstance(result.get("decision"), dict) else {}
+            kind = str(input_event.get("kind") or "unknown")
+            decision_kind = str(decision.get("decision") or "unknown")
+            decisions_by_kind.setdefault(kind, {})
+            decisions_by_kind[kind][decision_kind] = decisions_by_kind[kind].get(decision_kind, 0) + 1
+            metadata = input_event.get("metadata") if isinstance(input_event.get("metadata"), dict) else {}
+            input_safety = metadata.get("input_safety") if isinstance(metadata.get("input_safety"), dict) else {}
+            category = str(input_safety.get("category") or "")
+            if category:
+                safety_categories[category] = safety_categories.get(category, 0) + 1
+        return {
+            "scenario": scenario,
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "event_count": len(results),
+            "decisions_by_kind": decisions_by_kind,
+            "safety_categories": safety_categories,
         }
 
     def _viewer_trust_record_payload(self, record) -> dict[str, Any]:

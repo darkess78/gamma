@@ -203,6 +203,36 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertTrue(checks["irc_runtime"]["stale"])
         self.assertGreater(checks["irc_runtime"]["evidence"]["age_seconds"], 120)
 
+    def test_stream_ready_status_warns_on_post_errors_and_voice_enabled(self) -> None:
+        service = DashboardService()
+        updated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        with (
+            patch.object(settings, "twitch_channel", "shana"),
+            patch.object(settings, "twitch_bot_username", "bot"),
+            patch.object(settings, "twitch_oauth_token", "oauth:test"),
+            patch.object(settings, "twitch_client_id", "client"),
+            patch.object(settings, "twitch_broadcaster_user_id", "broadcaster"),
+            patch.object(settings, "twitch_eventsub_enabled", True),
+            patch.object(settings, "twitch_voice_enabled", True),
+            patch("gamma.dashboard.service.load_app_file_config", return_value={"twitch_voice_enabled": True}),
+            patch.object(DashboardService, "_probe_json", return_value={"ok": True}),
+            patch.object(service._process_manager, "module_status", return_value={"process": {"running": True}}),
+            patch(
+                "gamma.dashboard.service.read_twitch_worker_state",
+                return_value={"connected": True, "updated_at": updated_at, "message_count": 2, "last_post_error": "api down"},
+            ),
+            patch(
+                "gamma.dashboard.service.read_twitch_eventsub_state",
+                return_value={"connected": True, "updated_at": updated_at, "notification_count": 1, "last_post_error": "api down"},
+            ),
+        ):
+            payload = service.stream_ready_status()
+
+        checks = {check["id"]: check for check in payload["checks"]}
+        self.assertEqual(checks["irc_posting"]["status"], "warn")
+        self.assertEqual(checks["eventsub_posting"]["status"], "warn")
+        self.assertEqual(checks["voice_disabled_for_validation"]["status"], "warn")
+
     def test_twitch_status_reports_missing_config(self) -> None:
         service = DashboardService()
         with (
@@ -249,11 +279,25 @@ class DashboardRoutesTest(unittest.TestCase):
 
     def test_twitch_dry_run_replay_uses_builtin_safe_settings(self) -> None:
         service = DashboardService()
-        with patch("gamma.dashboard.service.replay_jsonl_text", return_value=[{"ok": True}]) as replay:
+        replay_results = [
+            {
+                "input_event": {"kind": "chat_message", "metadata": {"input_safety": {"category": "normal"}}},
+                "decision": {"decision": "reply"},
+            },
+            {
+                "input_event": {"kind": "chat_message", "metadata": {"input_safety": {"category": "spam_or_scam"}}},
+                "decision": {"decision": "acknowledge"},
+            },
+        ]
+        with patch("gamma.dashboard.service.replay_jsonl_text", return_value=replay_results) as replay:
             payload = service.run_twitch_dry_run_replay()
 
         self.assertEqual(payload["scenario"], "dry_run_readiness")
-        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["count"], 2)
+        self.assertEqual(payload["summary"]["event_count"], 2)
+        self.assertEqual(payload["summary"]["decisions_by_kind"]["chat_message"]["reply"], 1)
+        self.assertEqual(payload["summary"]["safety_categories"]["spam_or_scam"], 1)
+        self.assertEqual(service._latest_twitch_replay_summary["scenario"], "dry_run_readiness")
         _, kwargs = replay.call_args
         self.assertEqual(kwargs["session_id"], "twitch-dry-run-readiness")
         self.assertFalse(kwargs["synthesize_speech"])

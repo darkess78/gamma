@@ -1035,6 +1035,10 @@
     var lines = [];
     if (payload.scenario) lines.push('Scenario: ' + humanizeKey(payload.scenario));
     lines.push('Replay events posted: ' + payload.count);
+    if (payload.summary) {
+      lines.push('Safety categories: ' + compactCounts(payload.summary.safety_categories || {}));
+      lines.push('Decisions: ' + compactNestedCounts(payload.summary.decisions_by_kind || {}));
+    }
     var results = Array.isArray(payload.results) ? payload.results : [];
     for (var i = 0; i < Math.min(results.length, 8); i += 1) {
       var result = results[i] || {};
@@ -1103,6 +1107,15 @@
       lines.push('');
       lines.push('Controls:');
     }
+    var summary = payload.last_replay_summary || {};
+    if (summary.event_count) {
+      lines.push('');
+      lines.push('Last Dry-Run Replay:');
+      lines.push('Ran: ' + fmtLocalDateTime(summary.ran_at));
+      lines.push('Events: ' + summary.event_count);
+      lines.push('Safety categories: ' + compactCounts(summary.safety_categories || {}));
+      lines.push('Decisions: ' + compactNestedCounts(summary.decisions_by_kind || {}));
+    }
     lines.push('Dry run: ' + (controls.dry_run ? 'On' : 'Off'));
     lines.push('Voice: ' + (controls.voice_enabled ? 'On' : 'Off') + ' / Subtitles: ' + (controls.subtitles_enabled ? 'On' : 'Off'));
     lines.push('Safety gate: ' + (safety.enabled ? 'On' : 'Off') + ' / LLM review: ' + (safety.llm_review_enabled ? 'On' : 'Off'));
@@ -1111,6 +1124,20 @@
     lines.push('Speech gap: ' + (typeof controls.min_speech_gap_seconds === 'undefined' ? 'n/a' : controls.min_speech_gap_seconds + ' sec'));
     lines.push('Speech budget: ' + (typeof controls.max_speech_seconds_per_minute === 'undefined' ? 'n/a' : controls.max_speech_seconds_per_minute + ' sec/min'));
     return lines.join('\n');
+  }
+
+  function compactCounts(counts) {
+    var keys = Object.keys(counts || {}).sort();
+    if (!keys.length) return 'none';
+    return keys.map(function (key) { return humanizeKey(key) + '=' + counts[key]; }).join(', ');
+  }
+
+  function compactNestedCounts(counts) {
+    var keys = Object.keys(counts || {}).sort();
+    if (!keys.length) return 'none';
+    return keys.map(function (key) {
+      return humanizeKey(key) + '[' + compactCounts(counts[key] || {}) + ']';
+    }).join(', ');
   }
 
   function humanStreamTraces(payload) {

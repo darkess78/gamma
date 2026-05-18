@@ -128,13 +128,34 @@ class TwitchIrcWorker:
             session_id=f"twitch:{self.config.normalized_channel}",
             twitch_controls=self.config.controls(),
         )
-        result = self.client.post_event(
-            event,
-            synthesize_speech=self.synthesize_speech,
-            fast_mode=self.fast_mode,
+        evidence = _safe_event_evidence(
+            event_kind=event.kind,
+            display_name=chat_message.display_name,
+            message_id=chat_message.message_id,
         )
+        try:
+            result = self.client.post_event(
+                event,
+                synthesize_speech=self.synthesize_speech,
+                fast_mode=self.fast_mode,
+            )
+        except Exception as exc:
+            self._write_state(
+                status="connected",
+                connected=True,
+                last_message_kind="chat_message",
+                last_post_error=str(exc),
+                **evidence,
+            )
+            return {"ok": False, "error": str(exc), **evidence}
         self._message_count += 1
-        self._write_state(status="connected", connected=True, last_message_kind="chat_message")
+        self._write_state(
+            status="connected",
+            connected=True,
+            last_message_kind="chat_message",
+            last_post_error="",
+            **evidence,
+        )
         return result
 
     def _is_ignored_bot(self, display_name: str | None) -> bool:
@@ -230,6 +251,16 @@ def _iter_socket_lines(sock: ssl.SSLSocket) -> Iterable[str]:
 
 def _utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _safe_event_evidence(*, event_kind: str, display_name: str | None, message_id: str | None = None) -> dict[str, str]:
+    evidence = {
+        "last_posted_event_kind": event_kind,
+        "last_actor_display_name": str(display_name or ""),
+    }
+    if message_id:
+        evidence["last_message_id"] = message_id
+    return evidence
 
 
 def main() -> None:

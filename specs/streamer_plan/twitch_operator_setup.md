@@ -66,11 +66,14 @@ Before turning voice on:
 - Keep `twitch_dry_run = true`.
 - Open the Stream tab and fix any readiness blockers.
 - Run `Run Dry-Run Replay` from Twitch Replay and confirm the scenario posts events.
+- Confirm the readiness panel shows the last dry-run replay summary with decision counts and safety categories.
 - Confirm Stream Activity shows mention, ambient, spam, follow, raid, bits, and redeem decisions.
 - Confirm Safety Log records filtered/skipped decisions for unsafe replay inputs.
 - Confirm redeems that do not mention Shana are deferred instead of forcing speech.
 - Start IRC worker and confirm Twitch chat appears in Stream Activity.
 - Start EventSub worker and confirm EventSub status becomes connected.
+- Confirm worker evidence updates without raw unsafe chat text: last event kind, actor display name, message id/subscription type, and post-error status.
+- If `IRC posting` or `EventSub posting` warns, fix the Gamma API/posting issue before continuing.
 - Watch for stale worker warnings; a running worker state older than two minutes needs investigation.
 - Press Stop Speech and confirm subtitles clear and active live speech is cancelled.
 - Confirm ignored bots do not create stream events.

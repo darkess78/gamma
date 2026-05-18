@@ -377,6 +377,10 @@
     if (!document.querySelector('[data-tab-target="' + dashboardActiveTab + '"]')) {
       dashboardActiveTab = 'overview';
     }
+    document.body.setAttribute('data-active-tab', dashboardActiveTab);
+    if (dashboardActiveTab === 'stream') {
+      setSectionOpen('browserVoicePanel', true);
+    }
     panels.forEach(function (panel) {
       var tabs = String(panel.getAttribute('data-dashboard-tab') || '').split(/\s+/);
       panel.classList.toggle('tab-hidden', tabs.indexOf(dashboardActiveTab) === -1);

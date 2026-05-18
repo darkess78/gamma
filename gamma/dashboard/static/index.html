@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shana Control</title>
-  <link rel="stylesheet" href="/static/dashboard.css?v=20260518c">
+  <link rel="stylesheet" href="/static/dashboard.css?v=20260518d">
 </head>
 <body>
   <div class="wrap">
@@ -191,7 +191,7 @@
         </div>
         <div class="render" id="twitchReplayResult">No replay run yet.</div>
       </section>
-      <section class="panel full-width panel-fill" data-dashboard-tab="stream">
+      <section class="panel full-width panel-fill stream-activity-panel" data-dashboard-tab="stream">
         <div class="panel-head">
           <h2>Stream Activity</h2>
           <button class="ghost" onclick="loadStreamActivity()">Refresh Activity</button>
@@ -385,10 +385,10 @@
           <div id="ttsArtifactList" class="tts-artifacts"><span style="color:var(--muted);font-size:13px;">No recent audio files.</span></div>
         </div>
       </section>
-      <section class="panel wide" data-dashboard-tab="voice">
+      <section class="panel full-width stream-live-voice-panel" data-dashboard-tab="stream voice">
         <div class="panel-head">
           <button type="button" class="collapse-toggle collapse-toggle-panel" onclick="toggleSection('browserVoicePanel')">
-            <span>Browser Voice</span>
+            <span>Live Voice</span>
             <span class="collapse-chevron" id="browserVoicePanelChevron">></span>
           </button>
         </div>

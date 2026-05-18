@@ -434,8 +434,59 @@ pre {
   margin-bottom: 18px;
 }
 
-.stream-worker-panel {
+.panel[data-dashboard-tab~="stream"] {
+  order: 10;
+}
+
+body[data-active-tab="stream"] .stream-worker-panel {
+  order: 0;
   padding-bottom: 20px;
+}
+
+body[data-active-tab="stream"] .stream-live-voice-panel {
+  order: 1;
+}
+
+body[data-active-tab="stream"] .stream-activity-panel {
+  order: 2;
+}
+
+body[data-active-tab="stream"] .stream-live-voice-panel .provider-actions {
+  grid-template-columns: minmax(220px, 0.65fr) minmax(260px, 1fr) minmax(360px, 1.35fr);
+}
+
+body[data-active-tab="stream"] .stream-live-voice-panel .provider-actions .action-group:nth-child(2) {
+  display: none;
+}
+
+body[data-active-tab="stream"] .stream-live-voice-panel .provider-actions .action-group:nth-child(3) .action-buttons {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) repeat(2, minmax(120px, auto));
+  align-items: center;
+}
+
+body[data-active-tab="stream"] .stream-live-voice-panel .provider-actions .action-group:nth-child(3) .checkbox-row {
+  min-height: 38px;
+}
+
+body[data-active-tab="stream"] .stream-live-voice-panel .provider-actions .action-group:nth-child(4) {
+  grid-column: span 1;
+}
+
+body[data-active-tab="stream"] .stream-live-voice-panel .legend-details,
+body[data-active-tab="stream"] .stream-live-voice-panel #liveVoiceMeta,
+body[data-active-tab="stream"] .stream-live-voice-panel #liveVoiceHistory,
+body[data-active-tab="stream"] .stream-live-voice-panel #voiceRoundtripStatus {
+  display: none;
+}
+
+body[data-active-tab="stream"] .stream-live-voice-panel #liveVoiceStatus,
+body[data-active-tab="stream"] .stream-live-voice-panel #liveSubtitleStatus {
+  max-height: 170px;
+}
+
+body[data-active-tab="stream"] .stream-live-voice-panel audio {
+  margin-top: 10px;
 }
 
 .twitch-worker-actions {
@@ -1206,6 +1257,12 @@ audio {
     grid-template-columns: 1fr;
   }
   .twitch-worker-actions {
+    grid-template-columns: 1fr;
+  }
+  body[data-active-tab="stream"] .stream-live-voice-panel .provider-actions {
+    grid-template-columns: 1fr;
+  }
+  body[data-active-tab="stream"] .stream-live-voice-panel .provider-actions .action-group:nth-child(3) .action-buttons {
     grid-template-columns: 1fr;
   }
   .twitch-process-buttons {

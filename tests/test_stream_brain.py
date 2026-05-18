@@ -362,7 +362,49 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual(queue["slots"]["ambient"]["replaced_event_id"], first_deferred.input_event.event_id)
         self.assertEqual(second_deferred.decision.metadata["replaced_event_id"], first_deferred.input_event.event_id)
 
-    def test_twitch_pending_queue_uses_high_priority_slot_for_redeem(self) -> None:
+    def test_twitch_redeem_raises_priority_without_forcing_response(self) -> None:
+        conversation = _FakeConversation()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            result = brain.handle_event(
+                StreamInputEvent(
+                    kind="redeem",
+                    text="Say hi",
+                    priority=10,
+                    actor=StreamActor(source="twitch", platform_id="u2"),
+                )
+            )
+
+        self.assertEqual(result.decision.decision, "defer")
+        self.assertEqual(result.decision.reason, "twitch_redeem_recorded_without_forced_response")
+        self.assertFalse(result.decision.should_call_conversation)
+        self.assertEqual(result.decision.metadata["priority"], 10)
+        self.assertEqual(len(conversation.calls), 0)
+
+    def test_twitch_redeem_can_reply_when_it_mentions_shana(self) -> None:
+        conversation = _FakeConversation()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            result = brain.handle_event(
+                StreamInputEvent(
+                    kind="redeem",
+                    text="Shana, say hi",
+                    priority=10,
+                    actor=StreamActor(source="twitch", platform_id="u2"),
+                )
+            )
+
+        self.assertEqual(result.decision.decision, "reply")
+        self.assertEqual(result.decision.reason, "twitch_redeem_mentions_assistant")
+        self.assertEqual(len(conversation.calls), 1)
+
+    def test_twitch_pending_queue_uses_high_priority_slot_for_support_events(self) -> None:
         clock = _FakeClock(100.0)
         conversation = _FakeConversation()
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -382,16 +424,16 @@ class StreamBrainTest(unittest.TestCase):
             clock.value = 101.0
             deferred = brain.handle_event(
                 StreamInputEvent(
-                    kind="redeem",
-                    text="Say hi",
-                    priority=10,
+                    kind="bits",
+                    text="Viewer cheered 100 bits.",
+                    priority=15,
                     actor=StreamActor(source="twitch", platform_id="u2"),
                 )
             )
 
         self.assertEqual(deferred.decision.decision, "defer")
         self.assertEqual(deferred.decision.metadata["pending_slot"], "high_priority")
-        self.assertEqual(brain.pending_queue()["slots"]["high_priority"]["kind"], "redeem")
+        self.assertEqual(brain.pending_queue()["slots"]["high_priority"]["kind"], "bits")
 
     def test_twitch_high_priority_event_bypasses_speech_pacing(self) -> None:
         clock = _FakeClock(100.0)

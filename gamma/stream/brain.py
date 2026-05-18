@@ -418,7 +418,23 @@ class StreamBrain:
                 should_call_conversation=True,
                 response_mode="spoken",
             )
-        if event.kind in {"donation", "redeem", "follow", "raid", "bits", "subscription"}:
+        if event.kind == "redeem":
+            if ("gamma" in lowered or "shana" in lowered) and _twitch_control_enabled(event, "mention_replies_enabled", True):
+                return TurnDecision(
+                    decision="reply",
+                    reason="twitch_redeem_mentions_assistant",
+                    should_call_conversation=True,
+                    response_mode="chat",
+                    metadata={"event_kind": event.kind, "priority": event.priority},
+                )
+            return TurnDecision(
+                decision="defer",
+                reason="twitch_redeem_recorded_without_forced_response",
+                should_call_conversation=False,
+                response_mode="redeem",
+                metadata={"event_kind": event.kind, "priority": event.priority},
+            )
+        if event.kind in {"donation", "follow", "raid", "bits", "subscription"}:
             return TurnDecision(
                 decision="acknowledge",
                 reason="support_events_receive_acknowledgement",

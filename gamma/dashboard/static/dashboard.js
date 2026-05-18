@@ -1074,8 +1074,19 @@
       lines.push('Updated: ' + fmtLocalDateTime(state.updated_at));
       if (state.session_id) lines.push('Session: ' + state.session_id);
       if (typeof state.notification_count !== 'undefined') lines.push('Notifications: ' + state.notification_count);
+      if (state.last_message_kind) lines.push('Last message kind: ' + humanizeKey(state.last_message_kind));
+      if (state.last_subscription_type) lines.push('Last subscription: ' + state.last_subscription_type);
+      if (state.last_posted_event_kind) lines.push('Last posted event: ' + humanizeKey(state.last_posted_event_kind));
+      if (state.last_actor_display_name) lines.push('Last actor: ' + state.last_actor_display_name);
       if (typeof state.subscription_ok_count !== 'undefined') lines.push('Subscriptions OK: ' + state.subscription_ok_count);
       if (typeof state.subscription_error_count !== 'undefined') lines.push('Subscription errors: ' + state.subscription_error_count);
+      if (Array.isArray(state.subscriptions) && state.subscriptions.length) {
+        var subscriptionTypes = state.subscriptions.map(function (subscription) {
+          return (subscription.ok ? 'OK ' : 'ERR ') + (subscription.type || 'subscription');
+        });
+        lines.push('Subscription types: ' + subscriptionTypes.join(', '));
+      }
+      if (state.last_post_error) lines.push('Last post error: ' + state.last_post_error);
       if (state.detail) lines.push('Detail: ' + state.detail);
     }
     return lines.join('\n');

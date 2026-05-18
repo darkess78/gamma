@@ -105,6 +105,9 @@ class TwitchEventSubWorker:
         self.fast_mode = fast_mode
         self._message_count = 0
         self._notification_count = 0
+        self._subscriptions: list[dict[str, Any]] = []
+        self._subscription_ok_count = 0
+        self._subscription_error_count = 0
 
     async def run_forever(self) -> None:
         reconnects = 0
@@ -132,13 +135,13 @@ class TwitchEventSubWorker:
                 if not session_id:
                     raise RuntimeError("EventSub welcome missing session id")
                 subscriptions = self.create_subscriptions(session_id)
+                self._subscriptions = subscriptions
+                self._subscription_ok_count = sum(1 for subscription in subscriptions if subscription.get("ok"))
+                self._subscription_error_count = sum(1 for subscription in subscriptions if not subscription.get("ok"))
                 self._write_state(
                     status="connected",
                     connected=True,
                     session_id=session_id,
-                    subscriptions=subscriptions,
-                    subscription_ok_count=sum(1 for subscription in subscriptions if subscription.get("ok")),
-                    subscription_error_count=sum(1 for subscription in subscriptions if not subscription.get("ok")),
                     reconnects=reconnects,
                 )
                 continue
@@ -223,6 +226,9 @@ class TwitchEventSubWorker:
             "connected": connected,
             "message_count": self._message_count,
             "notification_count": self._notification_count,
+            "subscriptions": self._subscriptions,
+            "subscription_ok_count": self._subscription_ok_count,
+            "subscription_error_count": self._subscription_error_count,
             "updated_at": _utc_now(),
             **extra,
         }

@@ -274,6 +274,41 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertEqual(state["last_actor_display_name"], "Raider")
         self.assertEqual(state["notification_count"], 1)
 
+    def test_eventsub_keepalive_preserves_subscription_evidence(self) -> None:
+        class _FakeEventSubWorker(TwitchEventSubWorker):
+            def create_subscriptions(self, session_id: str):
+                return [
+                    {"ok": True, "type": "channel.follow", "version": "2"},
+                    {"ok": False, "type": "channel.cheer", "version": "1", "error": "missing scope"},
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_path = Path(temp_dir) / "state.json"
+            worker = _FakeEventSubWorker(
+                config=TwitchEventSubConfig(client_id="client", oauth_token="token", broadcaster_user_id="broadcaster"),
+                client=_FakeClient(),  # type: ignore[arg-type]
+                state_path=state_path,
+            )
+            socket = _FakeEventSubSocket(
+                [
+                    {
+                        "metadata": {"message_type": "session_welcome"},
+                        "payload": {"session": {"id": "session-1"}},
+                    },
+                    {
+                        "metadata": {"message_type": "session_keepalive"},
+                        "payload": {},
+                    },
+                ]
+            )
+            anyio.run(_run_eventsub_socket, worker, socket)
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(state["last_message_kind"], "keepalive")
+        self.assertEqual(state["subscription_ok_count"], 1)
+        self.assertEqual(state["subscription_error_count"], 1)
+        self.assertEqual([item["type"] for item in state["subscriptions"]], ["channel.follow", "channel.cheer"])
+
     def test_eventsub_worker_records_post_error_and_keeps_running(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             state_path = Path(temp_dir) / "state.json"

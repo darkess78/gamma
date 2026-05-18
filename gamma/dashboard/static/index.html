@@ -100,6 +100,8 @@
             <div class="action-buttons">
               <button id="twitchWorkerStartButton" class="secondary" onclick="action('/api/twitch/worker/start')">Start Worker</button>
               <button id="twitchWorkerStopButton" class="ghost danger-outline" onclick="action('/api/twitch/worker/stop')">Stop Twitch Worker</button>
+              <button id="twitchEventSubStartButton" class="secondary" onclick="action('/api/twitch/eventsub/start')">Start EventSub</button>
+              <button id="twitchEventSubStopButton" class="ghost danger-outline" onclick="action('/api/twitch/eventsub/stop')">Stop EventSub</button>
               <button class="danger" onclick="stopStreamSpeech()">Stop Speech</button>
             </div>
           </div>
@@ -124,6 +126,7 @@
           </div>
         </div>
         <div class="render" id="twitchWorkerStatus">...</div>
+        <div class="render compact-render" id="twitchEventSubStatus">EventSub status has not loaded yet.</div>
         <div class="render compact-render" id="twitchSettingsStatus">Twitch controls load with worker status.</div>
         <div class="render compact-render" id="streamStopStatus">Speech stop has not been requested.</div>
         <div class="render compact-render" id="streamReadyStatus">Stream readiness has not loaded yet.</div>

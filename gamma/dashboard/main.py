@@ -243,6 +243,21 @@ def stop_twitch_worker() -> dict:
     return get_dashboard_service().stop_twitch_worker()
 
 
+@app.get("/api/twitch/eventsub/status")
+def twitch_eventsub_status() -> dict:
+    return get_dashboard_service().twitch_eventsub_status()
+
+
+@app.post("/api/twitch/eventsub/start")
+def start_twitch_eventsub_worker() -> dict:
+    return get_dashboard_service().start_twitch_eventsub_worker()
+
+
+@app.post("/api/twitch/eventsub/stop")
+def stop_twitch_eventsub_worker() -> dict:
+    return get_dashboard_service().stop_twitch_eventsub_worker()
+
+
 @app.get("/api/twitch/viewer-trust")
 def twitch_viewer_trust(limit: int = 100) -> dict:
     return get_dashboard_service().twitch_viewer_trust(limit=limit)

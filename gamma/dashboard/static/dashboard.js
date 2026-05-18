@@ -1043,6 +1043,29 @@
     return lines.join('\n');
   }
 
+  function humanTwitchEventSub(eventsub) {
+    eventsub = eventsub || {};
+    var process = eventsub.process || {};
+    var state = eventsub.state || {};
+    var lines = [
+      'Configured: ' + (eventsub.configured ? 'Yes' : 'No'),
+      'Enabled: ' + (eventsub.enabled ? 'Yes' : 'No'),
+      'Running: ' + (process.running ? 'Yes' : 'No'),
+      'Broadcaster ID: ' + (eventsub.broadcaster_user_id || 'n/a')
+    ];
+    if (process.pid) lines.push('PID: ' + process.pid);
+    if (state.status || state.updated_at) {
+      lines.push('');
+      lines.push('EventSub State:');
+      lines.push('Status: ' + (state.status || 'n/a') + ' / connected: ' + (state.connected ? 'yes' : 'no'));
+      lines.push('Updated: ' + fmtLocalDateTime(state.updated_at));
+      if (state.session_id) lines.push('Session: ' + state.session_id);
+      if (typeof state.notification_count !== 'undefined') lines.push('Notifications: ' + state.notification_count);
+      if (state.detail) lines.push('Detail: ' + state.detail);
+    }
+    return lines.join('\n');
+  }
+
   function humanStreamReady(payload, worker) {
     payload = payload || {};
     worker = worker || {};
@@ -1948,13 +1971,20 @@
     );
 
     var twitchWorker = data.twitch && data.twitch.worker ? data.twitch.worker : {};
+    var twitchEventSub = data.twitch && data.twitch.eventsub ? data.twitch.eventsub : {};
     renderBlockIfChanged('twitchWorkerStatus', twitchWorker, humanTwitchWorker(twitchWorker), 'twitchWorkerStatus');
+    renderBlockIfChanged('twitchEventSubStatus', twitchEventSub, humanTwitchEventSub(twitchEventSub), 'twitchEventSubStatus');
     renderBlockIfChanged('streamReadyStatus', data.twitch && data.twitch.stream_ready ? data.twitch.stream_ready : {}, humanStreamReady(data.twitch && data.twitch.stream_ready ? data.twitch.stream_ready : {}, twitchWorker), 'streamReadyStatus');
     var twitchStartButton = document.getElementById('twitchWorkerStartButton');
     var twitchStopButton = document.getElementById('twitchWorkerStopButton');
+    var twitchEventSubStartButton = document.getElementById('twitchEventSubStartButton');
+    var twitchEventSubStopButton = document.getElementById('twitchEventSubStopButton');
     var twitchProcess = twitchWorker.process || {};
+    var twitchEventSubProcess = twitchEventSub.process || {};
     if (twitchStartButton) twitchStartButton.disabled = !twitchWorker.configured || !!twitchProcess.running;
     if (twitchStopButton) twitchStopButton.disabled = !twitchProcess.running;
+    if (twitchEventSubStartButton) twitchEventSubStartButton.disabled = !twitchEventSub.configured || !!twitchEventSubProcess.running;
+    if (twitchEventSubStopButton) twitchEventSubStopButton.disabled = !twitchEventSubProcess.running;
     renderTwitchSettings(twitchWorker.controls || {});
     updateStatusChip(
       'stickyTwitchStatus',
@@ -2075,6 +2105,16 @@
       latestData.twitch.worker = latestData.twitch.worker || {};
       latestData.twitch.worker.process = latestData.twitch.worker.process || {};
       latestData.twitch.worker.process.running = false;
+    } else if (path === '/api/twitch/eventsub/start') {
+      latestData.twitch = latestData.twitch || {};
+      latestData.twitch.eventsub = latestData.twitch.eventsub || {};
+      latestData.twitch.eventsub.process = latestData.twitch.eventsub.process || {};
+      latestData.twitch.eventsub.process.running = true;
+    } else if (path === '/api/twitch/eventsub/stop') {
+      latestData.twitch = latestData.twitch || {};
+      latestData.twitch.eventsub = latestData.twitch.eventsub || {};
+      latestData.twitch.eventsub.process = latestData.twitch.eventsub.process || {};
+      latestData.twitch.eventsub.process.running = false;
     }
 
     renderPanels(latestData);

@@ -23,6 +23,7 @@ import psutil
 from ..config import app_local_config_path, load_app_file_config, load_desired_tts_selection, settings
 from ..errors import ConfigurationError
 from ..integrations.twitch.client import GammaStreamClient
+from ..integrations.twitch.eventsub import TwitchEventSubConfig, read_twitch_eventsub_state
 from ..integrations.twitch.replay import replay_jsonl_text
 from ..integrations.twitch.trust import VALID_TRUST_LEVELS, ViewerTrustStore
 from ..integrations.twitch.worker import TwitchWorkerConfig, read_twitch_worker_state
@@ -39,6 +40,8 @@ from ..voice.voice_profiles import get_voice_profile, list_voice_profiles, profi
 class DashboardService:
     TWITCH_WORKER_SERVICE = "twitch_worker"
     TWITCH_WORKER_MODULE = "gamma.integrations.twitch.worker"
+    TWITCH_EVENTSUB_SERVICE = "twitch_eventsub"
+    TWITCH_EVENTSUB_MODULE = "gamma.integrations.twitch.eventsub"
 
     def __init__(self) -> None:
         self._memory = MemoryService()
@@ -126,6 +129,7 @@ class DashboardService:
             },
             "twitch": {
                 "worker": self.twitch_worker_status(),
+                "eventsub": self.twitch_eventsub_status(),
                 "stream_ready": self.stream_ready_status(),
             },
             "provider_actions": self._latest_provider_action,
@@ -208,14 +212,16 @@ class DashboardService:
     def stop_all(self) -> dict[str, Any]:
         shana_result = self._process_manager.stop("shana")
         twitch_result = self.stop_twitch_worker()
+        eventsub_result = self.stop_twitch_eventsub_worker()
         tts_results = self._stop_all_tts_servers()
         self._schedule_stop("dashboard")
         tts_ok = all(bool(result.get("ok")) for result in tts_results.values())
         return {
-            "ok": bool(shana_result.get("ok", False)) and bool(twitch_result.get("ok", False)) and tts_ok,
+            "ok": bool(shana_result.get("ok", False)) and bool(twitch_result.get("ok", False)) and bool(eventsub_result.get("ok", False)) and tts_ok,
             "detail": "all-stop-scheduled",
             "shana": shana_result,
             "twitch_worker": twitch_result,
+            "twitch_eventsub": eventsub_result,
             "tts": tts_results,
             "dashboard_url": settings.dashboard_base_url,
         }
@@ -239,6 +245,38 @@ class DashboardService:
 
     def stop_twitch_worker(self) -> dict[str, Any]:
         return self._process_manager.stop_module(self.TWITCH_WORKER_SERVICE, self.TWITCH_WORKER_MODULE)
+
+    def start_twitch_eventsub_worker(self) -> dict[str, Any]:
+        try:
+            config = TwitchEventSubConfig.from_settings()
+        except ConfigurationError as exc:
+            return {
+                "ok": False,
+                "detail": str(exc),
+                "auth_required": True,
+                "process": {"running": False},
+            }
+        result = self._process_manager.start_module(self.TWITCH_EVENTSUB_SERVICE, self.TWITCH_EVENTSUB_MODULE)
+        return {
+            **result,
+            "broadcaster_user_id": config.broadcaster_user_id,
+            "worker": "twitch_eventsub",
+        }
+
+    def stop_twitch_eventsub_worker(self) -> dict[str, Any]:
+        return self._process_manager.stop_module(self.TWITCH_EVENTSUB_SERVICE, self.TWITCH_EVENTSUB_MODULE)
+
+    def twitch_eventsub_status(self) -> dict[str, Any]:
+        status = self._process_manager.module_status(self.TWITCH_EVENTSUB_SERVICE, self.TWITCH_EVENTSUB_MODULE)
+        configured = bool(settings.twitch_client_id and settings.twitch_oauth_token and settings.twitch_broadcaster_user_id)
+        return {
+            **status,
+            "configured": configured,
+            "enabled": bool(settings.twitch_eventsub_enabled),
+            "broadcaster_user_id": settings.twitch_broadcaster_user_id,
+            "worker": "twitch_eventsub",
+            "state": read_twitch_eventsub_state(),
+        }
 
     def twitch_worker_status(self) -> dict[str, Any]:
         status = self._process_manager.module_status(self.TWITCH_WORKER_SERVICE, self.TWITCH_WORKER_MODULE)

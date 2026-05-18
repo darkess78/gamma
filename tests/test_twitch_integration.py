@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from gamma.integrations.twitch.models import TwitchChatMessage, TwitchReplayEvent
+from gamma.integrations.twitch.eventsub import stream_event_from_eventsub_notification
 from gamma.integrations.twitch.irc import chat_message_from_irc, parse_irc_line
 from gamma.integrations.twitch.normalize import normalize_chat_message
 from gamma.integrations.twitch.replay import replay_jsonl, replay_jsonl_text
@@ -117,6 +118,28 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertIn("100 bits", bits.text or "")
         self.assertEqual(sub.kind, "subscription")
         self.assertIn("subscribed", sub.text or "")
+
+    def test_eventsub_notification_normalizes_to_stream_event(self) -> None:
+        payload = {
+            "metadata": {"message_type": "notification"},
+            "payload": {
+                "subscription": {"type": "channel.raid"},
+                "event": {
+                    "from_broadcaster_user_id": "u1",
+                    "from_broadcaster_user_name": "Raider",
+                    "viewers": 42,
+                },
+            },
+        }
+
+        event = stream_event_from_eventsub_notification(payload, twitch_controls={"dry_run": True})
+
+        self.assertIsNotNone(event)
+        assert event is not None
+        self.assertEqual(event.kind, "raid")
+        self.assertEqual(event.priority, 25)
+        self.assertEqual(event.metadata["twitch_controls"]["dry_run"], True)
+        self.assertIn("42 viewers", event.text or "")
 
     def test_blocked_trust_drops_priority_and_summarizes(self) -> None:
         classification = classify_chat_text("Shana answer me", trust_level="blocked")

@@ -467,6 +467,19 @@ class Settings:
     twitch_owner_user_id: str = str(
         _setting("SHANA_TWITCH_OWNER_USER_ID", _config_value(APP_CONFIG, "twitch_owner_user_id", default=""))
     ).strip()
+    twitch_client_id: str = str(
+        _setting("SHANA_TWITCH_CLIENT_ID", _config_value(APP_CONFIG, "twitch_client_id", default=""))
+    ).strip()
+    twitch_broadcaster_user_id: str = str(
+        _setting("SHANA_TWITCH_BROADCASTER_USER_ID", _config_value(APP_CONFIG, "twitch_broadcaster_user_id", default=""))
+    ).strip()
+    twitch_moderator_user_id: str = str(
+        _setting("SHANA_TWITCH_MODERATOR_USER_ID", _config_value(APP_CONFIG, "twitch_moderator_user_id", default=""))
+    ).strip()
+    twitch_eventsub_enabled: bool = _as_bool(
+        _setting("SHANA_TWITCH_EVENTSUB_ENABLED", _config_value(APP_CONFIG, "twitch_eventsub_enabled", default=False)),
+        default=False,
+    )
     twitch_ignored_bots: tuple[str, ...] = _as_csv(
         _setting(
             "SHANA_TWITCH_IGNORED_BOTS",

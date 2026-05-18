@@ -100,6 +100,9 @@ class DashboardRoutesTest(unittest.TestCase):
             "twitch_worker_status": {"process": {"running": False}, "configured": False},
             "start_twitch_worker": {"ok": False, "auth_required": True},
             "stop_twitch_worker": {"ok": True, "detail": "not-running"},
+            "twitch_eventsub_status": {"process": {"running": False}, "configured": False},
+            "start_twitch_eventsub_worker": {"ok": False, "auth_required": True},
+            "stop_twitch_eventsub_worker": {"ok": True, "detail": "not-running"},
         }
         for method_name, payload in action_map.items():
             with self.subTest(method_name=method_name):

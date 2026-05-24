@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 
 from ..avatar_events.models import AvatarEvent
 from ..config import settings
+from ..performer.bus import PerformerEventBus, get_performer_event_bus
+from ..performer.models import performer_event_from_stream_output
 from .models import StreamOutputEvent, utc_now
 
 
@@ -35,7 +37,7 @@ class StreamOutputAdapter(ABC):
 
 class StreamOutputDispatcher:
     def __init__(self, adapters: list[StreamOutputAdapter] | None = None) -> None:
-        self._adapters = adapters if adapters is not None else [JsonlStreamOutputAdapter()]
+        self._adapters = adapters if adapters is not None else [JsonlStreamOutputAdapter(), PerformerBusOutputAdapter()]
 
     def dispatch(self, events: list[StreamOutputEvent]) -> OutputDispatchResult:
         records: list[OutputDispatchRecord] = []
@@ -132,3 +134,29 @@ class StreamOutputLogService:
 
     def recent_outputs(self, *, limit: int = 50) -> list[dict[str, Any]]:
         return self._adapter.read_recent(limit=limit)
+
+
+class PerformerBusOutputAdapter(StreamOutputAdapter):
+    name = "performer_event_bus"
+
+    def __init__(self, bus: PerformerEventBus | None = None) -> None:
+        self._bus = bus or get_performer_event_bus()
+
+    def handle(self, event: StreamOutputEvent) -> OutputDispatchRecord:
+        performer_event = performer_event_from_stream_output(event)
+        if performer_event is None:
+            return OutputDispatchRecord(
+                adapter=self.name,
+                ok=True,
+                output_event_id=event.output_event_id,
+                event_type=event.type,
+                detail="ignored: no performer event mapping",
+            )
+        self._bus.publish(performer_event)
+        return OutputDispatchRecord(
+            adapter=self.name,
+            ok=True,
+            output_event_id=event.output_event_id,
+            event_type=event.type,
+            metadata={"performer_event_id": performer_event.event_id, "performer_event_type": performer_event.type},
+        )

@@ -11,7 +11,14 @@ from .models import (
     StreamTurnResult,
     TurnDecision,
 )
-from .output import JsonlStreamOutputAdapter, OutputDispatchRecord, OutputDispatchResult, StreamOutputDispatcher, StreamOutputLogService
+from .output import (
+    JsonlStreamOutputAdapter,
+    OutputDispatchRecord,
+    OutputDispatchResult,
+    PerformerBusOutputAdapter,
+    StreamOutputDispatcher,
+    StreamOutputLogService,
+)
 from .replay import StreamEvalFinding, StreamEvalReport, StreamReplayService
 from .trace import StreamTraceStore
 
@@ -28,6 +35,7 @@ __all__ = [
     "JsonlStreamOutputAdapter",
     "OutputDispatchRecord",
     "OutputDispatchResult",
+    "PerformerBusOutputAdapter",
     "StreamOutputDispatcher",
     "StreamOutputLogService",
     "StreamReplayService",

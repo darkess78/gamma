@@ -96,6 +96,15 @@ class ApiRoutesTest(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 500)
         self.assertEqual(ctx.exception.detail, "misconfigured")
 
+    def test_performer_page_and_default_image_routes(self) -> None:
+        page = routes.performer_page()
+        image = routes.performer_default_image()
+
+        self.assertEqual(page.media_type, "text/html")
+        self.assertTrue(str(page.path).endswith("performer.html"))
+        self.assertEqual(image.media_type, "image/png")
+        self.assertTrue(str(image.path).endswith("jacket shana mouth closed eyes open.png"))
+
 
 if __name__ == "__main__":
     unittest.main()

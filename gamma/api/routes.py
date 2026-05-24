@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse
+import secrets
+import mimetypes
+from pathlib import Path
+
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse
 
 from ..config import settings
 from ..conversation.service import ConversationService
@@ -12,6 +16,7 @@ from ..schemas.voice import LiveVoiceJobResponse, VoiceRoundtripResponse, VoiceT
 from ..stream.brain import StreamBrain
 from ..stream.models import StreamInputEvent, StreamTurnResult
 from ..stream.output import StreamOutputLogService
+from ..performer.bus import PerformerEventBus, get_performer_event_bus
 from ..stream.replay import StreamEvalReport, StreamReplayService
 from ..stream.self_goals import StreamSelfGoalStore
 from ..stream.temp_memory import StreamTempMemoryStore
@@ -21,6 +26,8 @@ from ..voice.live_runtime import LiveTurnRuntime, SubprocessLiveTurnRuntime
 from ..voice.roundtrip import VoiceRoundtripService
 
 router = APIRouter()
+PERFORMER_STATIC_DIR = Path(__file__).resolve().parents[1] / "performer" / "static"
+SHANA_DEFAULT_IMAGE = Path(__file__).resolve().parents[2] / "images" / "shana" / "jacket shana mouth closed eyes open.png"
 conversation_service = LazySingleton[ConversationService]()
 system_status_service = LazySingleton[SystemStatusService]()
 voice_roundtrip_service = LazySingleton[VoiceRoundtripService]()
@@ -30,6 +37,7 @@ stream_replay_service = LazySingleton[StreamReplayService]()
 stream_output_log_service = LazySingleton[StreamOutputLogService]()
 stream_temp_memory_store = LazySingleton[StreamTempMemoryStore]()
 stream_self_goal_store = LazySingleton[StreamSelfGoalStore]()
+performer_event_bus = LazySingleton[PerformerEventBus]()
 
 
 def get_conversation_service() -> ConversationService:
@@ -58,6 +66,10 @@ def get_stream_replay_service() -> StreamReplayService:
 
 def get_stream_output_log_service() -> StreamOutputLogService:
     return stream_output_log_service.get(StreamOutputLogService)
+
+
+def get_performer_bus() -> PerformerEventBus:
+    return performer_event_bus.get(get_performer_event_bus)
 
 
 def get_stream_temp_memory_store() -> StreamTempMemoryStore:
@@ -92,6 +104,17 @@ def _cancel_active_live_turns(*, reason: str) -> dict:
             for turn in cancelled
         ],
     }
+
+
+def _websocket_api_auth_ok(websocket: WebSocket) -> bool:
+    if not settings.api_auth_enabled:
+        return True
+    expected = f"Bearer {settings.api_bearer_token}"
+    auth_header = websocket.headers.get("authorization", "")
+    if settings.api_bearer_token and secrets.compare_digest(auth_header, expected):
+        return True
+    token = websocket.query_params.get("token", "")
+    return bool(settings.api_bearer_token and secrets.compare_digest(token, settings.api_bearer_token))
 
 
 @router.get("/")
@@ -135,6 +158,18 @@ def dashboard() -> str:
   </div>
 </body>
 </html>"""
+
+
+@router.get("/performer")
+def performer_page() -> FileResponse:
+    return FileResponse(PERFORMER_STATIC_DIR / "performer.html", media_type="text/html")
+
+
+@router.get("/performer/assets/shana/default.png")
+def performer_default_image() -> FileResponse:
+    if not SHANA_DEFAULT_IMAGE.exists():
+        raise HTTPException(status_code=404, detail="default performer image not found")
+    return FileResponse(SHANA_DEFAULT_IMAGE, media_type="image/png")
 
 
 @router.get("/v1/assistant/demo", response_model=AssistantResponse)
@@ -242,6 +277,49 @@ def stream_pending_queue() -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/v1/performer/events/recent")
+def performer_recent_events(limit: int = 50) -> dict:
+    try:
+        items = [event.model_dump() for event in get_performer_bus().recent(limit=limit)]
+        return {"items": items, "stats": get_performer_bus().stats()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/v1/audio/artifacts/{filename}")
+def audio_artifact(filename: str) -> FileResponse:
+    safe_name = Path(filename).name
+    audio_path = settings.audio_output_dir / safe_name
+    try:
+        if audio_path.resolve().parent != settings.audio_output_dir.resolve():
+            raise HTTPException(status_code=400, detail="invalid audio artifact path")
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail="invalid audio artifact path") from exc
+    if not audio_path.exists() or not audio_path.is_file():
+        raise HTTPException(status_code=404, detail="audio artifact not found")
+    media_type = mimetypes.guess_type(str(audio_path))[0] or "application/octet-stream"
+    return FileResponse(str(audio_path), media_type=media_type)
+
+
+@router.websocket("/v1/performer/events")
+async def performer_events(websocket: WebSocket, replay_recent: int = 0) -> None:
+    if not _websocket_api_auth_ok(websocket):
+        await websocket.close(code=1008)
+        return
+    await websocket.accept()
+    bus = get_performer_bus()
+    subscriber_id, queue = await bus.subscribe(replay_recent=max(0, min(replay_recent, 100)))
+    await websocket.send_json({"type": "ready", "subscriber_id": subscriber_id, "stats": bus.stats()})
+    try:
+        while True:
+            payload = await queue.get()
+            await websocket.send_json(payload)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        bus.unsubscribe(subscriber_id)
 
 
 @router.get("/v1/stream/temp-memory")

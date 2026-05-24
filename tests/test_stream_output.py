@@ -5,10 +5,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import anyio
+
+from gamma.config import settings
+from gamma.performer.bus import PerformerEventBus
+from gamma.performer.models import performer_event_from_stream_output
 from gamma.schemas.response import AssistantResponse
 from gamma.stream.brain import StreamBrain
 from gamma.stream.models import StreamInputEvent, StreamOutputEvent
-from gamma.stream.output import JsonlStreamOutputAdapter, StreamOutputDispatcher, StreamOutputLogService
+from gamma.stream.output import JsonlStreamOutputAdapter, PerformerBusOutputAdapter, StreamOutputDispatcher, StreamOutputLogService
 from gamma.stream.trace import StreamTraceStore
 
 
@@ -52,6 +57,76 @@ class StreamOutputTest(unittest.TestCase):
         self.assertEqual(recent[1]["adapter_payload"]["speech"], "ended")
         self.assertTrue(recent[1]["adapter_payload"]["interrupted"])
 
+    def test_stream_output_maps_to_generic_performer_events(self) -> None:
+        subtitle = StreamOutputEvent(input_event_id="in-1", turn_id="turn-1", type="subtitle_line", payload={"text": "Hello."})
+        clear = StreamOutputEvent(input_event_id="in-1", turn_id="turn-1", type="subtitle_line", payload={"text": "", "clear": True})
+        emotion = StreamOutputEvent(input_event_id="in-1", turn_id="turn-1", type="emotion_changed", payload={"emotion": "happy"})
+        motion = StreamOutputEvent(input_event_id="in-1", turn_id="turn-1", type="avatar_motion", payload={"motion": "wave"})
+
+        subtitle_event = performer_event_from_stream_output(subtitle)
+        clear_event = performer_event_from_stream_output(clear)
+        emotion_event = performer_event_from_stream_output(emotion)
+        motion_event = performer_event_from_stream_output(motion)
+
+        self.assertIsNotNone(subtitle_event)
+        self.assertEqual(subtitle_event.type, "subtitle_update")
+        self.assertEqual(subtitle_event.payload["text"], "Hello.")
+        self.assertEqual(clear_event.type, "subtitle_clear")  # type: ignore[union-attr]
+        self.assertEqual(emotion_event.type, "expression_set")  # type: ignore[union-attr]
+        self.assertEqual(emotion_event.payload["expression"], "happy")  # type: ignore[union-attr]
+        self.assertEqual(motion_event.type, "motion_trigger")  # type: ignore[union-attr]
+        self.assertEqual(motion_event.payload["motion"], "wave")  # type: ignore[union-attr]
+
+    def test_performer_speech_event_uses_network_safe_audio_url(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            audio_path = Path(temp_dir) / "tts-test.wav"
+            audio_path.write_bytes(b"RIFF")
+            with (
+                patch.object(settings, "audio_output_dir", Path(temp_dir)),
+                patch.object(settings, "shana_public_host", "192.168.1.50"),
+                patch.object(settings, "shana_port", 8000),
+            ):
+                stream_event = StreamOutputEvent(
+                    input_event_id="in-1",
+                    turn_id="turn-1",
+                    type="speech_started",
+                    payload={"audio_path": str(audio_path), "audio_content_type": "audio/wav"},
+                )
+                performer_event = performer_event_from_stream_output(stream_event)
+
+        self.assertEqual(performer_event.type, "speech_started")  # type: ignore[union-attr]
+        self.assertNotIn("audio_path", performer_event.payload)  # type: ignore[union-attr]
+        self.assertEqual(performer_event.payload["audio_artifact"], "tts-test.wav")  # type: ignore[union-attr]
+        self.assertEqual(performer_event.payload["audio_url"], "http://192.168.1.50:8000/v1/audio/artifacts/tts-test.wav")  # type: ignore[union-attr]
+
+    def test_performer_bus_adapter_publishes_recent_events(self) -> None:
+        bus = PerformerEventBus()
+        adapter = PerformerBusOutputAdapter(bus)
+        stream_event = StreamOutputEvent(input_event_id="in-1", turn_id="turn-1", type="subtitle_line", payload={"text": "Hello."})
+
+        record = adapter.handle(stream_event)
+        recent = bus.recent(limit=5)
+
+        self.assertTrue(record.ok)
+        self.assertEqual(record.metadata["performer_event_type"], "subtitle_update")
+        self.assertEqual(len(recent), 1)
+        self.assertEqual(recent[0].payload["text"], "Hello.")
+
+    def test_performer_bus_replays_recent_events_to_subscriber(self) -> None:
+        async def run_case() -> None:
+            bus = PerformerEventBus()
+            adapter = PerformerBusOutputAdapter(bus)
+            adapter.handle(StreamOutputEvent(input_event_id="in-1", turn_id="turn-1", type="subtitle_line", payload={"text": "One"}))
+            subscriber_id, queue = await bus.subscribe(replay_recent=1)
+            try:
+                payload = await queue.get()
+            finally:
+                bus.unsubscribe(subscriber_id)
+            self.assertEqual(payload["type"], "subtitle_update")
+            self.assertEqual(payload["payload"]["text"], "One")
+
+        anyio.run(run_case)
+
     def test_stream_brain_dispatches_output_events(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             adapter = JsonlStreamOutputAdapter(Path(temp_dir) / "outputs.jsonl")
@@ -77,6 +152,28 @@ class StreamOutputTest(unittest.TestCase):
             recent = service.recent_outputs(limit=1)
 
         self.assertEqual(recent[0]["output_event"]["payload"]["text"], "Two")
+
+    def test_performer_recent_events_route_reads_bus(self) -> None:
+        from gamma.api.routes import audio_artifact, performer_recent_events
+
+        bus = PerformerEventBus()
+        PerformerBusOutputAdapter(bus).handle(
+            StreamOutputEvent(input_event_id="in-1", turn_id="turn-1", type="subtitle_line", payload={"text": "Monitor this."})
+        )
+        with patch("gamma.api.routes.get_performer_bus", return_value=bus):
+            result = performer_recent_events(limit=5)
+
+        self.assertEqual(result["items"][0]["type"], "subtitle_update")
+        self.assertEqual(result["items"][0]["payload"]["text"], "Monitor this.")
+        self.assertEqual(result["stats"]["history_count"], 1)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            audio_path = Path(temp_dir) / "tts-test.wav"
+            audio_path.write_bytes(b"RIFF")
+            with patch.object(settings, "audio_output_dir", Path(temp_dir)):
+                file_response = audio_artifact("tts-test.wav")
+
+        self.assertEqual(file_response.media_type, "audio/x-wav")
 
     def test_stream_output_routes_delegate_to_service(self) -> None:
         from gamma.api.routes import stream_recent_outputs, stream_temp_memory, stream_temp_memory_clear

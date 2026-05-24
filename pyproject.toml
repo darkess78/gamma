@@ -36,3 +36,6 @@ package-dir = {"" = "."}
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["gamma*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

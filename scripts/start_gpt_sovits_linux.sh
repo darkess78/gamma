@@ -13,7 +13,9 @@ STDOUT_LOG="${RUNTIME_DIR}/gpt_sovits.stdout.log"
 STDERR_LOG="${RUNTIME_DIR}/gpt_sovits.stderr.log"
 
 if [[ -z "${PYTHON_BIN}" ]]; then
-  if [[ -x "${PACKAGE_ROOT}/runtime/python" ]]; then
+  if [[ -x "${PACKAGE_ROOT}/.venv/bin/python" ]]; then
+    PYTHON_BIN="${PACKAGE_ROOT}/.venv/bin/python"
+  elif [[ -x "${PACKAGE_ROOT}/runtime/python" ]]; then
     PYTHON_BIN="${PACKAGE_ROOT}/runtime/python"
   elif [[ -x "${PACKAGE_ROOT}/runtime/bin/python" ]]; then
     PYTHON_BIN="${PACKAGE_ROOT}/runtime/bin/python"

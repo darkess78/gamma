@@ -37,6 +37,11 @@ class ExpressiveTextTest(unittest.TestCase):
         self.assertIn("concerned tone", instruct or "")
         self.assertIn("quiet nearby voice", instruct or "")
 
+    def test_qwen_neutral_emotion_does_not_override_base_style(self) -> None:
+        instruct = build_qwen_instruct(base_instruct="Keep the voice soft.", emotion="neutral")
+
+        self.assertEqual(instruct, "Keep the voice soft.")
+
     def test_qwen_speed_is_selected_from_internal_emotion(self) -> None:
         backend = QwenTTSBackend(
             SimpleNamespace(
@@ -64,6 +69,7 @@ class ExpressiveTextTest(unittest.TestCase):
                     "speed": 0.82,
                     "output_peak": 0.64,
                     "speed_by_emotion": {"default": 0.82, "excited": 0.86},
+                    "output_peak_by_emotion": {"default": 0.64, "excited": 0.62},
                 },
             )
         )
@@ -77,7 +83,7 @@ class ExpressiveTextTest(unittest.TestCase):
         self.assertEqual(fast["speed"], 0.87)
         self.assertEqual(fast["output_peak"], 0.64)
         self.assertEqual(excited["speed"], 0.87)
-        self.assertAlmostEqual(excited["output_peak"], 0.7)
+        self.assertAlmostEqual(excited["output_peak"], 0.68)
 
     def test_qwen_server_allows_longer_generation_for_long_text(self) -> None:
         text = (

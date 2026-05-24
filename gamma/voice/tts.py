@@ -84,14 +84,14 @@ class TTSService:
 
     _MAX_CHUNK_CHARS = 3800  # conservative limit; keeps all backends happy (OpenAI caps at 4096)
 
-    def synthesize_multipart(self, text: str) -> TTSResult:
+    def synthesize_multipart(self, text: str, emotion: str | None = None, styles: list[str] | None = None) -> TTSResult:
         """Split *text* into paragraph/sentence chunks, synthesize each, and stitch WAV frames."""
         chunks = self._split_text(text)
         if not chunks:
             raise ValueError("text is empty after parsing")
         if len(chunks) == 1:
-            return self.synthesize(chunks[0])
-        results = [self.synthesize(chunk) for chunk in chunks]
+            return self.synthesize(chunks[0], emotion=emotion, styles=styles)
+        results = [self.synthesize(chunk, emotion=emotion, styles=styles) for chunk in chunks]
         return self._concat_wav_results(results)
 
     def _split_text(self, text: str) -> list[str]:
@@ -504,6 +504,11 @@ class QwenTTSBackend(BaseFileTTSBackend):
             speed = self._select_emotion_speed(speed_by_emotion, emotion)
             if speed is not None:
                 extra["speed"] = speed
+        output_peak_by_emotion = extra.pop("output_peak_by_emotion", None)
+        if isinstance(output_peak_by_emotion, dict):
+            output_peak = self._select_emotion_output_peak(output_peak_by_emotion, emotion)
+            if output_peak is not None:
+                extra["output_peak"] = output_peak
         self._apply_voice_styles(extra, styles or [])
         return extra
 
@@ -553,6 +558,21 @@ class QwenTTSBackend(BaseFileTTSBackend):
             except (TypeError, ValueError):
                 continue
             return max(0.75, min(1.2, speed))
+        return None
+
+    def _select_emotion_output_peak(self, output_peak_by_emotion: dict[Any, Any], emotion: str | None) -> float | None:
+        keys = []
+        if emotion:
+            keys.append(str(emotion).strip().lower())
+        keys.extend(["default", "neutral"])
+        for key in keys:
+            if key not in output_peak_by_emotion:
+                continue
+            try:
+                output_peak = float(output_peak_by_emotion[key])
+            except (TypeError, ValueError):
+                continue
+            return max(0.48, min(0.78, output_peak))
         return None
 
     def _validate_wav_payload(self, audio_bytes: bytes) -> None:

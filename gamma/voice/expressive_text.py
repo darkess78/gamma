@@ -39,11 +39,11 @@ _TAG_TO_STYLE: dict[str, str] = {
 }
 
 _EMOTION_TO_INSTRUCT: dict[str, str] = {
-    "neutral": "Speak naturally with a steady neutral tone. Keep the pacing even and restrained.",
-    "happy": "Use clearly happy prosody: brighter pitch, a lighter smile in the voice, warmer energy, and more upward lift at phrase endings while keeping the words clear.",
+    "neutral": "",
+    "happy": "Use a clearly happier mood through a small smile in the voice, warmer cadence, and lighter rhythm. Keep the same distance and controlled volume; do not sound louder or closer.",
     "teasing": "Use an obviously playful teasing tone with a sly smile in the voice, light rhythm, and a touch of amused mischief rather than harshness.",
     "concerned": "Use a noticeably softer concerned tone with gentler pacing, careful emphasis, and supportive warmth.",
-    "excited": "Use clearly excited delivery with higher energy, quicker pace, brighter pitch, and emphatic stress while keeping articulation clean.",
+    "excited": "Use excited delivery through quicker pace, brighter rhythm, and more animated timing while keeping articulation clean and volume controlled.",
     "embarrassed": "Use a shy embarrassed tone with slight hesitation, softer attack, and a small wavering uncertainty in the voice.",
     "annoyed": "Use mild but audible annoyed restraint with terser pacing, flatter warmth, and clipped emphasis while staying controlled.",
 }
@@ -95,7 +95,7 @@ def build_qwen_instruct(*, base_instruct: str | None, emotion: str | None, style
     parts: list[str] = []
     if base_instruct and base_instruct.strip():
         parts.append(base_instruct.strip())
-    if emotion and emotion in _EMOTION_TO_INSTRUCT:
+    if emotion and emotion in _EMOTION_TO_INSTRUCT and _EMOTION_TO_INSTRUCT[emotion]:
         parts.append(_EMOTION_TO_INSTRUCT[emotion])
     seen: set[str] = set()
     for style in styles or []:

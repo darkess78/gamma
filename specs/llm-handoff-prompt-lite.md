@@ -12,9 +12,10 @@ Gamma is a local Shana assistant stack with:
 - local memory
 - pluggable STT / TTS / LLM backends
 - stream brain and Twitch operator controls
+- early performer output bus and `/performer` browser page for Stream PC / OBS testing
 - optional dataset-prep tooling
 
-Current practical focus is the live assistant/dashboard workflow and Twitch/stream operator workflow, not the old dataset-prep-first roadmap.
+Current practical focus is the live assistant/dashboard workflow, Twitch/stream operator workflow, and the new performer output path, not the old dataset-prep-first roadmap.
 
 ## Important Files
 
@@ -31,10 +32,22 @@ Current practical focus is the live assistant/dashboard workflow and Twitch/stre
   Status payloads, provider actions, memory actions, stream/Twitch status and actions.
 
 - [gamma/api/routes.py](/home/neety/.openclaw/workspace/gamma-main/gamma/api/routes.py)
-  Assistant API routes for conversation, vision, voice, stream events, stream logs, queue, temp memory, self-goals, and stream stop.
+  Assistant API routes for conversation, vision, voice, stream events, stream logs, queue, temp memory, self-goals, stream stop, performer websocket/page, and audio artifact serving.
 
 - [gamma/stream/brain.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/brain.py)
   Stream event decision engine, safety/policy handling, speech queue, output emission.
+
+- [gamma/stream/output.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/output.py)
+  Stream output dispatcher. Default dispatch persists JSONL logs and publishes generic performer events.
+
+- [gamma/performer/models.py](/home/neety/.openclaw/workspace/gamma-main/gamma/performer/models.py)
+  Runtime-agnostic performer event models and stream-output mapping.
+
+- [gamma/performer/bus.py](/home/neety/.openclaw/workspace/gamma-main/gamma/performer/bus.py)
+  In-process performer event bus with recent history and websocket subscribers.
+
+- [gamma/performer/static/performer.html](/home/neety/.openclaw/workspace/gamma-main/gamma/performer/static/performer.html)
+  Minimal Stream PC / OBS browser-source page for subtitles, state, and Shana audio playback.
 
 - [gamma/stream/temp_memory.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/temp_memory.py)
   Short-lived stream memory store.
@@ -72,6 +85,7 @@ Current practical focus is the live assistant/dashboard workflow and Twitch/stre
 - `gamma/dashboard/` - operator dashboard app/service/static UI
 - `gamma/integrations/twitch/` - Twitch IRC/EventSub/replay/safety/trust adapters
 - `gamma/stream/` - stream brain, output, traces, replay, queue helpers, temp memory, self-goals
+- `gamma/performer/` - performer event bus, generic output models, and browser performer page
 - `gamma/voice/` - STT/TTS, live voice, live jobs/runtime, roundtrip, controller, reply helpers
 - `gamma/safety/` - privacy and speech/stream safety layers
 - `gamma/llm/` - mock/OpenAI/local/router adapters
@@ -88,8 +102,13 @@ Current practical focus is the live assistant/dashboard workflow and Twitch/stre
 - browser live voice currently works
 - browser capture still uses deprecated `ScriptProcessorNode`
 - stream event API, stream output logs, queue, temp memory, and self-goals are implemented
+- performer output bus is implemented for generic subtitle/speech/expression/motion events
+- `/performer` serves a minimal browser performer page for Stream PC / OBS testing
+- `WebSocket /v1/performer/events` streams performer events; `GET /v1/performer/events/recent` exposes recent bus history
+- `GET /v1/audio/artifacts/{filename}` serves network-safe TTS WAV artifacts from the Shana API
 - Twitch IRC/EventSub workers, runtime controls, viewer trust, and replay tooling are implemented
 - public stream speech should stay operator-supervised and safe-by-default
+- performer clients should not depend on Shana PC local file paths; use `audio_url` / artifact endpoints
 - dashboard now has:
   - mute mic
   - mute Shana
@@ -117,15 +136,18 @@ Do not:
 - merge proxy-facing public port with internal dashboard bind port
 - regress the Linux-hosted / Windows-browser flow that currently works
 - bypass stream safety, dry-run, queueing, or operator review for Twitch-facing speech
+- put VTube Studio-specific logic into `ConversationService`, `StreamBrain`, or core voice code; keep it in a future performer adapter/client
 
 ## Validation
 
 Use:
 
 ```bash
-./.venv/bin/python -m unittest discover -s tests -v
+./.venv/bin/python -m pytest
 ./.venv/bin/python -m gamma.supervisor.cli restart dashboard
 ```
+
+`pytest` is scoped to `tests/` in `pyproject.toml` so vendored sidecar tests under `data/` are not collected.
 
 Useful smoke tests:
 

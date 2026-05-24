@@ -24,10 +24,16 @@ Gamma is a local assistant stack centered on a Shana persona, with these main pa
    temporary stream memory, self-goal proposal review, Twitch IRC/EventSub
    ingestion, and dashboard operator controls.
 
-5. TTS dataset prep tooling
+5. Performer output path
+   The assistant backend now has an early performer output bus. Stream output
+   events can be translated into generic performer events and served to browser
+   clients over a Shana API websocket. A minimal `/performer` page exists for
+   Stream PC / OBS browser-source testing.
+
+6. TTS dataset prep tooling
    The Tkinter dataset-prep tool still exists, but it is not the primary focus of the current repo state.
 
-Current practical focus: the dashboard/browser voice workflow, the Twitch/stream operator workflow, and Linux/Windows compatibility for the live assistant path.
+Current practical focus: the dashboard/browser voice workflow, the Twitch/stream operator workflow, the new performer output bus, and Linux/Windows compatibility for the live assistant path.
 
 ## Current State
 
@@ -60,6 +66,11 @@ Recent important changes:
 - Twitch controls now cover IRC worker lifecycle, EventSub lifecycle, runtime settings, viewer trust, replay, and dry-run replay
 - Stream safety now has configurable LLM review timeout behavior and fallback audio support
 - Stream/voice stack launcher scripts were added for starting the practical Shana runtime bundles
+- A new performer output bus was added under `gamma/performer/`
+- Stream output dispatch now publishes both JSONL log events and generic performer events
+- Shana API exposes `WebSocket /v1/performer/events`, `GET /v1/performer/events/recent`, `GET /performer`, and `GET /v1/audio/artifacts/{filename}`
+- The `/performer` browser page can be opened on the Stream PC or in OBS as an early audio/subtitle/expression monitor
+- Pytest discovery is scoped to `tests/` in `pyproject.toml` so vendored/sidecar tests under `data/` are not collected by normal Gamma test runs
 
 ## Architecture Map
 
@@ -69,7 +80,7 @@ Recent important changes:
   FastAPI entrypoint for the assistant backend.
 
 - [gamma/api/routes.py](/home/neety/.openclaw/workspace/gamma-main/gamma/api/routes.py)
-  Main API routes for conversation, vision, and voice APIs.
+  Main API routes for conversation, vision, voice, stream, performer websocket, performer page, and audio artifact APIs.
 
 - [gamma/conversation/service.py](/home/neety/.openclaw/workspace/gamma-main/gamma/conversation/service.py)
   Core conversation pipeline. Builds persona/system prompt, runs LLM, memory extraction, and optional TTS.
@@ -107,7 +118,7 @@ Recent important changes:
   Shared stream input, decision, action, and result models.
 
 - [gamma/stream/output.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/output.py)
-  Stream output JSONL adapter for subtitles, avatar/emotion events, audio references, and diagnostics.
+  Stream output dispatchers. The default dispatcher persists JSONL output records and publishes generic performer events to the performer bus.
 
 - [gamma/stream/trace.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/trace.py)
   Stream trace persistence and recent trace reading.
@@ -120,6 +131,24 @@ Recent important changes:
 
 - [gamma/stream/self_goals.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/self_goals.py)
   Proposed self-goal storage and approve/reject/clear workflow.
+
+### Performer Output Bus
+
+- [gamma/performer/models.py](/home/neety/.openclaw/workspace/gamma-main/gamma/performer/models.py)
+  Generic performer output event models and mapping from stream output events. This is where subtitle, speech, expression, motion, and clear events become runtime-agnostic performer events.
+
+- [gamma/performer/bus.py](/home/neety/.openclaw/workspace/gamma-main/gamma/performer/bus.py)
+  In-process performer event bus with recent history and asyncio subscriber queues.
+
+- [gamma/performer/static/performer.html](/home/neety/.openclaw/workspace/gamma-main/gamma/performer/static/performer.html)
+  Minimal Stream PC / OBS browser-source page. It connects to `/v1/performer/events`, shows subtitles/state, and plays audio from network-safe `audio_url` payloads.
+
+Performer API routes currently live in [gamma/api/routes.py](/home/neety/.openclaw/workspace/gamma-main/gamma/api/routes.py):
+- `GET /performer`
+- `GET /performer/assets/shana/default.png`
+- `GET /v1/performer/events/recent`
+- `WebSocket /v1/performer/events`
+- `GET /v1/audio/artifacts/{filename}`
 
 ### Twitch Integration
 
@@ -221,6 +250,7 @@ Use this as the high-level map before editing:
 - `gamma/llm/` - mock, OpenAI, local/Ollama, and router LLM adapters
 - `gamma/memory/` - SQLModel memory models and SQLite-backed memory service
 - `gamma/persona/` - Shana prompt source files, emotional state, and persona loaders
+- `gamma/performer/` - performer output event models, in-process output bus, and Stream PC browser performer page
 - `gamma/safety/` - privacy guard, speech filter, hard rules, heuristic checks, LLM reviewer, and rewrite guard
 - `gamma/schemas/` - API schema models
 - `gamma/stream/` - stream brain, models, traces, output log, replay, temporary memory, and self-goals
@@ -285,6 +315,28 @@ Dashboard controls exist for:
 - stream traces, safety findings, outputs, queue, temp memory, self-goals, and stream stop
 
 Preserve operator review points for potentially public speech. Avoid making Twitch speech-on behavior the default unless the config already explicitly enables it.
+
+### Performer / Stream PC Output
+
+The new performer path is the first implementation slice of `specs/shana_output_bus.md`.
+
+Current behavior:
+
+- Stream output events are still persisted to JSONL.
+- The same stream output events are also mapped into generic performer events.
+- Performer clients can subscribe to `WebSocket /v1/performer/events`.
+- Clients can request recent events through `GET /v1/performer/events/recent`.
+- The `/performer` page is intended as a simple Stream PC / OBS browser source.
+- Audio payloads should be network-safe. If a stream event has an `audio_path` inside `settings.audio_output_dir`, the performer payload removes the local path and exposes:
+  - `audio_artifact`
+  - `audio_url`
+- The Shana API serves those artifacts through `GET /v1/audio/artifacts/{filename}`.
+
+Important design intent:
+
+- Keep Gamma/StreamBrain runtime-agnostic. Do not put VTube Studio-specific logic in `ConversationService`, `StreamBrain`, or core voice code.
+- The current `/performer` page is a first browser client, not the final VTuber adapter.
+- Future VTube Studio support should translate generic performer events into VTS API calls in an adapter/client layer.
 
 ## Current Provider Defaults In Practice
 
@@ -385,16 +437,27 @@ If you are changing stream/Twitch behavior:
 6. Check [gamma/dashboard/static/dashboard.js](/home/neety/.openclaw/workspace/gamma-main/gamma/dashboard/static/dashboard.js)
 7. Check relevant Twitch adapter files under [gamma/integrations/twitch/](/home/neety/.openclaw/workspace/gamma-main/gamma/integrations/twitch)
 
+If you are changing performer/output-bus behavior:
+
+1. Check [specs/shana_output_bus.md](/home/neety/.openclaw/workspace/gamma-main/specs/shana_output_bus.md)
+2. Check [gamma/performer/models.py](/home/neety/.openclaw/workspace/gamma-main/gamma/performer/models.py)
+3. Check [gamma/performer/bus.py](/home/neety/.openclaw/workspace/gamma-main/gamma/performer/bus.py)
+4. Check [gamma/stream/output.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/output.py)
+5. Check [gamma/api/routes.py](/home/neety/.openclaw/workspace/gamma-main/gamma/api/routes.py)
+6. Check [gamma/performer/static/performer.html](/home/neety/.openclaw/workspace/gamma-main/gamma/performer/static/performer.html)
+
 ## Test / Validation Expectations
 
 Current useful validation commands:
 
 ```bash
-./.venv/bin/python -m unittest discover -s tests -v
+./.venv/bin/python -m pytest
 ./.venv/bin/python -m gamma.supervisor.cli start dashboard
 ./.venv/bin/python -m gamma.supervisor.cli start shana
 ./.venv/bin/python -m gamma.supervisor.cli restart dashboard
 ```
+
+`pytest` is intentionally scoped to `tests/` in `pyproject.toml`; do not remove that unless vendored/sidecar test directories under `data/` are excluded another way.
 
 Useful provider smoke tests:
 

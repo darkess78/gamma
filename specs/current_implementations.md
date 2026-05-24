@@ -1,6 +1,6 @@
 # Current Implementations
 
-Last updated: 2026-05-16
+Last updated: 2026-05-24
 
 This is a baseline inventory of features that are already implemented in Gamma. It is intended to support future TODO planning, so it focuses on concrete working surfaces in the codebase rather than aspirational roadmap items.
 
@@ -16,6 +16,7 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - Layered runtime configuration from `config/app.example.toml`, `config/app.toml`, `config/app.local.toml`, `.env`, and process environment variables.
 - Separate bind-host and public-host configuration for local-only or LAN use.
 - Runtime data directories for audio, images, timings, stream logs, and live voice job state.
+- Stream/Twitch runtime settings and operator controls are represented in layered config.
 
 ## Conversation Pipeline
 
@@ -147,15 +148,33 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - Proactive idle settings are configurable.
 - Conversation-lull events can be emitted as dry-run stream events.
 - Stream event endpoint at `POST /v1/stream/events`.
+- Stream stop endpoint can cancel active live turns and clear stream-facing speech/subtitle state.
 - Stream brain classifies events such as chat messages, owner commands, mic transcripts, donations, redeems, moderator actions, game state, system events, and conversation lulls.
-- Stream brain decides whether to reply, acknowledge, defer, ignore, or escalate moderation.
+- Stream brain decides whether to reply, acknowledge, defer, ignore, escalate moderation, play fallback audio, queue speech, or propose a self-goal.
+- Stream brain can apply per-event Twitch runtime controls for dry-run, voice/subtitle enablement, ambient chat, mention replies, spam quips, self-goal proposals, LLM safety review, and rate limits.
 - Stream events can call the conversation service with actor/speaker context.
 - Stream action planner converts assistant responses into action plans.
 - Stream output events include subtitle lines, emotion changes, and avatar motion events.
 - JSONL stream output adapter persists stream output events.
 - Stream traces are stored and exposed through recent trace endpoints.
 - Recent stream output endpoint is implemented.
+- Pending stream speech queue endpoint is implemented.
+- Temporary stream memory listing and clearing endpoints are implemented.
+- Stream self-goal listing, approve, reject, and clear endpoints are implemented.
 - Stream replay/evaluation service can inspect recent stream turns and report findings.
+- Filtered/fallback audio for stream safety responses is available as a tracked runtime asset.
+
+## Twitch Integration
+
+- Twitch IRC ingestion worker reads chat over IRC, normalizes messages, applies runtime controls, and posts events to the Gamma stream API.
+- Twitch EventSub websocket worker handles stream events such as follows, raids, redeems, bits, subscriptions, and moderation-style events.
+- Twitch replay utility can post JSONL replay events through the stream API for repeatable tests.
+- Twitch dry-run replay is exposed through the dashboard.
+- Twitch chat sanitizer classifies spam, bots, blocked content, and trust-sensitive messages before stream handling.
+- Viewer trust store tracks Twitch viewer trust level, pronunciation alias, and notes.
+- Dashboard controls can start/stop Twitch IRC and EventSub workers.
+- Dashboard controls can view/save Twitch runtime settings and viewer trust records.
+- Stream readiness/status payloads combine Twitch configuration, worker state, EventSub state, and stream safety state.
 
 ## Dashboard
 
@@ -174,6 +193,9 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - Recent conversation timing summary.
 - Recent LLM route summary.
 - Recent live voice, stream trace, stream eval, and stream output panels.
+- Stream safety, pending speech queue, temporary memory, and self-goal panels.
+- Stream stop control for stopping speech and clearing stream subtitles.
+- Twitch worker, EventSub, runtime settings, viewer trust, replay, and dry-run replay controls.
 - Dashboard vision analysis and vision response routes.
 - WebSocket live voice route.
 
@@ -181,6 +203,8 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 
 - Process manager for managed services.
 - Shared Python launchers for opening Gamma, starting Shana, starting the dashboard, starting the tray, and stopping services.
+- Managed Twitch IRC worker and Twitch EventSub worker services.
+- Stream and voice stack starter scripts for launching practical Shana runtime bundles.
 - Windows convenience wrappers.
 - Linux convenience wrappers.
 - Linux desktop entry templates.
@@ -202,9 +226,12 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 
 - Privacy guard refuses doxxing-style requests for private identifying information before the LLM is called.
 - Privacy guard output filtering replaces accidental IP, email, phone, street address, or coordinate leaks with a refusal.
+- Privacy guard includes streamer-facing checks for unsafe private identity, location, contact, and credential leakage patterns.
 - Speech safety policy combines hard blocklist, heuristic checks, optional LLM review, and rewrite behavior.
 - Speech filtering is applied before spoken text is returned to clients or synthesized.
 - Configurable speech filter level and layer enablement.
+- Stream safety review timeout and timeout action are configurable.
+- Stream/Twitch safety behavior can skip, fall back, or use filtered audio depending on decision and runtime controls.
 - Matched rules, action, blocked status, and layer metadata can be attached to TTS metadata.
 - Rewrite guard exists for safe text rewrite actions.
 
@@ -256,6 +283,7 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - Stream brain tests.
 - Stream output tests.
 - Stream replay tests.
+- Twitch integration tests.
 - Torch device tests.
 - Voice affect tests.
 

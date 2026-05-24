@@ -13,3 +13,4 @@ Suggested reading order:
 6. `streamer_plan/streamer_roadmap.md` for the staged AI-streamer architecture direction
 7. `streamer_plan/streamer_roadmap_current.md` for the mature current-state target architecture
 8. `streamer_plan/streamer_gap_backlog.md` for the bridge from the current repo to the target state
+9. `shana_output_bus.md` for the planned three-PC output bus, performer, dashboard monitor, VTuber, and Discord communication architecture

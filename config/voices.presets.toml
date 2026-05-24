@@ -54,6 +54,21 @@ denoise_enabled = true
 denoise_strength = 1.8
 denoise_gain = 1.0
 
+[profiles.gpt_sovits_shana_dataset_ref_soft]
+label = "GPT-SoVITS Shana Dataset Ref Soft"
+provider = "local"
+description = "GPT-SoVITS comparison profile using a clean prompt-length Shana dataset reference."
+gpt_sovits_endpoint = "http://127.0.0.1:9881/tts"
+gpt_sovits_reference_audio = "./assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_18_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0004.wav"
+gpt_sovits_prompt_text = "明日は浴衣を着て幼児をびっくりさせる そして一緒に祭りに行って"
+gpt_sovits_prompt_lang = "ja"
+gpt_sovits_text_lang = "en"
+gpt_sovits_timeout_seconds = 120
+gpt_sovits_extra_json = { top_k = 4, top_p = 0.8, temperature = 0.55, text_split_method = "cut4", batch_size = 1, batch_threshold = 0.75, split_bucket = true, speed_factor = 0.98, fragment_interval = 0.25, seed = 23 }
+denoise_enabled = true
+denoise_strength = 1.4
+denoise_gain = 1.0
+
 [profiles.henya_rvc]
 label = "Henya RVC"
 provider = "piper"
@@ -126,3 +141,26 @@ qwen_tts_language = "English"
 qwen_tts_instruct = "Keep Shana's character identity and voice color, but speak English with neutral broadcast-style pronunciation. Preserve timbre and character through the reference voice, not through foreign accent. Use natural English stress, smooth connected phrasing, clear consonant endings, controlled volume, clear articulation, and relaxed non-nasal resonance. Avoid Japanese accent, katakana-like rhythm, vowel insertion between consonants, clipped final consonants, nasal or country twang, over-rounded vowels, sharp pitch lift, shouting, or harsh projection. Let any requested emotion still shape the performance without changing the core voice."
 qwen_tts_timeout_seconds = 120
 qwen_tts_extra_json = { temperature = 0.4, top_k = 8, top_p = 0.62, repetition_penalty = 1.0, speed = 0.82, output_peak = 0.64, speed_by_emotion = { neutral = 0.82, happy = 0.84, teasing = 0.83, concerned = 0.78, excited = 0.86, embarrassed = 0.78, annoyed = 0.8, default = 0.82 }, output_peak_by_emotion = { neutral = 0.64, happy = 0.6, teasing = 0.61, concerned = 0.58, excited = 0.62, embarrassed = 0.58, annoyed = 0.6, default = 0.64 }, max_new_tokens = 2048, min_new_tokens = 100 }
+
+[profiles.qwen_shana_dataset_ref_soft]
+label = "Qwen3-TTS Shana Dataset Ref Soft"
+provider = "qwen-tts"
+description = "Dataset-derived Shana reference using clean exact-agreement training-candidate clips; conservative English generation settings to reduce harshness and accent carryover."
+qwen_tts_endpoint = "http://127.0.0.1:9882/tts"
+qwen_tts_reference_audio = "./assets/voice_references/shana/shana_dataset_ref_22s.wav"
+qwen_tts_reference_text = "お前たちのは違う\nそれって、これのこと?\nいつかここを出て行く時も 一緒に\nユージは強くなれるよ\nうん、美味しい\nどうすればいいか、気持ちが教えてくれる\nでももう心配ない\n私に教えるつもりがあるなら、ちゃんと勉強してから出直しなさい\nそれでもまだ残してやった方よ"
+qwen_tts_language = "English"
+qwen_tts_instruct = "Keep Shana's same core voice, age impression, distance, and restrained delivery across every emotion. Speak English with neutral natural pronunciation and smooth connected phrasing. Preserve timbre from the reference, not Japanese accent. Keep consonants clear but gentle, vowels relaxed, pitch changes small, and volume controlled. Avoid harsh projection, shouting, nasal twang, katakana-like rhythm, vowel insertion between consonants, clipped final consonants, or switching into a different speaker. Treat emotion as a subtle acting layer only."
+qwen_tts_timeout_seconds = 120
+qwen_tts_extra_json = { temperature = 0.36, top_k = 8, top_p = 0.58, repetition_penalty = 1.0, speed = 0.84, output_peak = 0.6, speed_by_emotion = { neutral = 0.84, happy = 0.85, teasing = 0.84, concerned = 0.8, excited = 0.86, embarrassed = 0.8, annoyed = 0.82, default = 0.84 }, output_peak_by_emotion = { neutral = 0.6, happy = 0.59, teasing = 0.59, concerned = 0.56, excited = 0.6, embarrassed = 0.56, annoyed = 0.58, default = 0.6 }, max_new_tokens = 2048, min_new_tokens = 100 }
+
+[profiles.qwen_shana_dataset_xvec_soft]
+label = "Qwen3-TTS Shana Dataset XVec Soft"
+provider = "qwen-tts"
+description = "Experimental Shana profile using x-vector-only cloning to reduce Japanese reference prosody carryover while keeping conservative generation settings."
+qwen_tts_endpoint = "http://127.0.0.1:9882/tts"
+qwen_tts_reference_audio = "./assets/voice_references/shana/shana_dataset_ref_22s.wav"
+qwen_tts_reference_text = "お前たちのは違う\nそれって、これのこと?\nいつかここを出て行く時も 一緒に\nユージは強くなれるよ\nうん、美味しい\nどうすればいいか、気持ちが教えてくれる\nでももう心配ない\n私に教えるつもりがあるなら、ちゃんと勉強してから出直しなさい\nそれでもまだ残してやった方よ"
+qwen_tts_language = "English"
+qwen_tts_timeout_seconds = 120
+qwen_tts_extra_json = { x_vector_only_mode = true, temperature = 0.32, top_k = 6, top_p = 0.52, repetition_penalty = 1.0, speed = 0.84, output_peak = 0.58, speed_by_emotion = { neutral = 0.84, happy = 0.85, teasing = 0.84, concerned = 0.8, excited = 0.86, embarrassed = 0.8, annoyed = 0.82, default = 0.84 }, output_peak_by_emotion = { neutral = 0.58, happy = 0.57, teasing = 0.57, concerned = 0.54, excited = 0.58, embarrassed = 0.54, annoyed = 0.56, default = 0.58 }, max_new_tokens = 2048, min_new_tokens = 100 }

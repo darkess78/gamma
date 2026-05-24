@@ -6,6 +6,7 @@ import math
 import os
 import queue
 import subprocess
+import sys
 import threading
 import time
 import wave
@@ -18,6 +19,9 @@ from typing import Any
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import numpy as np
+
+DATA_ROOT_ENV = "GAMMA_TTS_DATA_PREP_ROOT"
+REPO_DATA_ROOT = Path(__file__).resolve().parents[1] / "data" / "tts_data_prep"
 
 try:
     from .run_prepare_tts_dataset import DEFAULT_EXCLUDE_PATTERNS
@@ -224,6 +228,14 @@ class TTSDataPrepApp:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _default_data_root(self) -> Path:
+        configured_root = os.getenv(DATA_ROOT_ENV, "").strip()
+        if configured_root:
+            return Path(configured_root).expanduser().resolve()
+        if not getattr(sys, "frozen", False):
+            return REPO_DATA_ROOT.resolve()
+        for parent in Path(sys.executable).resolve().parents:
+            if (parent / "pyproject.toml").exists() and (parent / "gamma").is_dir():
+                return (parent / "data" / "tts_data_prep").resolve()
         if os.name == "nt":
             base_dir = Path.home() / "AppData" / "Local"
         else:
@@ -1187,11 +1199,7 @@ class TTSDataPrepApp:
             self.labels.pop(self.current_record.clip_id, None)
             action = "cleared"
         else:
-            self.labels[self.current_record.clip_id] = {
-                "label": label,
-                "clip_path": self.current_record.clip_path,
-                "source_path": self.current_record.source_path,
-            }
+            self.labels[self.current_record.clip_id] = self._label_payload(self.current_record, label)
             action = f"marked {label}"
         self._write_labels(self._labels_path(), self.labels)
         self._append_log(f"[system] {self.current_record.clip_id} {action}", "system")
@@ -1820,7 +1828,7 @@ class TTSDataPrepApp:
             record = next((r for r in self.records if r.clip_id == clip_id), None)
             if record is None:
                 continue
-            self.labels[clip_id] = {"label": label, "clip_path": record.clip_path, "source_path": record.source_path}
+            self.labels[clip_id] = self._label_payload(record, label)
         self._write_labels(self._labels_path(), self.labels)
         if label == "Shana":
             self.similarity_scores = {}
@@ -1839,7 +1847,7 @@ class TTSDataPrepApp:
             record = next((r for r in self.records if r.clip_id == clip_id), None)
             if record is None:
                 continue
-            self.labels[clip_id] = {"label": label, "clip_path": record.clip_path, "source_path": record.source_path}
+            self.labels[clip_id] = self._label_payload(record, label)
         self._write_labels(self._labels_path(), self.labels)
         if label == "Shana":
             self.similarity_scores = {}
@@ -1850,6 +1858,22 @@ class TTSDataPrepApp:
         labels_path.parent.mkdir(parents=True, exist_ok=True)
         with labels_path.open("w", encoding="utf-8") as handle:
             json.dump(labels, handle, indent=2, ensure_ascii=False)
+
+    def _label_payload(self, record: ReviewRecord, label: str) -> dict[str, Any]:
+        return {
+            "label": label,
+            "clip_path": record.clip_path,
+            "source_path": record.source_path,
+            "episode_id": record.episode_id,
+            "start_seconds": record.start_seconds,
+            "end_seconds": record.end_seconds,
+            "duration_seconds": record.duration_seconds,
+            "language": record.language,
+            "text": record.text,
+            "avg_logprob": record.avg_logprob,
+            "no_speech_prob": record.no_speech_prob,
+            "compression_ratio": record.compression_ratio,
+        }
 
     def _append_record_to_manifest(self, record: ReviewRecord) -> None:
         manifest_path = self._manifest_path()

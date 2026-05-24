@@ -58,9 +58,13 @@ data/shana_dataset/exports/
 ```
 
 Packaged app storage:
-- the Windows executable now defaults its working data to `%LOCALAPPDATA%\GammaTTSDataPrep`
-- staging and dataset paths entered as relative paths are resolved under that persistent folder
-- this avoids losing extracted clips and labels when `dist/GammaTTSDataPrep` is rebuilt
+- when launched from source with `python -m gamma.run_tts_dataset_gui`, the GUI defaults its working data to `data/tts_data_prep`
+- when launched as the packaged Windows executable from this repo's `dist/GammaTTSDataPrep` folder, it also defaults its working data to `data/tts_data_prep`
+- when the packaged executable is moved outside the repo, it falls back to `%LOCALAPPDATA%\GammaTTSDataPrep`
+- set `GAMMA_TTS_DATA_PREP_ROOT` to override either default
+- staging and dataset paths entered as relative paths are resolved under the active working data folder
+- the repo-local default is ignored by git through `data/`, so reviewed clips are available to local Gamma tooling without committing large or copyrighted media
+- the packaged default still avoids losing extracted clips and labels when `dist/GammaTTSDataPrep` is rebuilt
 
 Ranking note:
 - the seeded similarity ranking currently uses only clips labeled `Shana` as the clean reference set

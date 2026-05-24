@@ -37,6 +37,9 @@ data/
 !assets/audio/
 !assets/audio/system/
 !assets/audio/system/filtered.wav
+!assets/voice_datasets/
+!assets/voice_datasets/shana/
+!assets/voice_datasets/shana/**/*.wav
 
 # Large/private local assets
 imagegen/

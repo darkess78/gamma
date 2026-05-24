@@ -18,7 +18,7 @@ provider = "stub"
 voice = "default"
 
 [local_workers]
-enabled = false
-summary_model = ""
-tagging_model = ""
+enabled = true
+summary_model = "gemma4:e4b"
+tagging_model = "gemma4:e4b"
 retrieval_model = ""

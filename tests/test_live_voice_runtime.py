@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from gamma.run_live_voice_worker import _run_incremental_experimental, _run_simple_chunked
+from gamma.config import settings
 from gamma.schemas.response import AssistantResponse
 from gamma.schemas.voice import LiveVoiceJobResponse
 from gamma.stream.models import StreamTurnResult, TurnDecision
@@ -103,6 +104,13 @@ class _FakeJobManager:
 
 
 class LiveVoiceRuntimeTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._original_speech_filter_llm_enabled = settings.speech_filter_llm_enabled
+        settings.speech_filter_llm_enabled = False
+
+    def tearDown(self) -> None:
+        settings.speech_filter_llm_enabled = self._original_speech_filter_llm_enabled
+
     def test_simple_chunked_live_voice_turn_routes_through_stream_brain(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)

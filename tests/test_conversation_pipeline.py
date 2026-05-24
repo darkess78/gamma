@@ -51,9 +51,12 @@ class _FakeTTSService:
 class ConversationPipelineTest(unittest.TestCase):
     def setUp(self) -> None:
         self._original_memory_personality = settings.memory_personality
+        self._original_speech_filter_llm_enabled = settings.speech_filter_llm_enabled
+        settings.speech_filter_llm_enabled = False
 
     def tearDown(self) -> None:
         settings.memory_personality = self._original_memory_personality
+        settings.speech_filter_llm_enabled = self._original_speech_filter_llm_enabled
 
     def test_fast_mode_strips_hidden_tone_tags_before_tts(self) -> None:
         service = ConversationService()

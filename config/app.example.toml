@@ -122,3 +122,19 @@ dashboard_session_secret = ""
 dashboard_cookie_secure = false
 api_auth_enabled = false
 api_bearer_token = ""
+
+[vtube_studio]
+enabled = false
+endpoint = "ws://127.0.0.1:8001"
+plugin_name = "Gamma Shana"
+plugin_developer = "Gamma"
+auth_token = ""
+expression_hotkeys = {}
+motion_hotkeys = {}
+
+[discord]
+enabled = false
+bot_token = ""
+guild_id = ""
+voice_channel_id = ""
+output_enabled = false

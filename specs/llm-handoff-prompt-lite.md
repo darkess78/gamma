@@ -102,9 +102,13 @@ Current practical focus is the live assistant/dashboard workflow, Twitch/stream 
 - browser live voice currently works
 - browser capture still uses deprecated `ScriptProcessorNode`
 - stream event API, stream output logs, queue, temp memory, and self-goals are implemented
-- performer output bus is implemented for generic subtitle/speech/expression/motion events
-- `/performer` serves a minimal browser performer page for Stream PC / OBS testing
-- `WebSocket /v1/performer/events` streams performer events; `GET /v1/performer/events/recent` exposes recent bus history
+- performer output bus is implemented for generic subtitle/speech/expression/motion events with target policies, monotonic sequences, replay resume, and replay gap reporting
+- `/performer`, `/monitor`, and `/overlay/subtitles` serve browser output clients for Stream/Gaming PC use
+- `WebSocket /v1/performer/events` streams performer events; `GET /v1/performer/events/recent` exposes recent bus history with `after_sequence`
+- `GET /v1/performer/status` reports bus stats, per-target latest events, output targets, and adapter status
+- VTube Studio adapter maps generic performer events to configured hotkey request payloads, includes an optional websocket/auth client, and has a runner that can subscribe to `stream_public` performer events
+- Discord adapter normalizes Discord message/voice inputs into stream input events with identity resolver support; a dependency-light runtime tracks config/status and isolated `discord_call` outputs, while the real bot/voice transport remains future work
+- performer bus now maintains a derived in-memory spoken-turn store and exposes recent turns through performer status
 - `GET /v1/audio/artifacts/{filename}` serves network-safe TTS WAV artifacts from the Shana API
 - Twitch IRC/EventSub workers, runtime controls, viewer trust, and replay tooling are implemented
 - public stream speech should stay operator-supervised and safe-by-default

@@ -359,6 +359,11 @@ Mute should not cancel Shana's turn globally unless explicitly requested.
 
 The existing live voice job state is a useful starting point, but spoken turn state should eventually become a shared backend concept rather than something owned only by the dashboard live voice path.
 
+Status: initial shared state implemented.
+- Performer bus publishes into a shared in-memory spoken-turn store.
+- Recent spoken turns are exposed through performer status.
+- Remaining work: make stream/live/Discord paths use this as the primary turn lifecycle owner instead of only deriving it from performer events.
+
 Expected turn states:
 
 ```text
@@ -404,9 +409,21 @@ Define backend output bus models and expose a WebSocket event stream from the Sh
 
 Keep the current JSONL stream output logging as a replay/debug adapter.
 
+Status: mostly implemented.
+- Generic performer event models exist.
+- `WebSocket /v1/performer/events` streams ordered events.
+- `GET /v1/performer/events/recent` supports recent replay and `after_sequence`.
+- Events get monotonic sequence numbers and replay gap reporting.
+- Target policies currently include `stream_public`, `dashboard_monitor`, and `discord_call`.
+
 ### Phase 2: Dashboard Monitor
 
 Add a dashboard monitor page that subscribes to the output bus and plays Shana speech without requiring the dashboard live voice session to initiate the turn.
+
+Status: mostly implemented.
+- `/monitor` subscribes to the output bus as `dashboard_monitor`.
+- It plays Shana audio, shows subtitles/state/expression, and displays actor/input context.
+- Monitor output can be muted/cleared independently from stream output.
 
 ### Phase 3: Stream PC Performer Page
 
@@ -414,15 +431,32 @@ Add a browser-based performer page for the Stream PC.
 
 It should play Shana audio, render subtitles, and later become the bridge to VTuber commands.
 
+Status: mostly implemented.
+- `/performer` subscribes to `stream_public`.
+- It plays network-safe audio payloads, renders subtitles, and shows event state.
+- It is still a browser/OBS performer client, not the final VTuber runtime adapter.
+
 ### Phase 4: Move Live Voice Playback Onto The Output Bus
 
 Refactor dashboard live voice so generated speech chunks publish to the shared output bus.
 
 The dashboard live page should become one input client plus one optional monitor subscriber, not the exclusive owner of playback.
 
+Status: mostly implemented.
+- Dashboard live voice publishes monitor-targeted performer events.
+- Live voice chunks include audio, subtitle, expression, actor/input context, and terminal clear/end events.
+
 ### Phase 5: VTube Studio Adapter
 
 Add a VTube Studio adapter/client that translates generic performer events into VTube Studio API calls.
+
+Status: adapter/client implemented; stream runner is optional.
+- A VTube Studio adapter maps `expression_set` and `motion_trigger` to configured VTube Studio hotkey requests.
+- A VTube Studio websocket client can connect to the configured endpoint, authenticate with a saved token, send API requests, and report connection/auth errors.
+- An optional runner subscribes to `stream_public` performer events and forwards mapped actions to the client.
+- It tracks speaking state from speech start/end/clear events.
+- It reports status through performer status.
+- Remaining work: complete the operator token approval/persistence workflow and verify the VTube Studio hotkey mappings against the final model.
 
 ### Phase 6: Discord Communication Adapter
 
@@ -432,6 +466,13 @@ Add Discord as an optional communication module:
 - optional Discord voice output subscriber
 
 Discord output should subscribe to the same output bus as other clients.
+
+Status: normalization and runtime boundary implemented.
+- Discord message and voice utterance normalizers create stream input events with `source = "discord"`.
+- Discord speaker IDs are passed through the existing identity resolver.
+- `discord_call` is reserved as a separate output target.
+- A dependency-light Discord runtime owns config/status, tracks normalized inputs, and handles isolated `discord_call` output events when enabled.
+- Remaining work: add the real Discord bot/voice transport and connect it to the runtime boundary.
 
 ## Bottom Line
 
@@ -443,4 +484,3 @@ Stream PC owns OBS, VTuber runtime, and stream presentation.
 Gaming PC owns control, testing, and operator monitoring.
 Discord is optional communication, not core routing.
 ```
-

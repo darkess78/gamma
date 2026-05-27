@@ -74,6 +74,86 @@
     }
   }
 
+  function outputViewApiBase() {
+    var configured = window.GAMMA_SHANA_BASE_URL || '';
+    var statusUrl = latestData && latestData.shana && latestData.shana.url ? latestData.shana.url : '';
+    return browserReachableApiBase(statusUrl || configured || '');
+  }
+
+  function browserReachableApiBase(rawBase) {
+    var value = String(rawBase || '').replace(/\/$/, '');
+    if (!value) {
+      return '';
+    }
+    try {
+      var apiUrl = new URL(value, window.location.origin);
+      var browserHost = window.location.hostname;
+      var apiHost = apiUrl.hostname;
+      var apiIsLocal = apiHost === '127.0.0.1' || apiHost === 'localhost' || apiHost === '0.0.0.0' || apiHost === '::1';
+      var browserIsLocal = browserHost === '127.0.0.1' || browserHost === 'localhost' || browserHost === '::1';
+      if (apiIsLocal && browserHost && !browserIsLocal) {
+        apiUrl.hostname = browserHost;
+      }
+      return apiUrl.toString().replace(/\/$/, '');
+    } catch (error) {
+      return value;
+    }
+  }
+
+  function updateOutputViewLinks() {
+    var apiBase = outputViewApiBase();
+    var monitor = document.querySelector('[data-output-view="monitor"]');
+    var performer = document.querySelector('[data-output-view="performer"]');
+    var subtitles = document.querySelector('[data-output-view="subtitles"]');
+    var status = document.getElementById('outputViewApiStatus');
+    var shanaHealth = latestData && latestData.shana && latestData.shana.api_health ? latestData.shana.api_health : null;
+    var shanaRunning = latestData && latestData.shana && latestData.shana.process ? !!latestData.shana.process.running : false;
+    var apiReachable = !!(shanaHealth && shanaHealth.ok);
+    var monitorQuery = outputViewQuery(apiBase, {
+      target_policy: 'dashboard_monitor',
+      client_name: 'gaming_pc_monitor'
+    });
+    var performerQuery = outputViewQuery('', {
+      target_policy: 'stream_public',
+      client_name: 'stream_pc_performer'
+    });
+    var subtitlesQuery = outputViewQuery(apiBase, {
+      target_policy: 'stream_public',
+      client_name: 'stream_pc_subtitle_overlay'
+    });
+    if (monitor) {
+      monitor.href = '/static/monitor.html' + monitorQuery;
+    }
+    if (performer) {
+      performer.href = (apiBase ? apiBase + '/performer' : '/performer') + performerQuery;
+    }
+    if (subtitles) {
+      subtitles.href = '/static/overlay.html' + subtitlesQuery;
+    }
+    if (status) {
+      status.textContent = apiBase ? 'Shana API: ' + apiBase : 'Shana API: unavailable';
+      status.title = apiBase
+        ? 'Output views connect to ' + apiBase
+        : 'Output views will use the current browser origin until Shana status loads.';
+      status.classList.toggle('good', apiReachable);
+      status.classList.toggle('bad', !!latestData && (!shanaRunning || !apiReachable));
+    }
+  }
+
+  function outputViewQuery(apiBase, values) {
+    var query = new URLSearchParams();
+    if (apiBase) {
+      query.set('api_base', apiBase);
+    }
+    Object.keys(values || {}).forEach(function (key) {
+      if (values[key]) {
+        query.set(key, values[key]);
+      }
+    });
+    var text = query.toString();
+    return text ? '?' + text : '';
+  }
+
   function escapeHtml(value) {
     return String(value)
       .replace(/&/g, '&amp;')
@@ -1171,6 +1251,115 @@
     return lines.join('\n');
   }
 
+  function humanPerformerBus(payload) {
+    payload = payload || {};
+    var stats = payload.stats || {};
+    var byTarget = stats.subscribers_by_target || {};
+    var mutedTargets = Array.isArray(stats.muted_targets) ? stats.muted_targets : [];
+    var subscribers = Array.isArray(stats.subscribers) ? stats.subscribers : [];
+    var recent = payload.recent_event || null;
+    var recentByTarget = payload.recent_by_target || {};
+    var adapters = payload.adapters || {};
+    var lines = [];
+    lines.push('Output bus: ' + (payload.ok ? 'reachable' : 'unreachable'));
+    lines.push('Subscribers: ' + (stats.subscriber_count || 0) + ' / history: ' + (stats.history_count || 0) + ' / seq: ' + (stats.last_sequence || 0));
+    lines.push('Targets: ' + compactCounts(byTarget));
+    lines.push('Muted targets: ' + (mutedTargets.length ? mutedTargets.join(', ') : 'none'));
+    if (adapters.vtube_studio) {
+      lines.push('VTube Studio: ' + humanVTubeStudioAdapter(adapters.vtube_studio));
+    }
+    if (adapters.discord) {
+      lines.push('Discord: ' + humanDiscordRuntime(adapters.discord));
+    }
+    if (subscribers.length) {
+      lines.push('');
+      lines.push('Connected clients:');
+      subscribers.forEach(function (subscriber) {
+        var name = humanizeKey(subscriber.client_name || 'unknown_client');
+        var target = subscriber.target_policy || 'stream_public';
+        var host = subscriber.client_host || 'unknown host';
+        lines.push('- ' + name + ' / ' + target + ' / ' + host);
+      });
+    }
+    if (recent) {
+      var recentPayload = recent.payload || {};
+      var actor = recentPayload.actor || {};
+      var input = recentPayload.input || {};
+      lines.push('');
+      lines.push('Last event: ' + (recent.type || 'unknown'));
+      lines.push('Sequence: ' + (recent.sequence || 'n/a'));
+      lines.push('Target: ' + (recent.target_policy || 'stream_public'));
+      lines.push('Turn: ' + (recent.turn_id || 'n/a'));
+      lines.push('Input: ' + outputInputLabel(input));
+      lines.push('Actor: ' + outputActorLabel(actor));
+      lines.push('At: ' + fmtLocalDateTime(recent.occurred_at));
+      outputTargetPolicies(stats, recentByTarget).forEach(function (targetPolicy) {
+        lines.push(humanizeKey(targetPolicy) + ' latest: ' + outputRecentTargetLabel(recentByTarget[targetPolicy]));
+      });
+    } else if (payload.detail) {
+      lines.push('Detail: ' + payload.detail);
+    } else {
+      lines.push('Last event: none');
+    }
+    return lines.join('\n');
+  }
+
+  function outputActorLabel(actor) {
+    actor = actor || {};
+    var source = actor.source || 'unknown';
+    var name = actor.display_name || actor.platform_id || 'unknown';
+    var roles = Array.isArray(actor.roles) && actor.roles.length ? ' [' + actor.roles.join(', ') + ']' : '';
+    return source + ':' + name + roles;
+  }
+
+  function outputInputLabel(input) {
+    input = input || {};
+    var kind = input.kind || 'unknown';
+    return input.session_id ? kind + ' / ' + input.session_id : kind;
+  }
+
+  function outputRecentTargetLabel(event) {
+    if (!event) return 'none';
+    var actor = event.payload && event.payload.actor ? ' / ' + outputActorLabel(event.payload.actor) : '';
+    return '#' + (event.sequence || 'n/a') + ' / ' + (event.type || 'unknown') + ' / ' + (event.turn_id || 'n/a') + actor;
+  }
+
+  function humanVTubeStudioAdapter(adapter) {
+    var state = adapter.enabled ? 'enabled' : 'disabled';
+    var configured = adapter.configured ? 'configured' : 'not configured';
+    var client = adapter.client || {};
+    var runner = adapter.runner || {};
+    var connected = client.connected ? 'connected' : 'disconnected';
+    var auth = client.authenticated ? 'auth ok' : (client.token_requested ? 'token requested' : 'auth pending');
+    var runnerState = runner.running ? 'runner on' : 'runner off';
+    var action = adapter.last_action && adapter.last_action.action_type ? ' / last ' + adapter.last_action.action_type : '';
+    var error = adapter.last_error || client.last_error || runner.last_error;
+    return state + ', ' + configured + ', ' + connected + ', ' + auth + ', ' + runnerState + action + (error ? ' / error ' + error : '');
+  }
+
+  function humanDiscordRuntime(runtime) {
+    var state = runtime.enabled ? 'enabled' : 'disabled';
+    var configured = runtime.configured ? 'configured' : 'not configured';
+    var running = runtime.running ? 'running' : 'stopped';
+    var output = runtime.output_enabled ? 'output on' : 'output off';
+    var counts = 'inputs ' + (runtime.input_count || 0) + ', outputs ' + (runtime.output_count || 0);
+    return state + ', ' + configured + ', ' + running + ', ' + output + ', ' + counts + (runtime.last_error ? ' / error ' + runtime.last_error : '');
+  }
+
+  function outputTargetPolicies(stats, recentByTarget) {
+    var policies = Array.isArray(stats.target_policies) ? stats.target_policies.slice() : [];
+    Object.keys(stats.subscribers_by_target || {}).forEach(function (targetPolicy) {
+      if (policies.indexOf(targetPolicy) === -1) policies.push(targetPolicy);
+    });
+    Object.keys(recentByTarget || {}).forEach(function (targetPolicy) {
+      if (policies.indexOf(targetPolicy) === -1) policies.push(targetPolicy);
+    });
+    if (!policies.length) {
+      policies = ['stream_public', 'dashboard_monitor'];
+    }
+    return policies;
+  }
+
   function compactCounts(counts) {
     var keys = Object.keys(counts || {}).sort();
     if (!keys.length) return 'none';
@@ -2174,6 +2363,8 @@
     renderBlockIfChanged('twitchWorkerStatus', twitchWorker, humanTwitchWorker(twitchWorker), 'twitchWorkerStatus');
     renderBlockIfChanged('twitchEventSubStatus', twitchEventSub, humanTwitchEventSub(twitchEventSub), 'twitchEventSubStatus');
     renderBlockIfChanged('streamReadyStatus', data.twitch && data.twitch.stream_ready ? data.twitch.stream_ready : {}, humanStreamReady(data.twitch && data.twitch.stream_ready ? data.twitch.stream_ready : {}, twitchWorker), 'streamReadyStatus');
+    renderBlockIfChanged('performerBusStatus', data.performer || {}, humanPerformerBus(data.performer || {}), 'performerBusStatus');
+    updateOutputTargetControls(data.performer || {});
     var twitchStartButton = document.getElementById('twitchWorkerStartButton');
     var twitchStopButton = document.getElementById('twitchWorkerStopButton');
     var twitchEventSubStartButton = document.getElementById('twitchEventSubStartButton');
@@ -2244,6 +2435,75 @@
     setTextIfChanged('stderrLog', process.running ? (logs.stderr_tail || '') : 'Shana is not running. Log panel shows only the current supervised run.', 'stderrLog');
     updateStamp('Last refreshed: ' + new Date().toLocaleString());
     applyDashboardTabVisibility();
+  }
+
+  function updateOutputTargetControls(performer) {
+    var stats = performer && performer.stats ? performer.stats : {};
+    var mutedTargets = Array.isArray(stats.muted_targets) ? stats.muted_targets : [];
+    var policies = outputTargetPolicies(stats, performer && performer.recent_by_target ? performer.recent_by_target : {});
+    renderOutputTargetControls(policies, mutedTargets, stats);
+    updateOutputTargetSummary(performer, policies, mutedTargets);
+  }
+
+  function renderOutputTargetControls(policies, mutedTargets, stats) {
+    var controls = document.getElementById('outputTargetControls');
+    if (!controls) return;
+    var currentKey = policies.join('|') + '::' + mutedTargets.slice().sort().join('|') + '::' + JSON.stringify(stats.subscribers_by_target || {});
+    if (controls.dataset.renderKey === currentKey) return;
+    controls.dataset.renderKey = currentKey;
+    controls.textContent = '';
+    policies.forEach(function (targetPolicy) {
+      var muted = mutedTargets.indexOf(targetPolicy) !== -1;
+      var row = document.createElement('div');
+      row.className = 'output-target-row';
+
+      var title = document.createElement('div');
+      title.className = 'output-target-row-title';
+      title.textContent = outputTargetLabel(targetPolicy) + ' / clients ' + Number((stats.subscribers_by_target || {})[targetPolicy] || 0);
+      row.appendChild(title);
+
+      var actions = document.createElement('div');
+      actions.className = 'output-target-row-actions';
+      actions.appendChild(outputTargetButton('Mute', 'ghost danger-outline', targetPolicy, 'mute', muted));
+      actions.appendChild(outputTargetButton('Unmute', 'secondary', targetPolicy, 'unmute', !muted));
+      actions.appendChild(outputTargetButton('Clear', 'ghost', targetPolicy, 'clear', false));
+      row.appendChild(actions);
+      controls.appendChild(row);
+    });
+  }
+
+  function outputTargetButton(label, className, targetPolicy, actionName, disabled) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = className;
+    button.textContent = label;
+    button.disabled = !!disabled;
+    button.title = outputTargetLabel(targetPolicy) + ' ' + actionName;
+    button.addEventListener('click', function () {
+      action('/api/performer/targets/' + encodeURIComponent(targetPolicy) + '/' + actionName);
+    });
+    return button;
+  }
+
+  function updateOutputTargetSummary(performer, policies, mutedTargets) {
+    var summary = document.getElementById('outputTargetSummary');
+    if (!summary) return;
+    var stats = performer && performer.stats ? performer.stats : {};
+    var byTarget = stats.subscribers_by_target || {};
+    var status = performer && performer.ok ? 'reachable' : 'unreachable';
+    var targetParts = policies.map(function (targetPolicy) {
+      var muted = mutedTargets.indexOf(targetPolicy) !== -1;
+      return outputTargetLabel(targetPolicy) + ': ' + (muted ? 'muted' : 'live') + ', clients ' + Number(byTarget[targetPolicy] || 0);
+    });
+    var text = 'Bus ' + status + (targetParts.length ? ' | ' + targetParts.join(' | ') : '');
+    setTextIfChanged('outputTargetSummary', text, 'outputTargetSummary');
+  }
+
+  function outputTargetLabel(targetPolicy) {
+    if (targetPolicy === 'stream_public') return 'Stream';
+    if (targetPolicy === 'dashboard_monitor') return 'Monitor';
+    if (targetPolicy === 'discord_call') return 'Discord';
+    return humanizeKey(targetPolicy || 'stream_public');
   }
 
   function scheduleStatusRefreshes() {
@@ -2793,6 +3053,7 @@
       var data = await response.json();
       postClientLog('load_ok', { hasShana: !!data.shana, hasMachine: !!data.machine });
       latestData = data;
+      updateOutputViewLinks();
       renderPanels(data);
       loadTwitchViewerTrust();
       loadStreamActivity();
@@ -3858,6 +4119,7 @@
   loadVisionHistory();
   updateVisionImageMeta();
   renderVisionHistory();
+  updateOutputViewLinks();
   updateStickyTabOffset();
   window.addEventListener('resize', updateStickyTabOffset);
   if (window.ResizeObserver) {

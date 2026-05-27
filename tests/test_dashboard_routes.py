@@ -81,6 +81,31 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(response, {"runtime": "ok"})
         runtime_status.assert_called_once_with()
 
+    def test_output_pages_are_served_with_shana_api_config(self) -> None:
+        with (
+            patch.object(settings, "shana_public_host", "192.168.1.50"),
+            patch.object(settings, "shana_port", 8000),
+            patch.object(settings, "dashboard_public_host", "192.168.1.50"),
+            patch.object(settings, "dashboard_public_port", 8001),
+            patch.object(settings, "dashboard_public_scheme", "http"),
+        ):
+            dashboard = main.dashboard()
+            monitor = main.monitor_page()
+            performer = main.performer_redirect()
+            overlay = main.subtitle_overlay_page()
+
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertIn('window.GAMMA_SHANA_BASE_URL = "http://192.168.1.50:8000"', dashboard.body.decode("utf-8"))
+        self.assertIn('window.GAMMA_DASHBOARD_BASE_URL = "http://192.168.1.50:8001"', dashboard.body.decode("utf-8"))
+        self.assertIn('href="/static/monitor.html"', dashboard.body.decode("utf-8"))
+        self.assertEqual(monitor.status_code, 200)
+        self.assertIn('window.GAMMA_SHANA_BASE_URL = "http://192.168.1.50:8000"', monitor.body.decode("utf-8"))
+        self.assertIn('window.GAMMA_DASHBOARD_BASE_URL = "http://192.168.1.50:8001"', monitor.body.decode("utf-8"))
+        self.assertEqual(performer.headers["location"], "http://192.168.1.50:8000/performer")
+        self.assertEqual(overlay.status_code, 200)
+        self.assertIn('window.GAMMA_SHANA_BASE_URL = "http://192.168.1.50:8000"', overlay.body.decode("utf-8"))
+        self.assertIn('window.GAMMA_DASHBOARD_BASE_URL = "http://192.168.1.50:8001"', overlay.body.decode("utf-8"))
+
     def test_toolbar_actions(self) -> None:
         action_map = {
             "/api/shana/start": ("start_shana", {"ok": True, "detail": "started"}),
@@ -139,6 +164,61 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertTrue(payload["filtered_audio"]["exists"])
         self.assertEqual(payload["filtered_audio"]["resolved_path"], str(audio_path))
         self.assertTrue(any(check["id"] == "filtered_audio" and check["status"] == "ok" for check in payload["checks"]))
+
+    def test_performer_output_status_reports_bus_stats(self) -> None:
+        service = DashboardService()
+        performer_payload = {
+            "ok": True,
+            "recent_event": {"type": "subtitle_update", "turn_id": "turn-1", "target_policy": "stream_public"},
+            "recent_by_target": {
+                "stream_public": {"type": "subtitle_update", "turn_id": "turn-1", "target_policy": "stream_public"},
+                "dashboard_monitor": {"type": "subtitle_update", "turn_id": "turn-2", "target_policy": "dashboard_monitor"},
+            },
+            "adapters": {"vtube_studio": {"enabled": True, "configured": True, "connected": False}},
+            "stats": {
+                "subscriber_count": 2,
+                "history_count": 5,
+                "target_policies": ["stream_public", "dashboard_monitor", "discord_call"],
+                "subscribers_by_target": {"stream_public": 1, "dashboard_monitor": 1},
+                "muted_targets": ["stream_public"],
+                "subscribers": [
+                    {"client_name": "stream_pc_performer", "target_policy": "stream_public", "client_host": "10.78.78.15"},
+                    {"client_name": "gaming_pc_monitor", "target_policy": "dashboard_monitor", "client_host": "10.78.78.29"},
+                ],
+            },
+        }
+        with patch.object(DashboardService, "_probe_json", return_value=performer_payload) as probe:
+            payload = service.performer_output_status()
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["stats"]["subscriber_count"], 2)
+        self.assertEqual(payload["stats"]["subscribers"][0]["client_host"], "10.78.78.15")
+        self.assertEqual(payload["recent_event"]["type"], "subtitle_update")
+        self.assertEqual(payload["recent_by_target"]["dashboard_monitor"]["turn_id"], "turn-2")
+        self.assertTrue(payload["adapters"]["vtube_studio"]["enabled"])
+        self.assertIn("/v1/performer/status", probe.call_args.args[0])
+
+    def test_dashboard_performer_target_mute_routes_delegate_to_service(self) -> None:
+        self.mock_service.set_performer_target_mute.side_effect = [
+            {"ok": True, "target_policy": "stream_public", "muted": True},
+            {"ok": True, "target_policy": "stream_public", "muted": False},
+        ]
+
+        muted = main.dashboard_performer_target_mute("stream_public")
+        unmuted = main.dashboard_performer_target_unmute("stream_public")
+
+        self.assertTrue(muted["muted"])
+        self.assertFalse(unmuted["muted"])
+        self.mock_service.set_performer_target_mute.assert_any_call("stream_public", muted=True, reason="dashboard")
+        self.mock_service.set_performer_target_mute.assert_any_call("stream_public", muted=False, reason="dashboard")
+
+    def test_dashboard_performer_target_clear_route_delegates_to_service(self) -> None:
+        self.mock_service.clear_performer_target.return_value = {"ok": True, "target_policy": "stream_public", "cleared": True}
+
+        result = main.dashboard_performer_target_clear("stream_public")
+
+        self.assertTrue(result["cleared"])
+        self.mock_service.clear_performer_target.assert_called_once_with("stream_public", reason="dashboard")
 
     def test_stream_ready_status_reports_blocking_preflight_issues(self) -> None:
         service = DashboardService()

@@ -21,6 +21,9 @@ service = LazySingleton[DashboardService]()
 voice_roundtrip_service = LazySingleton[VoiceRoundtripService]()
 live_voice_session = LazySingleton[LiveVoiceSession]()
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+INDEX_PAGE = STATIC_DIR / "index.html"
+MONITOR_PAGE = STATIC_DIR / "monitor.html"
+SUBTITLE_OVERLAY_PAGE = STATIC_DIR / "overlay.html"
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="dashboard-static")
 
@@ -66,8 +69,37 @@ def health() -> dict[str, str]:
 
 
 @app.get("/")
-def dashboard() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+def dashboard() -> HTMLResponse:
+    return _dashboard_page(INDEX_PAGE)
+
+
+@app.get("/monitor")
+def monitor_page() -> HTMLResponse:
+    return _dashboard_output_page(MONITOR_PAGE)
+
+
+@app.get("/performer")
+def performer_redirect() -> RedirectResponse:
+    return RedirectResponse(url=f"{_app_settings.shana_base_url}/performer", status_code=307)
+
+
+@app.get("/overlay/subtitles")
+def subtitle_overlay_page() -> HTMLResponse:
+    return _dashboard_output_page(SUBTITLE_OVERLAY_PAGE)
+
+
+def _dashboard_output_page(path: Path) -> HTMLResponse:
+    return _dashboard_page(path)
+
+
+def _dashboard_page(path: Path) -> HTMLResponse:
+    html = path.read_text(encoding="utf-8")
+    config = (
+        f'<script>window.GAMMA_SHANA_BASE_URL = "{_app_settings.shana_base_url}";'
+        f' window.GAMMA_DASHBOARD_BASE_URL = "{_app_settings.dashboard_base_url}";</script>'
+    )
+    html = html.replace("</head>", f"  {config}\n</head>", 1)
+    return HTMLResponse(html)
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -506,6 +538,21 @@ def dashboard_stream_self_goals_clear() -> dict:
 @app.post("/api/stream/stop")
 def dashboard_stream_stop() -> dict:
     return get_dashboard_service().stop_stream_speech(reason="dashboard_stop")
+
+
+@app.post("/api/performer/targets/{target_policy}/mute")
+def dashboard_performer_target_mute(target_policy: str) -> dict:
+    return get_dashboard_service().set_performer_target_mute(target_policy, muted=True, reason="dashboard")
+
+
+@app.post("/api/performer/targets/{target_policy}/unmute")
+def dashboard_performer_target_unmute(target_policy: str) -> dict:
+    return get_dashboard_service().set_performer_target_mute(target_policy, muted=False, reason="dashboard")
+
+
+@app.post("/api/performer/targets/{target_policy}/clear")
+def dashboard_performer_target_clear(target_policy: str) -> dict:
+    return get_dashboard_service().clear_performer_target(target_policy, reason="dashboard")
 
 
 @app.post("/api/vision/analyze", response_model=VisionAnalysis)

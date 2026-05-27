@@ -25,6 +25,13 @@
         <div class="stamp" id="stamp">Loading...</div>
       </div>
     </div>
+    <nav class="external-nav" aria-label="Output views">
+      <span class="external-nav-label">Output Views</span>
+      <a data-output-view="monitor" href="/static/monitor.html" target="_blank" rel="noopener">Monitor</a>
+      <a data-output-view="performer" href="/performer" target="_blank" rel="noopener">Performer</a>
+      <a data-output-view="subtitles" href="/static/overlay.html" target="_blank" rel="noopener">Subtitle Overlay</a>
+      <span class="external-nav-status" id="outputViewApiStatus">Shana API: ...</span>
+    </nav>
     <div class="toolbar">
       <div class="toolbar-group">
         <button class="secondary" onclick="action('/api/shana/start')">Start Shana</button>
@@ -132,6 +139,11 @@
               <label class="range-row">Spam quip gap <input id="twitchSpamQuipCooldownSeconds" type="number" min="0" step="1" class="text-input"><span>sec</span></label>
             </div>
           </div>
+          <div class="action-group">
+            <div class="action-title">Output Targets</div>
+            <div class="target-status-line" id="outputTargetSummary">Output target status has not loaded yet.</div>
+            <div class="action-buttons action-stack output-target-controls" id="outputTargetControls">Output target controls load with bus status.</div>
+          </div>
         </div>
         <div class="stream-status-grid">
           <div class="render" id="twitchWorkerStatus">...</div>
@@ -139,6 +151,7 @@
           <div class="render compact-render" id="twitchSettingsStatus">Twitch controls load with worker status.</div>
           <div class="render compact-render" id="streamStopStatus">Speech stop has not been requested.</div>
           <div class="render compact-render" id="streamReadyStatus">Stream readiness has not loaded yet.</div>
+          <div class="render compact-render" id="performerBusStatus">Output bus status has not loaded yet.</div>
         </div>
       </section>
       <section class="panel wide" data-dashboard-tab="stream">

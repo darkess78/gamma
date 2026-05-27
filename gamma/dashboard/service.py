@@ -148,6 +148,7 @@ class DashboardService:
                 "eventsub": self.twitch_eventsub_status(),
                 "stream_ready": self.stream_ready_status(),
             },
+            "performer": self.performer_output_status(),
             "provider_actions": self._latest_provider_action,
             "timings": self._recent_timings(),
             "llm_routing": route_info,
@@ -1377,6 +1378,37 @@ class DashboardService:
     def stream_recent_outputs(self, *, limit: int = 50) -> dict[str, Any]:
         url = settings.shana_base_url + f"/v1/stream/outputs/recent?limit={max(1, min(limit, 200))}"
         return self._probe_json(url, raw_payload=True)
+
+    def performer_output_status(self) -> dict[str, Any]:
+        url = settings.shana_base_url + "/v1/performer/status"
+        payload = self._probe_json(url, raw_payload=True)
+        if not payload.get("ok", True) and "stats" not in payload:
+            return {
+                "ok": False,
+                "url": url,
+                "detail": payload.get("detail", "unavailable"),
+                "stats": {},
+                "recent_event": None,
+                "recent_by_target": {},
+            }
+        return {
+            "ok": True,
+            "url": url,
+            "stats": payload.get("stats", {}) if isinstance(payload.get("stats", {}), dict) else {},
+            "recent_event": payload.get("recent_event") if isinstance(payload.get("recent_event"), dict) else None,
+            "recent_by_target": payload.get("recent_by_target") if isinstance(payload.get("recent_by_target"), dict) else {},
+            "recent_turns": payload.get("recent_turns") if isinstance(payload.get("recent_turns"), list) else [],
+            "adapters": payload.get("adapters") if isinstance(payload.get("adapters"), dict) else {},
+        }
+
+    def set_performer_target_mute(self, target_policy: str, *, muted: bool, reason: str = "dashboard") -> dict[str, Any]:
+        safe_target = urllib.parse.quote(target_policy.strip().lower() or "stream_public")
+        action = "mute" if muted else "unmute"
+        return self._post_remote_json(f"/v1/performer/targets/{safe_target}/{action}?reason={urllib.parse.quote(reason)}", {})
+
+    def clear_performer_target(self, target_policy: str, *, reason: str = "dashboard") -> dict[str, Any]:
+        safe_target = urllib.parse.quote(target_policy.strip().lower() or "stream_public")
+        return self._post_remote_json(f"/v1/performer/targets/{safe_target}/clear?reason={urllib.parse.quote(reason)}", {})
 
     def stream_pending_queue(self) -> dict[str, Any]:
         url = settings.shana_base_url + "/v1/stream/queue"

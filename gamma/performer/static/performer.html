@@ -141,6 +141,13 @@
 
     .controls {
       display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
       gap: 8px;
     }
 
@@ -154,7 +161,22 @@
       cursor: pointer;
     }
 
-    button:hover {
+    .link-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(238, 245, 248, 0.18);
+      border-radius: 8px;
+      background: rgba(238, 245, 248, 0.06);
+      color: var(--muted);
+      padding: 9px 11px;
+      font-size: 13px;
+      line-height: 1;
+      text-decoration: none;
+    }
+
+    button:hover,
+    .link-button:hover {
       background: rgba(238, 245, 248, 0.14);
     }
 
@@ -197,13 +219,24 @@
       </div>
       <div class="state">
         <div class="status-row"><span><span id="statusDot" class="dot"></span>Connection</span><span id="connectionValue" class="value">connecting</span></div>
+        <div class="status-row"><span>Resume from</span><span id="resumeValue" class="value">0</span></div>
+        <div class="status-row"><span>Replay</span><span id="replayValue" class="value">20</span></div>
         <div class="status-row"><span>Turn</span><span id="turnValue" class="value">none</span></div>
+        <div class="status-row"><span>Sequence</span><span id="sequenceValue" class="value">none</span></div>
+        <div class="status-row"><span>Input</span><span id="inputValue" class="value">none</span></div>
+        <div class="status-row"><span>Actor</span><span id="actorValue" class="value">none</span></div>
         <div class="status-row"><span>Expression</span><span id="expressionValue" class="value">neutral</span></div>
         <div class="status-row"><span>Motion</span><span id="motionValue" class="value">none</span></div>
         <div class="status-row"><span>Audio queue</span><span id="queueValue" class="value">0</span></div>
         <div class="controls">
           <button id="muteButton" type="button">Mute</button>
           <button id="reconnectButton" type="button">Reconnect</button>
+          <button id="clearButton" type="button">Clear</button>
+        </div>
+        <div class="links">
+          <a data-dashboard-link class="link-button" href="/" target="_blank" rel="noopener">Dashboard</a>
+          <a data-output-link="monitor" class="link-button" href="/monitor" target="_blank" rel="noopener">Monitor</a>
+          <a data-output-link="subtitles" class="link-button" href="/overlay/subtitles" target="_blank" rel="noopener">Subtitles</a>
         </div>
       </div>
     </aside>
@@ -217,29 +250,99 @@
       var playing = false;
       var muted = false;
       var subtitleTimer = null;
+      var lastSequence = 0;
 
       var params = new URLSearchParams(window.location.search);
       var token = params.get('token') || '';
       var replayRecent = params.get('replay_recent') || '20';
+      var targetPolicy = params.get('target_policy') || 'stream_public';
+      var clientName = params.get('client_name') || 'stream_pc_performer';
+      var apiBase = browserReachableBase(params.get('api_base') || window.GAMMA_SHANA_BASE_URL || window.location.origin);
+      var dashboardBase = browserReachableBase(params.get('dashboard_base') || window.GAMMA_DASHBOARD_BASE_URL || '');
 
       var audio = document.getElementById('audioEngine');
       var subtitle = document.getElementById('subtitle');
       var statusDot = document.getElementById('statusDot');
       var connectionValue = document.getElementById('connectionValue');
+      var resumeValue = document.getElementById('resumeValue');
+      var replayValue = document.getElementById('replayValue');
       var turnValue = document.getElementById('turnValue');
+      var sequenceValue = document.getElementById('sequenceValue');
+      var inputValue = document.getElementById('inputValue');
+      var actorValue = document.getElementById('actorValue');
       var expressionValue = document.getElementById('expressionValue');
       var motionValue = document.getElementById('motionValue');
       var queueValue = document.getElementById('queueValue');
       var muteButton = document.getElementById('muteButton');
       var reconnectButton = document.getElementById('reconnectButton');
+      var clearButton = document.getElementById('clearButton');
+
+      function browserReachableBase(rawBase) {
+        var value = String(rawBase || '').replace(/\/$/, '');
+        if (!value) {
+          return '';
+        }
+        try {
+          var url = new URL(value, window.location.origin);
+          var browserHost = window.location.hostname;
+          var apiIsLocal = ['127.0.0.1', 'localhost', '0.0.0.0', '::1'].indexOf(url.hostname) !== -1;
+          var browserIsLocal = ['127.0.0.1', 'localhost', '::1'].indexOf(browserHost) !== -1;
+          if (apiIsLocal && browserHost && !browserIsLocal) {
+            url.hostname = browserHost;
+          }
+          return url.toString().replace(/\/$/, '');
+        } catch (_error) {
+          return value;
+        }
+      }
+
+      function outputViewQuery(values) {
+        var query = new URLSearchParams();
+        Object.keys(values || {}).forEach(function (key) {
+          if (values[key]) {
+            query.set(key, values[key]);
+          }
+        });
+        var text = query.toString();
+        return text ? '?' + text : '';
+      }
+
+      function updateLinks() {
+        var monitorQuery = outputViewQuery({
+          api_base: apiBase,
+          dashboard_base: dashboardBase,
+          target_policy: 'dashboard_monitor',
+          client_name: 'gaming_pc_monitor'
+        });
+        var subtitlesQuery = outputViewQuery({
+          api_base: apiBase,
+          dashboard_base: dashboardBase,
+          target_policy: 'stream_public',
+          client_name: 'stream_pc_subtitle_overlay'
+        });
+        document.querySelectorAll('[data-dashboard-link]').forEach(function (link) {
+          link.href = dashboardBase ? dashboardBase + '/' : '/';
+        });
+        document.querySelectorAll('[data-output-link="monitor"]').forEach(function (link) {
+          link.href = apiBase ? apiBase + '/monitor' + monitorQuery : '/monitor' + monitorQuery;
+        });
+        document.querySelectorAll('[data-output-link="subtitles"]').forEach(function (link) {
+          link.href = apiBase ? apiBase + '/overlay/subtitles' + subtitlesQuery : '/overlay/subtitles' + subtitlesQuery;
+        });
+      }
 
       function wsUrl() {
-        var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        var query = new URLSearchParams({ replay_recent: replayRecent });
+        var baseUrl = new URL(apiBase || window.location.origin);
+        var protocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+        var query = new URLSearchParams({ replay_recent: replayRecent, target_policy: targetPolicy, client_name: clientName });
+        resumeValue.textContent = String(lastSequence);
+        if (lastSequence > 0) {
+          query.set('after_sequence', String(lastSequence));
+        }
         if (token) {
           query.set('token', token);
         }
-        return protocol + '//' + window.location.host + '/v1/performer/events?' + query.toString();
+        return protocol + '//' + baseUrl.host + '/v1/performer/events?' + query.toString();
       }
 
       function setConnection(value, connected) {
@@ -272,14 +375,47 @@
         updateQueue();
       }
 
+      function updateEventContext(event) {
+        var payload = event && event.payload ? event.payload : {};
+        inputValue.textContent = inputLabel(payload.input);
+        actorValue.textContent = actorLabel(payload.actor);
+      }
+
+      function actorLabel(actor) {
+        actor = actor || {};
+        var source = actor.source || 'unknown';
+        var name = actor.display_name || actor.platform_id || 'unknown';
+        var roles = Array.isArray(actor.roles) && actor.roles.length ? ' [' + actor.roles.join(', ') + ']' : '';
+        return source + ':' + name + roles;
+      }
+
+      function inputLabel(input) {
+        input = input || {};
+        var kind = input.kind || 'unknown';
+        return input.session_id ? kind + ' / ' + input.session_id : kind;
+      }
+
       function enqueueAudio(event) {
-        var url = event.payload && event.payload.audio_url;
+        var url = audioSourceFromEvent(event);
         if (!url) {
           return;
         }
         audioQueue.push({ url: url, turnId: event.turn_id || '' });
         updateQueue();
         playNext();
+      }
+
+      function audioSourceFromEvent(event) {
+        if (!event || !event.payload) {
+          return '';
+        }
+        if (event.payload.audio_url) {
+          return event.payload.audio_url;
+        }
+        if (event.payload.audio_base64 && event.payload.audio_content_type) {
+          return 'data:' + event.payload.audio_content_type + ';base64,' + event.payload.audio_base64;
+        }
+        return '';
       }
 
       function playNext() {
@@ -314,10 +450,25 @@
         if (!event || !event.type) {
           return;
         }
+        if (isStaleEvent(event)) {
+          return;
+        }
         if (event.turn_id) {
           turnValue.textContent = event.turn_id;
         }
+        if (event.sequence) {
+          sequenceValue.textContent = String(event.sequence);
+          if (event.sequence > lastSequence) {
+            lastSequence = event.sequence;
+          }
+        }
+        updateEventContext(event);
         if (event.type === 'ready') {
+          replayValue.textContent = replayLabel(event);
+          if (targetMutedFromStats(event.stats)) {
+            clearOutput();
+            connectionValue.textContent = 'connected / muted';
+          }
           return;
         }
         if (event.type === 'subtitle_update') {
@@ -326,6 +477,12 @@
         }
         if (event.type === 'subtitle_clear' || event.type === 'output_cleared') {
           clearOutput();
+          return;
+        }
+        if (event.type === 'target_mute_changed') {
+          if (event.payload && event.payload.muted) {
+            clearOutput();
+          }
           return;
         }
         if (event.type === 'speech_started' || event.type === 'speech_chunk_ready') {
@@ -342,6 +499,19 @@
         if (event.type === 'motion_trigger') {
           motionValue.textContent = (event.payload && event.payload.motion) || 'none';
         }
+      }
+
+      function targetMutedFromStats(stats) {
+        var mutedTargets = stats && Array.isArray(stats.muted_targets) ? stats.muted_targets : [];
+        return mutedTargets.indexOf(targetPolicy) !== -1;
+      }
+
+      function isStaleEvent(event) {
+        return !!(event && event.sequence && lastSequence > 0 && event.sequence <= lastSequence);
+      }
+
+      function replayLabel(event) {
+        return String(event.replay_recent || replayRecent) + ' / after ' + String(event.after_sequence || 0) + (event.replay_gap ? ' / gap' : '');
       }
 
       function connect() {
@@ -383,6 +553,8 @@
       });
 
       reconnectButton.addEventListener('click', connect);
+      clearButton.addEventListener('click', clearOutput);
+      updateLinks();
       connect();
     })();
   </script>

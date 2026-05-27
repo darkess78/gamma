@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import tomllib
-from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..config import settings
 from .profile import SpeakerProfile, TrustLevel, UNKNOWN_PUBLIC
 
 if TYPE_CHECKING:
     from ..schemas.conversation import SpeakerContext
 
 
-_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "users.toml"
+_CONFIG_PATH = settings.project_root / "config" / "users.toml"
 
 
 def _load_config() -> dict:

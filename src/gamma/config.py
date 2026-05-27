@@ -10,7 +10,22 @@ from typing import Any
 from dotenv import load_dotenv
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+def _find_project_root() -> Path:
+    override = os.getenv("SHANA_PROJECT_ROOT")
+    if override:
+        root = Path(override).expanduser().resolve()
+        if not (root / "pyproject.toml").exists() or not (root / "config" / "app.example.toml").exists():
+            raise RuntimeError(f"SHANA_PROJECT_ROOT does not look like the Gamma repo root: {root}")
+        return root
+
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / "pyproject.toml").exists() and (candidate / "config" / "app.example.toml").exists():
+            return candidate
+
+    raise RuntimeError("Could not locate Gamma project root. Set SHANA_PROJECT_ROOT to the repo root.")
+
+
+PROJECT_ROOT = _find_project_root()
 CONFIG_DIR = PROJECT_ROOT / "config"
 load_dotenv(PROJECT_ROOT / ".env")
 

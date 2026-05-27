@@ -8,8 +8,8 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 
 ## Core Application
 
-- FastAPI app entry point in `gamma/main.py`.
-- API route layer in `gamma/api/routes.py`.
+- FastAPI app entry point in `src/gamma/main.py`.
+- API route layer in `src/gamma/api/routes.py`.
 - Root and dashboard HTML routes.
 - Conversation, memory, system status, vision, stream, and voice endpoints.
 - Optional API bearer-token auth for the Shana API.
@@ -178,8 +178,8 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 
 ## Dashboard
 
-- Separate dashboard FastAPI app in `gamma/dashboard/main.py`.
-- Static browser UI assets in `gamma/dashboard/static/`.
+- Separate dashboard FastAPI app in `src/gamma/dashboard/main.py`.
+- Static browser UI assets in `src/gamma/dashboard/static/`.
 - Optional dashboard login/session auth.
 - Dashboard status endpoint includes app, providers, Shana process, machine metrics, memory, assistant state, timings, and LLM routing.
 - Runtime status endpoint checks Shana process and API health.
@@ -252,7 +252,7 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 
 ## TTS Dataset Tooling
 
-- Standalone GammaTTSDataPrep GUI entry point at `gamma/run_tts_dataset_gui.py`.
+- Standalone GammaTTSDataPrep GUI entry point at `src/gamma/run_tts_dataset_gui.py`.
 - Dataset staging/preparation CLI entry points exist.
 - GUI build scripts for Windows and Linux/macOS.
 - PyInstaller spec for packaging.

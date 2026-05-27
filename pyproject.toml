@@ -31,11 +31,19 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-package-dir = {"" = "."}
+package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["src"]
 include = ["gamma*"]
+
+[tool.setuptools.package-data]
+gamma = [
+  "dashboard/static/*",
+  "performer/static/*",
+  "persona/*.md",
+  "persona/*.json",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

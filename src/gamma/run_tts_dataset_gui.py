@@ -21,7 +21,12 @@ from tkinter import filedialog, messagebox, ttk
 import numpy as np
 
 DATA_ROOT_ENV = "GAMMA_TTS_DATA_PREP_ROOT"
-REPO_DATA_ROOT = Path(__file__).resolve().parents[1] / "data" / "tts_data_prep"
+try:
+    from .config import settings as _settings
+except ImportError:
+    from gamma.config import settings as _settings
+
+REPO_DATA_ROOT = _settings.project_root / "data" / "tts_data_prep"
 
 try:
     from .run_prepare_tts_dataset import DEFAULT_EXCLUDE_PATTERNS

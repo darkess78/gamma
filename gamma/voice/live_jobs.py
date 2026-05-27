@@ -14,6 +14,8 @@ from uuid import uuid4
 import psutil
 from fastapi import UploadFile
 
+from ..performer.bus import PerformerEventBus, get_performer_event_bus
+from ..performer.models import PerformerOutputEvent
 from ..config import load_desired_tts_selection, settings
 from ..schemas.voice import LiveVoiceJobResponse
 from ..system.python_runtime import resolve_python_executable
@@ -39,17 +41,24 @@ class LiveVoiceJob:
     cancel_requested_at: str | None = None
     cancel_reason: str | None = None
     completed_at: str | None = None
+    performer_started: bool = False
+    performer_subtitle_published: bool = False
+    performer_speech_started: bool = False
+    performer_completed: bool = False
+    performer_published_chunks: set[int] | None = None
+    performer_last_status: str | None = None
 
 
 class LiveVoiceJobManager:
     history_rotate_bytes = 5 * 1024 * 1024
 
-    def __init__(self) -> None:
+    def __init__(self, performer_bus: PerformerEventBus | None = None) -> None:
         self._lock = threading.Lock()
         self._jobs: dict[str, LiveVoiceJob] = {}
         self._runtime_dir = settings.data_dir / "runtime" / "live_jobs"
         self._runtime_dir.mkdir(parents=True, exist_ok=True)
         self._history_path = self._runtime_dir / "history.current.jsonl"
+        self._performer_bus = performer_bus or get_performer_event_bus()
 
     async def start_job(
         self,
@@ -117,6 +126,7 @@ class LiveVoiceJobManager:
         self._refresh_job(job)
         status_payload = self._read_status(job.status_path)
         output_payload = self._read_json(job.output_path)
+        self._publish_live_performer_events(job, status_payload=status_payload, output_payload=output_payload)
         return LiveVoiceJobResponse(
             turn_id=turn_id,
             status=str(status_payload.get("status", "failed")),
@@ -159,6 +169,165 @@ class LiveVoiceJobManager:
         except Exception:
             return []
         return entries[-max(1, limit):]
+
+    def _publish_live_performer_events(
+        self,
+        job: LiveVoiceJob,
+        *,
+        status_payload: dict[str, Any],
+        output_payload: dict[str, Any],
+    ) -> None:
+        status = str(status_payload.get("status") or output_payload.get("status") or "failed")
+        output_context = self._live_output_context(job, output_payload)
+        if job.performer_published_chunks is None:
+            job.performer_published_chunks = set()
+
+        if output_payload and not job.performer_started:
+            self._publish_performer_event(
+                "turn_started",
+                job,
+                {
+                    "status": status,
+                    "session_id": job.session_id,
+                    "response_mode": job.response_mode,
+                    "source": "dashboard_live_voice",
+                    **output_context,
+                },
+            )
+            job.performer_started = True
+
+        if status and status != job.performer_last_status:
+            self._publish_performer_event(
+                "turn_state_changed",
+                job,
+                {
+                    "state": status,
+                    "previous_state": job.performer_last_status,
+                    "session_id": job.session_id,
+                    "response_mode": job.response_mode,
+                    "history_count": len(output_payload.get("reply_chunks", []) or []),
+                    **output_context,
+                },
+            )
+            job.performer_last_status = status
+
+        reply_text = str(output_payload.get("reply_text") or "").strip()
+        if reply_text and not job.performer_subtitle_published:
+            self._publish_performer_event("subtitle_update", job, {"text": reply_text, "clear": False, **output_context})
+            emotion = self._live_response_emotion(output_payload)
+            if emotion:
+                self._publish_performer_event("expression_set", job, {"expression": emotion, **output_context})
+            job.performer_subtitle_published = True
+
+        for chunk in output_payload.get("reply_chunks", []) or []:
+            if not isinstance(chunk, dict):
+                continue
+            try:
+                chunk_index = int(chunk.get("chunk_index", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if chunk_index <= 0 or chunk_index in job.performer_published_chunks:
+                continue
+            audio_base64 = str(chunk.get("audio_base64") or "")
+            audio_content_type = str(chunk.get("audio_content_type") or output_payload.get("audio_content_type") or "")
+            if not audio_base64 or not audio_content_type:
+                continue
+            if not job.performer_speech_started:
+                self._publish_performer_event(
+                    "speech_started",
+                    job,
+                    {
+                        "status": "speaking",
+                        "session_id": job.session_id,
+                        "response_mode": job.response_mode,
+                        **output_context,
+                    },
+                )
+                job.performer_speech_started = True
+            job.performer_published_chunks.add(chunk_index)
+            self._publish_performer_event(
+                "speech_chunk_ready",
+                job,
+                {
+                    "chunk_index": chunk_index,
+                    "text": str(chunk.get("text") or ""),
+                    "audio_base64": audio_base64,
+                    "audio_content_type": audio_content_type,
+                    "timing_ms": chunk.get("timing_ms", {}) if isinstance(chunk.get("timing_ms", {}), dict) else {},
+                    "interruptible": bool(chunk.get("interruptible", True)),
+                    "protect_ms": int(chunk.get("protect_ms", 0) or 0),
+                    "is_final": bool(chunk.get("is_final", False)),
+                    **output_context,
+                },
+            )
+
+        terminal_statuses = {"completed", "cancelled", "failed"}
+        if status in terminal_statuses and not job.performer_completed:
+            if status == "completed":
+                self._publish_performer_event("speech_ended", job, {"status": status, **output_context})
+            else:
+                self._publish_performer_event(
+                    "output_cleared",
+                    job,
+                    {"status": status, "reason": job.cancel_reason or status_payload.get("error"), **output_context},
+                )
+            job.performer_completed = True
+
+    def _publish_performer_event(self, event_type: str, job: LiveVoiceJob, payload: dict[str, Any]) -> None:
+        self._performer_bus.publish(
+            PerformerOutputEvent(
+                type=event_type,  # type: ignore[arg-type]
+                turn_id=job.turn_id,
+                input_event_id=job.turn_id,
+                source="live_voice",
+                target_policy="dashboard_monitor",
+                payload=payload,
+            )
+        )
+
+    @staticmethod
+    def _live_response_emotion(output_payload: dict[str, Any]) -> str | None:
+        stream = output_payload.get("stream")
+        if not isinstance(stream, dict):
+            return None
+        response = stream.get("assistant_response")
+        if not isinstance(response, dict):
+            return None
+        emotion = str(response.get("emotion") or "").strip()
+        return emotion or None
+
+    @staticmethod
+    def _live_output_context(job: LiveVoiceJob, output_payload: dict[str, Any]) -> dict[str, Any]:
+        stream = output_payload.get("stream")
+        input_event = stream.get("input_event") if isinstance(stream, dict) else None
+        if not isinstance(input_event, dict):
+            return {
+                "input": {
+                    "kind": "mic_transcript",
+                    "event_id": job.turn_id,
+                    "session_id": job.session_id,
+                },
+                "actor": {
+                    "source": "dashboard",
+                    "platform_id": "live_voice",
+                    "display_name": "Live Voice",
+                    "roles": ["voice"],
+                },
+            }
+        actor = input_event.get("actor") if isinstance(input_event.get("actor"), dict) else {}
+        return {
+            "input": {
+                "kind": input_event.get("kind") or "mic_transcript",
+                "event_id": input_event.get("event_id") or job.turn_id,
+                "session_id": input_event.get("session_id") or job.session_id,
+            },
+            "actor": {
+                "source": actor.get("source") or "dashboard",
+                "platform_id": actor.get("platform_id") or "live_voice",
+                "display_name": actor.get("display_name") or "Live Voice",
+                "roles": actor.get("roles") if isinstance(actor.get("roles"), list) else ["voice"],
+            },
+        }
 
     def cancel_job(self, turn_id: str, *, reason: str = "interrupted") -> LiveVoiceJobResponse:
         job = self._require_job(turn_id)

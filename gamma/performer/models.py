@@ -29,18 +29,30 @@ PerformerOutputEventType = Literal[
     "motion_trigger",
     "mouth_level",
     "output_cleared",
+    "target_mute_changed",
 ]
+
+STREAM_PUBLIC_TARGET = "stream_public"
+DASHBOARD_MONITOR_TARGET = "dashboard_monitor"
+DISCORD_CALL_TARGET = "discord_call"
+DEFAULT_TARGET_POLICY = STREAM_PUBLIC_TARGET
+KNOWN_TARGET_POLICIES = (
+    STREAM_PUBLIC_TARGET,
+    DASHBOARD_MONITOR_TARGET,
+    DISCORD_CALL_TARGET,
+)
 
 
 class PerformerOutputEvent(BaseModel):
     event_id: str = Field(default_factory=lambda: uuid4().hex)
+    sequence: int | None = None
     type: PerformerOutputEventType
     turn_id: str
     occurred_at: str = Field(default_factory=utc_now)
     input_event_id: str | None = None
     stream_output_event_id: str | None = None
     source: str = "stream_output"
-    target_policy: str = "stream_public"
+    target_policy: str = DEFAULT_TARGET_POLICY
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -49,22 +61,26 @@ def performer_event_from_stream_output(event: "StreamOutputEvent") -> PerformerO
     if event_type is None:
         return None
     payload = dict(event.payload)
+    target_policy = str(payload.pop("target_policy", "") or DEFAULT_TARGET_POLICY)
     if event.type == "subtitle_line":
         payload = {
             "text": str(event.payload.get("text", "") or ""),
             "clear": bool(event.payload.get("clear", False)),
             **{key: value for key, value in event.payload.items() if key not in {"text", "clear"}},
         }
+        payload.pop("target_policy", None)
     elif event.type == "emotion_changed":
         payload = {
             "expression": event.payload.get("emotion") or "neutral",
             **{key: value for key, value in event.payload.items() if key != "emotion"},
         }
+        payload.pop("target_policy", None)
     elif event.type == "avatar_motion":
         payload = {
             "motion": event.payload.get("motion"),
             **{key: value for key, value in event.payload.items() if key != "motion"},
         }
+        payload.pop("target_policy", None)
     payload = _network_safe_payload(payload)
     return PerformerOutputEvent(
         type=event_type,
@@ -72,6 +88,7 @@ def performer_event_from_stream_output(event: "StreamOutputEvent") -> PerformerO
         occurred_at=event.occurred_at,
         input_event_id=event.input_event_id,
         stream_output_event_id=event.output_event_id,
+        target_policy=target_policy,
         payload=payload,
     )
 

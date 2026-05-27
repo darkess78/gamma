@@ -24,6 +24,7 @@ from .models import (
     StreamOutputEvent,
     StreamTurnResult,
     TurnDecision,
+    output_context_from_input,
     output_events_from_response,
 )
 from .output import StreamOutputDispatcher
@@ -333,19 +334,19 @@ class StreamBrain:
                 input_event_id=input_event.event_id,
                 turn_id=turn_id,
                 type="speech_ended",
-                payload={"reason": reason, "interrupted": True, "clear_pending": True},
+                payload={"reason": reason, "interrupted": True, "clear_pending": True, **output_context_from_input(input_event)},
             ),
             StreamOutputEvent(
                 input_event_id=input_event.event_id,
                 turn_id=turn_id,
                 type="subtitle_line",
-                payload={"text": "", "clear": True},
+                payload={"text": "", "clear": True, **output_context_from_input(input_event)},
             ),
             StreamOutputEvent(
                 input_event_id=input_event.event_id,
                 turn_id=turn_id,
                 type="overlay_update",
-                payload={"target": "subtitles", "text": "", "clear": True},
+                payload={"target": "subtitles", "text": "", "clear": True, **output_context_from_input(input_event)},
             ),
         ]
         output_dispatch = self._output_dispatcher.dispatch(output_events)

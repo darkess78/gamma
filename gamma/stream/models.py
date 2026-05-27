@@ -117,18 +117,19 @@ def output_events_from_response(
     turn_id: str,
     response: AssistantResponse,
 ) -> list[StreamOutputEvent]:
+    context = output_context_from_input(input_event)
     events = [
         StreamOutputEvent(
             input_event_id=input_event.event_id,
             turn_id=turn_id,
             type="emotion_changed",
-            payload={"emotion": response.emotion},
+            payload={"emotion": response.emotion, **context},
         ),
         StreamOutputEvent(
             input_event_id=input_event.event_id,
             turn_id=turn_id,
             type="subtitle_line",
-            payload={"text": response.spoken_text},
+            payload={"text": response.spoken_text, **context},
         ),
     ]
     if response.audio_path or response.audio_content_type:
@@ -141,6 +142,7 @@ def output_events_from_response(
                 payload={
                     "audio_path": response.audio_path,
                     "audio_content_type": response.audio_content_type,
+                    **context,
                 },
             ),
         )
@@ -149,7 +151,7 @@ def output_events_from_response(
                 input_event_id=input_event.event_id,
                 turn_id=turn_id,
                 type="speech_ended",
-                payload={"audio_path": response.audio_path},
+                payload={"audio_path": response.audio_path, **context},
             )
         )
     for motion in response.motions:
@@ -158,7 +160,23 @@ def output_events_from_response(
                 input_event_id=input_event.event_id,
                 turn_id=turn_id,
                 type="avatar_motion",
-                payload={"motion": motion},
+                payload={"motion": motion, **context},
             )
         )
     return events
+
+
+def output_context_from_input(input_event: StreamInputEvent) -> dict[str, Any]:
+    return {
+        "input": {
+            "kind": input_event.kind,
+            "event_id": input_event.event_id,
+            "session_id": input_event.session_id,
+        },
+        "actor": {
+            "source": input_event.actor.source,
+            "platform_id": input_event.actor.platform_id,
+            "display_name": input_event.actor.display_name,
+            "roles": list(input_event.actor.roles),
+        },
+    }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import secrets
 import mimetypes
 from pathlib import Path
@@ -16,7 +17,10 @@ from ..schemas.voice import LiveVoiceJobResponse, VoiceRoundtripResponse, VoiceT
 from ..stream.brain import StreamBrain
 from ..stream.models import StreamInputEvent, StreamTurnResult
 from ..stream.output import StreamOutputLogService
+from ..integrations.discord import DiscordRuntime
 from ..performer.bus import PerformerEventBus, get_performer_event_bus
+from ..performer.models import DEFAULT_TARGET_POLICY, KNOWN_TARGET_POLICIES
+from ..performer.vtube_studio import VTubeStudioAdapter, VTubeStudioRunner
 from ..stream.replay import StreamEvalReport, StreamReplayService
 from ..stream.self_goals import StreamSelfGoalStore
 from ..stream.temp_memory import StreamTempMemoryStore
@@ -27,6 +31,8 @@ from ..voice.roundtrip import VoiceRoundtripService
 
 router = APIRouter()
 PERFORMER_STATIC_DIR = Path(__file__).resolve().parents[1] / "performer" / "static"
+DASHBOARD_DIR = Path(__file__).resolve().parents[1] / "dashboard"
+DASHBOARD_STATIC_DIR = DASHBOARD_DIR / "static"
 SHANA_DEFAULT_IMAGE = Path(__file__).resolve().parents[2] / "images" / "shana" / "jacket shana mouth closed eyes open.png"
 conversation_service = LazySingleton[ConversationService]()
 system_status_service = LazySingleton[SystemStatusService]()
@@ -38,6 +44,10 @@ stream_output_log_service = LazySingleton[StreamOutputLogService]()
 stream_temp_memory_store = LazySingleton[StreamTempMemoryStore]()
 stream_self_goal_store = LazySingleton[StreamSelfGoalStore]()
 performer_event_bus = LazySingleton[PerformerEventBus]()
+vtube_studio_adapter = LazySingleton[VTubeStudioAdapter]()
+vtube_studio_runner = LazySingleton[VTubeStudioRunner]()
+discord_runtime = LazySingleton[DiscordRuntime]()
+_vtube_studio_runner_task: asyncio.Task[None] | None = None
 
 
 def get_conversation_service() -> ConversationService:
@@ -70,6 +80,18 @@ def get_stream_output_log_service() -> StreamOutputLogService:
 
 def get_performer_bus() -> PerformerEventBus:
     return performer_event_bus.get(get_performer_event_bus)
+
+
+def get_vtube_studio_adapter() -> VTubeStudioAdapter:
+    return vtube_studio_adapter.get(VTubeStudioAdapter)
+
+
+def get_vtube_studio_runner() -> VTubeStudioRunner:
+    return vtube_studio_runner.get(lambda: VTubeStudioRunner(get_performer_bus(), get_vtube_studio_adapter()))
+
+
+def get_discord_runtime() -> DiscordRuntime:
+    return discord_runtime.get(DiscordRuntime)
 
 
 def get_stream_temp_memory_store() -> StreamTempMemoryStore:
@@ -161,8 +183,8 @@ def dashboard() -> str:
 
 
 @router.get("/performer")
-def performer_page() -> FileResponse:
-    return FileResponse(PERFORMER_STATIC_DIR / "performer.html", media_type="text/html")
+def performer_page() -> HTMLResponse:
+    return _performer_page(PERFORMER_STATIC_DIR / "performer.html")
 
 
 @router.get("/performer/assets/shana/default.png")
@@ -280,10 +302,94 @@ def stream_pending_queue() -> dict:
 
 
 @router.get("/v1/performer/events/recent")
-def performer_recent_events(limit: int = 50) -> dict:
+def performer_recent_events(limit: int = 50, target_policy: str | None = None, after_sequence: int | None = None) -> dict:
     try:
-        items = [event.model_dump() for event in get_performer_bus().recent(limit=limit)]
-        return {"items": items, "stats": get_performer_bus().stats()}
+        bus = get_performer_bus()
+        items = [
+            event.model_dump()
+            for event in bus.recent(limit=limit, target_policy=target_policy, after_sequence=after_sequence)
+        ]
+        return {
+            "items": items,
+            "stats": bus.stats(),
+            "replay": {
+                **bus.replay_window(),
+                "after_sequence": after_sequence,
+                "gap": bus.replay_gap_after(after_sequence),
+            },
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/v1/performer/status")
+def performer_status() -> dict:
+    try:
+        bus = get_performer_bus()
+        recent = bus.recent(limit=1)
+        recent_by_target = {}
+        for target_policy in KNOWN_TARGET_POLICIES:
+            target_recent = bus.recent(limit=1, target_policy=target_policy)
+            recent_by_target[target_policy] = target_recent[-1].model_dump() if target_recent else None
+        return {
+            "ok": True,
+            "stats": bus.stats(),
+            "recent_event": recent[-1].model_dump() if recent else None,
+            "recent_by_target": recent_by_target,
+            "recent_turns": bus.recent_turns(limit=5),
+            "adapters": {
+                "vtube_studio": {**get_vtube_studio_adapter().status(), "runner": get_vtube_studio_runner().status()},
+                "discord": get_discord_runtime().status(),
+            },
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/v1/performer/adapters/vtube-studio/start")
+async def performer_vtube_studio_start() -> dict:
+    global _vtube_studio_runner_task
+    try:
+        runner = get_vtube_studio_runner()
+        if _vtube_studio_runner_task is not None and not _vtube_studio_runner_task.done():
+            return {"ok": True, "already_running": True, "status": runner.status()}
+        _vtube_studio_runner_task = asyncio.create_task(runner.run_until_stopped())
+        await asyncio.sleep(0)
+        return {"ok": True, "already_running": False, "status": runner.status()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/v1/performer/adapters/vtube-studio/stop")
+async def performer_vtube_studio_stop() -> dict:
+    try:
+        runner = get_vtube_studio_runner()
+        runner.stop()
+        return {"ok": True, "status": runner.status()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/v1/performer/targets/{target_policy}/mute")
+def performer_target_mute(target_policy: str, reason: str = "operator") -> dict:
+    try:
+        return get_performer_bus().set_target_muted(target_policy, True, reason=reason)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/v1/performer/targets/{target_policy}/unmute")
+def performer_target_unmute(target_policy: str, reason: str = "operator") -> dict:
+    try:
+        return get_performer_bus().set_target_muted(target_policy, False, reason=reason)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/v1/performer/targets/{target_policy}/clear")
+def performer_target_clear(target_policy: str, reason: str = "operator") -> dict:
+    try:
+        return get_performer_bus().clear_target(target_policy, reason=reason)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -304,14 +410,39 @@ def audio_artifact(filename: str) -> FileResponse:
 
 
 @router.websocket("/v1/performer/events")
-async def performer_events(websocket: WebSocket, replay_recent: int = 0) -> None:
+async def performer_events(
+    websocket: WebSocket,
+    replay_recent: int = 0,
+    after_sequence: int | None = None,
+    target_policy: str = DEFAULT_TARGET_POLICY,
+    client_name: str = "",
+) -> None:
     if not _websocket_api_auth_ok(websocket):
         await websocket.close(code=1008)
         return
     await websocket.accept()
     bus = get_performer_bus()
-    subscriber_id, queue = await bus.subscribe(replay_recent=max(0, min(replay_recent, 100)))
-    await websocket.send_json({"type": "ready", "subscriber_id": subscriber_id, "stats": bus.stats()})
+    subscriber_target_policy = target_policy.strip().lower() or DEFAULT_TARGET_POLICY
+    subscriber_id, queue = await bus.subscribe(
+        replay_recent=max(0, min(replay_recent, 100)),
+        after_sequence=after_sequence,
+        target_policy=subscriber_target_policy,
+        client_name=client_name,
+        client_host=websocket.client.host if websocket.client else None,
+    )
+    await websocket.send_json(
+        {
+            "type": "ready",
+            "subscriber_id": subscriber_id,
+            "target_policy": subscriber_target_policy,
+            "client_name": client_name.strip().lower() or "unknown_client",
+            "replay_recent": max(0, min(replay_recent, 100)),
+            "after_sequence": after_sequence,
+            "replay_window": bus.replay_window(),
+            "replay_gap": bus.replay_gap_after(after_sequence),
+            "stats": bus.stats(),
+        }
+    )
     try:
         while True:
             payload = await queue.get()
@@ -517,6 +648,36 @@ def voice_live_history(limit: int = 20) -> dict[str, list[dict]]:
         return {"items": get_live_turn_runtime().get_recent_history(limit=limit)}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/monitor")
+def monitor_page() -> HTMLResponse:
+    return _dashboard_output_page(DASHBOARD_STATIC_DIR / "monitor.html")
+
+
+@router.get("/overlay/subtitles")
+def subtitle_overlay_page() -> HTMLResponse:
+    return _dashboard_output_page(DASHBOARD_STATIC_DIR / "overlay.html")
+
+
+def _dashboard_output_page(path: Path) -> HTMLResponse:
+    html = path.read_text(encoding="utf-8")
+    config = (
+        f'<script>window.GAMMA_SHANA_BASE_URL = "{settings.shana_base_url}";'
+        f' window.GAMMA_DASHBOARD_BASE_URL = "{settings.dashboard_base_url}";</script>'
+    )
+    html = html.replace("</head>", f"  {config}\n</head>", 1)
+    return HTMLResponse(html)
+
+
+def _performer_page(path: Path) -> HTMLResponse:
+    html = path.read_text(encoding="utf-8")
+    config = (
+        f'<script>window.GAMMA_SHANA_BASE_URL = "{settings.shana_base_url}";'
+        f' window.GAMMA_DASHBOARD_BASE_URL = "{settings.dashboard_base_url}";</script>'
+    )
+    html = html.replace("</head>", f"  {config}\n</head>", 1)
+    return HTMLResponse(html)
 
 
 @router.get("/v1/voice/live/{turn_id}", response_model=LiveVoiceJobResponse)

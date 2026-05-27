@@ -99,11 +99,21 @@ class ApiRoutesTest(unittest.TestCase):
     def test_performer_page_and_default_image_routes(self) -> None:
         page = routes.performer_page()
         image = routes.performer_default_image()
+        monitor = routes.monitor_page()
+        overlay = routes.subtitle_overlay_page()
 
         self.assertEqual(page.media_type, "text/html")
-        self.assertTrue(str(page.path).endswith("performer.html"))
+        self.assertIn("window.GAMMA_SHANA_BASE_URL", page.body.decode("utf-8"))
+        self.assertIn("window.GAMMA_DASHBOARD_BASE_URL", page.body.decode("utf-8"))
+        self.assertIn("data-dashboard-link", page.body.decode("utf-8"))
         self.assertEqual(image.media_type, "image/png")
         self.assertTrue(str(image.path).endswith("jacket shana mouth closed eyes open.png"))
+        self.assertEqual(monitor.media_type, "text/html")
+        self.assertIn("window.GAMMA_SHANA_BASE_URL", monitor.body.decode("utf-8"))
+        self.assertIn("window.GAMMA_DASHBOARD_BASE_URL", monitor.body.decode("utf-8"))
+        self.assertEqual(overlay.media_type, "text/html")
+        self.assertIn("window.GAMMA_SHANA_BASE_URL", overlay.body.decode("utf-8"))
+        self.assertIn("window.GAMMA_DASHBOARD_BASE_URL", overlay.body.decode("utf-8"))
 
 
 if __name__ == "__main__":

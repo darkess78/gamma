@@ -13,7 +13,7 @@ from .config import settings
 from .schemas.response import AssistantResponse
 from .stream.actions import ActionPlanner
 from .stream.brain import StreamBrain
-from .stream.models import ActionPlan, StreamActor, StreamInputEvent, StreamOutputEvent, StreamTurnResult, output_events_from_response
+from .stream.models import ActionPlan, StreamActor, StreamInputEvent, StreamOutputEvent, StreamTurnResult, output_context_from_input, output_events_from_response
 from .voice.affect import VoiceAffectAnalyzer
 from .voice.reply_chunking import split_reply_text
 from .voice.reply_interruptibility import build_interruptibility
@@ -199,6 +199,7 @@ def _stream_result_from_live_payload(
     )
     decision = decision or stream_brain.decide(stream_event)
     output_events = output_events_from_response(input_event=stream_event, turn_id=str(payload.get("turn_id") or stream_event.event_id), response=response)
+    output_context = output_context_from_input(stream_event)
     for chunk in payload.get("reply_chunks", []) or []:
         if not isinstance(chunk, dict):
             continue
@@ -215,6 +216,7 @@ def _stream_result_from_live_payload(
                     "interruptible": chunk.get("interruptible", True),
                     "protect_ms": chunk.get("protect_ms", 0),
                     "is_final": chunk.get("is_final", False),
+                    **output_context,
                 },
             )
         )

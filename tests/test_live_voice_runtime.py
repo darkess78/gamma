@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
+from gamma.performer.bus import PerformerEventBus
 from gamma.run_live_voice_worker import _run_incremental_experimental, _run_simple_chunked
 from gamma.config import settings
 from gamma.schemas.response import AssistantResponse
 from gamma.schemas.voice import LiveVoiceJobResponse
 from gamma.stream.models import StreamTurnResult, TurnDecision
+from gamma.voice.live_jobs import LiveVoiceJob, LiveVoiceJobManager
 from gamma.voice.live_runtime import SubprocessLiveTurnRuntime
 from gamma.voice.reply_state import AssistantTurnState
 
@@ -204,6 +207,118 @@ class LiveVoiceRuntimeTest(unittest.TestCase):
         self.assertEqual(active_cancelled[0].cancel_reason, "active-test")
         self.assertEqual(history, [{"turn_id": "turn-1"}])
         self.assertEqual([name for name, _payload in manager.calls], ["start_job", "get_job", "cancel_job", "cancel_active_jobs", "get_recent_history"])
+
+    def test_live_job_manager_bridges_reply_chunks_to_performer_bus(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            bus = PerformerEventBus()
+            manager = LiveVoiceJobManager(performer_bus=bus)
+            status_path = temp_path / "status.json"
+            output_path = temp_path / "output.json"
+            status_path.write_text(
+                json.dumps({"turn_id": "turn-live", "status": "completed", "created_at": "2026-05-25T00:00:00Z"}),
+                encoding="utf-8",
+            )
+            output_path.write_text(
+                json.dumps(
+                    {
+                        "turn_id": "turn-live",
+                        "status": "completed",
+                        "reply_text": "Live voice now reaches the monitor.",
+                        "reply_chunks": [
+                            {
+                                "chunk_index": 1,
+                                "text": "Live voice now reaches the monitor.",
+                                "audio_content_type": "audio/wav",
+                                "audio_base64": "UklGRg==",
+                                "is_final": True,
+                            }
+                        ],
+                        "stream": {
+                            "input_event": {
+                                "event_id": "turn-live",
+                                "kind": "mic_transcript",
+                                "session_id": "session-1",
+                                "actor": {
+                                    "source": "local",
+                                    "platform_id": "live_voice",
+                                    "display_name": "Live Voice",
+                                    "roles": ["voice"],
+                                },
+                            },
+                            "assistant_response": {"emotion": "happy"},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            manager._jobs["turn-live"] = LiveVoiceJob(  # type: ignore[attr-defined]
+                turn_id="turn-live",
+                session_id="session-1",
+                synthesize_speech=True,
+                response_mode="simple_chunked",
+                input_path=temp_path / "input.wav",
+                output_path=output_path,
+                status_path=status_path,
+                stdout_log=temp_path / "stdout.log",
+                stderr_log=temp_path / "stderr.log",
+                created_at="2026-05-25T00:00:00Z",
+                process=None,
+            )
+
+            response = manager.get_job("turn-live")
+            manager.get_job("turn-live")
+
+        self.assertEqual(response.turn_id, "turn-live")
+        events = bus.recent(limit=10, target_policy="dashboard_monitor")
+        self.assertEqual(
+            [event.type for event in events],
+            ["turn_started", "turn_state_changed", "subtitle_update", "expression_set", "speech_started", "speech_chunk_ready", "speech_ended"],
+        )
+        self.assertEqual(events[0].target_policy, "dashboard_monitor")
+        self.assertEqual(events[1].payload["state"], "completed")
+        self.assertEqual(events[2].payload["input"]["kind"], "mic_transcript")
+        self.assertEqual(events[2].payload["actor"]["platform_id"], "live_voice")
+        self.assertEqual(events[4].payload["status"], "speaking")
+        self.assertEqual(events[5].payload["audio_base64"], "UklGRg==")
+        self.assertEqual(events[5].payload["actor"]["roles"], ["voice"])
+
+    def test_live_job_manager_cancellation_clears_monitor_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            bus = PerformerEventBus()
+            manager = LiveVoiceJobManager(performer_bus=bus)
+            status_path = temp_path / "status.json"
+            output_path = temp_path / "output.json"
+            status_path.write_text(
+                json.dumps({"turn_id": "turn-cancel", "status": "cancelled", "cancel_reason": "test-stop"}),
+                encoding="utf-8",
+            )
+            output_path.write_text("{}", encoding="utf-8")
+            manager._jobs["turn-cancel"] = LiveVoiceJob(  # type: ignore[attr-defined]
+                turn_id="turn-cancel",
+                session_id="session-1",
+                synthesize_speech=True,
+                response_mode="simple_chunked",
+                input_path=temp_path / "input.wav",
+                output_path=output_path,
+                status_path=status_path,
+                stdout_log=temp_path / "stdout.log",
+                stderr_log=temp_path / "stderr.log",
+                created_at="2026-05-25T00:00:00Z",
+                process=None,
+                cancel_reason="test-stop",
+            )
+
+            response = manager.get_job("turn-cancel")
+            manager.get_job("turn-cancel")
+
+        self.assertEqual(response.status, "cancelled")
+        events = bus.recent(limit=10, target_policy="dashboard_monitor")
+        self.assertEqual([event.type for event in events], ["turn_state_changed", "output_cleared"])
+        self.assertEqual(events[0].payload["state"], "cancelled")
+        self.assertEqual(events[1].payload["reason"], "test-stop")
+        self.assertEqual(events[1].payload["actor"]["source"], "dashboard")
 
 
 if __name__ == "__main__":

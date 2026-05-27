@@ -123,7 +123,7 @@ Build a Windows executable:
 
 ```bash
 py -3.12 -m pip install pyinstaller
-py -3.12 scripts/build_tts_dataset_gui_exe.py
+py -3.12 helper_projects/GammaTTSDataPrep/scripts/build_exe.py
 ```
 
 Expected output:
@@ -133,11 +133,11 @@ dist/GammaTTSDataPrep/GammaTTSDataPrep.exe
 ```
 
 Packaging notes:
-- the executable is built from `packaging/tts_dataset_gui.spec`
+- the executable is built from `helper_projects/GammaTTSDataPrep/packaging/tts_dataset_gui.spec`
 - `ffmpeg` and `ffprobe` are still external runtime requirements
 - the build currently produces a folder-based app, not a single-file exe, to avoid extra startup and packaging friction
 - only launch `dist/GammaTTSDataPrep/GammaTTSDataPrep.exe`
-- do not launch `build/tts_dataset_gui/tts_dataset_gui/GammaTTSDataPrep.exe`; that is a PyInstaller intermediate artifact and will fail because it does not carry the final `_internal` runtime folder
+- do not launch `helper_projects/GammaTTSDataPrep/build/tts_dataset_gui/GammaTTSDataPrep.exe`; that is a PyInstaller intermediate artifact and will fail because it does not carry the final `_internal` runtime folder
 
 Staging behavior:
 - copies into a local directory before any processing

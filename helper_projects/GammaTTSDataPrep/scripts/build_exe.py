@@ -7,10 +7,10 @@ from pathlib import Path
 
 
 def main() -> int:
-    repo_root = Path(__file__).resolve().parents[1]
-    spec_path = repo_root / "packaging" / "tts_dataset_gui.spec"
+    repo_root = Path(__file__).resolve().parents[3]
+    spec_path = repo_root / "helper_projects" / "GammaTTSDataPrep" / "packaging" / "tts_dataset_gui.spec"
     dist_dir = repo_root / "dist"
-    build_dir = repo_root / "build" / "tts_dataset_gui"
+    build_dir = repo_root / "helper_projects" / "GammaTTSDataPrep" / "build"
     intermediate_exe_path = build_dir / "tts_dataset_gui" / "GammaTTSDataPrep.exe"
 
     if not spec_path.exists():

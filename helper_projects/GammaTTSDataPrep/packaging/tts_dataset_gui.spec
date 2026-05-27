@@ -4,7 +4,7 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 
-repo_root = Path(SPECPATH).resolve().parent
+repo_root = Path(SPECPATH).resolve().parents[2]
 
 hiddenimports = [
     "faster_whisper",
@@ -44,7 +44,7 @@ datas = (
 
 
 a = Analysis(
-    [str(repo_root / "gamma" / "run_tts_dataset_gui.py")],
+    [str(repo_root / "src" / "gamma" / "run_tts_dataset_gui.py")],
     pathex=[str(repo_root)],
     binaries=[],
     datas=datas,

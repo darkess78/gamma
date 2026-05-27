@@ -154,13 +154,16 @@ Recommended starting points:
   - Browser voice through the dashboard is the most portable interactive path.
 
 ## Project layout
-- `gamma/main.py` - FastAPI app entrypoint
-- `gamma/api/routes.py` - API routes
-- `gamma/conversation/service.py` - main conversation pipeline
-- `gamma/memory/service.py` - SQLite-backed memory service
-- `gamma/llm/` - model adapters
-- `gamma/voice/` - STT, TTS, and controller logic
+- `src/gamma/main.py` - FastAPI app entrypoint
+- `src/gamma/api/routes.py` - API routes
+- `src/gamma/conversation/service.py` - main conversation pipeline
+- `src/gamma/memory/service.py` - SQLite-backed memory service
+- `src/gamma/llm/` - model adapters
+- `src/gamma/voice/` - STT, TTS, and controller logic
 - `config/` - runtime, persona, and memory configuration
+- `assets/` - small versioned source/runtime assets
+- `data/` - local runtime state, generated outputs, models, and working datasets
+- `helper_projects/` - support projects that are useful for Gamma but not part of the core runtime package
 - `specs/` - project notes and architecture docs
 
 ## Quick start
@@ -463,23 +466,24 @@ The current implementation is still phrase-based, not true streaming word-by-wor
 
 A standalone GUI tool for preparing TTS training datasets from anime source media.
 
-**Entry point:** `gamma/run_tts_dataset_gui.py`  
-**Spec:** `packaging/tts_dataset_gui.spec`  
-**Build script:** `packaging/build.bat`
+**Project folder:** `helper_projects/GammaTTSDataPrep/`  
+**Entry point:** `src/gamma/run_tts_dataset_gui.py`  
+**Spec:** `helper_projects/GammaTTSDataPrep/packaging/tts_dataset_gui.spec`  
+**Build script:** `helper_projects/GammaTTSDataPrep/packaging/build.bat`
 
 ### Building
 
 Windows:
 
 ```bat
-packaging\build.bat
+helper_projects\GammaTTSDataPrep\packaging\build.bat
 ```
 
 Linux / macOS:
 
 ```bash
-chmod +x packaging/build.sh
-./packaging/build.sh
+chmod +x helper_projects/GammaTTSDataPrep/packaging/build.sh
+./helper_projects/GammaTTSDataPrep/packaging/build.sh
 ```
 
 Both scripts run PyInstaller against the spec using the repo `.venv` and print the output path when done. The full distribution lands in `dist/GammaTTSDataPrep/`.
@@ -504,10 +508,11 @@ Requires `ffmpeg` and `ffprobe` on `PATH` for video file handling. The `demucs` 
 The repo excludes local or heavyweight assets such as:
 - `.env`
 - `.venv/`
-- `data/`
-- `imagegen/`
+- `helper_projects/imagegen/`
 - local databases
 - generated audio artifacts
+
+Use `assets/` for small, versioned source/runtime assets that are safe to commit. Use `data/` for local runtime state, generated output, models, sidecar installs, logs, and working datasets. See `assets/README.md` and `data/README.md` for the folder boundary.
 
 ## Status
 

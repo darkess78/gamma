@@ -19,7 +19,7 @@ PUNCTUATION_RE = re.compile(r"[\s、。,.!?！？…・「」『』（）()\[\]{
 
 
 def parse_args() -> argparse.Namespace:
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[3]
     parser = argparse.ArgumentParser(
         description="Cross-check Shana TTS transcripts with a larger Whisper model.",
     )
@@ -135,7 +135,7 @@ def main() -> int:
     if not all_manifest.exists():
         raise SystemExit(f"manifest not found: {all_manifest}")
 
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[3]
     rows = load_jsonl(all_manifest)
     model = WhisperModel(
         args.model,

@@ -12,7 +12,7 @@ from gamma.config import settings
 
 
 def parse_args() -> argparse.Namespace:
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[3]
     parser = argparse.ArgumentParser(
         description="Transcribe exported Shana TTS asset clips and update manifests.",
     )
@@ -69,7 +69,7 @@ def main() -> int:
     if not all_manifest.exists():
         raise SystemExit(f"manifest not found: {all_manifest}")
 
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[3]
     rows = load_jsonl(all_manifest)
     model = WhisperModel(
         args.model,

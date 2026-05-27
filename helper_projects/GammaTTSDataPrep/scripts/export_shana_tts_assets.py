@@ -17,7 +17,7 @@ LABEL_DIRS = {
 
 
 def parse_args() -> argparse.Namespace:
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[3]
     parser = argparse.ArgumentParser(
         description="Export reviewed Shana TTS clips into a small repo asset folder."
     )
@@ -109,7 +109,7 @@ def wav_duration_seconds(path: Path) -> float | None:
 
 
 def relative_to_repo(path: Path) -> str:
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[3]
     try:
         return path.resolve().relative_to(repo_root).as_posix()
     except ValueError:
@@ -127,7 +127,7 @@ def main() -> int:
     args = parse_args()
     dataset_dir = args.dataset_dir.expanduser().resolve()
     out_dir = args.out_dir.expanduser().resolve()
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[3]
 
     if not dataset_dir.exists():
         raise SystemExit(f"dataset directory not found: {dataset_dir}")
@@ -233,7 +233,8 @@ def main() -> int:
         "- `heavy_noise`: clips labeled `Shana-heavy-noise`\n\n"
         "The WAV files are reviewed by speaker label, but many rows still need accurate transcript text before "
         "they should be used for supervised TTS training.\n\n"
-        "Use `scripts/export_shana_tts_assets.py --clean` to refresh this folder after labeling more clips.\n"
+        "Use `helper_projects/GammaTTSDataPrep/scripts/export_shana_tts_assets.py --clean` "
+        "to refresh this folder after labeling more clips.\n"
     )
     (out_dir / "README.md").write_text(readme, encoding="utf-8", newline="\n")
 

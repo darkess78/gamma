@@ -26,4 +26,4 @@ Labels:
 
 The WAV files are reviewed by speaker label. Transcript text is machine-generated with faster-whisper and should be reviewed before supervised TTS training.
 
-Use `scripts/export_shana_tts_assets.py --clean`, then `scripts/transcribe_shana_tts_assets.py --model small --language ja`, then `scripts/validate_shana_tts_transcripts.py --model large-v3 --language ja --device cuda --compute-type float16`, to refresh this folder after labeling more clips.
+Use `helper_projects/GammaTTSDataPrep/scripts/export_shana_tts_assets.py --clean`, then `helper_projects/GammaTTSDataPrep/scripts/transcribe_shana_tts_assets.py --model small --language ja`, then `helper_projects/GammaTTSDataPrep/scripts/validate_shana_tts_transcripts.py --model large-v3 --language ja --device cuda --compute-type float16`, to refresh this folder after labeling more clips.

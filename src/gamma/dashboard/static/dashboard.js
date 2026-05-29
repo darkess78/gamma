@@ -53,7 +53,31 @@
   var subtitlePopup = null;
   var subtitleState = { transcript: '', reply: '', partial: '' };
   var pendingMemoryDeleteItems = [];
-  var dashboardActiveTab = localStorage.getItem('gammaDashboardActiveTab') || 'overview';
+  var dashboardPage = String(window.GAMMA_DASHBOARD_PAGE || '').trim().toLowerCase() || dashboardPageFromPath();
+  var dashboardPageTabs = {
+    dashboard: ['dashboard-overview'],
+    live: ['voice'],
+    status: ['status', 'providers', 'logs'],
+    stream: ['stream'],
+    memory: ['memory'],
+    settings: ['providers', 'settings']
+  };
+  var dashboardActiveTab = dashboardPageTabs[dashboardPage]
+    ? dashboardPageTabs[dashboardPage][0]
+    : (localStorage.getItem('gammaDashboardActiveTab') || 'overview');
+
+  function dashboardPageFromPath() {
+    var path = String(window.location.pathname || '').replace(/\/+$/, '') || '/';
+    if (path === '/' || path === '/dashboard') return 'dashboard';
+    if (path.indexOf('/dashboard/') === 0) {
+      return path.slice('/dashboard/'.length).split('/')[0] || 'dashboard';
+    }
+    return 'dashboard';
+  }
+
+  function currentDashboardTabs() {
+    return dashboardPageTabs[dashboardPage] || [dashboardActiveTab || 'overview'];
+  }
 
   function postClientLog(kind, detail) {
     try {
@@ -80,6 +104,19 @@
     return browserReachableApiBase(statusUrl || configured || '');
   }
 
+  function dashboardPublicBase() {
+    return browserReachableApiBase(window.GAMMA_DASHBOARD_BASE_URL || '');
+  }
+
+  function dashboardHref(path) {
+    var route = String(path || '/dashboard');
+    if (route.charAt(0) !== '/') {
+      route = '/' + route;
+    }
+    var dashboardBase = dashboardPublicBase();
+    return dashboardBase ? dashboardBase + route : route;
+  }
+
   function browserReachableApiBase(rawBase) {
     var value = String(rawBase || '').replace(/\/$/, '');
     if (!value) {
@@ -102,9 +139,10 @@
 
   function updateOutputViewLinks() {
     var apiBase = outputViewApiBase();
-    var monitor = document.querySelector('[data-output-view="monitor"]');
-    var performer = document.querySelector('[data-output-view="performer"]');
-    var subtitles = document.querySelector('[data-output-view="subtitles"]');
+    var dashboardBase = dashboardPublicBase();
+    var monitors = document.querySelectorAll('[data-output-view="monitor"]');
+    var performers = document.querySelectorAll('[data-output-view="performer"]');
+    var subtitles = document.querySelectorAll('[data-output-view="subtitles"]');
     var status = document.getElementById('outputViewApiStatus');
     var shanaHealth = latestData && latestData.shana && latestData.shana.api_health ? latestData.shana.api_health : null;
     var shanaRunning = latestData && latestData.shana && latestData.shana.process ? !!latestData.shana.process.running : false;
@@ -121,15 +159,18 @@
       target_policy: 'stream_public',
       client_name: 'stream_pc_subtitle_overlay'
     });
-    if (monitor) {
-      monitor.href = '/static/monitor.html' + monitorQuery;
-    }
-    if (performer) {
+    document.querySelectorAll('[data-dashboard-route]').forEach(function (link) {
+      link.href = dashboardHref(link.getAttribute('data-dashboard-route'));
+    });
+    monitors.forEach(function (monitor) {
+      monitor.href = (dashboardBase ? dashboardBase : '') + '/dashboard/monitor' + monitorQuery;
+    });
+    performers.forEach(function (performer) {
       performer.href = (apiBase ? apiBase + '/performer' : '/performer') + performerQuery;
-    }
-    if (subtitles) {
-      subtitles.href = '/static/overlay.html' + subtitlesQuery;
-    }
+    });
+    subtitles.forEach(function (subtitle) {
+      subtitle.href = (dashboardBase ? dashboardBase : '') + '/overlay/subtitles' + subtitlesQuery;
+    });
     if (status) {
       status.textContent = apiBase ? 'Shana API: ' + apiBase : 'Shana API: unavailable';
       status.title = apiBase
@@ -272,7 +313,8 @@
       '</style></head><body><div id="subtitleText">Subtitles idle.</div></body></html>'
     );
     subtitlePopup.document.close();
-    updateSubtitlePopup(document.getElementById('liveSubtitleStatus').textContent || 'Subtitles idle.');
+    var subtitleStatus = document.getElementById('liveSubtitleStatus');
+    updateSubtitlePopup((subtitleStatus && subtitleStatus.textContent) || 'Subtitles idle.');
   }
 
   function syncLivePlaybackMute() {
@@ -440,7 +482,8 @@
   }
 
   function updateStamp(text) {
-    document.getElementById('stamp').textContent = text;
+    var stamp = document.getElementById('stamp');
+    if (stamp) stamp.textContent = text;
   }
 
   function switchDashboardTab(tabName) {
@@ -454,21 +497,30 @@
 
   function applyDashboardTabVisibility() {
     var panels = document.querySelectorAll('[data-dashboard-tab]');
-    if (!document.querySelector('[data-tab-target="' + dashboardActiveTab + '"]')) {
+    var activeTabs = currentDashboardTabs();
+    if (!dashboardPageTabs[dashboardPage] && document.querySelector('[data-tab-target]') && !document.querySelector('[data-tab-target="' + dashboardActiveTab + '"]')) {
       dashboardActiveTab = 'overview';
+      activeTabs = currentDashboardTabs();
     }
-    document.body.setAttribute('data-active-tab', dashboardActiveTab);
-    if (dashboardActiveTab === 'stream') {
+    document.body.setAttribute('data-dashboard-page', dashboardPage);
+    document.body.setAttribute('data-active-tab', activeTabs.join(' '));
+    if (activeTabs.indexOf('stream') !== -1) {
       setSectionOpen('browserVoicePanel', true);
     }
     panels.forEach(function (panel) {
       var tabs = String(panel.getAttribute('data-dashboard-tab') || '').split(/\s+/);
-      panel.classList.toggle('tab-hidden', tabs.indexOf(dashboardActiveTab) === -1);
+      var visible = tabs.some(function (tab) { return activeTabs.indexOf(tab) !== -1; });
+      panel.classList.toggle('tab-hidden', !visible);
     });
     document.querySelectorAll('[data-tab-target]').forEach(function (button) {
-      var isActive = button.getAttribute('data-tab-target') === dashboardActiveTab;
+      var isActive = activeTabs.indexOf(button.getAttribute('data-tab-target')) !== -1;
       button.classList.toggle('active', isActive);
       button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-dashboard-page-link]').forEach(function (link) {
+      var isActive = link.getAttribute('data-dashboard-page-link') === dashboardPage;
+      link.classList.toggle('active', isActive);
+      link.setAttribute('aria-current', isActive ? 'page' : 'false');
     });
   }
 
@@ -478,6 +530,72 @@
     el.textContent = text;
     el.classList.remove('good', 'warn', 'bad');
     if (tone) el.classList.add(tone);
+  }
+
+  function toggleNavMenu() {
+    var isOpen = !document.body.classList.contains('nav-menu-open');
+    document.body.classList.toggle('nav-menu-open', isOpen);
+    var toggle = document.querySelector('.nav-menu-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+  }
+
+  function updateNavbarDetails(data) {
+    var process = data && data.shana && data.shana.process ? data.shana.process : {};
+    var health = data && data.shana && data.shana.api_health ? data.shana.api_health : {};
+    var twitchWorker = data && data.twitch && data.twitch.worker ? data.twitch.worker : {};
+    var eventSub = data && data.twitch && data.twitch.eventsub ? data.twitch.eventsub : {};
+    var twitchRunning = !!(twitchWorker.process && twitchWorker.process.running);
+    var eventSubRunning = !!(eventSub.process && eventSub.process.running);
+    var workerCount = (twitchRunning ? 1 : 0) + (eventSubRunning ? 1 : 0);
+    updateStatusChip('stickyTwitchStatus', 'Workers ' + workerCount, workerCount ? 'good' : 'warn');
+    setTextIfChanged('navbarDashboardStatus', data && data.dashboard && data.dashboard.url ? data.dashboard.url : 'running');
+    setTextIfChanged('navbarApiStatus', health.ok ? 'healthy' : (health.detail || 'unavailable'));
+    setTextIfChanged('navbarWorkerStatus', workerCount + ' running / Twitch ' + (twitchRunning ? 'on' : 'off') + ' / EventSub ' + (eventSubRunning ? 'on' : 'off'));
+    setTextIfChanged('overviewWorkerStatus', workerCount + ' active');
+  }
+
+  function updateOverviewCards(data) {
+    var process = data && data.shana && data.shana.process ? data.shana.process : {};
+    var health = data && data.shana && data.shana.api_health ? data.shana.api_health : {};
+    var providers = data && data.providers ? data.providers : {};
+    var memoryStats = data && data.memory_db && data.memory_db.stats ? data.memory_db.stats : {};
+    var performer = data && data.performer ? data.performer : {};
+    var twitchWorker = data && data.twitch && data.twitch.worker ? data.twitch.worker : {};
+    var eventSub = data && data.twitch && data.twitch.eventsub ? data.twitch.eventsub : {};
+    var streamReady = data && data.twitch && data.twitch.stream_ready ? data.twitch.stream_ready : {};
+    var recentByTarget = performer.recent_by_target || {};
+    var currentOutput = recentByTarget.dashboard_monitor || recentByTarget.stream_public || performer.recent_event || {};
+    var twitchRunning = !!(twitchWorker.process && twitchWorker.process.running);
+    var eventSubRunning = !!(eventSub.process && eventSub.process.running);
+    var warnings = [];
+    if (!process.running) warnings.push('Shana stopped');
+    if (!health.ok) warnings.push('API unavailable');
+    if (streamReady.blocker_count) warnings.push(streamReady.blocker_count + ' stream blockers');
+    setTextIfChanged('overviewLiveStatus', 'Voice test');
+    setTextIfChanged('overviewOutputStatus', currentOutput.type || 'idle');
+    setTextIfChanged('overviewShanaStatus', process.running ? 'Running' : 'Stopped');
+    setTextIfChanged('overviewStreamStatus', streamReady.mode || (twitchRunning ? 'Twitch running' : 'Ready check'));
+    setTextIfChanged('overviewMemoryStatus', (memoryStats.total_items || memoryStats.item_count || 0) + ' items');
+    setTextIfChanged('overviewProviderStatus', providerSummary(providers));
+    setTextIfChanged('overviewShanaMini', process.running ? 'ON' : 'OFF');
+    setTextIfChanged('overviewApiMini', health.ok ? 'OK' : (health.detail || 'Down'));
+    setTextIfChanged('overviewWorkerMini', ((twitchRunning ? 1 : 0) + (eventSubRunning ? 1 : 0)) + ' active');
+    setTextIfChanged('overviewTurnMini', currentOutput.type ? currentOutput.type + ' #' + (currentOutput.sequence || '?') : 'Idle');
+    setTextIfChanged('overviewLiveMini', liveSocket ? 'Connected' : 'Idle');
+    setTextIfChanged('overviewStreamMini', streamReady.ok ? 'Ready' : (streamReady.mode || 'Check status'));
+    setTextIfChanged('overviewTwitchMini', 'IRC ' + (twitchRunning ? 'on' : 'off') + ' / EventSub ' + (eventSubRunning ? 'on' : 'off'));
+    setTextIfChanged('overviewMemoryMini', (memoryStats.known_people || memoryStats.people_count || 0) + ' people');
+    setTextIfChanged('overviewWarningsMini', warnings.length ? warnings.join(' / ') : 'No current warnings');
+  }
+
+  function providerSummary(providers) {
+    var names = ['llm', 'stt', 'tts'];
+    var ready = 0;
+    names.forEach(function (name) {
+      var provider = providers && providers[name] ? providers[name] : {};
+      if (provider.ok || provider.available || provider.provider || provider.enabled) ready += 1;
+    });
+    return ready + '/' + names.length + ' configured';
   }
 
   function setSectionOpen(sectionId, isOpen) {
@@ -527,7 +645,8 @@
   function setViewMode(mode) {
     viewMode = mode;
     localStorage.setItem('gammaDashboardViewMode', mode);
-    document.getElementById('viewModeSwitch').checked = mode === 'json';
+    var switchEl = document.getElementById('viewModeSwitch');
+    if (switchEl) switchEl.checked = mode === 'json';
     if (latestData) {
       renderPanels(latestData);
     }
@@ -535,20 +654,21 @@
   }
 
   function toggleViewMode() {
-    var checked = document.getElementById('viewModeSwitch').checked;
+    var switchEl = document.getElementById('viewModeSwitch');
+    var checked = switchEl ? switchEl.checked : viewMode !== 'json';
     setViewMode(checked ? 'json' : 'human');
   }
 
   function updateStickyTabOffset() {
-    var toolbar = document.querySelector('.toolbar');
-    if (!toolbar) return;
-    var rect = toolbar.getBoundingClientRect();
-    var margin = 14;
-    document.documentElement.style.setProperty('--tabbar-top', Math.ceil(rect.height + margin) + 'px');
+    var topbar = document.querySelector('.topbar');
+    if (!topbar) return;
+    var rect = topbar.getBoundingClientRect();
+    document.documentElement.style.setProperty('--topbar-top', Math.ceil(rect.height) + 'px');
   }
 
   function renderBlock(elementId, rawValue, humanText) {
     var el = document.getElementById(elementId);
+    if (!el) return;
     if (viewMode === 'json') {
       el.textContent = pretty(rawValue);
     } else {
@@ -565,15 +685,18 @@
   }
 
   function setTextIfChanged(elementId, value, cacheKey) {
+    var el = document.getElementById(elementId);
+    if (!el) return;
     var key = cacheKey || elementId;
     if (sectionHashes[key] === value) {
       return;
     }
     sectionHashes[key] = value;
-    document.getElementById(elementId).textContent = value;
+    el.textContent = value;
   }
 
   function renderBlockIfChanged(elementId, rawValue, humanText, cacheKey) {
+    if (!document.getElementById(elementId)) return;
     var key = cacheKey || elementId;
     var nextKey = viewMode === 'json' ? pretty(rawValue) : humanText;
     if (sectionHashes[key] === nextKey) {
@@ -584,13 +707,14 @@
   }
 
   function renderHtmlBlockIfChanged(elementId, rawValue, humanHtml, cacheKey) {
+    var el = document.getElementById(elementId);
+    if (!el) return;
     var key = cacheKey || elementId;
     var nextKey = viewMode === 'json' ? pretty(rawValue) : humanHtml;
     if (sectionHashes[key] === nextKey) {
       return;
     }
     sectionHashes[key] = nextKey;
-    var el = document.getElementById(elementId);
     if (viewMode === 'json') {
       el.classList.add('json-render');
       el.textContent = pretty(rawValue);
@@ -601,7 +725,14 @@
   }
 
   function updateLiveStatus(text) {
-    document.getElementById('liveVoiceStatus').textContent = text;
+    var status = document.getElementById('liveVoiceStatus');
+    if (status) status.textContent = text;
+  }
+
+  function addElementListener(elementId, eventName, handler, options) {
+    var element = document.getElementById(elementId);
+    if (!element) return;
+    element.addEventListener(eventName, handler, options);
   }
 
   function renderLiveMeta(job) {
@@ -676,21 +807,33 @@
     var savedInterruptSpeech = localStorage.getItem('gammaLiveInterruptSpeechMs');
     var savedSilence = localStorage.getItem('gammaLiveSilenceMs');
     var savedBargeIn = localStorage.getItem('gammaLiveBargeIn');
-    if (savedResponseMode) document.getElementById('liveResponseMode').value = savedResponseMode;
-    if (savedBargeInMode) document.getElementById('liveBargeInMode').value = savedBargeInMode;
-    if (savedSpeech) document.getElementById('liveSpeechThreshold').value = savedSpeech;
-    if (savedInterruptSpeech) document.getElementById('liveInterruptSpeechMs').value = savedInterruptSpeech;
-    if (savedSilence) document.getElementById('liveSilenceMs').value = savedSilence;
-    if (savedBargeIn !== null) document.getElementById('liveBargeInEnabled').checked = savedBargeIn === 'true';
+    var responseMode = document.getElementById('liveResponseMode');
+    var bargeInMode = document.getElementById('liveBargeInMode');
+    var speech = document.getElementById('liveSpeechThreshold');
+    var interruptSpeech = document.getElementById('liveInterruptSpeechMs');
+    var silence = document.getElementById('liveSilenceMs');
+    var bargeIn = document.getElementById('liveBargeInEnabled');
+    if (savedResponseMode && responseMode) responseMode.value = savedResponseMode;
+    if (savedBargeInMode && bargeInMode) bargeInMode.value = savedBargeInMode;
+    if (savedSpeech && speech) speech.value = savedSpeech;
+    if (savedInterruptSpeech && interruptSpeech) interruptSpeech.value = savedInterruptSpeech;
+    if (savedSilence && silence) silence.value = savedSilence;
+    if (savedBargeIn !== null && bargeIn) bargeIn.checked = savedBargeIn === 'true';
   }
 
   function persistLiveControlDefaults() {
-    localStorage.setItem('gammaLiveResponseMode', document.getElementById('liveResponseMode').value);
-    localStorage.setItem('gammaLiveBargeInMode', document.getElementById('liveBargeInMode').value);
-    localStorage.setItem('gammaLiveSpeechThreshold', document.getElementById('liveSpeechThreshold').value);
-    localStorage.setItem('gammaLiveInterruptSpeechMs', document.getElementById('liveInterruptSpeechMs').value);
-    localStorage.setItem('gammaLiveSilenceMs', document.getElementById('liveSilenceMs').value);
-    localStorage.setItem('gammaLiveBargeIn', document.getElementById('liveBargeInEnabled').checked ? 'true' : 'false');
+    var responseMode = document.getElementById('liveResponseMode');
+    var bargeInMode = document.getElementById('liveBargeInMode');
+    var speech = document.getElementById('liveSpeechThreshold');
+    var interruptSpeech = document.getElementById('liveInterruptSpeechMs');
+    var silence = document.getElementById('liveSilenceMs');
+    var bargeIn = document.getElementById('liveBargeInEnabled');
+    if (responseMode) localStorage.setItem('gammaLiveResponseMode', responseMode.value);
+    if (bargeInMode) localStorage.setItem('gammaLiveBargeInMode', bargeInMode.value);
+    if (speech) localStorage.setItem('gammaLiveSpeechThreshold', speech.value);
+    if (interruptSpeech) localStorage.setItem('gammaLiveInterruptSpeechMs', interruptSpeech.value);
+    if (silence) localStorage.setItem('gammaLiveSilenceMs', silence.value);
+    if (bargeIn) localStorage.setItem('gammaLiveBargeIn', bargeIn.checked ? 'true' : 'false');
     updateLiveControlLabels();
   }
 
@@ -2203,7 +2346,7 @@
     );
     updateStatusChip(
       'stickyBackendStatus',
-      'Backend: ' + (backendOk ? 'healthy' : 'unavailable'),
+      'API ' + (backendOk ? 'OK' : 'Down'),
       backendOk ? 'good' : 'warn'
     );
 
@@ -2378,9 +2521,12 @@
     renderTwitchSettings(twitchWorker.controls || {});
     updateStatusChip(
       'stickyTwitchStatus',
-      'Twitch: ' + (twitchProcess.running ? 'running' : (twitchWorker.configured ? 'stopped' : 'not configured')),
-      twitchProcess.running ? 'good' : (twitchWorker.configured ? 'warn' : 'bad')
+      'Workers ' + ((twitchProcess.running ? 1 : 0) + (twitchEventSubProcess.running ? 1 : 0)),
+      twitchProcess.running || twitchEventSubProcess.running ? 'good' : (twitchWorker.configured || twitchEventSub.configured ? 'warn' : 'bad')
     );
+
+    updateNavbarDetails(data);
+    updateOverviewCards(data);
 
     if (!sectionHashes.ttsProfileEditorStatusSaved) {
       renderBlockIfChanged(
@@ -2606,7 +2752,7 @@
       }
       if (path === '/api/dashboard/stop' || path === '/api/all/stop') {
         updateStamp('Stopping...');
-        document.getElementById('backendHealth').textContent = 'Shutdown requested.';
+        setTextIfChanged('backendHealth', 'Shutdown requested.', 'backendHealthAction');
         return;
       }
       if (path === '/api/providers/tts/test') {
@@ -2624,7 +2770,7 @@
     } catch (error) {
       postClientLog('action_exception', { path: path, error: String(error) });
       updateStamp('Action failed');
-      document.getElementById('backendHealth').textContent = 'Dashboard action failed.\n' + String(error);
+      setTextIfChanged('backendHealth', 'Dashboard action failed.\n' + String(error), 'backendHealthAction');
     }
   }
 
@@ -2829,6 +2975,38 @@
     } catch (error) {
       renderBlockIfChanged('streamStopStatus', { error: String(error) }, 'Stop speech failed.\n' + String(error), 'streamStopStatus');
     }
+  }
+
+  async function stopShanaOutput() {
+    var targets = ['dashboard_monitor', 'stream_public', 'discord_call'];
+    var results = [];
+    try {
+      renderBlockIfChanged('streamStopStatus', { status: 'running' }, 'Stopping output and clearing targets...', 'streamStopStatus');
+      var streamResponse = await fetch('/api/stream/stop', { method: 'POST' });
+      results.push({ target: 'stream_stop', ok: streamResponse.ok, status: streamResponse.status });
+      for (var i = 0; i < targets.length; i++) {
+        var target = targets[i];
+        var response = await fetch('/api/performer/targets/' + encodeURIComponent(target) + '/clear', { method: 'POST' });
+        results.push({ target: target, ok: response.ok, status: response.status });
+      }
+      setSubtitleState({ transcript: '', reply: '', partial: '' });
+      ttsPlayerClear();
+      setTextIfChanged('overviewOutputStatus', 'cleared');
+      setTextIfChanged('overviewTurnMini', 'Cleared');
+      renderBlockIfChanged('streamStopStatus', { results: results }, humanOutputStopResult(results), 'streamStopStatus');
+      await loadStreamActivity();
+      await loadStatus();
+    } catch (error) {
+      renderBlockIfChanged('streamStopStatus', { error: String(error) }, 'Stop output failed.\n' + String(error), 'streamStopStatus');
+      postClientLog('stop_output_error', { error: String(error) });
+    }
+  }
+
+  function humanOutputStopResult(results) {
+    var failed = (results || []).filter(function (item) { return !item.ok; });
+    return failed.length
+      ? 'Output stop requested with ' + failed.length + ' failed target(s).'
+      : 'Output stopped and performer targets cleared.';
   }
 
   function humanStreamStopResult(result) {
@@ -3060,7 +3238,7 @@
     } catch (error) {
       postClientLog('load_exception', { error: String(error) });
       updateStamp('Load failed');
-      document.getElementById('backendHealth').textContent = 'Dashboard failed to render data.\n' + String(error);
+      setTextIfChanged('backendHealth', 'Dashboard failed to render data.\n' + String(error), 'backendHealthLoadError');
     }
   }
 
@@ -3990,6 +4168,7 @@
   };
 
   window.toggleViewMode = toggleViewMode;
+  window.toggleNavMenu = toggleNavMenu;
   window.switchDashboardTab = switchDashboardTab;
   window.action = action;
   window.loadStatus = loadStatus;
@@ -4022,6 +4201,7 @@
   window.setStreamSelfGoalStatus = setStreamSelfGoalStatus;
   window.clearStreamSelfGoals = clearStreamSelfGoals;
   window.stopStreamSpeech = stopStreamSpeech;
+  window.stopShanaOutput = stopShanaOutput;
 
   postClientLog('script_boot', { viewMode: viewMode });
   applyDashboardTabVisibility();
@@ -4092,12 +4272,12 @@
   initSectionState('visionPanel', false);
   initSectionState('stdoutPanel', false);
   initSectionState('stderrPanel', false);
-  document.getElementById('liveResponseMode').addEventListener('change', persistLiveControlDefaults);
-  document.getElementById('liveBargeInMode').addEventListener('change', persistLiveControlDefaults);
-  document.getElementById('liveSpeechThreshold').addEventListener('input', persistLiveControlDefaults);
-  document.getElementById('liveInterruptSpeechMs').addEventListener('input', persistLiveControlDefaults);
-  document.getElementById('liveSilenceMs').addEventListener('input', persistLiveControlDefaults);
-  document.getElementById('liveBargeInEnabled').addEventListener('change', persistLiveControlDefaults);
+  addElementListener('liveResponseMode', 'change', persistLiveControlDefaults);
+  addElementListener('liveBargeInMode', 'change', persistLiveControlDefaults);
+  addElementListener('liveSpeechThreshold', 'input', persistLiveControlDefaults);
+  addElementListener('liveInterruptSpeechMs', 'input', persistLiveControlDefaults);
+  addElementListener('liveSilenceMs', 'input', persistLiveControlDefaults);
+  addElementListener('liveBargeInEnabled', 'change', persistLiveControlDefaults);
   updateRecordButton();
   updateLiveButton();
   updateMuteButtons();
@@ -4105,7 +4285,7 @@
   renderLiveMeta(null);
   renderLiveHistory();
   drawLiveMeter(0);
-  document.getElementById('visionImageFile').addEventListener('change', function (event) {
+  addElementListener('visionImageFile', 'change', function (event) {
     if (selectedVisionPreviewUrl) {
       URL.revokeObjectURL(selectedVisionPreviewUrl);
       selectedVisionPreviewUrl = null;
@@ -4122,8 +4302,9 @@
   updateOutputViewLinks();
   updateStickyTabOffset();
   window.addEventListener('resize', updateStickyTabOffset);
-  if (window.ResizeObserver) {
-    new ResizeObserver(updateStickyTabOffset).observe(document.querySelector('.toolbar'));
+  var _topbar = document.querySelector('.topbar');
+  if (window.ResizeObserver && _topbar) {
+    new ResizeObserver(updateStickyTabOffset).observe(_topbar);
   }
   [
     'ttsEditorPiperModelPath',
@@ -4141,7 +4322,7 @@
     var eventName = element.tagName === 'INPUT' && element.type === 'checkbox' ? 'change' : 'input';
     element.addEventListener(eventName, syncJsonFromStructuredFields);
   });
-  document.getElementById('ttsEditorValues').addEventListener('input', syncStructuredFieldsFromJson);
+  addElementListener('ttsEditorValues', 'input', syncStructuredFieldsFromJson);
   window.toggleLiveSpeakerMuted = toggleLiveSpeakerMuted;
   window.toggleLiveMicMuted = toggleLiveMicMuted;
   window.toggleSubtitleWindow = toggleSubtitleWindow;

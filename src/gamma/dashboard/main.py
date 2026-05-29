@@ -69,13 +69,49 @@ def health() -> dict[str, str]:
 
 
 @app.get("/")
+@app.get("/dashboard")
 def dashboard() -> HTMLResponse:
-    return _dashboard_page(INDEX_PAGE)
+    return _dashboard_page(INDEX_PAGE, dashboard_page="dashboard")
+
+
+@app.get("/dashboard/live")
+def dashboard_live_page() -> HTMLResponse:
+    return _dashboard_page(INDEX_PAGE, dashboard_page="live")
+
+
+@app.get("/dashboard/status")
+def dashboard_status_page() -> HTMLResponse:
+    return _dashboard_page(INDEX_PAGE, dashboard_page="status")
+
+
+@app.get("/dashboard/stream")
+def dashboard_stream_page() -> HTMLResponse:
+    return _dashboard_page(INDEX_PAGE, dashboard_page="stream")
+
+
+@app.get("/dashboard/twitch")
+def dashboard_twitch_page() -> RedirectResponse:
+    return RedirectResponse(url="/dashboard/stream", status_code=307)
+
+
+@app.get("/dashboard/memory")
+def dashboard_memory_page() -> HTMLResponse:
+    return _dashboard_page(INDEX_PAGE, dashboard_page="memory")
+
+
+@app.get("/dashboard/settings")
+def dashboard_settings_page() -> HTMLResponse:
+    return _dashboard_page(INDEX_PAGE, dashboard_page="settings")
 
 
 @app.get("/monitor")
-def monitor_page() -> HTMLResponse:
-    return _dashboard_output_page(MONITOR_PAGE)
+def monitor_page() -> RedirectResponse:
+    return RedirectResponse(url="/dashboard/monitor", status_code=307)
+
+
+@app.get("/dashboard/monitor")
+def dashboard_monitor_page() -> HTMLResponse:
+    return _dashboard_output_page(MONITOR_PAGE, dashboard_page="monitor")
 
 
 @app.get("/performer")
@@ -88,18 +124,31 @@ def subtitle_overlay_page() -> HTMLResponse:
     return _dashboard_output_page(SUBTITLE_OVERLAY_PAGE)
 
 
-def _dashboard_output_page(path: Path) -> HTMLResponse:
-    return _dashboard_page(path)
+def _dashboard_output_page(path: Path, *, dashboard_page: str = "") -> HTMLResponse:
+    return _dashboard_page(path, dashboard_page=dashboard_page)
 
 
-def _dashboard_page(path: Path) -> HTMLResponse:
+def _dashboard_page(path: Path, *, dashboard_page: str = "") -> HTMLResponse:
     html = path.read_text(encoding="utf-8")
+    html = _with_dashboard_public_links(html)
     config = (
         f'<script>window.GAMMA_SHANA_BASE_URL = "{_app_settings.shana_base_url}";'
-        f' window.GAMMA_DASHBOARD_BASE_URL = "{_app_settings.dashboard_base_url}";</script>'
+        f' window.GAMMA_DASHBOARD_BASE_URL = "{_app_settings.dashboard_base_url}";'
+        f' window.GAMMA_DASHBOARD_PAGE = "{dashboard_page}";</script>'
     )
     html = html.replace("</head>", f"  {config}\n</head>", 1)
     return HTMLResponse(html)
+
+
+def _with_dashboard_public_links(html: str) -> str:
+    dashboard_base = _app_settings.dashboard_base_url.rstrip("/")
+    replacements = {
+        'href="/dashboard': f'href="{dashboard_base}/dashboard',
+        'href="/overlay/subtitles': f'href="{dashboard_base}/overlay/subtitles',
+    }
+    for old, new in replacements.items():
+        html = html.replace(old, new)
+    return html
 
 
 @app.get("/login", response_class=HTMLResponse)

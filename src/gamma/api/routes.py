@@ -6,7 +6,7 @@ import mimetypes
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from ..config import settings
 from ..conversation.service import ConversationService
@@ -144,42 +144,19 @@ def root() -> dict[str, str]:
     return {"message": "gamma backend scaffold"}
 
 
-@router.get("/dashboard", response_class=HTMLResponse)
-def dashboard() -> str:
-    return """<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dashboard Moved</title>
-  <style>
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      background: linear-gradient(135deg, #f5ecdf 0%, #dfd3c1 100%);
-      color: #241a12;
-      font-family: Georgia, "Times New Roman", serif;
-    }
-    .card {
-      max-width: 720px;
-      padding: 28px;
-      border-radius: 18px;
-      background: rgba(255,255,255,0.75);
-      box-shadow: 0 18px 40px rgba(36,26,18,0.12);
-    }
-    a { color: #8c2f1b; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>Dashboard Runs Separately Now</h1>
-    <p>The browser dashboard is no longer hosted by the main Shana API process.</p>
-    <p>Start the standalone dashboard and open <a href="{settings.dashboard_base_url}/">{settings.dashboard_base_url}/</a>.</p>
-  </div>
-</body>
-</html>"""
+@router.get("/dashboard")
+def dashboard() -> RedirectResponse:
+    return RedirectResponse(url=f"{settings.dashboard_base_url}/dashboard", status_code=307)
+
+
+@router.get("/dashboard/{page_name}")
+def dashboard_page_redirect(page_name: str) -> RedirectResponse:
+    if page_name == "twitch":
+        page_name = "stream"
+    allowed = {"live", "monitor", "status", "stream", "memory", "settings"}
+    if page_name not in allowed:
+        raise HTTPException(status_code=404, detail="dashboard page not found")
+    return RedirectResponse(url=f"{settings.dashboard_base_url}/dashboard/{page_name}", status_code=307)
 
 
 @router.get("/performer")

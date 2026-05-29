@@ -24,6 +24,40 @@
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
     }
+    body.theme-dashboard {
+      --bg: #0e1218;
+      --surface: #131a23;
+      --border: rgba(182, 206, 230, 0.12);
+      --text: #ecf2f8;
+      --muted: #9aa8b7;
+      --accent: #33c3b3;
+    }
+    body.theme-compact .grid {
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      padding: 14px;
+    }
+    body.theme-compact .panel {
+      padding: 12px;
+      border-radius: 8px;
+    }
+    body.theme-compact .subtitle-display {
+      min-height: 44px;
+      padding: 10px;
+      font-size: 18px;
+    }
+    body.theme-focus .grid {
+      grid-template-columns: minmax(320px, 1.4fr) minmax(260px, 0.8fr);
+      align-items: stretch;
+    }
+    body.theme-focus .subtitle-panel {
+      grid-column: 1 / -1;
+    }
+    body.theme-focus .subtitle-display {
+      min-height: 180px;
+      font-size: clamp(34px, 5vw, 64px);
+      line-height: 1.18;
+    }
     .header {
       display: flex;
       align-items: center;
@@ -39,6 +73,8 @@
     }
     .header-actions {
       display: flex;
+      align-items: center;
+      flex-wrap: wrap;
       gap: 8px;
     }
     .btn {
@@ -56,6 +92,14 @@
     .btn.danger:hover { background: rgba(218, 54, 51, 0.15); }
     .btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
     .btn.primary:hover { background: #76c4ff; }
+    .select {
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 13px;
+    }
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -159,6 +203,21 @@
     .expression-grateful { color: var(--success); }
     .expression-pain { color: var(--danger); }
     .expression-silly { color: #d2a8ff; }
+    .audio-gate {
+      margin: 16px 24px 0;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(88, 166, 255, 0.1);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .audio-gate.enabled {
+      background: rgba(35, 134, 54, 0.12);
+    }
     .overlay-links {
       display: flex;
       gap: 8px;
@@ -178,12 +237,23 @@
   <div class="header">
     <h1>Shana Monitor</h1>
     <div class="header-actions">
-      <a data-dashboard-link href="/" class="btn">Dashboard</a>
+      <a data-dashboard-link href="/dashboard" class="btn">Dashboard</a>
       <a data-output-link="performer" href="/performer" class="btn">Performer Page</a>
-      <a data-output-link="subtitles" href="/static/overlay.html" class="btn">Subtitle Overlay</a>
+      <a data-output-link="subtitles" href="/overlay/subtitles" class="btn">Subtitle Overlay</a>
+      <select id="themeSelect" class="select" onchange="setMonitorTheme(this.value)" title="Monitor layout">
+        <option value="dashboard">Dashboard</option>
+        <option value="compact">Compact</option>
+        <option value="focus">Focus</option>
+      </select>
+      <button class="btn primary" id="audioEnableButton" onclick="enableAudio()">Enable Audio</button>
       <button class="btn" id="muteButton" onclick="toggleMute()">Mute Monitor</button>
-      <button class="btn danger" onclick="stopShana()">Stop Shana</button>
+      <button class="btn danger" onclick="clearOutput()">Clear Output</button>
     </div>
+  </div>
+
+  <div class="audio-gate" id="audioGate">
+    <span id="audioGateText">Click Enable Audio once to allow future Shana monitor audio playback.</span>
+    <button class="btn primary" onclick="enableAudio()">Enable Audio</button>
   </div>
 
   <div class="grid">
@@ -242,7 +312,7 @@
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel subtitle-panel">
       <h2>Subtitle</h2>
       <div class="subtitle-display" id="subtitleDisplay">Waiting for subtitle...</div>
     </div>
@@ -268,8 +338,8 @@
 
   <div class="overlay-links">
     <a data-output-link="performer" href="/performer">Open Performer Page</a>
-    <a data-output-link="subtitles" href="/static/overlay.html">Open Subtitle Overlay</a>
-    <a data-dashboard-link href="/">Open Dashboard</a>
+    <a data-output-link="subtitles" href="/overlay/subtitles">Open Subtitle Overlay</a>
+    <a data-dashboard-link href="/dashboard">Open Dashboard</a>
   </div>
 
   <audio id="audioEngine" preload="auto" style="display:none;"></audio>
@@ -278,6 +348,7 @@
     let subscriberId = null;
     let ws = null;
     let muted = false;
+    let audioEnabled = false;
     let playing = false;
     let audioQueue = [];
     let lastSequence = 0;
@@ -290,6 +361,31 @@
     const apiBase = browserReachableApiBase(params.get('api_base') || window.GAMMA_SHANA_BASE_URL || location.origin);
     const dashboardBase = browserReachableApiBase(params.get('dashboard_base') || window.GAMMA_DASHBOARD_BASE_URL || '');
     const audio = document.getElementById('audioEngine');
+
+    function initTheme() {
+      const theme = localStorage.getItem('gammaMonitorTheme') || 'dashboard';
+      setMonitorTheme(theme);
+    }
+
+    function setMonitorTheme(theme) {
+      const selected = ['dashboard', 'compact', 'focus'].includes(theme) ? theme : 'dashboard';
+      document.body.classList.remove('theme-dashboard', 'theme-compact', 'theme-focus');
+      document.body.classList.add(`theme-${selected}`);
+      document.getElementById('themeSelect').value = selected;
+      localStorage.setItem('gammaMonitorTheme', selected);
+    }
+
+    function enableAudio() {
+      audioEnabled = true;
+      const button = document.getElementById('audioEnableButton');
+      const gate = document.getElementById('audioGate');
+      const text = document.getElementById('audioGateText');
+      button.textContent = 'Audio Enabled';
+      button.disabled = true;
+      gate.classList.add('enabled');
+      text.textContent = 'Monitor audio is enabled for future Shana speech.';
+      playNextAudio();
+    }
 
     function browserReachableApiBase(rawBase) {
       const value = String(rawBase || '').replace(/\/$/, '');
@@ -323,10 +419,10 @@
         link.href = `${apiBase ? `${apiBase}/performer` : '/performer'}${performerQuery}`;
       });
       document.querySelectorAll('[data-output-link="subtitles"]').forEach(link => {
-        link.href = `/static/overlay.html${subtitlesQuery}`;
+        link.href = `/overlay/subtitles${subtitlesQuery}`;
       });
       document.querySelectorAll('[data-dashboard-link]').forEach(link => {
-        link.href = dashboardBase ? `${dashboardBase}/` : '/';
+        link.href = dashboardBase ? `${dashboardBase}/dashboard` : '/dashboard';
       });
     }
 
@@ -545,7 +641,7 @@
     }
 
     function playNextAudio() {
-      if (muted || playing || audioQueue.length === 0) {
+      if (!audioEnabled || muted || playing || audioQueue.length === 0) {
         return;
       }
       const url = audioQueue.shift();
@@ -579,18 +675,17 @@
       }
     }
 
-    function stopShana() {
-      if (ws) {
-        ws.close();
-      }
-      fetch(`${apiBase}/v1/stream/stop?reason=monitor_stop`, { method: 'POST' })
+    function clearOutput() {
+      fetch(`${apiBase}/v1/performer/targets/${encodeURIComponent(targetPolicy)}/clear?reason=monitor_clear`, { method: 'POST' })
         .then(() => {
           clearAudio();
-          location.reload();
+          document.getElementById('subtitleDisplay').textContent = '';
+          document.getElementById('turnState').textContent = 'cleared';
+          document.getElementById('queueIndicator').textContent = 'Output cleared';
         })
         .catch(err => {
-          console.error('Failed to stop Shana:', err);
-          alert('Failed to stop Shana');
+          console.error('Failed to clear output:', err);
+          alert('Failed to clear output');
         });
     }
 
@@ -606,6 +701,7 @@
       playNextAudio();
     });
 
+    initTheme();
     updateOutputLinks();
     connect();
   </script>

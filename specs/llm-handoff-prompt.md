@@ -56,6 +56,14 @@ The repo currently has working support for:
 
 Recent important changes:
 
+- Dashboard navigation is now page-oriented with `/dashboard`, `/dashboard/live`, `/dashboard/monitor`, `/dashboard/status`, `/dashboard/stream`, `/dashboard/memory`, and `/dashboard/settings`.
+- `/dashboard` is a glanceable overview, `/dashboard/stream` combines Stream and Twitch operations, and `/dashboard/settings` is the central settings hub.
+- `/dashboard/twitch` redirects to `/dashboard/stream`; `/monitor` redirects to `/dashboard/monitor`.
+- The Shana API app redirects dashboard subpage requests to the standalone dashboard app so browser links do not open JSON 404 pages.
+- The dashboard navbar is the first visible element and includes compact status chips, a status dropdown, mobile menu behavior, visually separate Performer/Subtitles output links, and a permanent `Stop Output` control.
+- `Stop Output` stops current speech/output and clears `dashboard_monitor`, `stream_public`, and `discord_call` performer targets without killing Shana or stream workers.
+- `/dashboard/monitor` is restored as the minimalist monitor view with one-click audio enable, mute, clear output, current event/turn state, subtitles, expression metadata, actor/input context, and `dashboard`/`compact`/`focus` local-storage themes.
+- Latest validation for this state: `node --check src/gamma/dashboard/static/dashboard.js`, dashboard/API pytest (41 passed, 50 subtests), stream output/brain pytest, and full pytest (`218 passed`).
 - Qwen3-TTS startup now falls back cleanly when requested CUDA devices are unavailable
 - Local faster-whisper STT also falls back more safely across device availability differences
 - Dashboard public URL handling now separates bind port from public/proxied URL
@@ -274,6 +282,9 @@ Current intended deployment model:
 - dashboard process binds locally on port `8001`
 - reverse proxy terminates HTTPS and exposes `https://gamma.neety.me`
 - dashboard public URL is configured separately from the bind port
+- public `/dashboard/*`, dashboard `/api/*`, and dashboard `/static/*` browser requests must route to the dashboard process, not the Shana API process
+- the Shana API process keeps fallback redirects for `/dashboard` and valid `/dashboard/<page>` paths so a misrouted page request redirects to the configured dashboard public URL instead of returning JSON 404
+- rendered dashboard page links use `SHANA_DASHBOARD_PUBLIC_*` through `settings.dashboard_base_url`; do not replace this with root-relative public links
 
 Important settings:
 

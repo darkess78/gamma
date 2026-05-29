@@ -90,21 +90,106 @@ class DashboardRoutesTest(unittest.TestCase):
             patch.object(settings, "dashboard_public_scheme", "http"),
         ):
             dashboard = main.dashboard()
-            monitor = main.monitor_page()
+            monitor_redirect = main.monitor_page()
+            monitor = main.dashboard_monitor_page()
             performer = main.performer_redirect()
             overlay = main.subtitle_overlay_page()
 
         self.assertEqual(dashboard.status_code, 200)
         self.assertIn('window.GAMMA_SHANA_BASE_URL = "http://192.168.1.50:8000"', dashboard.body.decode("utf-8"))
         self.assertIn('window.GAMMA_DASHBOARD_BASE_URL = "http://192.168.1.50:8001"', dashboard.body.decode("utf-8"))
-        self.assertIn('href="/static/monitor.html"', dashboard.body.decode("utf-8"))
+        self.assertIn('window.GAMMA_DASHBOARD_PAGE = "dashboard"', dashboard.body.decode("utf-8"))
+        self.assertIn('href="http://192.168.1.50:8001/dashboard/monitor"', dashboard.body.decode("utf-8"))
+        self.assertEqual(monitor_redirect.status_code, 307)
+        self.assertEqual(monitor_redirect.headers["location"], "/dashboard/monitor")
         self.assertEqual(monitor.status_code, 200)
         self.assertIn('window.GAMMA_SHANA_BASE_URL = "http://192.168.1.50:8000"', monitor.body.decode("utf-8"))
         self.assertIn('window.GAMMA_DASHBOARD_BASE_URL = "http://192.168.1.50:8001"', monitor.body.decode("utf-8"))
+        self.assertIn('window.GAMMA_DASHBOARD_PAGE = "monitor"', monitor.body.decode("utf-8"))
+        self.assertIn('id="audioEnableButton"', monitor.body.decode("utf-8"))
+        self.assertIn('id="themeSelect"', monitor.body.decode("utf-8"))
         self.assertEqual(performer.headers["location"], "http://192.168.1.50:8000/performer")
         self.assertEqual(overlay.status_code, 200)
         self.assertIn('window.GAMMA_SHANA_BASE_URL = "http://192.168.1.50:8000"', overlay.body.decode("utf-8"))
         self.assertIn('window.GAMMA_DASHBOARD_BASE_URL = "http://192.168.1.50:8001"', overlay.body.decode("utf-8"))
+
+    def test_dashboard_app_public_page_routes_are_registered(self) -> None:
+        registered_paths = {getattr(route, "path", "") for route in main.app.routes}
+        for path in [
+            "/dashboard",
+            "/dashboard/live",
+            "/dashboard/monitor",
+            "/dashboard/status",
+            "/dashboard/stream",
+            "/dashboard/memory",
+            "/dashboard/settings",
+        ]:
+            with self.subTest(path=path):
+                self.assertIn(path, registered_paths)
+
+    def test_dashboard_app_public_page_routes_return_html(self) -> None:
+        page_paths = [
+            (main.dashboard, "dashboard"),
+            (main.dashboard_live_page, "live"),
+            (main.dashboard_monitor_page, "monitor"),
+            (main.dashboard_status_page, "status"),
+            (main.dashboard_stream_page, "stream"),
+            (main.dashboard_memory_page, "memory"),
+            (main.dashboard_settings_page, "settings"),
+        ]
+        with (
+            patch.object(settings, "dashboard_public_scheme", "https"),
+            patch.object(settings, "dashboard_public_host", "gamma.neety.me"),
+            patch.object(settings, "dashboard_public_port", 443),
+        ):
+            for route_call, page_name in page_paths:
+                with self.subTest(page_name=page_name):
+                    response = route_call()
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(response.media_type, "text/html")
+                    self.assertIn(f'window.GAMMA_DASHBOARD_PAGE = "{page_name}"', response.body.decode("utf-8"))
+
+    def test_rendered_dashboard_links_use_public_dashboard_base(self) -> None:
+        with (
+            patch.object(settings, "dashboard_public_scheme", "https"),
+            patch.object(settings, "dashboard_public_host", "gamma.neety.me"),
+            patch.object(settings, "dashboard_public_port", 443),
+        ):
+            response = main.dashboard()
+        body = response.body.decode("utf-8")
+        for path in [
+            "/dashboard",
+            "/dashboard/live",
+            "/dashboard/monitor",
+            "/dashboard/status",
+            "/dashboard/stream",
+            "/dashboard/memory",
+            "/dashboard/settings",
+        ]:
+            with self.subTest(path=path):
+                self.assertIn(f'href="https://gamma.neety.me{path}"', body)
+        self.assertNotIn('href="/dashboard/live"', body)
+
+    def test_dashboard_section_pages_are_served_with_page_config(self) -> None:
+        page_routes = {
+            "dashboard_live_page": "live",
+            "dashboard_status_page": "status",
+            "dashboard_stream_page": "stream",
+            "dashboard_memory_page": "memory",
+            "dashboard_settings_page": "settings",
+        }
+        for route_name, page_name in page_routes.items():
+            with self.subTest(route_name=route_name):
+                response = getattr(main, route_name)()
+                self.assertEqual(response.status_code, 200)
+                body = response.body.decode("utf-8")
+                self.assertIn(f'window.GAMMA_DASHBOARD_PAGE = "{page_name}"', body)
+                self.assertIn('class="app-nav"', body)
+                self.assertIn('Stop Output', body)
+
+        twitch_redirect = main.dashboard_twitch_page()
+        self.assertEqual(twitch_redirect.status_code, 307)
+        self.assertEqual(twitch_redirect.headers["location"], "/dashboard/stream")
 
     def test_toolbar_actions(self) -> None:
         action_map = {

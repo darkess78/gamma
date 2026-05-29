@@ -234,8 +234,8 @@
           <button id="clearButton" type="button">Clear</button>
         </div>
         <div class="links">
-          <a data-dashboard-link class="link-button" href="/" target="_blank" rel="noopener">Dashboard</a>
-          <a data-output-link="monitor" class="link-button" href="/monitor" target="_blank" rel="noopener">Monitor</a>
+          <a data-dashboard-link class="link-button" href="/dashboard" target="_blank" rel="noopener">Dashboard</a>
+          <a data-output-link="monitor" class="link-button" href="/dashboard/monitor" target="_blank" rel="noopener">Monitor</a>
           <a data-output-link="subtitles" class="link-button" href="/overlay/subtitles" target="_blank" rel="noopener">Subtitles</a>
         </div>
       </div>
@@ -321,13 +321,13 @@
           client_name: 'stream_pc_subtitle_overlay'
         });
         document.querySelectorAll('[data-dashboard-link]').forEach(function (link) {
-          link.href = dashboardBase ? dashboardBase + '/' : '/';
+          link.href = dashboardBase ? dashboardBase + '/dashboard' : '/dashboard';
         });
         document.querySelectorAll('[data-output-link="monitor"]').forEach(function (link) {
-          link.href = apiBase ? apiBase + '/monitor' + monitorQuery : '/monitor' + monitorQuery;
+          link.href = dashboardBase ? dashboardBase + '/dashboard/monitor' + monitorQuery : '/dashboard/monitor' + monitorQuery;
         });
         document.querySelectorAll('[data-output-link="subtitles"]').forEach(function (link) {
-          link.href = apiBase ? apiBase + '/overlay/subtitles' + subtitlesQuery : '/overlay/subtitles' + subtitlesQuery;
+          link.href = dashboardBase ? dashboardBase + '/overlay/subtitles' + subtitlesQuery : '/overlay/subtitles' + subtitlesQuery;
         });
       }
 

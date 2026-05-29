@@ -89,7 +89,7 @@
 </head>
 <body>
   <div class="controls">
-    <a data-dashboard-link href="/" class="btn">Dashboard</a>
+    <a data-dashboard-link href="/dashboard" class="btn">Dashboard</a>
     <a data-output-link="performer" href="/performer" class="btn">Performer Page</a>
     <span class="btn" id="overlayConnection">connecting</span>
     <span class="btn" id="overlayResume">seq 0</span>
@@ -102,7 +102,7 @@
 
   <div class="overlay-links">
     <a data-output-link="performer" href="/performer">Performer Page</a>
-    <a data-dashboard-link href="/">Dashboard</a>
+    <a data-dashboard-link href="/dashboard">Dashboard</a>
   </div>
 
   <script>
@@ -146,7 +146,7 @@
         link.href = `${apiBase ? `${apiBase}/performer` : '/performer'}${performerQuery}`;
       });
       document.querySelectorAll('[data-dashboard-link]').forEach(link => {
-        link.href = dashboardBase ? `${dashboardBase}/` : '/';
+        link.href = dashboardBase ? `${dashboardBase}/dashboard` : '/dashboard';
       });
     }
 

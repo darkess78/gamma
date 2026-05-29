@@ -236,13 +236,25 @@ Suggested page split:
 
 ```text
 /dashboard
-  main control center
+  glanceable streaming overview
 
 /dashboard/live
   mic testing and live voice testing
 
 /dashboard/monitor
   listen-only Shana output monitor
+
+/dashboard/status
+  service status, process controls, provider health, machine metrics, logs
+
+/dashboard/stream
+  combined Stream and Twitch operations
+
+/dashboard/memory
+  memory stats, latest memories, known people, safer cleanup controls
+
+/dashboard/settings
+  central settings hub
 
 /performer
   Stream PC OBS/browser source
@@ -251,7 +263,13 @@ Suggested page split:
   optional subtitle-only OBS/browser source
 ```
 
-The existing dashboard tab system may need to evolve into multiple independently openable pages so the Gaming PC and Stream PC can keep different views open at the same time.
+Current status: implemented as route-backed dashboard pages over the existing shared dashboard shell. `/dashboard/twitch` redirects to `/dashboard/stream`, and `/monitor` redirects to `/dashboard/monitor`.
+
+Public routing expectation: `https://gamma.neety.me/dashboard/*`, dashboard `/api/*`, and dashboard `/static/*` should be reverse-proxied to the dashboard process. The Shana API process keeps fallback redirects for `/dashboard` and valid `/dashboard/<page>` paths to `settings.dashboard_base_url` so misrouted dashboard page requests do not return JSON 404. Dashboard navbar and overview links are rendered with the configured public dashboard base URL.
+
+The dashboard navbar is the top control surface. It includes compact page links, visually separate output links for Performer/Subtitles, a `Stop Output` control, status chips, a status dropdown, and mobile menu behavior. `Stop Output` clears current speech/subtitles for `dashboard_monitor`, `stream_public`, and `discord_call` without stopping Shana or ingestion workers.
+
+Latest validation for this state: dashboard JavaScript syntax check, dashboard/API route tests (41 passed, 50 subtests), stream output/brain tests, and full pytest suite (`218 passed`).
 
 ## Dashboard Monitor
 
@@ -421,9 +439,10 @@ Status: mostly implemented.
 Add a dashboard monitor page that subscribes to the output bus and plays Shana speech without requiring the dashboard live voice session to initiate the turn.
 
 Status: mostly implemented.
-- `/monitor` subscribes to the output bus as `dashboard_monitor`.
+- `/dashboard/monitor` subscribes to the output bus as `dashboard_monitor`.
 - It plays Shana audio, shows subtitles/state/expression, and displays actor/input context.
 - Monitor output can be muted/cleared independently from stream output.
+- It requires a user click to enable future audio playback and supports `dashboard`, `compact`, and `focus` CSS/local-storage themes.
 
 ### Phase 3: Stream PC Performer Page
 

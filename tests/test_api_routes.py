@@ -16,6 +16,7 @@ with patch.object(status_module, "SystemStatusService", autospec=True), patch.ob
     roundtrip_module, "VoiceRoundtripService", autospec=True
 ), patch.object(live_jobs_module, "LiveVoiceJobManager", autospec=True):
     from gamma.api import routes
+    from gamma.main import app as api_app
 
 
 class ApiRoutesTest(unittest.TestCase):
@@ -114,6 +115,46 @@ class ApiRoutesTest(unittest.TestCase):
         self.assertEqual(overlay.media_type, "text/html")
         self.assertIn("window.GAMMA_SHANA_BASE_URL", overlay.body.decode("utf-8"))
         self.assertIn("window.GAMMA_DASHBOARD_BASE_URL", overlay.body.decode("utf-8"))
+
+    def test_dashboard_subpage_routes_redirect_to_dashboard_app(self) -> None:
+        with patch.object(routes.settings, "dashboard_public_host", "10.78.78.29"):
+            dashboard = routes.dashboard()
+            response = routes.dashboard_page_redirect("live")
+            twitch = routes.dashboard_page_redirect("twitch")
+
+        self.assertEqual(dashboard.status_code, 307)
+        self.assertIn("/dashboard", dashboard.headers["location"])
+        self.assertEqual(response.status_code, 307)
+        self.assertIn("/dashboard/live", response.headers["location"])
+        self.assertEqual(twitch.status_code, 307)
+        self.assertIn("/dashboard/stream", twitch.headers["location"])
+
+    def test_public_dashboard_routes_are_registered_on_api_app(self) -> None:
+        registered_paths = {getattr(route, "path", "") for route in api_app.routes}
+        self.assertIn("/dashboard", registered_paths)
+        self.assertIn("/dashboard/{page_name}", registered_paths)
+
+    def test_public_dashboard_routes_on_api_app_do_not_json_404(self) -> None:
+        page_paths = [
+            ("dashboard", routes.dashboard),
+            ("live", lambda: routes.dashboard_page_redirect("live")),
+            ("monitor", lambda: routes.dashboard_page_redirect("monitor")),
+            ("status", lambda: routes.dashboard_page_redirect("status")),
+            ("stream", lambda: routes.dashboard_page_redirect("stream")),
+            ("memory", lambda: routes.dashboard_page_redirect("memory")),
+            ("settings", lambda: routes.dashboard_page_redirect("settings")),
+        ]
+        with (
+            patch.object(routes.settings, "dashboard_public_scheme", "https"),
+            patch.object(routes.settings, "dashboard_public_host", "gamma.neety.me"),
+            patch.object(routes.settings, "dashboard_public_port", 443),
+        ):
+            for page_name, route_call in page_paths:
+                with self.subTest(page_name=page_name):
+                    response = route_call()
+                    self.assertNotEqual(response.status_code, 404)
+                    self.assertEqual(response.status_code, 307)
+                    self.assertTrue(response.headers["location"].startswith("https://gamma.neety.me/dashboard"))
 
 
 if __name__ == "__main__":

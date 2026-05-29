@@ -99,11 +99,21 @@ Current practical focus is the live assistant/dashboard workflow, Twitch/stream 
 - Dashboard runs internally on port `8001`
 - HTTPS is expected to be terminated by a reverse proxy
 - public dashboard URL is separate from bind port
+- public `/dashboard/*`, dashboard `/api/*`, and dashboard `/static/*` browser requests should route to the dashboard process
+- the Shana API process has fallback redirects for `/dashboard` and valid `/dashboard/<page>` paths to avoid JSON 404 pages when a dashboard page request is misrouted
+- dashboard navbar and overview links use the configured public dashboard base URL rather than assuming root-relative paths are safe
 - browser live voice currently works
 - browser capture still uses deprecated `ScriptProcessorNode`
 - stream event API, stream output logs, queue, temp memory, and self-goals are implemented
 - performer output bus is implemented for generic subtitle/speech/expression/motion events with target policies, monotonic sequences, replay resume, and replay gap reporting
-- `/performer`, `/monitor`, and `/overlay/subtitles` serve browser output clients for Stream/Gaming PC use
+- Dashboard page routes are `/dashboard`, `/dashboard/live`, `/dashboard/monitor`, `/dashboard/status`, `/dashboard/stream`, `/dashboard/memory`, and `/dashboard/settings`
+- `/dashboard` is a glanceable overview; `/dashboard/live` is focused live voice testing; `/dashboard/status` owns detailed service/process controls; `/dashboard/stream` combines Stream and Twitch operations; `/dashboard/settings` is the central settings hub
+- `/dashboard/monitor`, `/performer`, and `/overlay/subtitles` are the main browser output/monitor views for Gaming PC and Stream PC use
+- `/dashboard/twitch` redirects to `/dashboard/stream`
+- The dashboard navbar is the first visible element and includes compact status chips, a status dropdown, mobile menu behavior, and a permanent `Stop Output` control
+- `Stop Output` stops current speech/stream output and clears `dashboard_monitor`, `stream_public`, and `discord_call` performer targets without stopping Shana or workers
+- The monitor page has `dashboard`, `compact`, and `focus` themes in local storage and requires one click to enable future audio playback
+- Latest validation for this dashboard/output-bus state: JS syntax check, focused dashboard/API pytest (41 passed, 50 subtests), stream output/brain pytest, and full pytest (`218 passed`)
 - `WebSocket /v1/performer/events` streams performer events; `GET /v1/performer/events/recent` exposes recent bus history with `after_sequence`
 - `GET /v1/performer/status` reports bus stats, per-target latest events, output targets, and adapter status
 - VTube Studio adapter maps generic performer events to configured hotkey request payloads, includes an optional websocket/auth client, and has a runner that can subscribe to `stream_public` performer events

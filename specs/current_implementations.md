@@ -181,6 +181,23 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - Separate dashboard FastAPI app in `src/gamma/dashboard/main.py`.
 - Static browser UI assets in `src/gamma/dashboard/static/`.
 - Optional dashboard login/session auth.
+- Dashboard pages now use a compact top navbar rather than the older stacked title/tab controls.
+- Dashboard route structure:
+  - `/dashboard` overview with live mini cards and links to major areas.
+  - `/dashboard/live` focused browser live voice testing.
+  - `/dashboard/monitor` minimalist output monitor.
+  - `/dashboard/status` detailed service, process, provider health, metrics, and log view.
+  - `/dashboard/stream` combined Stream and Twitch operations.
+  - `/dashboard/memory` memory stats, latest memories, known people, and safer cleanup controls.
+  - `/dashboard/settings` central settings hub.
+- `/dashboard/twitch` redirects to `/dashboard/stream`; `/monitor` redirects to `/dashboard/monitor`.
+- The reverse proxy should send public `/dashboard/*`, dashboard `/api/*`, and dashboard `/static/*` browser requests to the dashboard process.
+- The Shana API app redirects `/dashboard` and valid dashboard subpage requests to the configured dashboard public URL so misrouted browser links do not fall through to JSON 404 pages.
+- Rendered dashboard navbar and overview links use `settings.dashboard_base_url` from `SHANA_DASHBOARD_PUBLIC_*` rather than assuming root-relative `/dashboard/*` links are safe on every public host.
+- Navbar includes dashboard page links, visually separate Performer/Subtitles output links, compact status chips, a status dropdown, mobile menu behavior, and a permanent `Stop Output` button.
+- `Stop Output` stops current speech output and clears dashboard, stream, and Discord performer targets without stopping Shana, dashboard, Twitch, EventSub, or ingestion workers.
+- `/dashboard/monitor` is a dedicated monitor page with one-click audio enable, monitor mute, clear output, connection/current event state, subtitle text, expression metadata, actor/input context, and dashboard/compact/focus themes saved in local storage.
+- Latest dashboard/output-bus validation for this state: `node --check src/gamma/dashboard/static/dashboard.js`, focused dashboard/API pytest (41 passed, 50 subtests), stream output/brain pytest, and full pytest suite (`218 passed`).
 - Dashboard status endpoint includes app, providers, Shana process, machine metrics, memory, assistant state, timings, and LLM routing.
 - Runtime status endpoint checks Shana process and API health.
 - Start, stop, and restart Shana controls.

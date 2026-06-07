@@ -114,7 +114,9 @@ class DashboardService:
             local_status["providers"]["llm"]
         )
         runtime_status = self.build_runtime_status()
-        system_status = self._probe_json(settings.shana_base_url + "/v1/system/status")
+        # Use local API for health checks, not the public URL
+        local_api_base = f"http://127.0.0.1:{settings.shana_port}"
+        system_status = self._probe_json(local_api_base + "/v1/system/status")
         return {
             "dashboard": {
                 "name": f"{settings.app_name} dashboard",
@@ -199,7 +201,9 @@ class DashboardService:
 
     def build_runtime_status(self) -> dict[str, Any]:
         shana_process = self._process_manager.find_process("shana")
-        api_probe = self._probe_json(settings.shana_base_url + "/v1/system/status")
+        # Use local API for health checks, not the public URL
+        local_api_base = f"http://127.0.0.1:{settings.shana_port}"
+        api_probe = self._probe_json(local_api_base + "/v1/system/status")
         api_health = {
             "ok": api_probe.get("ok", False),
             "detail": "ok" if api_probe.get("ok", False) else api_probe.get("detail", "unreachable"),
@@ -345,7 +349,9 @@ class DashboardService:
         eventsub_state = read_twitch_eventsub_state()
         irc_runtime = self._worker_runtime_evidence(irc_process, irc_state, message_key="message_count")
         eventsub_runtime = self._worker_runtime_evidence(eventsub_process, eventsub_state, message_key="notification_count")
-        api_probe = self._probe_json(settings.shana_base_url + "/v1/system/status")
+        # Use local API for health checks, not the public URL
+        local_api_base = f"http://127.0.0.1:{settings.shana_port}"
+        api_probe = self._probe_json(local_api_base + "/v1/system/status")
         checks = [
             self._stream_ready_check(
                 "api",

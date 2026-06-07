@@ -131,6 +131,17 @@ def _cancel_active_live_turns(*, reason: str) -> dict:
 def _websocket_api_auth_ok(websocket: WebSocket) -> bool:
     if not settings.api_auth_enabled:
         return True
+    # Allow connections from the dashboard/public host or localhost without auth
+    dashboard_host = settings.dashboard_public_host
+    api_host = websocket.client.host if websocket.client else None
+    is_dashboard_origin = (
+        dashboard_host in {api_host, None}
+    )
+    if is_dashboard_origin:
+        return True
+    # Also allow localhost connections (for local development/testing)
+    if api_host in {"127.0.0.1", "localhost", None, "0.0.0.0"}:
+        return True
     expected = f"Bearer {settings.api_bearer_token}"
     auth_header = websocket.headers.get("authorization", "")
     if settings.api_bearer_token and secrets.compare_digest(auth_header, expected):
@@ -145,11 +156,11 @@ def root() -> dict[str, str]:
 
 
 @router.get("/dashboard")
-def dashboard() -> RedirectResponse:
-    return RedirectResponse(url=f"{settings.dashboard_base_url}/dashboard", status_code=307)
+def dashboard() -> HTMLResponse:
+    return _dashboard_output_page(DASHBOARD_STATIC_DIR / "dashboard.html")
 
 
-@router.get("/dashboard/{page_name}")
+@router.get("/{page_name}")
 def dashboard_page_redirect(page_name: str) -> RedirectResponse:
     if page_name == "twitch":
         page_name = "stream"
@@ -630,6 +641,31 @@ def voice_live_history(limit: int = 20) -> dict[str, list[dict]]:
 @router.get("/monitor")
 def monitor_page() -> HTMLResponse:
     return _dashboard_output_page(DASHBOARD_STATIC_DIR / "monitor.html")
+
+
+@router.get("/dashboard/status")
+def dashboard_status_page() -> HTMLResponse:
+    return _dashboard_output_page(DASHBOARD_STATIC_DIR / "status.html")
+
+
+@router.get("/dashboard/memory")
+def dashboard_memory_page() -> HTMLResponse:
+    return _dashboard_output_page(DASHBOARD_STATIC_DIR / "memory.html")
+
+
+@router.get("/dashboard/settings")
+def dashboard_settings_page() -> HTMLResponse:
+    return _dashboard_output_page(DASHBOARD_STATIC_DIR / "settings.html")
+
+
+@router.get("/dashboard/live")
+def dashboard_live_page() -> HTMLResponse:
+    return _dashboard_output_page(DASHBOARD_STATIC_DIR / "live.html")
+
+
+@router.get("/dashboard/stream")
+def dashboard_stream_page() -> HTMLResponse:
+    return _dashboard_output_page(DASHBOARD_STATIC_DIR / "stream.html")
 
 
 @router.get("/overlay/subtitles")

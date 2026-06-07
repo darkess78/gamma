@@ -1,5 +1,26 @@
 // monitor.js - Monitor-related functions for Gamma dashboard
 (function () {
+  'use strict';
+
+  // Determine if we're on a monitor or dashboard page
+  function hasMonitorContext() {
+    var path = String(location.pathname || '').replace(/\/+$/, '') || '/';
+    if (path === '/' || path === '/dashboard') return 'dashboard';
+    if (path.indexOf('/dashboard/') === 0) {
+      return path.slice('/dashboard/'.length).split('/')[0] || 'dashboard';
+    }
+    return 'dashboard';
+  }
+
+  // Get the current dashboard page from path
+  const currentDashboardPage = hasMonitorContext();
+
+  // Only connect WebSocket on the dedicated monitor page
+  if (currentDashboardPage !== 'monitor') {
+    console.debug('Gamma monitor WebSocket skipped for page:', currentDashboardPage);
+    return;
+  }
+
   let subscriberId = null;
   let ws = null;
   let muted = false;

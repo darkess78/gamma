@@ -566,4 +566,9 @@
     }
   }
 
+  // Initialize tab visibility after all modules are loaded
+  if (typeof applyDashboardTabVisibility === 'function') {
+    applyDashboardTabVisibility();
+  }
+
 })();

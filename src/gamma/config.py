@@ -781,6 +781,14 @@ class Settings:
 
     @property
     def shana_base_url(self) -> str:
+        # Use same URL format as dashboard_base_url when on same host with HTTPS
+        # This allows websocket to connect via the dashboard's HTTPS URL
+        if (
+            self.dashboard_public_scheme == 'https' and
+            self.dashboard_public_port in ('', '443') and
+            self.dashboard_public_host == self.shana_public_host
+        ):
+            return f"{self.dashboard_public_scheme}://{self.dashboard_public_host}"
         return f"http://{self.shana_public_host}:{self.shana_port}"
 
     @property

@@ -131,12 +131,24 @@ def _dashboard_output_page(path: Path, *, dashboard_page: str = "") -> HTMLRespo
 def _dashboard_page(path: Path, *, dashboard_page: str = "") -> HTMLResponse:
     html = path.read_text(encoding="utf-8")
     html = _with_dashboard_public_links(html)
+    # Add data-dashboard-page attribute to indicate which page is active
+    active_page = dashboard_page.split("/")[0] if dashboard_page else "dashboard"
     config = (
         f'<script>window.GAMMA_SHANA_BASE_URL = "{_app_settings.shana_base_url}";'
         f' window.GAMMA_DASHBOARD_BASE_URL = "{_app_settings.dashboard_base_url}";'
         f' window.GAMMA_DASHBOARD_PAGE = "{dashboard_page}";</script>'
     )
-    html = html.replace("</head>", f"  {config}\n</head>", 1)
+    # Add data-dashboard-page attribute to body element and scripts before head closing
+    html = html.replace(
+        "<body>",
+        f'<body data-dashboard-page="{active_page}"',
+        1
+    )
+    html = html.replace(
+        "</head>",
+        f"  {config}\n</head>",
+        1
+    )
     return HTMLResponse(html)
 
 

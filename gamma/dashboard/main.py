@@ -131,12 +131,11 @@ def _dashboard_output_page(path: Path, *, dashboard_page: str = "") -> HTMLRespo
 def _dashboard_page(path: Path, *, dashboard_page: str = "") -> HTMLResponse:
     html = path.read_text(encoding="utf-8")
     html = _with_dashboard_public_links(html)
-    # Use local API base for dashboard health checks
-    local_api_base = f"http://127.0.0.1:{_app_settings.shana_port}"
+    # Use public dashboard base for browser; API routes are same-origin proxy
     config = (
-        f'<script>window.GAMMA_SHANA_BASE_URL = "{local_api_base}";'
-        f' window.GAMMA_DASHBOARD_BASE_URL = "{_app_settings.dashboard_base_url}";'
-        f' window.GAMMA_DASHBOARD_PAGE = "{dashboard_page}";</script>'
+        f"<script>window.GAMMA_SHANA_BASE_URL = '{_app_settings.dashboard_base_url.rstrip('/')}';"
+        f" window.GAMMA_DASHBOARD_BASE_URL = '{_app_settings.dashboard_base_url}';"
+        f" window.GAMMA_DASHBOARD_PAGE = '{dashboard_page}';</script>"
     )
     html = html.replace("</head>", f"  {config}\n</head>", 1)
     return HTMLResponse(html)

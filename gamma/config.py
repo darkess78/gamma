@@ -571,6 +571,9 @@ class Settings:
     twitch_ignored_bots: str = str(
         _setting("SHANA_TWITCH_IGNORED_BOTS", _config_value(APP_CONFIG, "twitch_ignored_bots", default=""))
     )
+    twitch_broadcaster_user_id: str = str(
+        _setting("SHANA_TWITCH_BROADCASTER_USER_ID", _config_value(APP_CONFIG, "twitch_broadcaster_user_id", default=""))
+    )
     twitch_llm_safety_review_enabled: bool = _as_bool(
         _setting("SHANA_TWITCH_LLM_SAFETY_REVIEW_ENABLED", _config_value(APP_CONFIG, "twitch_llm_safety_review_enabled", default=False)),
         default=False,
@@ -591,6 +594,9 @@ class Settings:
         _setting("SHANA_TWITCH_OAUTH_TOKEN", _config_value(APP_CONFIG, "twitch_oauth_token", default=""))
     )
     twitch_owner_user_id: str = str(
+    twitch_broadcaster_user_id: str = str(
+        _setting("SHANA_TWITCH_BROADCASTER_USER_ID", _config_value(APP_CONFIG, "twitch_broadcaster_user_id", default=""))
+    )
         _setting("SHANA_TWITCH_OWNER_USER_ID", _config_value(APP_CONFIG, "twitch_owner_user_id", default=""))
     )
     twitch_self_goal_proposals_enabled: bool = _as_bool(

@@ -1,0 +1,2 @@
+"""Twitch ingestion adapter package."""
+

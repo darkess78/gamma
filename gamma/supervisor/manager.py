@@ -158,6 +158,33 @@ class ProcessManager:
             "stderr_path": str(self.stderr_log(name)),
         }
 
+    def module_status(self, service: str, module: str) -> dict[str, Any]:
+        """Get status for a specific module (twitch worker/eventsub).
+        
+        Args:
+            service: The service name (e.g., "twitch_worker", "twitch_eventsub")
+            module: The module name to check
+        """
+        # Check if the service can be accessed
+        try:
+            process = self.find_process(service)
+            if process:
+                return {
+                    "running": True,
+                    "service": service,
+                    "module": module,
+                    "pid": process.pid,
+                    "cmdline": " ".join(process.cmdline()),
+                }
+        except (KeyError, AttributeError, ValueError, IndexError):
+            pass
+        
+        # Fall back to returning not running
+        return {
+            "running": False,
+            "detail": "service-not-found",
+        }
+
     def find_process(self, name: str) -> psutil.Process | None:
         processes = self.find_processes(name)
         return processes[0] if processes else None

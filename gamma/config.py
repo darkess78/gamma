@@ -435,6 +435,9 @@ class Settings:
     speech_filter_llm_model: str = str(
         _setting("SHANA_SPEECH_FILTER_LLM_MODEL", _config_value(APP_CONFIG, "speech_filter_llm_model", default=""))
     )
+    speech_filter_llm_temperature: float = float(
+        _setting("SHANA_SPEECH_FILTER_LLM_TEMPERATURE", default=0.9)
+    )
     speech_filter_auto_rewrite: bool = _as_bool(
         _setting("SHANA_SPEECH_FILTER_AUTO_REWRITE", _config_value(APP_CONFIG, "speech_filter_auto_rewrite", default=True)),
         default=True,
@@ -463,6 +466,160 @@ class Settings:
         _setting("SHANA_MEMORY_WRITE_MODE", _config_value(MEMORY_CONFIG, "write_mode", default="selective"))
     )
 
+    llm_router_enabled: bool = _as_bool(
+        _setting("SHANA_LLM_ROUTER_ENABLED", _config_value(APP_CONFIG, "local_llm_enable_routing", default=False)),
+        default=False,
+    )
+    llm_router_profile: str = str(
+        _setting("SHANA_LLM_ROUTER_PROFILE", _config_value(APP_CONFIG, "local_llm_model", default=""))
+    )
+    llm_router_default_provider: str = str(
+        _setting("SHANA_LLM_ROUTER_DEFAULT_PROVIDER", _config_value(APP_CONFIG, "llm_provider", default=""))
+    )
+    llm_router_default_model: str = str(
+        _setting("SHANA_LLM_ROUTER_DEFAULT_MODEL", _config_value(APP_CONFIG, "local_llm_model", default=""))
+    )
+    llm_router_allow_hosted_escalation: bool = _as_bool(
+        _setting("SHANA_LLM_ROUTER_ALLOW_HOSTED_ESCALATION", _config_value(APP_CONFIG, "local_llm_enable_routing", default=False)),
+        default=False,
+    )
+    llm_router_chat_light_max_input_words: int = _as_int(
+        _setting("SHANA_LLM_ROUTER_CHAT_LIGHT_MAX_INPUT_WORDS", _config_value(APP_CONFIG, "local_llm_light_max_input_words", default=40)),
+        default=40,
+    )
+    llm_router_complex_max_input_words: int = _as_int(
+        _setting("SHANA_LLM_ROUTER_COMPLEX_MAX_INPUT_WORDS", _config_value(APP_CONFIG, "llm_model_tokens", default=4096)),
+        default=4096,
+    )
+    llm_router_failure_backoff_seconds: int = _as_int(
+        _setting("SHANA_LLM_ROUTER_FAILURE_BACKOFF_SECONDS", _config_value(APP_CONFIG, "llm_timeout_seconds", default=120)),
+        default=120,
+    )
+    llm_router_hosted_model: str = str(
+        _setting("SHANA_LLM_ROUTER_HOSTED_MODEL", _config_value(APP_CONFIG, "openai_api_key", default=""))
+    )
+    llm_router_hosted_provider: str = str(
+        _setting("SHANA_LLM_ROUTER_HOSTED_PROVIDER", _config_value(APP_CONFIG, "llm_provider", default="openai"))
+    )
+    llm_router_persona_heavy_hosted_fallback_enabled: bool = _as_bool(
+        _setting("SHANA_LLM_ROUTER_PERSONA_HEAVY_HOSTED_FALLBACK_ENABLED", _config_value(APP_CONFIG, "local_llm_enable_routing", default=False)),
+        default=False,
+    )
+    llm_router_persona_hosted_fallback_enabled: bool = _as_bool(
+        _setting("SHANA_LLM_ROUTER_PERSONA_HOSTED_FALLBACK_ENABLED", _config_value(APP_CONFIG, "local_llm_enable_routing", default=False)),
+        default=False,
+    )
+    proactive_idle_cooldown_seconds: int = _as_int(
+        _setting("SHANA_PROACTIVE_IDLE_COOLDOWN_SECONDS", _config_value(APP_CONFIG, "proactive_idle_cooldown_seconds", default=300)),
+        default=300,
+    )
+    proactive_idle_enabled: bool = _as_bool(
+        _setting("SHANA_PROACTIVE_IDLE_ENABLED", _config_value(APP_CONFIG, "proactive_idle_enabled", default=False)),
+        default=False,
+    )
+    proactive_idle_max_attempts_per_topic: int = _as_int(
+        _setting("SHANA_PROACTIVE_IDLE_MAX_ATTEMPTS_PER_TOPIC", _config_value(APP_CONFIG, "proactive_idle_max_attempts_per_topic", default=5)),
+        default=5,
+    )
+    proactive_idle_min_silence_seconds: int = _as_int(
+        _setting("SHANA_PROACTIVE_IDLE_MIN_SILENCE_SECONDS", _config_value(APP_CONFIG, "proactive_idle_min_silence_seconds", default=15)),
+        default=15,
+    )
+    proactive_idle_speech_enabled: bool = _as_bool(
+        _setting("SHANA_PROACTIVE_IDLE_SPEECH_ENABLED", _config_value(APP_CONFIG, "proactive_idle_speech_enabled", default=False)),
+        default=False,
+    )
+    proactive_idle_target_silence_seconds: int = _as_int(
+        _setting("SHANA_PROACTIVE_IDLE_TARGET_SILENCE_SECONDS", _config_value(APP_CONFIG, "proactive_idle_target_silence_seconds", default=20)),
+        default=20,
+    )
+    proactive_idle_tick_seconds: int = _as_int(
+        _setting("SHANA_PROACTIVE_IDLE_TICK_SECONDS", _config_value(APP_CONFIG, "proactive_idle_tick_seconds", default=5)),
+        default=5,
+    )
+    stream_filtered_audio_path: str = str(
+        _setting("SHANA_STREAM_FILTEREDAUDIO_PATH", _config_value(APP_CONFIG, "stream_filtered_audio_path", default="/data/stream/filtered"))
+    )
+    stream_safety_review_timeout_action: str = str(
+        _setting("SHANA_STREAM_SAFETY_REVIEW_TIMEOUT_ACTION", _config_value(APP_CONFIG, "stream_safety_review_timeout_action", default="stop"))
+    )
+    stream_safety_review_timeout_seconds: int = _as_int(
+        _setting("SHANA_STREAM_SAFETY_REVIEW_TIMEOUT_SECONDS", _config_value(APP_CONFIG, "stream_safety_review_timeout_seconds", default=60)),
+        default=60,
+    )
+    twitch_ambient_chat_enabled: bool = _as_bool(
+        _setting("SHANA_TWITCH_AMBIENT_CHAT_ENABLED", _config_value(APP_CONFIG, "twitch_ambient_chat_enabled", default=False)),
+        default=False,
+    )
+    twitch_bot_username: str = str(
+        _setting("SHANA_TWITCH_BOT_USERNAME", _config_value(APP_CONFIG, "twitch_bot_username", default=""))
+    )
+    twitch_channel: str = str(
+        _setting("SHANA_TWITCH_CHANNEL", _config_value(APP_CONFIG, "twitch_channel", default=""))
+    )
+    twitch_client_id: str = str(
+        _setting("SHANA_TWITCH_CLIENT_ID", _config_value(APP_CONFIG, "twitch_client_id", default=""))
+    )
+    twitch_dry_run: bool = _as_bool(
+        _setting("SHANA_TWITCH_DRY_RUN", _config_value(APP_CONFIG, "twitch_dry_run", default=False)),
+        default=False,
+    )
+    twitch_eventsub_enabled: bool = _as_bool(
+        _setting("SHANA_TWITCH_EVENTSUB_ENABLED", _config_value(APP_CONFIG, "twitch_eventsub_enabled", default=False)),
+        default=False,
+    )
+    twitch_ignored_bots: str = str(
+        _setting("SHANA_TWITCH_IGNORED_BOTS", _config_value(APP_CONFIG, "twitch_ignored_bots", default=""))
+    )
+    twitch_broadcaster_user_id: str = str(
+        _setting("SHANA_TWITCH_BROADCASTER_USER_ID", _config_value(APP_CONFIG, "twitch_broadcaster_user_id", default=""))
+    )
+    twitch_llm_safety_review_enabled: bool = _as_bool(
+        _setting("SHANA_TWITCH_LLM_SAFETY_REVIEW_ENABLED", _config_value(APP_CONFIG, "twitch_llm_safety_review_enabled", default=False)),
+        default=False,
+    )
+    twitch_max_speech_seconds_per_minute: int = _as_int(
+        _setting("SHANA_TWITCH_MAX_SPEECH_SECONDS_PER_MINUTE", _config_value(APP_CONFIG, "twitch_max_speech_seconds_per_minute", default=150)),
+        default=150,
+    )
+    twitch_mention_replies_enabled: bool = _as_bool(
+        _setting("SHANA_TWITCH_MENTION_REPLIES_ENABLED", _config_value(APP_CONFIG, "twitch_mention_replies_enabled", default=False)),
+        default=False,
+    )
+    twitch_min_speech_gap_seconds: int = _as_int(
+        _setting("SHANA_TWITCH_MIN_SPEECH_GAP_SECONDS", _config_value(APP_CONFIG, "twitch_min_speech_gap_seconds", default=5)),
+        default=5,
+    )
+    twitch_oauth_token: str = str(
+        _setting("SHANA_TWITCH_OAUTH_TOKEN", _config_value(APP_CONFIG, "twitch_oauth_token", default=""))
+    )
+    twitch_owner_user_id: str = str(
+        _setting("SHANA_TWITCH_OWNER_USER_ID", _config_value(APP_CONFIG, "twitch_owner_user_id", default=""))
+    )
+    twitch_broadcaster_user_id: str = str(
+        _setting("SHANA_TWITCH_BROADCASTER_USER_ID", _config_value(APP_CONFIG, "twitch_broadcaster_user_id", default=""))
+    )
+    twitch_self_goal_proposals_enabled: bool = _as_bool(
+        _setting("SHANA_TWITCH_SELF_GOAL_PROPOSALS_ENABLED", _config_value(APP_CONFIG, "twitch_self_goal_proposals_enabled", default=False)),
+        default=False,
+    )
+    twitch_spam_quip_cooldown_seconds: int = _as_int(
+        _setting("SHANA_TWITCH_SPAM_QUIP_COOLDOWN_SECONDS", _config_value(APP_CONFIG, "twitch_spam_quip_cooldown_seconds", default=300)),
+        default=300,
+    )
+    twitch_spam_quips_enabled: bool = _as_bool(
+        _setting("SHANA_TWITCH_SPAM_QUIPS_ENABLED", _config_value(APP_CONFIG, "twitch_spam_quips_enabled", default=False)),
+        default=False,
+    )
+    twitch_subtitles_enabled: bool = _as_bool(
+        _setting("SHANA_TWITCH_SUBTITLES_ENABLED", _config_value(APP_CONFIG, "twitch_subtitles_enabled", default=True)),
+        default=True,
+    )
+    twitch_voice_enabled: bool = _as_bool(
+        _setting("SHANA_TWITCH_VOICE_ENABLED", _config_value(APP_CONFIG, "twitch_voice_enabled", default=False)),
+        default=False,
+    )
+
     @property
     def shana_base_url(self) -> str:
         return f"http://{self.shana_public_host}:{self.shana_port}"
@@ -479,3 +636,13 @@ settings = Settings()
 settings.data_dir.mkdir(parents=True, exist_ok=True)
 settings.audio_output_dir.mkdir(parents=True, exist_ok=True)
 settings.image_input_dir.mkdir(parents=True, exist_ok=True)
+
+
+# Default TTS selection helper
+def load_desired_tts_selection() -> dict[str, str]:
+    """Load the desired TTS provider and profile selection."""
+    return {
+        "tts_provider": str(settings.tts_provider or getattr(settings, "default_tts_provider", "") or ""),
+        "tts_profile": str(settings.tts_profile or ""),
+    }
+

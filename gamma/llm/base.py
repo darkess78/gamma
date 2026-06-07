@@ -4,6 +4,15 @@ from dataclasses import dataclass
 
 
 @dataclass(slots=True)
+class LLMCallContext:
+    """Call context for LLM routing."""
+    session_id: str | None = None
+    call_id: str | None = None
+    provider: str | None = None
+    model: str | None = None
+
+
+@dataclass(slots=True)
 class LLMImageInput:
     data: bytes
     media_type: str

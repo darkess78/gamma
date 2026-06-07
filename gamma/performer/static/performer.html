@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shana Performer</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090b0f;
+      --panel: rgba(14, 18, 25, 0.78);
+      --line: rgba(218, 231, 242, 0.18);
+      --text: #eef5f8;
+      --muted: #9fafbb;
+      --accent: #40c7b2;
+      --warn: #f3b45d;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 25% 20%, rgba(64, 199, 178, 0.18), transparent 36%),
+        linear-gradient(135deg, #07090d 0%, #151923 48%, #1b1420 100%);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .stage {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 34vw);
+      min-height: 100vh;
+      padding: 28px;
+      gap: 24px;
+    }
+
+    .output {
+      position: relative;
+      display: flex;
+      min-width: 0;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: 7vh;
+    }
+
+    .subtitle {
+      width: min(1120px, 96%);
+      min-height: 98px;
+      padding: 22px 28px;
+      border: 1px solid rgba(238, 245, 248, 0.22);
+      border-radius: 8px;
+      background: rgba(5, 8, 12, 0.82);
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.36);
+      color: var(--text);
+      font-size: 34px;
+      line-height: 1.18;
+      text-align: center;
+      text-wrap: balance;
+      opacity: 0;
+      transform: translateY(12px);
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+
+    .subtitle.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .side {
+      display: grid;
+      grid-template-rows: 1fr auto;
+      min-width: 0;
+      gap: 16px;
+    }
+
+    .portrait {
+      position: relative;
+      min-height: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(8, 12, 18, 0.7);
+      overflow: hidden;
+    }
+
+    .portrait img {
+      position: absolute;
+      inset: auto 0 0;
+      width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      filter: drop-shadow(0 22px 30px rgba(0, 0, 0, 0.42));
+    }
+
+    .state {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .value {
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-align: right;
+    }
+
+    .dot {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--warn);
+      margin-right: 7px;
+      vertical-align: middle;
+    }
+
+    .dot.connected {
+      background: var(--accent);
+      box-shadow: 0 0 12px rgba(64, 199, 178, 0.75);
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    button {
+      border: 1px solid rgba(238, 245, 248, 0.22);
+      border-radius: 8px;
+      background: rgba(238, 245, 248, 0.08);
+      color: var(--text);
+      padding: 10px 12px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .link-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(238, 245, 248, 0.18);
+      border-radius: 8px;
+      background: rgba(238, 245, 248, 0.06);
+      color: var(--muted);
+      padding: 9px 11px;
+      font-size: 13px;
+      line-height: 1;
+      text-decoration: none;
+    }
+
+    button:hover,
+    .link-button:hover {
+      background: rgba(238, 245, 248, 0.14);
+    }
+
+    audio {
+      display: none;
+    }
+
+    @media (max-width: 860px) {
+      .stage {
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr auto;
+        padding: 16px;
+      }
+
+      .side {
+        grid-template-columns: 120px 1fr;
+        grid-template-rows: auto;
+      }
+
+      .portrait {
+        min-height: 160px;
+      }
+
+      .subtitle {
+        font-size: 24px;
+        min-height: 78px;
+        padding: 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <section class="output" aria-label="Performer output">
+      <div id="subtitle" class="subtitle"></div>
+    </section>
+    <aside class="side" aria-label="Performer state">
+      <div class="portrait">
+        <img alt="Shana" src="/performer/assets/shana/default.png">
+      </div>
+      <div class="state">
+        <div class="status-row"><span><span id="statusDot" class="dot"></span>Connection</span><span id="connectionValue" class="value">connecting</span></div>
+        <div class="status-row"><span>Resume from</span><span id="resumeValue" class="value">0</span></div>
+        <div class="status-row"><span>Replay</span><span id="replayValue" class="value">20</span></div>
+        <div class="status-row"><span>Turn</span><span id="turnValue" class="value">none</span></div>
+        <div class="status-row"><span>Sequence</span><span id="sequenceValue" class="value">none</span></div>
+        <div class="status-row"><span>Input</span><span id="inputValue" class="value">none</span></div>
+        <div class="status-row"><span>Actor</span><span id="actorValue" class="value">none</span></div>
+        <div class="status-row"><span>Expression</span><span id="expressionValue" class="value">neutral</span></div>
+        <div class="status-row"><span>Motion</span><span id="motionValue" class="value">none</span></div>
+        <div class="status-row"><span>Audio queue</span><span id="queueValue" class="value">0</span></div>
+        <div class="controls">
+          <button id="muteButton" type="button">Mute</button>
+          <button id="reconnectButton" type="button">Reconnect</button>
+          <button id="clearButton" type="button">Clear</button>
+        </div>
+        <div class="links">
+          <a data-dashboard-link class="link-button" href="/dashboard" target="_blank" rel="noopener">Dashboard</a>
+          <a data-output-link="monitor" class="link-button" href="/dashboard/monitor" target="_blank" rel="noopener">Monitor</a>
+          <a data-output-link="subtitles" class="link-button" href="/overlay/subtitles" target="_blank" rel="noopener">Subtitles</a>
+        </div>
+      </div>
+    </aside>
+  </main>
+  <audio id="audioEngine" preload="auto"></audio>
+  <script>
+    (function () {
+      var socket = null;
+      var reconnectTimer = null;
+      var audioQueue = [];
+      var playing = false;
+      var muted = false;
+      var subtitleTimer = null;
+      var lastSequence = 0;
+
+      var params = new URLSearchParams(window.location.search);
+      var token = params.get('token') || '';
+      var replayRecent = params.get('replay_recent') || '20';
+      var targetPolicy = params.get('target_policy') || 'stream_public';
+      var clientName = params.get('client_name') || 'stream_pc_performer';
+      var apiBase = browserReachableBase(params.get('api_base') || window.GAMMA_SHANA_BASE_URL || window.location.origin);
+      var dashboardBase = browserReachableBase(params.get('dashboard_base') || window.GAMMA_DASHBOARD_BASE_URL || '');
+
+      var audio = document.getElementById('audioEngine');
+      var subtitle = document.getElementById('subtitle');
+      var statusDot = document.getElementById('statusDot');
+      var connectionValue = document.getElementById('connectionValue');
+      var resumeValue = document.getElementById('resumeValue');
+      var replayValue = document.getElementById('replayValue');
+      var turnValue = document.getElementById('turnValue');
+      var sequenceValue = document.getElementById('sequenceValue');
+      var inputValue = document.getElementById('inputValue');
+      var actorValue = document.getElementById('actorValue');
+      var expressionValue = document.getElementById('expressionValue');
+      var motionValue = document.getElementById('motionValue');
+      var queueValue = document.getElementById('queueValue');
+      var muteButton = document.getElementById('muteButton');
+      var reconnectButton = document.getElementById('reconnectButton');
+      var clearButton = document.getElementById('clearButton');
+
+      function browserReachableBase(rawBase) {
+        var value = String(rawBase || '').replace(/\/$/, '');
+        if (!value) {
+          return '';
+        }
+        try {
+          var url = new URL(value, window.location.origin);
+          var browserHost = window.location.hostname;
+          var apiIsLocal = ['127.0.0.1', 'localhost', '0.0.0.0', '::1'].indexOf(url.hostname) !== -1;
+          var browserIsLocal = ['127.0.0.1', 'localhost', '::1'].indexOf(browserHost) !== -1;
+          if (apiIsLocal && browserHost && !browserIsLocal) {
+            url.hostname = browserHost;
+          }
+          return url.toString().replace(/\/$/, '');
+        } catch (_error) {
+          return value;
+        }
+      }
+
+      function outputViewQuery(values) {
+        var query = new URLSearchParams();
+        Object.keys(values || {}).forEach(function (key) {
+          if (values[key]) {
+            query.set(key, values[key]);
+          }
+        });
+        var text = query.toString();
+        return text ? '?' + text : '';
+      }
+
+      function updateLinks() {
+        var monitorQuery = outputViewQuery({
+          api_base: apiBase,
+          dashboard_base: dashboardBase,
+          target_policy: 'dashboard_monitor',
+          client_name: 'gaming_pc_monitor'
+        });
+        var subtitlesQuery = outputViewQuery({
+          api_base: apiBase,
+          dashboard_base: dashboardBase,
+          target_policy: 'stream_public',
+          client_name: 'stream_pc_subtitle_overlay'
+        });
+        document.querySelectorAll('[data-dashboard-link]').forEach(function (link) {
+          link.href = dashboardBase ? dashboardBase + '/dashboard' : '/dashboard';
+        });
+        document.querySelectorAll('[data-output-link="monitor"]').forEach(function (link) {
+          link.href = dashboardBase ? dashboardBase + '/dashboard/monitor' + monitorQuery : '/dashboard/monitor' + monitorQuery;
+        });
+        document.querySelectorAll('[data-output-link="subtitles"]').forEach(function (link) {
+          link.href = dashboardBase ? dashboardBase + '/overlay/subtitles' + subtitlesQuery : '/overlay/subtitles' + subtitlesQuery;
+        });
+      }
+
+      function wsUrl() {
+        var baseUrl = new URL(apiBase || window.location.origin);
+        var protocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+        var query = new URLSearchParams({ replay_recent: replayRecent, target_policy: targetPolicy, client_name: clientName });
+        resumeValue.textContent = String(lastSequence);
+        if (lastSequence > 0) {
+          query.set('after_sequence', String(lastSequence));
+        }
+        if (token) {
+          query.set('token', token);
+        }
+        return protocol + '//' + baseUrl.host + '/v1/performer/events?' + query.toString();
+      }
+
+      function setConnection(value, connected) {
+        connectionValue.textContent = value;
+        statusDot.classList.toggle('connected', Boolean(connected));
+      }
+
+      function updateQueue() {
+        queueValue.textContent = String(audioQueue.length + (playing ? 1 : 0));
+      }
+
+      function showSubtitle(text) {
+        window.clearTimeout(subtitleTimer);
+        subtitle.textContent = text || '';
+        subtitle.classList.toggle('visible', Boolean(text));
+        if (text) {
+          subtitleTimer = window.setTimeout(function () {
+            subtitle.classList.remove('visible');
+          }, 9000);
+        }
+      }
+
+      function clearOutput() {
+        audioQueue = [];
+        playing = false;
+        audio.pause();
+        audio.removeAttribute('src');
+        audio.load();
+        showSubtitle('');
+        updateQueue();
+      }
+
+      function updateEventContext(event) {
+        var payload = event && event.payload ? event.payload : {};
+        inputValue.textContent = inputLabel(payload.input);
+        actorValue.textContent = actorLabel(payload.actor);
+      }
+
+      function actorLabel(actor) {
+        actor = actor || {};
+        var source = actor.source || 'unknown';
+        var name = actor.display_name || actor.platform_id || 'unknown';
+        var roles = Array.isArray(actor.roles) && actor.roles.length ? ' [' + actor.roles.join(', ') + ']' : '';
+        return source + ':' + name + roles;
+      }
+
+      function inputLabel(input) {
+        input = input || {};
+        var kind = input.kind || 'unknown';
+        return input.session_id ? kind + ' / ' + input.session_id : kind;
+      }
+
+      function enqueueAudio(event) {
+        var url = audioSourceFromEvent(event);
+        if (!url) {
+          return;
+        }
+        audioQueue.push({ url: url, turnId: event.turn_id || '' });
+        updateQueue();
+        playNext();
+      }
+
+      function audioSourceFromEvent(event) {
+        if (!event || !event.payload) {
+          return '';
+        }
+        if (event.payload.audio_url) {
+          return event.payload.audio_url;
+        }
+        if (event.payload.audio_base64 && event.payload.audio_content_type) {
+          return 'data:' + event.payload.audio_content_type + ';base64,' + event.payload.audio_base64;
+        }
+        return '';
+      }
+
+      function playNext() {
+        if (playing || muted || audioQueue.length === 0) {
+          updateQueue();
+          return;
+        }
+        var item = audioQueue.shift();
+        playing = true;
+        turnValue.textContent = item.turnId || 'none';
+        audio.src = item.url;
+        audio.play().catch(function () {
+          playing = false;
+          updateQueue();
+        });
+        updateQueue();
+      }
+
+      audio.addEventListener('ended', function () {
+        playing = false;
+        updateQueue();
+        playNext();
+      });
+
+      audio.addEventListener('error', function () {
+        playing = false;
+        updateQueue();
+        playNext();
+      });
+
+      function handleEvent(event) {
+        if (!event || !event.type) {
+          return;
+        }
+        if (isStaleEvent(event)) {
+          return;
+        }
+        if (event.turn_id) {
+          turnValue.textContent = event.turn_id;
+        }
+        if (event.sequence) {
+          sequenceValue.textContent = String(event.sequence);
+          if (event.sequence > lastSequence) {
+            lastSequence = event.sequence;
+          }
+        }
+        updateEventContext(event);
+        if (event.type === 'ready') {
+          replayValue.textContent = replayLabel(event);
+          if (targetMutedFromStats(event.stats)) {
+            clearOutput();
+            connectionValue.textContent = 'connected / muted';
+          }
+          return;
+        }
+        if (event.type === 'subtitle_update') {
+          showSubtitle((event.payload && event.payload.text) || '');
+          return;
+        }
+        if (event.type === 'subtitle_clear' || event.type === 'output_cleared') {
+          clearOutput();
+          return;
+        }
+        if (event.type === 'target_mute_changed') {
+          if (event.payload && event.payload.muted) {
+            clearOutput();
+          }
+          return;
+        }
+        if (event.type === 'speech_started' || event.type === 'speech_chunk_ready') {
+          enqueueAudio(event);
+          return;
+        }
+        if (event.type === 'speech_ended') {
+          return;
+        }
+        if (event.type === 'expression_set') {
+          expressionValue.textContent = (event.payload && event.payload.expression) || 'neutral';
+          return;
+        }
+        if (event.type === 'motion_trigger') {
+          motionValue.textContent = (event.payload && event.payload.motion) || 'none';
+        }
+      }
+
+      function targetMutedFromStats(stats) {
+        var mutedTargets = stats && Array.isArray(stats.muted_targets) ? stats.muted_targets : [];
+        return mutedTargets.indexOf(targetPolicy) !== -1;
+      }
+
+      function isStaleEvent(event) {
+        return !!(event && event.sequence && lastSequence > 0 && event.sequence <= lastSequence);
+      }
+
+      function replayLabel(event) {
+        return String(event.replay_recent || replayRecent) + ' / after ' + String(event.after_sequence || 0) + (event.replay_gap ? ' / gap' : '');
+      }
+
+      function connect() {
+        window.clearTimeout(reconnectTimer);
+        if (socket) {
+          socket.close();
+        }
+        setConnection('connecting', false);
+        socket = new WebSocket(wsUrl());
+        socket.addEventListener('open', function () {
+          setConnection('connected', true);
+        });
+        socket.addEventListener('message', function (message) {
+          try {
+            handleEvent(JSON.parse(message.data));
+          } catch (_error) {
+            return;
+          }
+        });
+        socket.addEventListener('close', function () {
+          setConnection('disconnected', false);
+          reconnectTimer = window.setTimeout(connect, 2000);
+        });
+        socket.addEventListener('error', function () {
+          setConnection('error', false);
+        });
+      }
+
+      muteButton.addEventListener('click', function () {
+        muted = !muted;
+        muteButton.textContent = muted ? 'Unmute' : 'Mute';
+        if (muted) {
+          audio.pause();
+        } else {
+          playing = false;
+          playNext();
+        }
+        updateQueue();
+      });
+
+      reconnectButton.addEventListener('click', connect);
+      clearButton.addEventListener('click', clearOutput);
+      updateLinks();
+      connect();
+    })();
+  </script>
+</body>
+</html>

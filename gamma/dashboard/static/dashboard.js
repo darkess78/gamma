@@ -27,6 +27,7 @@
   var liveReplyCompleted = false;
   var liveCurrentChunk = null;
   var liveCurrentChunkStartedAt = 0;
+  var liveCurrentChunkWatchdog = 0;
   var liveInterruptSpeechStartedAt = 0;
   var liveInterruptProbePending = false;
   var liveInterruptProbeChunks = [];
@@ -52,6 +53,31 @@
   var subtitlePopup = null;
   var subtitleState = { transcript: '', reply: '', partial: '' };
   var pendingMemoryDeleteItems = [];
+  var dashboardPage = String(window.GAMMA_DASHBOARD_PAGE || '').trim().toLowerCase() || dashboardPageFromPath();
+  var dashboardPageTabs = {
+    dashboard: ['dashboard-overview'],
+    live: ['voice'],
+    status: ['status', 'providers', 'logs'],
+    stream: ['stream'],
+    memory: ['memory'],
+    settings: ['providers', 'settings']
+  };
+  var dashboardActiveTab = dashboardPageTabs[dashboardPage]
+    ? dashboardPageTabs[dashboardPage][0]
+    : (localStorage.getItem('gammaDashboardActiveTab') || 'overview');
+
+  function dashboardPageFromPath() {
+    var path = String(window.location.pathname || '').replace(/\/+$/, '') || '/';
+    if (path === '/' || path === '/dashboard') return 'dashboard';
+    if (path.indexOf('/dashboard/') === 0) {
+      return path.slice('/dashboard/'.length).split('/')[0] || 'dashboard';
+    }
+    return 'dashboard';
+  }
+
+  function currentDashboardTabs() {
+    return dashboardPageTabs[dashboardPage] || [dashboardActiveTab || 'overview'];
+  }
 
   function postClientLog(kind, detail) {
     try {
@@ -70,6 +96,103 @@
     } catch (error) {
       return String(value);
     }
+  }
+
+  function outputViewApiBase() {
+    var configured = window.GAMMA_SHANA_BASE_URL || '';
+    var statusUrl = latestData && latestData.shana && latestData.shana.url ? latestData.shana.url : '';
+    return browserReachableApiBase(statusUrl || configured || '');
+  }
+
+  function dashboardPublicBase() {
+    return browserReachableApiBase(window.GAMMA_DASHBOARD_BASE_URL || '');
+  }
+
+  function dashboardHref(path) {
+    var route = String(path || '/dashboard');
+    if (route.charAt(0) !== '/') {
+      route = '/' + route;
+    }
+    var dashboardBase = dashboardPublicBase();
+    return dashboardBase ? dashboardBase + route : route;
+  }
+
+  function browserReachableApiBase(rawBase) {
+    var value = String(rawBase || '').replace(/\/$/, '');
+    if (!value) {
+      return '';
+    }
+    try {
+      var apiUrl = new URL(value, window.location.origin);
+      var browserHost = window.location.hostname;
+      var apiHost = apiUrl.hostname;
+      var apiIsLocal = apiHost === '127.0.0.1' || apiHost === 'localhost' || apiHost === '0.0.0.0' || apiHost === '::1';
+      var browserIsLocal = browserHost === '127.0.0.1' || browserHost === 'localhost' || browserHost === '::1';
+      if (apiIsLocal && browserHost && !browserIsLocal) {
+        apiUrl.hostname = browserHost;
+      }
+      return apiUrl.toString().replace(/\/$/, '');
+    } catch (error) {
+      return value;
+    }
+  }
+
+  function updateOutputViewLinks() {
+    var apiBase = outputViewApiBase();
+    var dashboardBase = dashboardPublicBase();
+    var monitors = document.querySelectorAll('[data-output-view="monitor"]');
+    var performers = document.querySelectorAll('[data-output-view="performer"]');
+    var subtitles = document.querySelectorAll('[data-output-view="subtitles"]');
+    var status = document.getElementById('outputViewApiStatus');
+    var shanaHealth = latestData && latestData.shana && latestData.shana.api_health ? latestData.shana.api_health : null;
+    var shanaRunning = latestData && latestData.shana && latestData.shana.process ? !!latestData.shana.process.running : false;
+    var apiReachable = !!(shanaHealth && shanaHealth.ok);
+    var monitorQuery = outputViewQuery(apiBase, {
+      target_policy: 'dashboard_monitor',
+      client_name: 'gaming_pc_monitor'
+    });
+    var performerQuery = outputViewQuery('', {
+      target_policy: 'stream_public',
+      client_name: 'stream_pc_performer'
+    });
+    var subtitlesQuery = outputViewQuery(apiBase, {
+      target_policy: 'stream_public',
+      client_name: 'stream_pc_subtitle_overlay'
+    });
+    document.querySelectorAll('[data-dashboard-route]').forEach(function (link) {
+      link.href = dashboardHref(link.getAttribute('data-dashboard-route'));
+    });
+    monitors.forEach(function (monitor) {
+      monitor.href = (dashboardBase ? dashboardBase : '') + '/dashboard/monitor' + monitorQuery;
+    });
+    performers.forEach(function (performer) {
+      performer.href = (apiBase ? apiBase + '/performer' : '/performer') + performerQuery;
+    });
+    subtitles.forEach(function (subtitle) {
+      subtitle.href = (dashboardBase ? dashboardBase : '') + '/overlay/subtitles' + subtitlesQuery;
+    });
+    if (status) {
+      status.textContent = apiBase ? 'Shana API: ' + apiBase : 'Shana API: unavailable';
+      status.title = apiBase
+        ? 'Output views connect to ' + apiBase
+        : 'Output views will use the current browser origin until Shana status loads.';
+      status.classList.toggle('good', apiReachable);
+      status.classList.toggle('bad', !!latestData && (!shanaRunning || !apiReachable));
+    }
+  }
+
+  function outputViewQuery(apiBase, values) {
+    var query = new URLSearchParams();
+    if (apiBase) {
+      query.set('api_base', apiBase);
+    }
+    Object.keys(values || {}).forEach(function (key) {
+      if (values[key]) {
+        query.set(key, values[key]);
+      }
+    });
+    var text = query.toString();
+    return text ? '?' + text : '';
   }
 
   function escapeHtml(value) {
@@ -190,7 +313,8 @@
       '</style></head><body><div id="subtitleText">Subtitles idle.</div></body></html>'
     );
     subtitlePopup.document.close();
-    updateSubtitlePopup(document.getElementById('liveSubtitleStatus').textContent || 'Subtitles idle.');
+    var subtitleStatus = document.getElementById('liveSubtitleStatus');
+    updateSubtitlePopup((subtitleStatus && subtitleStatus.textContent) || 'Subtitles idle.');
   }
 
   function syncLivePlaybackMute() {
@@ -205,8 +329,8 @@
     if (speakerButton) {
       speakerButton.textContent = liveSpeakerMuted ? 'Unmute Shana' : 'Mute Shana';
       speakerButton.setAttribute('data-muted', liveSpeakerMuted ? 'true' : 'false');
-      speakerButton.classList.remove('secondary', 'danger');
-      speakerButton.classList.add(liveSpeakerMuted ? 'danger' : 'secondary');
+      speakerButton.classList.remove('secondary', 'danger', 'info', 'warn');
+      speakerButton.classList.add(liveSpeakerMuted ? 'info' : 'warn');
       speakerButton.style.backgroundColor = '';
       speakerButton.style.border = '';
       speakerButton.style.color = '';
@@ -215,8 +339,8 @@
     if (micButton) {
       micButton.textContent = liveMicMuted ? 'Unmute Mic' : 'Mute Mic';
       micButton.setAttribute('data-muted', liveMicMuted ? 'true' : 'false');
-      micButton.classList.remove('secondary', 'danger');
-      micButton.classList.add(liveMicMuted ? 'danger' : 'secondary');
+      micButton.classList.remove('secondary', 'danger', 'info', 'warn');
+      micButton.classList.add(liveMicMuted ? 'info' : 'warn');
       micButton.style.backgroundColor = '';
       micButton.style.border = '';
       micButton.style.color = '';
@@ -332,9 +456,13 @@
       .replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
   }
 
-  function providerLabel(value) {
+  function providerLabel(value, kind) {
     var normalized = String(value || '').toLowerCase();
-    if (normalized === 'local' || normalized === 'gpt-sovits' || normalized === 'gpt_sovits') return 'GPT-SoVITS';
+    if (normalized === 'local' && kind === 'stt') return 'Local Whisper';
+    if (normalized === 'local' && kind === 'tts') return 'GPT-SoVITS';
+    if (normalized === 'local') return 'Local';
+    if (normalized === 'faster-whisper' || normalized === 'faster_whisper') return 'Faster Whisper';
+    if (normalized === 'gpt-sovits' || normalized === 'gpt_sovits') return 'GPT-SoVITS';
     if (normalized === 'qwen-tts' || normalized === 'qwen_tts' || normalized === 'qwen' || normalized === 'qwentts') return 'Qwen3-TTS';
     if (normalized === 'openai') return 'OpenAI';
     if (normalized === 'stt') return 'STT';
@@ -349,8 +477,125 @@
     return health.detail ? 'Unavailable (' + health.detail + ')' : 'Unavailable';
   }
 
+  function formatRouterScope(scope) {
+    return String(scope || 'text').replace(/_/g, ' ');
+  }
+
   function updateStamp(text) {
-    document.getElementById('stamp').textContent = text;
+    var stamp = document.getElementById('stamp');
+    if (stamp) stamp.textContent = text;
+  }
+
+  function switchDashboardTab(tabName) {
+    dashboardActiveTab = tabName || 'overview';
+    try {
+      localStorage.setItem('gammaDashboardActiveTab', dashboardActiveTab);
+    } catch (error) {
+    }
+    applyDashboardTabVisibility();
+  }
+
+  function applyDashboardTabVisibility() {
+    var panels = document.querySelectorAll('[data-dashboard-tab]');
+    var activeTabs = currentDashboardTabs();
+    if (!dashboardPageTabs[dashboardPage] && document.querySelector('[data-tab-target]') && !document.querySelector('[data-tab-target="' + dashboardActiveTab + '"]')) {
+      dashboardActiveTab = 'overview';
+      activeTabs = currentDashboardTabs();
+    }
+    document.body.setAttribute('data-dashboard-page', dashboardPage);
+    document.body.setAttribute('data-active-tab', activeTabs.join(' '));
+    if (activeTabs.indexOf('stream') !== -1) {
+      setSectionOpen('browserVoicePanel', true);
+    }
+    panels.forEach(function (panel) {
+      var tabs = String(panel.getAttribute('data-dashboard-tab') || '').split(/\s+/);
+      var visible = tabs.some(function (tab) { return activeTabs.indexOf(tab) !== -1; });
+      panel.classList.toggle('tab-hidden', !visible);
+    });
+    document.querySelectorAll('[data-tab-target]').forEach(function (button) {
+      var isActive = activeTabs.indexOf(button.getAttribute('data-tab-target')) !== -1;
+      button.classList.toggle('active', isActive);
+      button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-dashboard-page-link]').forEach(function (link) {
+      var isActive = link.getAttribute('data-dashboard-page-link') === dashboardPage;
+      link.classList.toggle('active', isActive);
+      link.setAttribute('aria-current', isActive ? 'page' : 'false');
+    });
+  }
+
+  function updateStatusChip(elementId, text, tone) {
+    var el = document.getElementById(elementId);
+    if (!el) return;
+    el.textContent = text;
+    el.classList.remove('good', 'warn', 'bad');
+    if (tone) el.classList.add(tone);
+  }
+
+  function toggleNavMenu() {
+    var isOpen = !document.body.classList.contains('nav-menu-open');
+    document.body.classList.toggle('nav-menu-open', isOpen);
+    var toggle = document.querySelector('.nav-menu-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+  }
+
+  function updateNavbarDetails(data) {
+    var process = data && data.shana && data.shana.process ? data.shana.process : {};
+    var health = data && data.shana && data.shana.api_health ? data.shana.api_health : {};
+    var twitchWorker = data && data.twitch && data.twitch.worker ? data.twitch.worker : {};
+    var eventSub = data && data.twitch && data.twitch.eventsub ? data.twitch.eventsub : {};
+    var twitchRunning = !!(twitchWorker.process && twitchWorker.process.running);
+    var eventSubRunning = !!(eventSub.process && eventSub.process.running);
+    var workerCount = (twitchRunning ? 1 : 0) + (eventSubRunning ? 1 : 0);
+    updateStatusChip('stickyTwitchStatus', 'Workers ' + workerCount, workerCount ? 'good' : 'warn');
+    setTextIfChanged('navbarDashboardStatus', data && data.dashboard && data.dashboard.url ? data.dashboard.url : 'running');
+    setTextIfChanged('navbarApiStatus', health.ok ? 'healthy' : (health.detail || 'unavailable'));
+    setTextIfChanged('navbarWorkerStatus', workerCount + ' running / Twitch ' + (twitchRunning ? 'on' : 'off') + ' / EventSub ' + (eventSubRunning ? 'on' : 'off'));
+    setTextIfChanged('overviewWorkerStatus', workerCount + ' active');
+  }
+
+  function updateOverviewCards(data) {
+    var process = data && data.shana && data.shana.process ? data.shana.process : {};
+    var health = data && data.shana && data.shana.api_health ? data.shana.api_health : {};
+    var providers = data && data.providers ? data.providers : {};
+    var memoryStats = data && data.memory_db && data.memory_db.stats ? data.memory_db.stats : {};
+    var performer = data && data.performer ? data.performer : {};
+    var twitchWorker = data && data.twitch && data.twitch.worker ? data.twitch.worker : {};
+    var eventSub = data && data.twitch && data.twitch.eventsub ? data.twitch.eventsub : {};
+    var streamReady = data && data.twitch && data.twitch.stream_ready ? data.twitch.stream_ready : {};
+    var recentByTarget = performer.recent_by_target || {};
+    var currentOutput = recentByTarget.dashboard_monitor || recentByTarget.stream_public || performer.recent_event || {};
+    var twitchRunning = !!(twitchWorker.process && twitchWorker.process.running);
+    var eventSubRunning = !!(eventSub.process && eventSub.process.running);
+    var warnings = [];
+    if (!process.running) warnings.push('Shana stopped');
+    if (!health.ok) warnings.push('API unavailable');
+    if (streamReady.blocker_count) warnings.push(streamReady.blocker_count + ' stream blockers');
+    setTextIfChanged('overviewLiveStatus', 'Voice test');
+    setTextIfChanged('overviewOutputStatus', currentOutput.type || 'idle');
+    setTextIfChanged('overviewShanaStatus', process.running ? 'Running' : 'Stopped');
+    setTextIfChanged('overviewStreamStatus', streamReady.mode || (twitchRunning ? 'Twitch running' : 'Ready check'));
+    setTextIfChanged('overviewMemoryStatus', (memoryStats.total_items || memoryStats.item_count || 0) + ' items');
+    setTextIfChanged('overviewProviderStatus', providerSummary(providers));
+    setTextIfChanged('overviewShanaMini', process.running ? 'ON' : 'OFF');
+    setTextIfChanged('overviewApiMini', health.ok ? 'OK' : (health.detail || 'Down'));
+    setTextIfChanged('overviewWorkerMini', ((twitchRunning ? 1 : 0) + (eventSubRunning ? 1 : 0)) + ' active');
+    setTextIfChanged('overviewTurnMini', currentOutput.type ? currentOutput.type + ' #' + (currentOutput.sequence || '?') : 'Idle');
+    setTextIfChanged('overviewLiveMini', liveSocket ? 'Connected' : 'Idle');
+    setTextIfChanged('overviewStreamMini', streamReady.ok ? 'Ready' : (streamReady.mode || 'Check status'));
+    setTextIfChanged('overviewTwitchMini', 'IRC ' + (twitchRunning ? 'on' : 'off') + ' / EventSub ' + (eventSubRunning ? 'on' : 'off'));
+    setTextIfChanged('overviewMemoryMini', (memoryStats.known_people || memoryStats.people_count || 0) + ' people');
+    setTextIfChanged('overviewWarningsMini', warnings.length ? warnings.join(' / ') : 'No current warnings');
+  }
+
+  function providerSummary(providers) {
+    var names = ['llm', 'stt', 'tts'];
+    var ready = 0;
+    names.forEach(function (name) {
+      var provider = providers && providers[name] ? providers[name] : {};
+      if (provider.ok || provider.available || provider.provider || provider.enabled) ready += 1;
+    });
+    return ready + '/' + names.length + ' configured';
   }
 
   function setSectionOpen(sectionId, isOpen) {
@@ -400,7 +645,8 @@
   function setViewMode(mode) {
     viewMode = mode;
     localStorage.setItem('gammaDashboardViewMode', mode);
-    document.getElementById('viewModeSwitch').checked = mode === 'json';
+    var switchEl = document.getElementById('viewModeSwitch');
+    if (switchEl) switchEl.checked = mode === 'json';
     if (latestData) {
       renderPanels(latestData);
     }
@@ -408,12 +654,21 @@
   }
 
   function toggleViewMode() {
-    var checked = document.getElementById('viewModeSwitch').checked;
+    var switchEl = document.getElementById('viewModeSwitch');
+    var checked = switchEl ? switchEl.checked : viewMode !== 'json';
     setViewMode(checked ? 'json' : 'human');
+  }
+
+  function updateStickyTabOffset() {
+    var topbar = document.querySelector('.topbar');
+    if (!topbar) return;
+    var rect = topbar.getBoundingClientRect();
+    document.documentElement.style.setProperty('--topbar-top', Math.ceil(rect.height) + 'px');
   }
 
   function renderBlock(elementId, rawValue, humanText) {
     var el = document.getElementById(elementId);
+    if (!el) return;
     if (viewMode === 'json') {
       el.textContent = pretty(rawValue);
     } else {
@@ -430,15 +685,18 @@
   }
 
   function setTextIfChanged(elementId, value, cacheKey) {
+    var el = document.getElementById(elementId);
+    if (!el) return;
     var key = cacheKey || elementId;
     if (sectionHashes[key] === value) {
       return;
     }
     sectionHashes[key] = value;
-    document.getElementById(elementId).textContent = value;
+    el.textContent = value;
   }
 
   function renderBlockIfChanged(elementId, rawValue, humanText, cacheKey) {
+    if (!document.getElementById(elementId)) return;
     var key = cacheKey || elementId;
     var nextKey = viewMode === 'json' ? pretty(rawValue) : humanText;
     if (sectionHashes[key] === nextKey) {
@@ -448,8 +706,33 @@
     renderBlock(elementId, rawValue, humanText);
   }
 
+  function renderHtmlBlockIfChanged(elementId, rawValue, humanHtml, cacheKey) {
+    var el = document.getElementById(elementId);
+    if (!el) return;
+    var key = cacheKey || elementId;
+    var nextKey = viewMode === 'json' ? pretty(rawValue) : humanHtml;
+    if (sectionHashes[key] === nextKey) {
+      return;
+    }
+    sectionHashes[key] = nextKey;
+    if (viewMode === 'json') {
+      el.classList.add('json-render');
+      el.textContent = pretty(rawValue);
+    } else {
+      el.classList.remove('json-render');
+      el.innerHTML = humanHtml;
+    }
+  }
+
   function updateLiveStatus(text) {
-    document.getElementById('liveVoiceStatus').textContent = text;
+    var status = document.getElementById('liveVoiceStatus');
+    if (status) status.textContent = text;
+  }
+
+  function addElementListener(elementId, eventName, handler, options) {
+    var element = document.getElementById(elementId);
+    if (!element) return;
+    element.addEventListener(eventName, handler, options);
   }
 
   function renderLiveMeta(job) {
@@ -524,21 +807,33 @@
     var savedInterruptSpeech = localStorage.getItem('gammaLiveInterruptSpeechMs');
     var savedSilence = localStorage.getItem('gammaLiveSilenceMs');
     var savedBargeIn = localStorage.getItem('gammaLiveBargeIn');
-    if (savedResponseMode) document.getElementById('liveResponseMode').value = savedResponseMode;
-    if (savedBargeInMode) document.getElementById('liveBargeInMode').value = savedBargeInMode;
-    if (savedSpeech) document.getElementById('liveSpeechThreshold').value = savedSpeech;
-    if (savedInterruptSpeech) document.getElementById('liveInterruptSpeechMs').value = savedInterruptSpeech;
-    if (savedSilence) document.getElementById('liveSilenceMs').value = savedSilence;
-    if (savedBargeIn !== null) document.getElementById('liveBargeInEnabled').checked = savedBargeIn === 'true';
+    var responseMode = document.getElementById('liveResponseMode');
+    var bargeInMode = document.getElementById('liveBargeInMode');
+    var speech = document.getElementById('liveSpeechThreshold');
+    var interruptSpeech = document.getElementById('liveInterruptSpeechMs');
+    var silence = document.getElementById('liveSilenceMs');
+    var bargeIn = document.getElementById('liveBargeInEnabled');
+    if (savedResponseMode && responseMode) responseMode.value = savedResponseMode;
+    if (savedBargeInMode && bargeInMode) bargeInMode.value = savedBargeInMode;
+    if (savedSpeech && speech) speech.value = savedSpeech;
+    if (savedInterruptSpeech && interruptSpeech) interruptSpeech.value = savedInterruptSpeech;
+    if (savedSilence && silence) silence.value = savedSilence;
+    if (savedBargeIn !== null && bargeIn) bargeIn.checked = savedBargeIn === 'true';
   }
 
   function persistLiveControlDefaults() {
-    localStorage.setItem('gammaLiveResponseMode', document.getElementById('liveResponseMode').value);
-    localStorage.setItem('gammaLiveBargeInMode', document.getElementById('liveBargeInMode').value);
-    localStorage.setItem('gammaLiveSpeechThreshold', document.getElementById('liveSpeechThreshold').value);
-    localStorage.setItem('gammaLiveInterruptSpeechMs', document.getElementById('liveInterruptSpeechMs').value);
-    localStorage.setItem('gammaLiveSilenceMs', document.getElementById('liveSilenceMs').value);
-    localStorage.setItem('gammaLiveBargeIn', document.getElementById('liveBargeInEnabled').checked ? 'true' : 'false');
+    var responseMode = document.getElementById('liveResponseMode');
+    var bargeInMode = document.getElementById('liveBargeInMode');
+    var speech = document.getElementById('liveSpeechThreshold');
+    var interruptSpeech = document.getElementById('liveInterruptSpeechMs');
+    var silence = document.getElementById('liveSilenceMs');
+    var bargeIn = document.getElementById('liveBargeInEnabled');
+    if (responseMode) localStorage.setItem('gammaLiveResponseMode', responseMode.value);
+    if (bargeInMode) localStorage.setItem('gammaLiveBargeInMode', bargeInMode.value);
+    if (speech) localStorage.setItem('gammaLiveSpeechThreshold', speech.value);
+    if (interruptSpeech) localStorage.setItem('gammaLiveInterruptSpeechMs', interruptSpeech.value);
+    if (silence) localStorage.setItem('gammaLiveSilenceMs', silence.value);
+    if (bargeIn) localStorage.setItem('gammaLiveBargeIn', bargeIn.checked ? 'true' : 'false');
     updateLiveControlLabels();
   }
 
@@ -631,17 +926,73 @@
     var llm = providers.llm || {};
     var stt = providers.stt || {};
     var tts = providers.tts || {};
-    lines.push('LLM: ' + providerLabel(llm.provider) + (llm.model ? ' using ' + llm.model : ''));
+    lines.push('LLM: ' + providerLabel(llm.provider, 'llm') + (llm.model ? ' using ' + llm.model : ''));
     if (llm.endpoint) lines.push('LLM endpoint: ' + llm.endpoint);
     if (llm.health) lines.push('LLM health: ' + fmtHealthStatus(llm.health));
+    if (llm.router_capabilities && llm.router_capabilities.length) {
+      for (var c = 0; c < llm.router_capabilities.length; c += 1) {
+        var capability = llm.router_capabilities[c] || {};
+        if (!capability.health) continue;
+        lines.push(
+          'LLM capability: ' +
+          providerLabel(capability.provider, 'llm') +
+          ' [' + formatRouterScope(capability.scope) + '] ' +
+          fmtHealthStatus(capability.health)
+        );
+      }
+    }
+    lines.push('LLM router: ' + (llm.router_enabled ? 'Enabled' : 'Disabled'));
+    if (llm.router_enabled) {
+      lines.push('Router profile: ' + (llm.router_profile || 'balanced'));
+      lines.push('Router default: ' + providerLabel(llm.router_default_provider, 'llm') + (llm.router_default_model ? ' using ' + llm.router_default_model : ''));
+      lines.push('Hosted escalation: ' + (llm.router_hosted_escalation ? 'Enabled' : 'Disabled'));
+      if (llm.router_hosted_escalation) {
+        lines.push('Hosted route: ' + providerLabel(llm.router_hosted_provider, 'llm') + (llm.router_hosted_model ? ' using ' + llm.router_hosted_model : ''));
+      }
+      if (llm.router_failure_backoff_seconds) lines.push('Failure backoff: ' + llm.router_failure_backoff_seconds + ' sec');
+      if (llm.provider_backoff_entries && llm.provider_backoff_entries.length) {
+        var backoffLines = [];
+        for (var b = 0; b < llm.provider_backoff_entries.length; b += 1) {
+          var backoffEntry = llm.provider_backoff_entries[b] || {};
+          backoffLines.push(
+            providerLabel(backoffEntry.provider, 'llm') + ' [' + formatRouterScope(backoffEntry.scope) + ']: ' + backoffEntry.seconds + ' sec'
+          );
+        }
+        if (backoffLines.length) lines.push('Active backoff: ' + backoffLines.join(' | '));
+      }
+      if (llm.last_route) {
+        lines.push(
+          'Last route: ' +
+          providerLabel(llm.last_route.provider, 'llm') +
+          (llm.last_route.model ? ' using ' + llm.last_route.model : '') +
+          ' [' + (llm.last_route.route_family || 'route') + ', ' + (llm.last_route.status || 'n/a') + ']'
+        );
+      }
+      if (llm.route_summary && llm.route_summary.provider_counts) {
+        var providerCounts = [];
+        for (var providerName in llm.route_summary.provider_counts) {
+          if (!Object.prototype.hasOwnProperty.call(llm.route_summary.provider_counts, providerName)) continue;
+          providerCounts.push(providerLabel(providerName, 'llm') + ': ' + llm.route_summary.provider_counts[providerName]);
+        }
+        if (providerCounts.length) lines.push('Recent route mix: ' + providerCounts.join(' | '));
+      }
+      if (llm.route_summary && llm.route_summary.route_family_counts) {
+        var familyCounts = [];
+        for (var familyName in llm.route_summary.route_family_counts) {
+          if (!Object.prototype.hasOwnProperty.call(llm.route_summary.route_family_counts, familyName)) continue;
+          familyCounts.push(familyName + ': ' + llm.route_summary.route_family_counts[familyName]);
+        }
+        if (familyCounts.length) lines.push('Recent route families: ' + familyCounts.join(' | '));
+      }
+    }
     lines.push('');
-    lines.push('STT: ' + providerLabel(stt.provider) + (stt.model ? ' using ' + stt.model : ''));
+    lines.push('STT: ' + providerLabel(stt.provider, 'stt') + (stt.model ? ' using ' + stt.model : ''));
     if (stt.device) lines.push('STT device: ' + stt.device);
     if (stt.health) lines.push('STT health: ' + fmtHealthStatus(stt.health));
     lines.push('');
-    lines.push('TTS running: ' + providerLabel(tts.provider) + (tts.model ? ' using ' + tts.model : ''));
+    lines.push('TTS running: ' + providerLabel(tts.provider, 'tts') + (tts.model ? ' using ' + tts.model : ''));
     if (tts.profile_label) lines.push('TTS voice profile: ' + tts.profile_label);
-    if (tts.selected_provider) lines.push('TTS saved selection: ' + providerLabel(tts.selected_provider));
+    if (tts.selected_provider) lines.push('TTS saved selection: ' + providerLabel(tts.selected_provider, 'tts'));
     if (tts.selected_profile_label) lines.push('TTS saved profile: ' + tts.selected_profile_label);
     lines.push('TTS restart required: ' + (tts.restart_required ? 'Yes' : 'No'));
     if (tts.endpoint) lines.push('TTS endpoint: ' + tts.endpoint);
@@ -664,8 +1015,8 @@
     var editorStatusShell = document.getElementById('ttsProfileEditorStatusShell');
 
     function restartNote(nextProvider) {
-      var runningProvider = providerLabel(tts.provider);
-      var selectedProviderLabel = providerLabel(tts.selected_provider || nextProvider || provider);
+      var runningProvider = providerLabel(tts.provider, 'tts');
+      var selectedProviderLabel = providerLabel(tts.selected_provider || nextProvider || provider, 'tts');
       if (selectedProviderLabel === 'GPT-SoVITS') {
         return 'Start GPT-SoVITS, then restart Shana to switch conversations from ' + runningProvider + ' to GPT-SoVITS.';
       }
@@ -685,7 +1036,7 @@
           var providerValue = String(tts.available_providers[p] || '');
           if (!providerValue) continue;
           var selectedProvider = providerValue.toLowerCase() === provider ? ' selected' : '';
-          var providerOptionLabel = providerLabel(providerValue);
+          var providerOptionLabel = providerLabel(providerValue, 'tts');
           providerOptions.push('<option value="' + providerValue + '"' + selectedProvider + '>' + escapeHtml(providerOptionLabel) + '</option>');
         }
         select.innerHTML = providerOptions.join('');
@@ -855,6 +1206,528 @@
     return lines.join('\n');
   }
 
+  function humanTwitchWorker(worker) {
+    worker = worker || {};
+    var process = worker.process || {};
+    var controls = worker.controls || {};
+    var state = worker.state || {};
+    var lines = [
+      'Configured: ' + (worker.configured ? 'Yes' : 'No'),
+      'Running: ' + (process.running ? 'Yes' : 'No'),
+      'Channel: ' + (worker.channel || 'n/a')
+    ];
+    if (Array.isArray(worker.missing_config) && worker.missing_config.length) lines.push('Missing config: ' + worker.missing_config.join(', '));
+    if (process.pid) lines.push('PID: ' + process.pid);
+    if (state.status || state.updated_at) {
+      lines.push('');
+      lines.push('IRC State:');
+      lines.push('Status: ' + (state.status || 'n/a') + ' / connected: ' + (state.connected ? 'yes' : 'no'));
+      lines.push('Updated: ' + fmtLocalDateTime(state.updated_at));
+      if (typeof state.reconnects !== 'undefined') lines.push('Reconnects: ' + state.reconnects);
+      if (typeof state.message_count !== 'undefined') lines.push('Messages ingested: ' + state.message_count);
+      if (state.last_message_kind) lines.push('Last message kind: ' + humanizeKey(state.last_message_kind));
+      if (state.last_actor_display_name) lines.push('Last actor: ' + state.last_actor_display_name);
+      if (state.last_posted_event_kind) lines.push('Last posted event: ' + humanizeKey(state.last_posted_event_kind));
+      if (state.last_message_id) lines.push('Last message id: ' + state.last_message_id);
+      if (state.last_post_error) lines.push('Last post error: ' + state.last_post_error);
+      if (state.detail) lines.push('Detail: ' + state.detail);
+    }
+    lines.push('');
+    lines.push('Controls:');
+    lines.push('Dry run: ' + (controls.dry_run ? 'On' : 'Off'));
+    lines.push('Voice: ' + (controls.voice_enabled ? 'On' : 'Off'));
+    lines.push('Subtitles: ' + (controls.subtitles_enabled ? 'On' : 'Off'));
+    lines.push('Ambient chat: ' + (controls.ambient_chat_enabled ? 'On' : 'Off'));
+    lines.push('Mention replies: ' + (controls.mention_replies_enabled ? 'On' : 'Off'));
+    lines.push('Spam quips: ' + (controls.spam_quips_enabled ? 'On' : 'Off'));
+    lines.push('Self-goal proposals: ' + (controls.self_goal_proposals_enabled ? 'On' : 'Off'));
+    lines.push('LLM safety review: ' + (controls.llm_safety_review_enabled ? 'On' : 'Off'));
+    lines.push('Speech gap: ' + (typeof controls.min_speech_gap_seconds === 'undefined' ? 'n/a' : controls.min_speech_gap_seconds + ' sec'));
+    lines.push('Speech budget: ' + (typeof controls.max_speech_seconds_per_minute === 'undefined' ? 'n/a' : controls.max_speech_seconds_per_minute + ' sec/min'));
+    lines.push('Spam quip gap: ' + (typeof controls.spam_quip_cooldown_seconds === 'undefined' ? 'n/a' : controls.spam_quip_cooldown_seconds + ' sec'));
+    if (Array.isArray(worker.ignored_bots) && worker.ignored_bots.length) lines.push('Ignored bots: ' + worker.ignored_bots.join(', '));
+    if (worker.stdout_path) lines.push('Stdout: ' + worker.stdout_path);
+    if (worker.stderr_path) lines.push('Stderr: ' + worker.stderr_path);
+    return lines.join('\n');
+  }
+
+  function renderTwitchSettings(settings) {
+    settings = settings || {};
+    var map = {
+      twitchDryRun: 'dry_run',
+      twitchVoiceEnabled: 'voice_enabled',
+      twitchSubtitlesEnabled: 'subtitles_enabled',
+      twitchAmbientChatEnabled: 'ambient_chat_enabled',
+      twitchMentionRepliesEnabled: 'mention_replies_enabled',
+      twitchSpamQuipsEnabled: 'spam_quips_enabled',
+      twitchSelfGoalProposalsEnabled: 'self_goal_proposals_enabled',
+      twitchLlmSafetyReviewEnabled: 'llm_safety_review_enabled'
+    };
+    Object.keys(map).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.checked = !!settings[map[id]];
+    });
+    var minGap = document.getElementById('twitchMinSpeechGapSeconds');
+    if (minGap) minGap.value = typeof settings.min_speech_gap_seconds === 'undefined' ? 5 : settings.min_speech_gap_seconds;
+    var speechBudget = document.getElementById('twitchMaxSpeechSecondsPerMinute');
+    if (speechBudget) speechBudget.value = typeof settings.max_speech_seconds_per_minute === 'undefined' ? 20 : settings.max_speech_seconds_per_minute;
+    var spamGap = document.getElementById('twitchSpamQuipCooldownSeconds');
+    if (spamGap) spamGap.value = typeof settings.spam_quip_cooldown_seconds === 'undefined' ? 60 : settings.spam_quip_cooldown_seconds;
+  }
+
+  function humanTwitchViewerTrust(payload) {
+    var items = payload && Array.isArray(payload.items) ? payload.items : [];
+    if (!items.length) return 'No viewer trust overrides saved.';
+    return items.map(function (item) {
+      var name = item.display_name ? (' / ' + item.display_name) : '';
+      var alias = item.pronunciation_alias ? (' / say: ' + item.pronunciation_alias) : '';
+      var notes = item.notes ? ('\n  notes: ' + item.notes) : '';
+      return item.platform_user_id + name + ' -> ' + item.trust_level + alias + notes;
+    }).join('\n\n');
+  }
+
+  function humanTwitchReplayResult(payload) {
+    if (!payload || !payload.ok) return 'No replay run yet.';
+    var lines = [];
+    if (payload.scenario) lines.push('Scenario: ' + humanizeKey(payload.scenario));
+    lines.push('Replay events posted: ' + payload.count);
+    if (payload.summary) {
+      lines.push('Safety categories: ' + compactCounts(payload.summary.safety_categories || {}));
+      lines.push('Decisions: ' + compactNestedCounts(payload.summary.decisions_by_kind || {}));
+    }
+    var results = Array.isArray(payload.results) ? payload.results : [];
+    for (var i = 0; i < Math.min(results.length, 8); i += 1) {
+      var result = results[i] || {};
+      var input = result.input_event || {};
+      var decision = result.decision || {};
+      lines.push((i + 1) + '. ' + (input.kind || 'event') + ' -> ' + (decision.decision || 'n/a') + ' / ' + (decision.reason || 'n/a'));
+    }
+    if (results.length > 8) lines.push('...');
+    return lines.join('\n');
+  }
+
+  function humanTwitchEventSub(eventsub) {
+    eventsub = eventsub || {};
+    var process = eventsub.process || {};
+    var state = eventsub.state || {};
+    var lines = [
+      'Configured: ' + (eventsub.configured ? 'Yes' : 'No'),
+      'Enabled: ' + (eventsub.enabled ? 'Yes' : 'No'),
+      'Running: ' + (process.running ? 'Yes' : 'No'),
+      'Broadcaster ID: ' + (eventsub.broadcaster_user_id || 'n/a')
+    ];
+    if (Array.isArray(eventsub.missing_config) && eventsub.missing_config.length) lines.push('Missing config: ' + eventsub.missing_config.join(', '));
+    if (process.pid) lines.push('PID: ' + process.pid);
+    if (state.status || state.updated_at) {
+      lines.push('');
+      lines.push('EventSub State:');
+      lines.push('Status: ' + (state.status || 'n/a') + ' / connected: ' + (state.connected ? 'yes' : 'no'));
+      lines.push('Updated: ' + fmtLocalDateTime(state.updated_at));
+      if (state.session_id) lines.push('Session: ' + state.session_id);
+      if (typeof state.notification_count !== 'undefined') lines.push('Notifications: ' + state.notification_count);
+      if (state.last_message_kind) lines.push('Last message kind: ' + humanizeKey(state.last_message_kind));
+      if (state.last_subscription_type) lines.push('Last subscription: ' + state.last_subscription_type);
+      if (state.last_posted_event_kind) lines.push('Last posted event: ' + humanizeKey(state.last_posted_event_kind));
+      if (state.last_actor_display_name) lines.push('Last actor: ' + state.last_actor_display_name);
+      if (typeof state.subscription_ok_count !== 'undefined') lines.push('Subscriptions OK: ' + state.subscription_ok_count);
+      if (typeof state.subscription_error_count !== 'undefined') lines.push('Subscription errors: ' + state.subscription_error_count);
+      if (Array.isArray(state.subscriptions) && state.subscriptions.length) {
+        var subscriptionTypes = state.subscriptions.map(function (subscription) {
+          return (subscription.ok ? 'OK ' : 'ERR ') + (subscription.type || 'subscription');
+        });
+        lines.push('Subscription types: ' + subscriptionTypes.join(', '));
+      }
+      if (state.last_post_error) lines.push('Last post error: ' + state.last_post_error);
+      if (state.detail) lines.push('Detail: ' + state.detail);
+    }
+    return lines.join('\n');
+  }
+
+  function humanStreamReady(payload, worker) {
+    payload = payload || {};
+    worker = worker || {};
+    var controls = worker.controls || {};
+    var safety = payload.safety_gate || {};
+    var filteredAudio = payload.filtered_audio || {};
+    var lines = [];
+    lines.push('Mode: ' + humanizeKey(payload.mode || 'unknown'));
+    lines.push('Preflight: ' + (payload.ok ? 'Pass' : 'Blocked') + ' / blockers: ' + (payload.blocker_count || 0) + ' / warnings: ' + (payload.warning_count || 0));
+    if (payload.next_step) lines.push('Next: ' + payload.next_step);
+    var checks = Array.isArray(payload.checks) ? payload.checks : [];
+    if (checks.length) {
+      lines.push('');
+      lines.push('Checks:');
+      checks.forEach(function (check) {
+        var marker = check.status === 'ok' ? 'OK' : (check.status === 'block' ? 'BLOCK' : 'WARN');
+        var stale = check.stale ? ' / stale' : '';
+        lines.push(marker + stale + ' - ' + (check.label || check.id || 'check') + ': ' + (check.detail || 'n/a'));
+      });
+      lines.push('');
+      lines.push('Dry-Run Checklist:');
+      lines.push('1. Fix blockers.');
+      lines.push('2. Run Dry-Run Replay.');
+      lines.push('3. Start IRC worker.');
+      lines.push('4. Start EventSub.');
+      lines.push('5. Verify Stream Activity, Safety Log, and queue.');
+      lines.push('6. Press Stop Speech and confirm subtitles clear.');
+      lines.push('7. Disable dry run only after the checks stay clean.');
+      lines.push('');
+      lines.push('Controls:');
+    }
+    var summary = payload.last_replay_summary || {};
+    if (summary.event_count) {
+      lines.push('');
+      lines.push('Last Dry-Run Replay:');
+      lines.push('Ran: ' + fmtLocalDateTime(summary.ran_at));
+      lines.push('Events: ' + summary.event_count);
+      lines.push('Safety categories: ' + compactCounts(summary.safety_categories || {}));
+      lines.push('Decisions: ' + compactNestedCounts(summary.decisions_by_kind || {}));
+    }
+    lines.push('Dry run: ' + (controls.dry_run ? 'On' : 'Off'));
+    lines.push('Voice: ' + (controls.voice_enabled ? 'On' : 'Off') + ' / Subtitles: ' + (controls.subtitles_enabled ? 'On' : 'Off'));
+    lines.push('Safety gate: ' + (safety.enabled ? 'On' : 'Off') + ' / LLM review: ' + (safety.llm_review_enabled ? 'On' : 'Off'));
+    lines.push('Reviewer timeout: ' + (typeof safety.review_timeout_seconds === 'undefined' ? 'n/a' : safety.review_timeout_seconds + ' sec') + ' -> ' + (safety.review_timeout_action || 'n/a'));
+    lines.push('Filtered audio: ' + (filteredAudio.exists ? 'ready' : 'missing') + (filteredAudio.configured_path ? ' / ' + filteredAudio.configured_path : ''));
+    lines.push('Speech gap: ' + (typeof controls.min_speech_gap_seconds === 'undefined' ? 'n/a' : controls.min_speech_gap_seconds + ' sec'));
+    lines.push('Speech budget: ' + (typeof controls.max_speech_seconds_per_minute === 'undefined' ? 'n/a' : controls.max_speech_seconds_per_minute + ' sec/min'));
+    return lines.join('\n');
+  }
+
+  function humanPerformerBus(payload) {
+    payload = payload || {};
+    var stats = payload.stats || {};
+    var byTarget = stats.subscribers_by_target || {};
+    var mutedTargets = Array.isArray(stats.muted_targets) ? stats.muted_targets : [];
+    var subscribers = Array.isArray(stats.subscribers) ? stats.subscribers : [];
+    var recent = payload.recent_event || null;
+    var recentByTarget = payload.recent_by_target || {};
+    var adapters = payload.adapters || {};
+    var lines = [];
+    lines.push('Output bus: ' + (payload.ok ? 'reachable' : 'unreachable'));
+    lines.push('Subscribers: ' + (stats.subscriber_count || 0) + ' / history: ' + (stats.history_count || 0) + ' / seq: ' + (stats.last_sequence || 0));
+    lines.push('Targets: ' + compactCounts(byTarget));
+    lines.push('Muted targets: ' + (mutedTargets.length ? mutedTargets.join(', ') : 'none'));
+    if (adapters.vtube_studio) {
+      lines.push('VTube Studio: ' + humanVTubeStudioAdapter(adapters.vtube_studio));
+    }
+    if (adapters.discord) {
+      lines.push('Discord: ' + humanDiscordRuntime(adapters.discord));
+    }
+    if (subscribers.length) {
+      lines.push('');
+      lines.push('Connected clients:');
+      subscribers.forEach(function (subscriber) {
+        var name = humanizeKey(subscriber.client_name || 'unknown_client');
+        var target = subscriber.target_policy || 'stream_public';
+        var host = subscriber.client_host || 'unknown host';
+        lines.push('- ' + name + ' / ' + target + ' / ' + host);
+      });
+    }
+    if (recent) {
+      var recentPayload = recent.payload || {};
+      var actor = recentPayload.actor || {};
+      var input = recentPayload.input || {};
+      lines.push('');
+      lines.push('Last event: ' + (recent.type || 'unknown'));
+      lines.push('Sequence: ' + (recent.sequence || 'n/a'));
+      lines.push('Target: ' + (recent.target_policy || 'stream_public'));
+      lines.push('Turn: ' + (recent.turn_id || 'n/a'));
+      lines.push('Input: ' + outputInputLabel(input));
+      lines.push('Actor: ' + outputActorLabel(actor));
+      lines.push('At: ' + fmtLocalDateTime(recent.occurred_at));
+      outputTargetPolicies(stats, recentByTarget).forEach(function (targetPolicy) {
+        lines.push(humanizeKey(targetPolicy) + ' latest: ' + outputRecentTargetLabel(recentByTarget[targetPolicy]));
+      });
+    } else if (payload.detail) {
+      lines.push('Detail: ' + payload.detail);
+    } else {
+      lines.push('Last event: none');
+    }
+    return lines.join('\n');
+  }
+
+  function outputActorLabel(actor) {
+    actor = actor || {};
+    var source = actor.source || 'unknown';
+    var name = actor.display_name || actor.platform_id || 'unknown';
+    var roles = Array.isArray(actor.roles) && actor.roles.length ? ' [' + actor.roles.join(', ') + ']' : '';
+    return source + ':' + name + roles;
+  }
+
+  function outputInputLabel(input) {
+    input = input || {};
+    var kind = input.kind || 'unknown';
+    return input.session_id ? kind + ' / ' + input.session_id : kind;
+  }
+
+  function outputRecentTargetLabel(event) {
+    if (!event) return 'none';
+    var actor = event.payload && event.payload.actor ? ' / ' + outputActorLabel(event.payload.actor) : '';
+    return '#' + (event.sequence || 'n/a') + ' / ' + (event.type || 'unknown') + ' / ' + (event.turn_id || 'n/a') + actor;
+  }
+
+  function humanVTubeStudioAdapter(adapter) {
+    var state = adapter.enabled ? 'enabled' : 'disabled';
+    var configured = adapter.configured ? 'configured' : 'not configured';
+    var client = adapter.client || {};
+    var runner = adapter.runner || {};
+    var connected = client.connected ? 'connected' : 'disconnected';
+    var auth = client.authenticated ? 'auth ok' : (client.token_requested ? 'token requested' : 'auth pending');
+    var runnerState = runner.running ? 'runner on' : 'runner off';
+    var action = adapter.last_action && adapter.last_action.action_type ? ' / last ' + adapter.last_action.action_type : '';
+    var error = adapter.last_error || client.last_error || runner.last_error;
+    return state + ', ' + configured + ', ' + connected + ', ' + auth + ', ' + runnerState + action + (error ? ' / error ' + error : '');
+  }
+
+  function humanDiscordRuntime(runtime) {
+    var state = runtime.enabled ? 'enabled' : 'disabled';
+    var configured = runtime.configured ? 'configured' : 'not configured';
+    var running = runtime.running ? 'running' : 'stopped';
+    var output = runtime.output_enabled ? 'output on' : 'output off';
+    var counts = 'inputs ' + (runtime.input_count || 0) + ', outputs ' + (runtime.output_count || 0);
+    return state + ', ' + configured + ', ' + running + ', ' + output + ', ' + counts + (runtime.last_error ? ' / error ' + runtime.last_error : '');
+  }
+
+  function outputTargetPolicies(stats, recentByTarget) {
+    var policies = Array.isArray(stats.target_policies) ? stats.target_policies.slice() : [];
+    Object.keys(stats.subscribers_by_target || {}).forEach(function (targetPolicy) {
+      if (policies.indexOf(targetPolicy) === -1) policies.push(targetPolicy);
+    });
+    Object.keys(recentByTarget || {}).forEach(function (targetPolicy) {
+      if (policies.indexOf(targetPolicy) === -1) policies.push(targetPolicy);
+    });
+    if (!policies.length) {
+      policies = ['stream_public', 'dashboard_monitor'];
+    }
+    return policies;
+  }
+
+  function compactCounts(counts) {
+    var keys = Object.keys(counts || {}).sort();
+    if (!keys.length) return 'none';
+    return keys.map(function (key) { return humanizeKey(key) + '=' + counts[key]; }).join(', ');
+  }
+
+  function compactNestedCounts(counts) {
+    var keys = Object.keys(counts || {}).sort();
+    if (!keys.length) return 'none';
+    return keys.map(function (key) {
+      return humanizeKey(key) + '[' + compactCounts(counts[key] || {}) + ']';
+    }).join(', ');
+  }
+
+  function streamEmptyHtml(message) {
+    return '<div class="stream-empty">' + escapeHtml(message) + '</div>';
+  }
+
+  function streamBadge(label, tone) {
+    var safeTone = tone ? ' stream-badge-' + tone : '';
+    return '<span class="stream-badge' + safeTone + '">' + escapeHtml(label || 'n/a') + '</span>';
+  }
+
+  function streamDecisionTone(value, reason) {
+    var text = String(value || reason || '').toLowerCase();
+    if (text.indexOf('block') >= 0 || text.indexOf('drop') >= 0 || text.indexOf('reject') >= 0 || text.indexOf('failed') >= 0) return 'bad';
+    if (text.indexOf('soften') >= 0 || text.indexOf('defer') >= 0 || text.indexOf('skip') >= 0 || text.indexOf('timeout') >= 0 || text.indexOf('dry') >= 0) return 'warn';
+    if (text.indexOf('speak') >= 0 || text.indexOf('allow') >= 0 || text.indexOf('approve') >= 0 || text.indexOf('queued') >= 0) return 'good';
+    return 'info';
+  }
+
+  function streamCardHtml(parts) {
+    return '<article class="stream-card">' + parts.filter(Boolean).join('') + '</article>';
+  }
+
+  function streamHeaderHtml(metaHtml) {
+    return '<div class="stream-card-header">' + metaHtml.filter(Boolean).join('') + '</div>';
+  }
+
+  function streamTitleHtml(title, subtitle) {
+    return '<div><div class="stream-card-title">' + escapeHtml(title || 'Unknown') + '</div>'
+      + (subtitle ? '<div class="stream-card-subtitle">' + escapeHtml(subtitle) + '</div>' : '')
+      + '</div>';
+  }
+
+  function streamQuoteHtml(text, className) {
+    if (!text) return '';
+    return '<div class="' + (className || 'stream-quote') + '">' + escapeHtml(oneLine(text, 260)) + '</div>';
+  }
+
+  function streamKvHtml(items) {
+    var rows = items.filter(function (item) { return item && item.value !== '' && typeof item.value !== 'undefined' && item.value !== null; }).map(function (item) {
+      return '<div><dt>' + escapeHtml(item.label) + '</dt><dd>' + escapeHtml(item.value) + '</dd></div>';
+    });
+    if (!rows.length) return '';
+    return '<dl class="stream-kv">' + rows.join('') + '</dl>';
+  }
+
+  function humanStreamTraces(payload) {
+    var items = payload && Array.isArray(payload.items) ? payload.items : [];
+    if (!items.length) return streamEmptyHtml('No recent stream traces.');
+    return items.slice(-12).reverse().map(function (item) {
+      var input = item.input_event || {};
+      var actor = input.actor || {};
+      var metadata = input.metadata || {};
+      var decision = item.decision || {};
+      var decisionMeta = decision.metadata || {};
+      var response = item.assistant_response || {};
+      var outputs = Array.isArray(item.output_events) ? item.output_events : [];
+      var outputTypes = outputs.map(function (event) { return event.type || 'output'; }).join(', ') || 'none';
+      var speaker = actor.display_name || actor.platform_id || actor.source || 'unknown';
+      var when = fmtLocalDateTime(item.recorded_at || input.occurred_at);
+      var detailRows = [
+        { label: 'Reason', value: decision.reason || 'n/a' },
+        { label: 'Mode', value: decision.response_mode || 'n/a' },
+        { label: 'Priority', value: typeof input.priority === 'undefined' ? 'n/a' : input.priority },
+        { label: 'Outputs', value: outputTypes }
+      ];
+      if (decisionMeta.dry_run) detailRows.push({ label: 'Dry run', value: 'yes, voice suppressed: ' + (decisionMeta.dry_run_voice_suppressed ? 'yes' : 'no') });
+      if (decisionMeta.would_decision) detailRows.push({ label: 'Would do', value: decisionMeta.would_decision + ' / ' + (decisionMeta.would_reason || 'n/a') });
+      if (metadata.input_safety && Array.isArray(metadata.input_safety.reasons) && metadata.input_safety.reasons.length) {
+        detailRows.push({ label: 'Input safety', value: (metadata.input_safety.category || 'classified') + ' / ' + metadata.input_safety.reasons.join(', ') });
+      }
+      return streamCardHtml([
+        streamHeaderHtml([
+          '<span class="stream-time">' + escapeHtml(when) + '</span>',
+          streamBadge(input.kind || 'event', 'info'),
+          streamBadge(decision.decision || 'n/a', streamDecisionTone(decision.decision, decision.reason))
+        ]),
+        streamTitleHtml(speaker, actor.platform_id || actor.source || ''),
+        streamQuoteHtml(input.text, 'stream-quote'),
+        streamKvHtml(detailRows),
+        streamQuoteHtml(response.spoken_text, 'stream-reply')
+      ]);
+    }).join('');
+  }
+
+  function humanStreamSafety(payload) {
+    var items = payload && Array.isArray(payload.items) ? payload.items : [];
+    var safetyItems = [];
+    items.forEach(function (item) {
+      var input = item.input_event || {};
+      var metadata = input.metadata || {};
+      var safety = metadata.input_safety || item.safety_decision || {};
+      if (!safety || (!safety.category && !safety.action && !safety.reasons)) return;
+      safetyItems.push({ item: item, input: input, safety: safety });
+    });
+    if (!safetyItems.length) return streamEmptyHtml('No recent safety-classified stream events.');
+    return safetyItems.slice(-12).reverse().map(function (entry) {
+      var item = entry.item;
+      var input = entry.input;
+      var safety = entry.safety;
+      var reasons = Array.isArray(safety.reasons) && safety.reasons.length ? safety.reasons.join(', ') : 'n/a';
+      if (reasons === 'n/a' && Array.isArray(safety.matched_rules) && safety.matched_rules.length) reasons = safety.matched_rules.join(', ');
+      var decision = item.decision || {};
+      var category = safety.category || safety.action || 'classified';
+      return streamCardHtml([
+        streamHeaderHtml([
+          '<span class="stream-time">' + escapeHtml(fmtLocalDateTime(item.recorded_at || input.occurred_at)) + '</span>',
+          streamBadge(category, streamDecisionTone(safety.action || category, reasons)),
+          safety.stage ? streamBadge(safety.stage, 'info') : '',
+          safety.review_timeout ? streamBadge('timeout', 'warn') : ''
+        ]),
+        streamTitleHtml((input.actor && (input.actor.display_name || input.actor.platform_id)) || input.kind || 'Stream event', decision.reason || 'No decision reason'),
+        streamKvHtml([
+          { label: 'Decision', value: (decision.decision || 'n/a') + ' / ' + (decision.reason || 'n/a') },
+          { label: 'Drop', value: safety.should_drop ? 'yes' : 'no' },
+          { label: 'Approved', value: safety.playback_approved ? 'yes' : 'no' },
+          { label: 'Reasons', value: reasons }
+        ]),
+        streamQuoteHtml(safety.safe_prompt_text || input.text || 'n/a', 'stream-quote')
+      ]);
+    }).join('');
+  }
+
+  function humanStreamOutputs(payload) {
+    var items = payload && Array.isArray(payload.items) ? payload.items : [];
+    if (!items.length) return streamEmptyHtml('No recent stream output events.');
+    return items.slice(-12).reverse().map(function (item) {
+      var event = item.output_event || {};
+      var payload = event.payload || {};
+      var adapterPayload = item.adapter_payload || {};
+      var detail = payload.text || payload.emotion || payload.motion || adapterPayload.subtitle || '';
+      return streamCardHtml([
+        streamHeaderHtml([
+          '<span class="stream-time">' + escapeHtml(fmtLocalDateTime(item.recorded_at || event.occurred_at)) + '</span>',
+          streamBadge(event.type || 'output', 'info')
+        ]),
+        streamQuoteHtml(detail || pretty(payload || adapterPayload), 'stream-quote'),
+        streamKvHtml([
+          { label: 'Input', value: event.input_event_id || '' },
+          { label: 'Turn', value: event.turn_id || '' }
+        ])
+      ]);
+    }).join('');
+  }
+
+  function humanStreamQueue(payload) {
+    var slots = payload && payload.slots ? payload.slots : {};
+    var names = Object.keys(slots);
+    if (!names.length) return streamEmptyHtml('No pending stream speech.');
+    return names.sort().map(function (slotName) {
+      var item = slots[slotName] || {};
+      var actor = item.actor || {};
+      var speaker = actor.display_name || actor.platform_id || actor.source || 'unknown';
+      return streamCardHtml([
+        streamHeaderHtml([
+          streamBadge(slotName, 'info'),
+          streamBadge(item.decision || 'queued', streamDecisionTone(item.decision, item.reason))
+        ]),
+        streamTitleHtml(speaker, (item.kind || 'event') + ' queued ' + fmtLocalDateTime(item.queued_at)),
+        streamKvHtml([
+          { label: 'Reason', value: item.reason || 'n/a' },
+          {
+            label: 'Gap',
+            value: (typeof item.elapsed_seconds === 'undefined' ? 'n/a' : item.elapsed_seconds + 's')
+              + ' of ' + (typeof item.min_gap_seconds === 'undefined' ? 'n/a' : item.min_gap_seconds + 's')
+          },
+          { label: 'Replaced', value: item.replaced_event_id || '' }
+        ]),
+        streamQuoteHtml(item.text || 'n/a', 'stream-quote')
+      ]);
+    }).join('');
+  }
+
+  function humanStreamTempMemory(payload) {
+    var items = payload && Array.isArray(payload.items) ? payload.items : [];
+    if (!items.length) return streamEmptyHtml('No temporary stream memory.');
+    return items.slice(0, 12).map(function (item) {
+      var metadata = item.metadata || {};
+      var decision = metadata.last_decision || metadata.decision || '';
+      var reason = metadata.last_reason || metadata.reason || '';
+      return streamCardHtml([
+        streamHeaderHtml([
+          streamBadge(item.bucket || 'bucket', 'info'),
+          decision ? streamBadge(decision, streamDecisionTone(decision, reason)) : ''
+        ]),
+        streamTitleHtml(item.key || 'key', 'Updated ' + fmtLocalDateTime(item.updated_at)),
+        streamQuoteHtml(item.value || '', 'stream-quote'),
+        streamKvHtml([{ label: 'Reason', value: reason || '' }])
+      ]);
+    }).join('');
+  }
+
+  function humanStreamSelfGoals(payload) {
+    var items = payload && Array.isArray(payload.items) ? payload.items : [];
+    if (!items.length) return streamEmptyHtml('No stream self-goals.');
+    return items.slice(0, 12).map(function (item) {
+      return streamCardHtml([
+        streamHeaderHtml([
+          streamBadge('#' + item.id, 'info'),
+          streamBadge(item.status || 'status', streamDecisionTone(item.status, ''))
+        ]),
+        streamTitleHtml(item.title || 'goal', 'Updated ' + fmtLocalDateTime(item.updated_at)),
+        streamQuoteHtml(item.description || '', 'stream-quote')
+      ]);
+    }).join('');
+  }
+
+  function oneLine(value, maxLength) {
+    var text = String(value || '').replace(/\s+/g, ' ').trim();
+    if (text.length <= maxLength) return text;
+    return text.slice(0, Math.max(0, maxLength - 3)) + '...';
+  }
+
   function humanMemoryStats(stats) {
     var lines = [
       'Backend: ' + (stats.backend || 'n/a'),
@@ -887,6 +1760,19 @@
       lines.push(fmtLocalDateTime(entry.timestamp) + '  |  Total: ' + fmtDurationMs(phase.total_ms));
       lines.push('Draft: ' + fmtDurationMs(phase.draft_reply_ms) + ' | Metadata: ' + fmtDurationMs(phase.metadata_ms) + ' | Tools: ' + fmtDurationMs(phase.tool_exec_ms));
       lines.push('Finalizer: ' + fmtDurationMs(phase.finalizer_ms) + ' | Memory: ' + fmtDurationMs(phase.memory_persist_ms) + ' | TTS: ' + fmtDurationMs(phase.tts_ms));
+      if (entry.route_events && entry.route_events.length) {
+        var routeLines = [];
+        for (var r = 0; r < entry.route_events.length; r += 1) {
+            var route = entry.route_events[r] || {};
+            routeLines.push(
+              (route.route_family || route.purpose || 'route') + ': ' +
+              providerLabel(route.provider) +
+              (route.model ? ' using ' + route.model : '') +
+              ' [' + (route.profile || 'balanced') + ', ' + (route.status || 'n/a') + ', ' + (route.reason || 'n/a') + ', ' + fmtDurationMs(route.duration_ms) + ']'
+            );
+        }
+        lines.push('Routes: ' + routeLines.join(' || '));
+      }
       lines.push('User: ' + (entry.user_text_preview || ''));
       lines.push('');
     }
@@ -979,10 +1865,24 @@
       assistantLlmEnabled: !!settings.speech_filter_llm_enabled,
       assistantAutoRewrite: !!settings.speech_filter_auto_rewrite,
       assistantLlmModel: settings.speech_filter_llm_model || '',
+      assistantLlmTemperature: typeof settings.speech_filter_llm_temperature === 'number' ? settings.speech_filter_llm_temperature : 0,
+      assistantSafetyReviewTimeout: settings.stream_safety_review_timeout_seconds || 2,
+      assistantSafetyReviewTimeoutAction: settings.stream_safety_review_timeout_action || 'skip',
+      assistantRouterProfile: settings.llm_router_profile || 'balanced',
+      assistantRouterHostedEscalation: !!settings.llm_router_allow_hosted_escalation,
+      assistantRouterPersonaHosted: !!settings.llm_router_persona_hosted_fallback_enabled,
+      assistantRouterPersonaHeavyHosted: !!settings.llm_router_persona_heavy_hosted_fallback_enabled,
+      assistantRouterLightWords: settings.llm_router_chat_light_max_input_words,
+      assistantRouterComplexWords: settings.llm_router_complex_max_input_words,
       assistantStateEnabled: !!settings.assistant_state_enabled,
       assistantEmotionDecayTurns: settings.assistant_emotion_decay_turns,
       assistantEmotionEpisodeThreshold: settings.assistant_emotion_episode_threshold,
-      assistantEmotionPatternThreshold: settings.assistant_emotion_pattern_threshold
+      assistantEmotionPatternThreshold: settings.assistant_emotion_pattern_threshold,
+      assistantProactiveIdleEnabled: !!settings.proactive_idle_enabled,
+      assistantProactiveIdleMinSilence: settings.proactive_idle_min_silence_seconds,
+      assistantProactiveIdleTargetSilence: settings.proactive_idle_target_silence_seconds,
+      assistantProactiveIdleCooldown: settings.proactive_idle_cooldown_seconds,
+      assistantProactiveIdleMaxAttempts: settings.proactive_idle_max_attempts_per_topic
     };
     Object.keys(bindings).forEach(function (id) {
       var el = document.getElementById(id);
@@ -1409,8 +2309,20 @@
     setTextIfChanged('hostRam', machine.memory ? (machine.memory.percent.toFixed(1) + '%') : 'n/a');
     setTextIfChanged('hostDisk', machine.disk ? (machine.disk.percent.toFixed(1) + '%') : 'n/a');
     if (gpu.ok && gpu.gpus && gpu.gpus.length) {
-      var first = gpu.gpus[0];
-      setTextIfChanged('hostGpu', first.utilization_percent + '% / ' + first.memory_used_mb + ' MB');
+      var gpuLines = gpu.gpus.map(function (entry, idx) {
+        var label = String(entry.label || ('GPU ' + idx));
+        var name = String(entry.name || 'Unknown GPU');
+        var usedMb = Number(entry.memory_used_mb || 0);
+        var totalMb = Number(entry.memory_total_mb || 0);
+        var util = Number(entry.utilization_percent || 0);
+        var temp = Number(entry.temperature_c || 0);
+        return label + ' [' + name + ']\n'
+          + util + '% util / '
+          + usedMb + ' MB'
+          + (totalMb ? ' of ' + totalMb + ' MB' : '')
+          + (temp ? ' / ' + temp + ' C' : '');
+      });
+      setTextIfChanged('hostGpu', gpuLines.join('\n\n'));
     } else {
       setTextIfChanged('hostGpu', gpu.detail || 'n/a');
     }
@@ -1425,6 +2337,18 @@
       shana_url: data.shana && data.shana.url ? data.shana.url : null,
       api_health: health
     }, humanBackendHealth(data, health), 'backendHealth');
+
+    var backendOk = !!health.ok;
+    updateStatusChip(
+      'stickyShanaStatus',
+      'Shana: ' + (process.running ? 'running' + (process.pid ? ' #' + process.pid : '') : 'stopped'),
+      process.running ? 'good' : 'bad'
+    );
+    updateStatusChip(
+      'stickyBackendStatus',
+      'API ' + (backendOk ? 'OK' : 'Down'),
+      backendOk ? 'good' : 'warn'
+    );
 
     if (machine && machine.refresh_interval_seconds) {
       runtimePollMs = Math.max(1000, Number(machine.refresh_interval_seconds) * 1000);
@@ -1577,6 +2501,33 @@
       'providerActions'
     );
 
+    var twitchWorker = data.twitch && data.twitch.worker ? data.twitch.worker : {};
+    var twitchEventSub = data.twitch && data.twitch.eventsub ? data.twitch.eventsub : {};
+    renderBlockIfChanged('twitchWorkerStatus', twitchWorker, humanTwitchWorker(twitchWorker), 'twitchWorkerStatus');
+    renderBlockIfChanged('twitchEventSubStatus', twitchEventSub, humanTwitchEventSub(twitchEventSub), 'twitchEventSubStatus');
+    renderBlockIfChanged('streamReadyStatus', data.twitch && data.twitch.stream_ready ? data.twitch.stream_ready : {}, humanStreamReady(data.twitch && data.twitch.stream_ready ? data.twitch.stream_ready : {}, twitchWorker), 'streamReadyStatus');
+    renderBlockIfChanged('performerBusStatus', data.performer || {}, humanPerformerBus(data.performer || {}), 'performerBusStatus');
+    updateOutputTargetControls(data.performer || {});
+    var twitchStartButton = document.getElementById('twitchWorkerStartButton');
+    var twitchStopButton = document.getElementById('twitchWorkerStopButton');
+    var twitchEventSubStartButton = document.getElementById('twitchEventSubStartButton');
+    var twitchEventSubStopButton = document.getElementById('twitchEventSubStopButton');
+    var twitchProcess = twitchWorker.process || {};
+    var twitchEventSubProcess = twitchEventSub.process || {};
+    if (twitchStartButton) twitchStartButton.disabled = !twitchWorker.configured || !!twitchProcess.running;
+    if (twitchStopButton) twitchStopButton.disabled = !twitchProcess.running;
+    if (twitchEventSubStartButton) twitchEventSubStartButton.disabled = !twitchEventSub.configured || !!twitchEventSubProcess.running;
+    if (twitchEventSubStopButton) twitchEventSubStopButton.disabled = !twitchEventSubProcess.running;
+    renderTwitchSettings(twitchWorker.controls || {});
+    updateStatusChip(
+      'stickyTwitchStatus',
+      'Workers ' + ((twitchProcess.running ? 1 : 0) + (twitchEventSubProcess.running ? 1 : 0)),
+      twitchProcess.running || twitchEventSubProcess.running ? 'good' : (twitchWorker.configured || twitchEventSub.configured ? 'warn' : 'bad')
+    );
+
+    updateNavbarDetails(data);
+    updateOverviewCards(data);
+
     if (!sectionHashes.ttsProfileEditorStatusSaved) {
       renderBlockIfChanged(
         'ttsProfileEditorStatus',
@@ -1629,6 +2580,76 @@
     setTextIfChanged('stdoutLog', process.running ? (logs.stdout_tail || '') : 'Shana is not running. Log panel shows only the current supervised run.', 'stdoutLog');
     setTextIfChanged('stderrLog', process.running ? (logs.stderr_tail || '') : 'Shana is not running. Log panel shows only the current supervised run.', 'stderrLog');
     updateStamp('Last refreshed: ' + new Date().toLocaleString());
+    applyDashboardTabVisibility();
+  }
+
+  function updateOutputTargetControls(performer) {
+    var stats = performer && performer.stats ? performer.stats : {};
+    var mutedTargets = Array.isArray(stats.muted_targets) ? stats.muted_targets : [];
+    var policies = outputTargetPolicies(stats, performer && performer.recent_by_target ? performer.recent_by_target : {});
+    renderOutputTargetControls(policies, mutedTargets, stats);
+    updateOutputTargetSummary(performer, policies, mutedTargets);
+  }
+
+  function renderOutputTargetControls(policies, mutedTargets, stats) {
+    var controls = document.getElementById('outputTargetControls');
+    if (!controls) return;
+    var currentKey = policies.join('|') + '::' + mutedTargets.slice().sort().join('|') + '::' + JSON.stringify(stats.subscribers_by_target || {});
+    if (controls.dataset.renderKey === currentKey) return;
+    controls.dataset.renderKey = currentKey;
+    controls.textContent = '';
+    policies.forEach(function (targetPolicy) {
+      var muted = mutedTargets.indexOf(targetPolicy) !== -1;
+      var row = document.createElement('div');
+      row.className = 'output-target-row';
+
+      var title = document.createElement('div');
+      title.className = 'output-target-row-title';
+      title.textContent = outputTargetLabel(targetPolicy) + ' / clients ' + Number((stats.subscribers_by_target || {})[targetPolicy] || 0);
+      row.appendChild(title);
+
+      var actions = document.createElement('div');
+      actions.className = 'output-target-row-actions';
+      actions.appendChild(outputTargetButton('Mute', 'ghost danger-outline', targetPolicy, 'mute', muted));
+      actions.appendChild(outputTargetButton('Unmute', 'secondary', targetPolicy, 'unmute', !muted));
+      actions.appendChild(outputTargetButton('Clear', 'ghost', targetPolicy, 'clear', false));
+      row.appendChild(actions);
+      controls.appendChild(row);
+    });
+  }
+
+  function outputTargetButton(label, className, targetPolicy, actionName, disabled) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = className;
+    button.textContent = label;
+    button.disabled = !!disabled;
+    button.title = outputTargetLabel(targetPolicy) + ' ' + actionName;
+    button.addEventListener('click', function () {
+      action('/api/performer/targets/' + encodeURIComponent(targetPolicy) + '/' + actionName);
+    });
+    return button;
+  }
+
+  function updateOutputTargetSummary(performer, policies, mutedTargets) {
+    var summary = document.getElementById('outputTargetSummary');
+    if (!summary) return;
+    var stats = performer && performer.stats ? performer.stats : {};
+    var byTarget = stats.subscribers_by_target || {};
+    var status = performer && performer.ok ? 'reachable' : 'unreachable';
+    var targetParts = policies.map(function (targetPolicy) {
+      var muted = mutedTargets.indexOf(targetPolicy) !== -1;
+      return outputTargetLabel(targetPolicy) + ': ' + (muted ? 'muted' : 'live') + ', clients ' + Number(byTarget[targetPolicy] || 0);
+    });
+    var text = 'Bus ' + status + (targetParts.length ? ' | ' + targetParts.join(' | ') : '');
+    setTextIfChanged('outputTargetSummary', text, 'outputTargetSummary');
+  }
+
+  function outputTargetLabel(targetPolicy) {
+    if (targetPolicy === 'stream_public') return 'Stream';
+    if (targetPolicy === 'dashboard_monitor') return 'Monitor';
+    if (targetPolicy === 'discord_call') return 'Discord';
+    return humanizeKey(targetPolicy || 'stream_public');
   }
 
   function scheduleStatusRefreshes() {
@@ -1669,10 +2690,36 @@
       latestData.shana = latestData.shana || {};
       latestData.shana.process = latestData.shana.process || {};
       latestData.shana.process.running = false;
+      if (path === '/api/all/stop') {
+        latestData.twitch = latestData.twitch || {};
+        latestData.twitch.worker = latestData.twitch.worker || {};
+        latestData.twitch.worker.process = latestData.twitch.worker.process || {};
+        latestData.twitch.worker.process.running = false;
+      }
     } else if (path === '/api/shana/restart') {
       latestData.shana = latestData.shana || {};
       latestData.shana.process = latestData.shana.process || {};
       latestData.shana.process.running = true;
+    } else if (path === '/api/twitch/worker/start') {
+      latestData.twitch = latestData.twitch || {};
+      latestData.twitch.worker = latestData.twitch.worker || {};
+      latestData.twitch.worker.process = latestData.twitch.worker.process || {};
+      latestData.twitch.worker.process.running = true;
+    } else if (path === '/api/twitch/worker/stop') {
+      latestData.twitch = latestData.twitch || {};
+      latestData.twitch.worker = latestData.twitch.worker || {};
+      latestData.twitch.worker.process = latestData.twitch.worker.process || {};
+      latestData.twitch.worker.process.running = false;
+    } else if (path === '/api/twitch/eventsub/start') {
+      latestData.twitch = latestData.twitch || {};
+      latestData.twitch.eventsub = latestData.twitch.eventsub || {};
+      latestData.twitch.eventsub.process = latestData.twitch.eventsub.process || {};
+      latestData.twitch.eventsub.process.running = true;
+    } else if (path === '/api/twitch/eventsub/stop') {
+      latestData.twitch = latestData.twitch || {};
+      latestData.twitch.eventsub = latestData.twitch.eventsub || {};
+      latestData.twitch.eventsub.process = latestData.twitch.eventsub.process || {};
+      latestData.twitch.eventsub.process.running = false;
     }
 
     renderPanels(latestData);
@@ -1705,7 +2752,7 @@
       }
       if (path === '/api/dashboard/stop' || path === '/api/all/stop') {
         updateStamp('Stopping...');
-        document.getElementById('backendHealth').textContent = 'Shutdown requested.';
+        setTextIfChanged('backendHealth', 'Shutdown requested.', 'backendHealthAction');
         return;
       }
       if (path === '/api/providers/tts/test') {
@@ -1723,7 +2770,7 @@
     } catch (error) {
       postClientLog('action_exception', { path: path, error: String(error) });
       updateStamp('Action failed');
-      document.getElementById('backendHealth').textContent = 'Dashboard action failed.\n' + String(error);
+      setTextIfChanged('backendHealth', 'Dashboard action failed.\n' + String(error), 'backendHealthAction');
     }
   }
 
@@ -1739,10 +2786,24 @@
       speech_filter_llm_enabled: !!document.getElementById('assistantLlmEnabled').checked,
       speech_filter_auto_rewrite: !!document.getElementById('assistantAutoRewrite').checked,
       speech_filter_llm_model: document.getElementById('assistantLlmModel').value.trim(),
+      speech_filter_llm_temperature: Number(document.getElementById('assistantLlmTemperature').value || 0),
+      stream_safety_review_timeout_seconds: Number(document.getElementById('assistantSafetyReviewTimeout').value || 2),
+      stream_safety_review_timeout_action: document.getElementById('assistantSafetyReviewTimeoutAction').value,
+      llm_router_profile: document.getElementById('assistantRouterProfile').value,
+      llm_router_allow_hosted_escalation: !!document.getElementById('assistantRouterHostedEscalation').checked,
+      llm_router_persona_hosted_fallback_enabled: !!document.getElementById('assistantRouterPersonaHosted').checked,
+      llm_router_persona_heavy_hosted_fallback_enabled: !!document.getElementById('assistantRouterPersonaHeavyHosted').checked,
+      llm_router_chat_light_max_input_words: Number(document.getElementById('assistantRouterLightWords').value || 40),
+      llm_router_complex_max_input_words: Number(document.getElementById('assistantRouterComplexWords').value || 120),
       assistant_state_enabled: !!document.getElementById('assistantStateEnabled').checked,
       assistant_emotion_decay_turns: Number(document.getElementById('assistantEmotionDecayTurns').value || 0),
       assistant_emotion_episode_threshold: Number(document.getElementById('assistantEmotionEpisodeThreshold').value || 0.65),
-      assistant_emotion_pattern_threshold: Number(document.getElementById('assistantEmotionPatternThreshold').value || 3)
+      assistant_emotion_pattern_threshold: Number(document.getElementById('assistantEmotionPatternThreshold').value || 3),
+      proactive_idle_enabled: !!document.getElementById('assistantProactiveIdleEnabled').checked,
+      proactive_idle_min_silence_seconds: Number(document.getElementById('assistantProactiveIdleMinSilence').value || 30),
+      proactive_idle_target_silence_seconds: Number(document.getElementById('assistantProactiveIdleTargetSilence').value || 60),
+      proactive_idle_cooldown_seconds: Number(document.getElementById('assistantProactiveIdleCooldown').value || 180),
+      proactive_idle_max_attempts_per_topic: Number(document.getElementById('assistantProactiveIdleMaxAttempts').value || 2)
     };
     var response = await fetch('/api/assistant/settings', {
       method: 'POST',
@@ -1789,6 +2850,264 @@
       postClientLog('tts_synthesize_error', { error: String(error) });
     }
     btn.disabled = false;
+  }
+
+  async function loadTwitchViewerTrust() {
+    try {
+      var response = await fetch('/api/twitch/viewer-trust?limit=50', { cache: 'no-store' });
+      var payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || ('HTTP ' + response.status));
+      }
+      renderBlockIfChanged('twitchViewerTrust', payload, humanTwitchViewerTrust(payload), 'twitchViewerTrust');
+    } catch (error) {
+      renderBlockIfChanged('twitchViewerTrust', { error: String(error) }, 'Viewer trust load failed.\n' + String(error), 'twitchViewerTrust');
+    }
+  }
+
+  async function saveTwitchViewerTrust() {
+    var payload = {
+      platform: 'twitch',
+      platform_user_id: document.getElementById('twitchTrustUserId').value.trim(),
+      display_name: document.getElementById('twitchTrustDisplayName').value.trim(),
+      trust_level: document.getElementById('twitchTrustLevel').value,
+      pronunciation_alias: document.getElementById('twitchTrustAlias').value.trim(),
+      notes: document.getElementById('twitchTrustNotes').value.trim()
+    };
+    try {
+      var response = await fetch('/api/twitch/viewer-trust', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      var result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.detail || ('HTTP ' + response.status));
+      }
+      renderBlockIfChanged('twitchViewerTrust', result, humanTwitchViewerTrust(result), 'twitchViewerTrust');
+    } catch (error) {
+      renderBlockIfChanged('twitchViewerTrust', { error: String(error) }, 'Viewer trust save failed.\n' + String(error), 'twitchViewerTrust');
+    }
+  }
+
+  async function runTwitchReplay() {
+    var payload = {
+      jsonl: document.getElementById('twitchReplayJsonl').value,
+      session_id: document.getElementById('twitchReplaySessionId').value.trim() || 'twitch-replay',
+      fast_mode: !!document.getElementById('twitchReplayFastMode').checked,
+      synthesize_speech: !!document.getElementById('twitchReplaySpeech').checked
+    };
+    try {
+      renderBlockIfChanged('twitchReplayResult', { status: 'running' }, 'Running replay...', 'twitchReplayResult');
+      var response = await fetch('/api/twitch/replay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      var result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.detail || ('HTTP ' + response.status));
+      }
+      renderBlockIfChanged('twitchReplayResult', result, humanTwitchReplayResult(result), 'twitchReplayResult');
+      scheduleStatusRefreshes();
+    } catch (error) {
+      renderBlockIfChanged('twitchReplayResult', { error: String(error) }, 'Replay failed.\n' + String(error), 'twitchReplayResult');
+    }
+  }
+
+  async function runTwitchDryRunReplay() {
+    try {
+      renderBlockIfChanged('twitchReplayResult', { status: 'running' }, 'Running dry-run replay...', 'twitchReplayResult');
+      var response = await fetch('/api/twitch/replay/dry-run', { method: 'POST' });
+      var result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.detail || ('HTTP ' + response.status));
+      }
+      renderBlockIfChanged('twitchReplayResult', result, humanTwitchReplayResult(result), 'twitchReplayResult');
+      scheduleStatusRefreshes();
+    } catch (error) {
+      renderBlockIfChanged('twitchReplayResult', { error: String(error) }, 'Dry-run replay failed.\n' + String(error), 'twitchReplayResult');
+    }
+  }
+
+  async function saveTwitchSettings() {
+    var payload = {
+      dry_run: !!document.getElementById('twitchDryRun').checked,
+      voice_enabled: !!document.getElementById('twitchVoiceEnabled').checked,
+      subtitles_enabled: !!document.getElementById('twitchSubtitlesEnabled').checked,
+      ambient_chat_enabled: !!document.getElementById('twitchAmbientChatEnabled').checked,
+      mention_replies_enabled: !!document.getElementById('twitchMentionRepliesEnabled').checked,
+      spam_quips_enabled: !!document.getElementById('twitchSpamQuipsEnabled').checked,
+      self_goal_proposals_enabled: !!document.getElementById('twitchSelfGoalProposalsEnabled').checked,
+      llm_safety_review_enabled: !!document.getElementById('twitchLlmSafetyReviewEnabled').checked,
+      min_speech_gap_seconds: Math.max(0, Number(document.getElementById('twitchMinSpeechGapSeconds').value || 0)),
+      max_speech_seconds_per_minute: Math.max(0, Number(document.getElementById('twitchMaxSpeechSecondsPerMinute').value || 0)),
+      spam_quip_cooldown_seconds: Math.max(0, Number(document.getElementById('twitchSpamQuipCooldownSeconds').value || 0))
+    };
+    try {
+      var response = await fetch('/api/twitch/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      var result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.detail || ('HTTP ' + response.status));
+      }
+      renderTwitchSettings(result.settings || payload);
+      renderBlockIfChanged('twitchSettingsStatus', result, result.detail || 'Twitch controls saved.', 'twitchSettingsStatus');
+      await loadStatus();
+    } catch (error) {
+      renderBlockIfChanged('twitchSettingsStatus', { error: String(error) }, 'Twitch controls save failed.\n' + String(error), 'twitchSettingsStatus');
+    }
+  }
+
+  async function stopStreamSpeech() {
+    try {
+      renderBlockIfChanged('streamStopStatus', { status: 'running' }, 'Stopping speech and clearing subtitles...', 'streamStopStatus');
+      var response = await fetch('/api/stream/stop', { method: 'POST' });
+      var result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.detail || ('HTTP ' + response.status));
+      }
+      renderBlockIfChanged('streamStopStatus', result, humanStreamStopResult(result), 'streamStopStatus');
+      await loadStreamActivity();
+    } catch (error) {
+      renderBlockIfChanged('streamStopStatus', { error: String(error) }, 'Stop speech failed.\n' + String(error), 'streamStopStatus');
+    }
+  }
+
+  async function stopShanaOutput() {
+    var targets = ['dashboard_monitor', 'stream_public', 'discord_call'];
+    var results = [];
+    try {
+      renderBlockIfChanged('streamStopStatus', { status: 'running' }, 'Stopping output and clearing targets...', 'streamStopStatus');
+      var streamResponse = await fetch('/api/stream/stop', { method: 'POST' });
+      results.push({ target: 'stream_stop', ok: streamResponse.ok, status: streamResponse.status });
+      for (var i = 0; i < targets.length; i++) {
+        var target = targets[i];
+        var response = await fetch('/api/performer/targets/' + encodeURIComponent(target) + '/clear', { method: 'POST' });
+        results.push({ target: target, ok: response.ok, status: response.status });
+      }
+      setSubtitleState({ transcript: '', reply: '', partial: '' });
+      ttsPlayerClear();
+      setTextIfChanged('overviewOutputStatus', 'cleared');
+      setTextIfChanged('overviewTurnMini', 'Cleared');
+      renderBlockIfChanged('streamStopStatus', { results: results }, humanOutputStopResult(results), 'streamStopStatus');
+      await loadStreamActivity();
+      await loadStatus();
+    } catch (error) {
+      renderBlockIfChanged('streamStopStatus', { error: String(error) }, 'Stop output failed.\n' + String(error), 'streamStopStatus');
+      postClientLog('stop_output_error', { error: String(error) });
+    }
+  }
+
+  function humanOutputStopResult(results) {
+    var failed = (results || []).filter(function (item) { return !item.ok; });
+    return failed.length
+      ? 'Output stop requested with ' + failed.length + ' failed target(s).'
+      : 'Output stopped and performer targets cleared.';
+  }
+
+  function humanStreamStopResult(result) {
+    var decision = result && result.decision ? result.decision : {};
+    var outputs = result && Array.isArray(result.output_events) ? result.output_events : [];
+    return [
+      'Speech stop requested.',
+      'Decision: ' + (decision.reason || 'n/a'),
+      'Output events: ' + outputs.length
+    ].join('\n');
+  }
+
+  async function loadStreamActivity() {
+    try {
+      var traceResponse = await fetch('/api/stream/traces/recent?limit=30', { cache: 'no-store' });
+      var tracePayload = await traceResponse.json();
+      if (!traceResponse.ok) throw new Error(tracePayload.detail || ('traces HTTP ' + traceResponse.status));
+      renderHtmlBlockIfChanged('streamTraceFeed', tracePayload, humanStreamTraces(tracePayload), 'streamTraceFeed');
+      renderHtmlBlockIfChanged('streamSafetyFeed', tracePayload, humanStreamSafety(tracePayload), 'streamSafetyFeed');
+    } catch (error) {
+      renderHtmlBlockIfChanged('streamTraceFeed', { error: String(error) }, streamEmptyHtml('Stream trace load failed. ' + String(error)), 'streamTraceFeed');
+      renderHtmlBlockIfChanged('streamSafetyFeed', { error: String(error) }, streamEmptyHtml('Safety log load failed. ' + String(error)), 'streamSafetyFeed');
+    }
+
+    try {
+      var outputResponse = await fetch('/api/stream/outputs/recent?limit=30', { cache: 'no-store' });
+      var outputPayload = await outputResponse.json();
+      if (!outputResponse.ok) throw new Error(outputPayload.detail || ('outputs HTTP ' + outputResponse.status));
+      renderHtmlBlockIfChanged('streamOutputFeed', outputPayload, humanStreamOutputs(outputPayload), 'streamOutputFeed');
+    } catch (error) {
+      renderHtmlBlockIfChanged('streamOutputFeed', { error: String(error) }, streamEmptyHtml('Stream output load failed. ' + String(error)), 'streamOutputFeed');
+    }
+
+    try {
+      var queueResponse = await fetch('/api/stream/queue', { cache: 'no-store' });
+      var queuePayload = await queueResponse.json();
+      if (!queueResponse.ok) throw new Error(queuePayload.detail || ('queue HTTP ' + queueResponse.status));
+      renderHtmlBlockIfChanged('streamQueueFeed', queuePayload, humanStreamQueue(queuePayload), 'streamQueueFeed');
+    } catch (error) {
+      renderHtmlBlockIfChanged('streamQueueFeed', { error: String(error) }, streamEmptyHtml('Stream queue load failed. ' + String(error)), 'streamQueueFeed');
+    }
+
+    try {
+      var memoryResponse = await fetch('/api/stream/temp-memory?limit=30', { cache: 'no-store' });
+      var memoryPayload = await memoryResponse.json();
+      if (!memoryResponse.ok) throw new Error(memoryPayload.detail || ('temp memory HTTP ' + memoryResponse.status));
+      renderHtmlBlockIfChanged('streamTempMemoryFeed', memoryPayload, humanStreamTempMemory(memoryPayload), 'streamTempMemoryFeed');
+    } catch (error) {
+      renderHtmlBlockIfChanged('streamTempMemoryFeed', { error: String(error) }, streamEmptyHtml('Temp memory load failed. ' + String(error)), 'streamTempMemoryFeed');
+    }
+
+    try {
+      var goalResponse = await fetch('/api/stream/self-goals?limit=30', { cache: 'no-store' });
+      var goalPayload = await goalResponse.json();
+      if (!goalResponse.ok) throw new Error(goalPayload.detail || ('self-goals HTTP ' + goalResponse.status));
+      renderHtmlBlockIfChanged('streamSelfGoalFeed', goalPayload, humanStreamSelfGoals(goalPayload), 'streamSelfGoalFeed');
+    } catch (error) {
+      renderHtmlBlockIfChanged('streamSelfGoalFeed', { error: String(error) }, streamEmptyHtml('Self-goals load failed. ' + String(error)), 'streamSelfGoalFeed');
+    }
+  }
+
+  async function clearStreamTempMemory() {
+    try {
+      var response = await fetch('/api/stream/temp-memory', { method: 'DELETE' });
+      var payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || ('temp memory clear HTTP ' + response.status));
+      renderHtmlBlockIfChanged('streamTempMemoryFeed', payload, streamEmptyHtml('Temp memory cleared. Deleted: ' + (payload.deleted || 0)), 'streamTempMemoryFeed');
+      await loadStreamActivity();
+    } catch (error) {
+      renderHtmlBlockIfChanged('streamTempMemoryFeed', { error: String(error) }, streamEmptyHtml('Temp memory clear failed. ' + String(error)), 'streamTempMemoryFeed');
+    }
+  }
+
+  async function setStreamSelfGoalStatus(actionName) {
+    var input = document.getElementById('streamSelfGoalId');
+    var goalId = input ? String(input.value || '').trim() : '';
+    if (!goalId) {
+      renderHtmlBlockIfChanged('streamSelfGoalFeed', { error: 'missing-goal-id' }, streamEmptyHtml('Enter a self-goal id first.'), 'streamSelfGoalFeed');
+      return;
+    }
+    try {
+      var response = await fetch('/api/stream/self-goals/' + encodeURIComponent(goalId) + '/' + actionName, { method: 'POST' });
+      var payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || ('self-goal HTTP ' + response.status));
+      renderHtmlBlockIfChanged('streamSelfGoalFeed', payload, streamEmptyHtml('Goal #' + payload.id + ' is now ' + payload.status + '.'), 'streamSelfGoalFeed');
+      await loadStreamActivity();
+    } catch (error) {
+      renderHtmlBlockIfChanged('streamSelfGoalFeed', { error: String(error) }, streamEmptyHtml('Self-goal update failed. ' + String(error)), 'streamSelfGoalFeed');
+    }
+  }
+
+  async function clearStreamSelfGoals() {
+    try {
+      var response = await fetch('/api/stream/self-goals/clear', { method: 'POST' });
+      var payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || ('self-goals clear HTTP ' + response.status));
+      renderHtmlBlockIfChanged('streamSelfGoalFeed', payload, streamEmptyHtml('Self-goals cleared. Count: ' + (payload.cleared || 0)), 'streamSelfGoalFeed');
+      await loadStreamActivity();
+    } catch (error) {
+      renderHtmlBlockIfChanged('streamSelfGoalFeed', { error: String(error) }, streamEmptyHtml('Self-goals clear failed. ' + String(error)), 'streamSelfGoalFeed');
+    }
   }
 
   function onTtsSynthesizeFileChange() {
@@ -1912,11 +3231,14 @@
       var data = await response.json();
       postClientLog('load_ok', { hasShana: !!data.shana, hasMachine: !!data.machine });
       latestData = data;
+      updateOutputViewLinks();
       renderPanels(data);
+      loadTwitchViewerTrust();
+      loadStreamActivity();
     } catch (error) {
       postClientLog('load_exception', { error: String(error) });
       updateStamp('Load failed');
-      document.getElementById('backendHealth').textContent = 'Dashboard failed to render data.\n' + String(error);
+      setTextIfChanged('backendHealth', 'Dashboard failed to render data.\n' + String(error), 'backendHealthLoadError');
     }
   }
 
@@ -2196,6 +3518,7 @@
     liveReplyCompleted = false;
     liveCurrentChunk = null;
     liveCurrentChunkStartedAt = 0;
+    clearLiveChunkWatchdog();
     liveInterruptSpeechStartedAt = 0;
     liveInterruptProbePending = false;
     liveInterruptProbeChunks = [];
@@ -2212,6 +3535,41 @@
     playback.pause();
     playback.removeAttribute('src');
     try { playback.load(); } catch (error) {}
+  }
+
+  function clearLiveChunkWatchdog() {
+    if (liveCurrentChunkWatchdog) {
+      clearTimeout(liveCurrentChunkWatchdog);
+      liveCurrentChunkWatchdog = 0;
+    }
+  }
+
+  function finishCurrentChunkAndContinue(message) {
+    clearLiveChunkWatchdog();
+    livePlaybackActive = false;
+    liveCurrentChunk = null;
+    liveCurrentChunkStartedAt = 0;
+    if (message) {
+      updateLiveStatus(message);
+    }
+    playNextLiveReplyChunk();
+  }
+
+  function armLiveChunkWatchdog(playback, chunk) {
+    clearLiveChunkWatchdog();
+    var durationMs = 0;
+    if (playback && isFinite(playback.duration) && playback.duration > 0) {
+      durationMs = Math.ceil(playback.duration * 1000);
+    }
+    if (!durationMs) {
+      durationMs = 15000;
+    }
+    liveCurrentChunkWatchdog = setTimeout(function () {
+      if (!livePlaybackActive || !liveCurrentChunk || liveCurrentChunk !== chunk) {
+        return;
+      }
+      finishCurrentChunkAndContinue('Chunk playback watchdog fired. Advancing to next chunk.');
+    }, durationMs + 4000);
   }
 
   function queueLiveReplyChunk(chunk, turnId) {
@@ -2256,20 +3614,32 @@
     livePlaybackActive = true;
     liveCurrentChunk = chunk;
     liveCurrentChunkStartedAt = Date.now();
+    clearLiveChunkWatchdog();
+    playback.onloadedmetadata = function () {
+      armLiveChunkWatchdog(playback, chunk);
+    };
+    playback.oncanplay = function () {
+      armLiveChunkWatchdog(playback, chunk);
+    };
     playback.src = 'data:' + chunk.audio_content_type + ';base64,' + chunk.audio_base64;
     playback.muted = liveSpeakerMuted;
     updateLiveStatus('Speaking chunk ' + chunk.chunk_index + (chunk.interruptible === false ? ' (protected)...' : '...'));
     playback.onended = function () {
-      livePlaybackActive = false;
-      liveCurrentChunk = null;
-      liveCurrentChunkStartedAt = 0;
-      playNextLiveReplyChunk();
+      finishCurrentChunkAndContinue('');
+    };
+    playback.onerror = function () {
+      finishCurrentChunkAndContinue('Chunk playback error. Skipping to next chunk.');
+    };
+    playback.onstalled = function () {
+      updateLiveStatus('Chunk playback stalled. Waiting for audio to resume...');
+    };
+    playback.onsuspend = function () {
+      if (playback.ended) {
+        finishCurrentChunkAndContinue('');
+      }
     };
     playback.play().catch(function () {
-      livePlaybackActive = false;
-      liveCurrentChunk = null;
-      liveCurrentChunkStartedAt = 0;
-      playNextLiveReplyChunk();
+      finishCurrentChunkAndContinue('Chunk playback rejected. Skipping to next chunk.');
     });
   }
 
@@ -2491,6 +3861,27 @@
             liveInterruptProbeChunks = [];
             liveInterruptProbeBytes = 0;
           }
+          return;
+        }
+        if (payload.type === 'idle_decision') {
+          liveHistory.push({
+            kind: 'event',
+            label: 'idle decision',
+            detail: (payload.would_reply ? 'Would speak: ' : 'Stayed quiet: ') + (payload.reason || payload.decision || 'n/a'),
+            job: payload.stream || null
+          });
+          renderLiveHistory();
+          updateLiveStatus('Idle policy dry run: ' + (payload.reason || payload.decision || 'decision logged') + '.');
+          return;
+        }
+        if (payload.type === 'idle_decision_error') {
+          liveHistory.push({
+            kind: 'event',
+            label: 'idle decision error',
+            detail: payload.detail || 'Idle decision failed.',
+            job: null
+          });
+          renderLiveHistory();
           return;
         }
         if (payload.type === 'turn_result') {
@@ -2777,6 +4168,8 @@
   };
 
   window.toggleViewMode = toggleViewMode;
+  window.toggleNavMenu = toggleNavMenu;
+  window.switchDashboardTab = switchDashboardTab;
   window.action = action;
   window.loadStatus = loadStatus;
   window.toggleSection = toggleSection;
@@ -2800,8 +4193,18 @@
   window.ttsPlayerLoadLatest = ttsPlayerLoadLatest;
   window.ttsPlayerClear = ttsPlayerClear;
   window.ttsArtifactDelete = ttsArtifactDelete;
+  window.runTwitchReplay = runTwitchReplay;
+  window.runTwitchDryRunReplay = runTwitchDryRunReplay;
+  window.saveTwitchSettings = saveTwitchSettings;
+  window.loadStreamActivity = loadStreamActivity;
+  window.clearStreamTempMemory = clearStreamTempMemory;
+  window.setStreamSelfGoalStatus = setStreamSelfGoalStatus;
+  window.clearStreamSelfGoals = clearStreamSelfGoals;
+  window.stopStreamSpeech = stopStreamSpeech;
+  window.stopShanaOutput = stopShanaOutput;
 
   postClientLog('script_boot', { viewMode: viewMode });
+  applyDashboardTabVisibility();
   setViewMode(viewMode);
   loadLiveControlDefaults();
   initSectionState('ttsProfileEditorPanel', false);
@@ -2869,12 +4272,12 @@
   initSectionState('visionPanel', false);
   initSectionState('stdoutPanel', false);
   initSectionState('stderrPanel', false);
-  document.getElementById('liveResponseMode').addEventListener('change', persistLiveControlDefaults);
-  document.getElementById('liveBargeInMode').addEventListener('change', persistLiveControlDefaults);
-  document.getElementById('liveSpeechThreshold').addEventListener('input', persistLiveControlDefaults);
-  document.getElementById('liveInterruptSpeechMs').addEventListener('input', persistLiveControlDefaults);
-  document.getElementById('liveSilenceMs').addEventListener('input', persistLiveControlDefaults);
-  document.getElementById('liveBargeInEnabled').addEventListener('change', persistLiveControlDefaults);
+  addElementListener('liveResponseMode', 'change', persistLiveControlDefaults);
+  addElementListener('liveBargeInMode', 'change', persistLiveControlDefaults);
+  addElementListener('liveSpeechThreshold', 'input', persistLiveControlDefaults);
+  addElementListener('liveInterruptSpeechMs', 'input', persistLiveControlDefaults);
+  addElementListener('liveSilenceMs', 'input', persistLiveControlDefaults);
+  addElementListener('liveBargeInEnabled', 'change', persistLiveControlDefaults);
   updateRecordButton();
   updateLiveButton();
   updateMuteButtons();
@@ -2882,7 +4285,7 @@
   renderLiveMeta(null);
   renderLiveHistory();
   drawLiveMeter(0);
-  document.getElementById('visionImageFile').addEventListener('change', function (event) {
+  addElementListener('visionImageFile', 'change', function (event) {
     if (selectedVisionPreviewUrl) {
       URL.revokeObjectURL(selectedVisionPreviewUrl);
       selectedVisionPreviewUrl = null;
@@ -2896,6 +4299,13 @@
   loadVisionHistory();
   updateVisionImageMeta();
   renderVisionHistory();
+  updateOutputViewLinks();
+  updateStickyTabOffset();
+  window.addEventListener('resize', updateStickyTabOffset);
+  var _topbar = document.querySelector('.topbar');
+  if (window.ResizeObserver && _topbar) {
+    new ResizeObserver(updateStickyTabOffset).observe(_topbar);
+  }
   [
     'ttsEditorPiperModelPath',
     'ttsEditorPiperConfigPath',
@@ -2912,7 +4322,7 @@
     var eventName = element.tagName === 'INPUT' && element.type === 'checkbox' ? 'change' : 'input';
     element.addEventListener(eventName, syncJsonFromStructuredFields);
   });
-  document.getElementById('ttsEditorValues').addEventListener('input', syncStructuredFieldsFromJson);
+  addElementListener('ttsEditorValues', 'input', syncStructuredFieldsFromJson);
   window.toggleLiveSpeakerMuted = toggleLiveSpeakerMuted;
   window.toggleLiveMicMuted = toggleLiveMicMuted;
   window.toggleSubtitleWindow = toggleSubtitleWindow;

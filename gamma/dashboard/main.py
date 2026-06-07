@@ -21,6 +21,9 @@ service = LazySingleton[DashboardService]()
 voice_roundtrip_service = LazySingleton[VoiceRoundtripService]()
 live_voice_session = LazySingleton[LiveVoiceSession]()
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+INDEX_PAGE = STATIC_DIR / "index.html"
+MONITOR_PAGE = STATIC_DIR / "monitor.html"
+SUBTITLE_OVERLAY_PAGE = STATIC_DIR / "overlay.html"
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="dashboard-static")
 
@@ -41,6 +44,8 @@ def get_live_voice_session() -> LiveVoiceSession:
             job_fetcher=dashboard_service.get_remote_live_job,
             job_canceler=dashboard_service.cancel_remote_live_job,
             partial_transcriber=dashboard_service.transcribe_remote_live_audio,
+            idle_settings_provider=dashboard_service.live_idle_settings,
+            idle_event_recorder=dashboard_service.record_remote_stream_event,
         )
 
     return live_voice_session.get(_build_live_voice_session)
@@ -64,8 +69,86 @@ def health() -> dict[str, str]:
 
 
 @app.get("/")
-def dashboard() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+@app.get("/dashboard")
+def dashboard() -> HTMLResponse:
+    return _dashboard_page(INDEX_PAGE, dashboard_page="dashboard")
+
+
+@app.get("/dashboard/live")
+def dashboard_live_page() -> HTMLResponse:
+    return _dashboard_page(INDEX_PAGE, dashboard_page="live")
+
+
+@app.get("/dashboard/status")
+def dashboard_status_page() -> HTMLResponse:
+    return _dashboard_page(INDEX_PAGE, dashboard_page="status")
+
+
+@app.get("/dashboard/stream")
+def dashboard_stream_page() -> HTMLResponse:
+    return _dashboard_page(INDEX_PAGE, dashboard_page="stream")
+
+
+@app.get("/dashboard/twitch")
+def dashboard_twitch_page() -> RedirectResponse:
+    return RedirectResponse(url="/dashboard/stream", status_code=307)
+
+
+@app.get("/dashboard/memory")
+def dashboard_memory_page() -> HTMLResponse:
+    return _dashboard_page(INDEX_PAGE, dashboard_page="memory")
+
+
+@app.get("/dashboard/settings")
+def dashboard_settings_page() -> HTMLResponse:
+    return _dashboard_page(INDEX_PAGE, dashboard_page="settings")
+
+
+@app.get("/monitor")
+def monitor_page() -> RedirectResponse:
+    return RedirectResponse(url="/dashboard/monitor", status_code=307)
+
+
+@app.get("/dashboard/monitor")
+def dashboard_monitor_page() -> HTMLResponse:
+    return _dashboard_output_page(MONITOR_PAGE, dashboard_page="monitor")
+
+
+@app.get("/performer")
+def performer_redirect() -> RedirectResponse:
+    return RedirectResponse(url=f"{_app_settings.shana_base_url}/performer", status_code=307)
+
+
+@app.get("/overlay/subtitles")
+def subtitle_overlay_page() -> HTMLResponse:
+    return _dashboard_output_page(SUBTITLE_OVERLAY_PAGE)
+
+
+def _dashboard_output_page(path: Path, *, dashboard_page: str = "") -> HTMLResponse:
+    return _dashboard_page(path, dashboard_page=dashboard_page)
+
+
+def _dashboard_page(path: Path, *, dashboard_page: str = "") -> HTMLResponse:
+    html = path.read_text(encoding="utf-8")
+    html = _with_dashboard_public_links(html)
+    config = (
+        f'<script>window.GAMMA_SHANA_BASE_URL = "{_app_settings.shana_base_url}";'
+        f' window.GAMMA_DASHBOARD_BASE_URL = "{_app_settings.dashboard_base_url}";'
+        f' window.GAMMA_DASHBOARD_PAGE = "{dashboard_page}";</script>'
+    )
+    html = html.replace("</head>", f"  {config}\n</head>", 1)
+    return HTMLResponse(html)
+
+
+def _with_dashboard_public_links(html: str) -> str:
+    dashboard_base = _app_settings.dashboard_base_url.rstrip("/")
+    replacements = {
+        'href="/dashboard': f'href="{dashboard_base}/dashboard',
+        'href="/overlay/subtitles': f'href="{dashboard_base}/overlay/subtitles',
+    }
+    for old, new in replacements.items():
+        html = html.replace(old, new)
+    return html
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -211,6 +294,86 @@ def stop_dashboard() -> dict:
 @app.post("/api/all/stop")
 def stop_all() -> dict:
     return get_dashboard_service().stop_all()
+
+
+@app.get("/api/twitch/worker/status")
+def twitch_worker_status() -> dict:
+    return get_dashboard_service().twitch_worker_status()
+
+
+@app.get("/api/twitch/settings")
+def twitch_settings() -> dict:
+    return {"settings": get_dashboard_service().twitch_runtime_settings()}
+
+
+@app.post("/api/twitch/settings")
+async def save_twitch_settings(request: Request) -> dict:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="object payload is required")
+    return get_dashboard_service().save_twitch_runtime_settings(payload)
+
+
+@app.post("/api/twitch/worker/start")
+def start_twitch_worker() -> dict:
+    return get_dashboard_service().start_twitch_worker()
+
+
+@app.post("/api/twitch/worker/stop")
+def stop_twitch_worker() -> dict:
+    return get_dashboard_service().stop_twitch_worker()
+
+
+@app.get("/api/twitch/eventsub/status")
+def twitch_eventsub_status() -> dict:
+    return get_dashboard_service().twitch_eventsub_status()
+
+
+@app.post("/api/twitch/eventsub/start")
+def start_twitch_eventsub_worker() -> dict:
+    return get_dashboard_service().start_twitch_eventsub_worker()
+
+
+@app.post("/api/twitch/eventsub/stop")
+def stop_twitch_eventsub_worker() -> dict:
+    return get_dashboard_service().stop_twitch_eventsub_worker()
+
+
+@app.get("/api/twitch/viewer-trust")
+def twitch_viewer_trust(limit: int = 100) -> dict:
+    return get_dashboard_service().twitch_viewer_trust(limit=limit)
+
+
+@app.post("/api/twitch/viewer-trust")
+async def save_twitch_viewer_trust(request: Request) -> dict:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="object payload is required")
+    try:
+        return get_dashboard_service().save_twitch_viewer_trust(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/twitch/replay")
+async def run_twitch_replay(request: Request) -> dict:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="object payload is required")
+    try:
+        return get_dashboard_service().run_twitch_replay(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/twitch/replay/dry-run")
+def run_twitch_dry_run_replay() -> dict:
+    try:
+        return get_dashboard_service().run_twitch_dry_run_replay()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.post("/api/memory/clear")
@@ -369,6 +532,76 @@ async def dashboard_voice_roundtrip(
 @app.get("/api/voice/live/history")
 def dashboard_live_voice_history(limit: int = 20) -> dict:
     return get_dashboard_service().remote_live_history(limit=limit)
+
+
+@app.get("/api/stream/traces/recent")
+def dashboard_stream_recent_traces(limit: int = 50) -> dict:
+    return get_dashboard_service().stream_recent_traces(limit=limit)
+
+
+@app.get("/api/stream/eval/recent")
+def dashboard_stream_recent_eval(limit: int = 50) -> dict:
+    return get_dashboard_service().stream_recent_eval(limit=limit)
+
+
+@app.get("/api/stream/outputs/recent")
+def dashboard_stream_recent_outputs(limit: int = 50) -> dict:
+    return get_dashboard_service().stream_recent_outputs(limit=limit)
+
+
+@app.get("/api/stream/queue")
+def dashboard_stream_pending_queue() -> dict:
+    return get_dashboard_service().stream_pending_queue()
+
+
+@app.get("/api/stream/temp-memory")
+def dashboard_stream_temp_memory(bucket: str | None = None, limit: int = 100) -> dict:
+    return get_dashboard_service().stream_temp_memory(bucket=bucket, limit=limit)
+
+
+@app.delete("/api/stream/temp-memory")
+def dashboard_stream_temp_memory_clear(bucket: str | None = None) -> dict:
+    return get_dashboard_service().clear_stream_temp_memory(bucket=bucket)
+
+
+@app.get("/api/stream/self-goals")
+def dashboard_stream_self_goals(status: str | None = None, limit: int = 100) -> dict:
+    return get_dashboard_service().stream_self_goals(status=status, limit=limit)
+
+
+@app.post("/api/stream/self-goals/{goal_id}/approve")
+def dashboard_stream_self_goal_approve(goal_id: int) -> dict:
+    return get_dashboard_service().set_stream_self_goal_status(goal_id, status="approve")
+
+
+@app.post("/api/stream/self-goals/{goal_id}/reject")
+def dashboard_stream_self_goal_reject(goal_id: int) -> dict:
+    return get_dashboard_service().set_stream_self_goal_status(goal_id, status="reject")
+
+
+@app.post("/api/stream/self-goals/clear")
+def dashboard_stream_self_goals_clear() -> dict:
+    return get_dashboard_service().clear_stream_self_goals()
+
+
+@app.post("/api/stream/stop")
+def dashboard_stream_stop() -> dict:
+    return get_dashboard_service().stop_stream_speech(reason="dashboard_stop")
+
+
+@app.post("/api/performer/targets/{target_policy}/mute")
+def dashboard_performer_target_mute(target_policy: str) -> dict:
+    return get_dashboard_service().set_performer_target_mute(target_policy, muted=True, reason="dashboard")
+
+
+@app.post("/api/performer/targets/{target_policy}/unmute")
+def dashboard_performer_target_unmute(target_policy: str) -> dict:
+    return get_dashboard_service().set_performer_target_mute(target_policy, muted=False, reason="dashboard")
+
+
+@app.post("/api/performer/targets/{target_policy}/clear")
+def dashboard_performer_target_clear(target_policy: str) -> dict:
+    return get_dashboard_service().clear_performer_target(target_policy, reason="dashboard")
 
 
 @app.post("/api/vision/analyze", response_model=VisionAnalysis)

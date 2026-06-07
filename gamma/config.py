@@ -479,3 +479,13 @@ settings = Settings()
 settings.data_dir.mkdir(parents=True, exist_ok=True)
 settings.audio_output_dir.mkdir(parents=True, exist_ok=True)
 settings.image_input_dir.mkdir(parents=True, exist_ok=True)
+
+
+# Default TTS selection helper
+def load_desired_tts_selection() -> dict[str, str]:
+    """Load the desired TTS provider and profile selection."""
+    return {
+        "tts_provider": str(settings.tts_provider or getattr(settings, "default_tts_provider", "") or ""),
+        "tts_profile": str(settings.tts_profile or ""),
+    }
+

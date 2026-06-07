@@ -594,10 +594,10 @@ class Settings:
         _setting("SHANA_TWITCH_OAUTH_TOKEN", _config_value(APP_CONFIG, "twitch_oauth_token", default=""))
     )
     twitch_owner_user_id: str = str(
+        _setting("SHANA_TWITCH_OWNER_USER_ID", _config_value(APP_CONFIG, "twitch_owner_user_id", default=""))
+    )
     twitch_broadcaster_user_id: str = str(
         _setting("SHANA_TWITCH_BROADCASTER_USER_ID", _config_value(APP_CONFIG, "twitch_broadcaster_user_id", default=""))
-    )
-        _setting("SHANA_TWITCH_OWNER_USER_ID", _config_value(APP_CONFIG, "twitch_owner_user_id", default=""))
     )
     twitch_self_goal_proposals_enabled: bool = _as_bool(
         _setting("SHANA_TWITCH_SELF_GOAL_PROPOSALS_ENABLED", _config_value(APP_CONFIG, "twitch_self_goal_proposals_enabled", default=False)),

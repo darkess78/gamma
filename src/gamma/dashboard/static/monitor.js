@@ -26,7 +26,9 @@
   }
 
   function enableAudio() {
+    if (!audio || !audioEnabled) return;
     audioEnabled = true;
+    if (!audio) return;
     const button = document.getElementById('audioEnableButton');
     const gate = document.getElementById('audioGate');
     const text = document.getElementById('audioGateText');
@@ -375,6 +377,7 @@
   function clearAudio() {
     audioQueue = [];
     playing = false;
+    if (!audio) return;
     audio.pause();
     audio.removeAttribute('src');
     audio.load();
@@ -394,7 +397,7 @@
       button.textContent = muted ? 'Unmute Monitor' : 'Mute Monitor';
     }
     if (muted) {
-      audio.pause();
+      if (audio) audio.pause();
     } else {
       playing = false;
       playNextAudio();
@@ -422,21 +425,25 @@
       });
   }
 
-  audio.addEventListener('ended', () => {
-    playing = false;
-    if (document.getElementById('queueSize')) {
-      document.getElementById('queueSize').textContent = audioQueue.length;
-    }
-    playNextAudio();
-  });
+  if (audio) {
+    audio.addEventListener('ended', () => {
+      playing = false;
+      const queueSizeEl = document.getElementById('queueSize');
+      if (queueSizeEl) {
+        queueSizeEl.textContent = audioQueue.length;
+      }
+      playNextAudio();
+    });
 
-  audio.addEventListener('error', () => {
-    playing = false;
-    if (document.getElementById('queueSize')) {
-      document.getElementById('queueSize').textContent = audioQueue.length;
+    audio.addEventListener('error', () => {
+      playing = false;
+      const queueSizeEl = document.getElementById('queueSize');
+      if (queueSizeEl) {
+        queueSizeEl.textContent = audioQueue.length;
+      }
+      playNextAudio();
+    });
     }
-    playNextAudio();
-  });
 
   // Initialize
   setMonitorTheme(localStorage.getItem('gammaMonitorTheme') || 'dashboard');

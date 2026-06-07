@@ -158,6 +158,34 @@ class ProcessManager:
             "stderr_path": str(self.stderr_log(name)),
         }
 
+    def module_status(self, service: str, module: str) -> dict[str, Any]:
+        """Get status for a specific module (twitch worker/eventsub)."""
+        # Check if process for this service is running
+        process = self.find_process(service)
+        if not process:
+            return {"running": False, "detail": "service-not-running"}
+        
+        # Parse module from service name
+        target = service.lower()  # twitchworker or twitcheventsub
+        status_cmd = f"ps aux | grep -E '[{service[7:]}|{module}]' | grep uvicorn"
+        
+        lines = process.cmdline()
+        if target in lines:
+            return {
+                "running": True,
+                "service": service,
+                "module": module,
+                "pid": process.pid,
+                "cmdline": lines,
+            }
+        else:
+            return {
+                "running": False,
+                "service": service,
+                "module": module,
+                "detail": "module-not-active",
+            }
+
     def find_process(self, name: str) -> psutil.Process | None:
         processes = self.find_processes(name)
         return processes[0] if processes else None

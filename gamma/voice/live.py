@@ -20,11 +20,15 @@ class LiveVoiceSession:
         job_fetcher: Callable[[str], dict],
         job_canceler: Callable[..., dict],
         partial_transcriber: Callable[..., dict] | None = None,
+        idle_settings_provider: Callable[..., dict] = None,
+        idle_event_recorder: Callable[[dict], dict] = None,
     ) -> None:
         self._job_starter = job_starter
         self._job_fetcher = job_fetcher
         self._job_canceler = job_canceler
         self._partial_transcriber = partial_transcriber
+        self._idle_settings_provider = idle_settings_provider
+        self._idle_event_recorder = idle_event_recorder
 
     async def handle(self, websocket: WebSocket) -> None:
         await websocket.accept()

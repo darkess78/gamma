@@ -315,7 +315,7 @@ class Settings:
             _config_value(MODELS_CONFIG, "stt", "model", default=_config_value(APP_CONFIG, "stt_model", default="base.en")),
         )
     )
-    stt_device: str = str(_setting("SHANA_STT_DEVICE", _config_value(APP_CONFIG, "stt_device", default="cpu")))
+    stt_device: str = str(_setting("SHANA_STT_DEVICE", _config_value(APP_CONFIG, "stt_device", default="cuda")))
     stt_device_index: int = _as_int(
         _setting("SHANA_STT_DEVICE_INDEX", _config_value(APP_CONFIG, "stt_device_index", default=0)),
         default=0,
@@ -622,7 +622,37 @@ class Settings:
 
     @property
     def shana_base_url(self) -> str:
-        return f"http://{self.shana_public_host}:{self.shana_port}"
+        scheme = _config_value(APP_CONFIG, "shana_public_scheme", default="https" if _as_bool(_setting("SHANA_DASHBOARD_COOKIE_SECURE", _config_value(APP_CONFIG, "dashboard_cookie_secure", default=False)), default=False) else "http")
+        scheme = _config_value(APP_CONFIG, "shana_public_scheme", default=scheme)
+        actual_port = self.shana_port if self.shana_port else 8000
+        # For local service-to-service communication, use localhost
+        # When public host is gamma.neety.me but services run locally, use 127.0.0.1
+        if self.shana_public_host == "gamma.neety.me" and actual_port == 8000:
+            actual_host = "127.0.0.1"
+            actual_scheme = "http"  # Use http internally for local
+        else:
+            actual_host = self.shana_public_host
+            actual_scheme = scheme
+        # Don't include port for default https (port 443)
+        if actual_scheme == "https" and actual_port == 8000:  # Default production port
+            return f"{actual_scheme}://{actual_host}"
+        elif actual_port == "http":
+            return f"{actual_scheme}://{actual_host}"
+        else:
+            return f"{actual_scheme}://{actual_host}:{actual_port}"
+
+    def shana_api_base_url(self) -> str:
+        """Public API base URL for browsers to use."""
+        scheme = _config_value(APP_CONFIG, "shana_public_scheme", default="https" if _as_bool(_setting("SHANA_DASHBOARD_COOKIE_SECURE", _config_value(APP_CONFIG, "dashboard_cookie_secure", default=False)), default=False) else "http")
+        scheme = _config_value(APP_CONFIG, "shana_public_scheme", default=scheme)
+        actual_port = self.shana_port if self.shana_port else 8000
+        if scheme == "https" and actual_port == 8000:
+            # HTTPS via NGINX on port 443
+            return f"{scheme}://{self.shana_public_host}/v1/"
+        elif scheme == "http" and actual_port != "http":
+            return f"{scheme}://{self.shana_public_host}/v1/"
+        else:
+            return f"{scheme}://{self.shana_public_host}:{actual_port}/v1/"
 
     @property
     def dashboard_base_url(self) -> str:

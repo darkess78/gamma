@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import psutil
-
+from fastapi.logger import logger
 from ..config import app_local_config_path, load_app_file_config, load_desired_tts_selection, settings
 from ..errors import ConfigurationError
 from ..integrations.twitch.client import GammaStreamClient
@@ -1497,14 +1497,24 @@ class DashboardService:
             headers=headers,
             method="POST",
         )
+        logger.info("live voice start request: %s", settings.shana_base_url + path)
+        logger.info("live job auth header configured: %s", bool(self._api_headers().get("authorization")))
+        logger.info("live voice base_url configured: %s", settings.shana_base_url)
+        logger.info("live voice path configured: %s", path)
+        logger.info("live voice request headers: %s", headers)
         try:
+            logger.info("live voice opening URL... %s", settings.shana_base_url + path)
             with urllib.request.urlopen(request, timeout=180) as response:
+                logger.info("live voice response status: %s", response.status)
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"remote voice roundtrip failed: http-{exc.code} {detail}") from exc
+            logger.error("live voice http error: %s %s", exc.code, detail[:500])
+            logger.error("live voice response headers: %s", response.headers if 'response' in locals() else "N/A")
+            raise RuntimeError(f"live voice job failed: http-{exc.code} {detail}") from exc
         except Exception as exc:
-            raise RuntimeError(f"remote voice roundtrip failed: {exc}") from exc
+            logger.error("live voice exception at start_remote_live_job: %s", exc, exc_info=True)
+            raise RuntimeError(f"live voice job failed: {exc}") from exc
         if not isinstance(payload, dict):
             raise RuntimeError("remote voice roundtrip returned a non-object payload")
         return payload

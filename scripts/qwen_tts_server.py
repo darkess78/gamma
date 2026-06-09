@@ -36,6 +36,20 @@ import sys
 import wave
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+
+# Add venv to path if available
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+venv_path = PROJECT_ROOT / ".venv"
+venv_python = venv_path / "bin" / "python"
+if venv_path.exists() and venv_python.exists():
+    venv_lib = venv_path / "lib"
+    if venv_lib.exists():
+        venv_lib_path = str(venv_lib)
+        if venv_lib_path not in sys.path:
+            sys.path.insert(0, venv_lib_path)
+        # Also add PROJECT_ROOT for gamma
+        if str(PROJECT_ROOT) not in sys.path:
+            sys.path.insert(0, str(PROJECT_ROOT))
 from typing import Any
 
 from dotenv import load_dotenv

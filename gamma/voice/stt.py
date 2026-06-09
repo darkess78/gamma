@@ -44,7 +44,7 @@ class FasterWhisperSTTBackend(STTBackend):
                 if warning:
                     log.warning(warning)
                 if resolved_spec == "cpu":
-                    resolved_device = "cpu"
+                    resolved_device = "cuda:1"
                     resolved_index = None
                 elif resolved_spec.startswith("cuda:"):
                     resolved_device = "cuda"

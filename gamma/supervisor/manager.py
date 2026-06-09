@@ -47,6 +47,14 @@ class ProcessManager:
                 settings.dashboard_public_host,
                 settings.dashboard_port,
             ),
+            "qwen_tts": ManagedService(
+                            "qwen_tts",
+                            "scripts:start_qwen_tts_server.py",
+                            "",
+                            "",
+                            9882,
+            ),
+
         }
 
     def service(self, name: str) -> ManagedService:

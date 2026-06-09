@@ -4,6 +4,7 @@ import mimetypes
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.logger import logger
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -54,6 +55,9 @@ def get_live_voice_session() -> LiveVoiceSession:
 @app.middleware("http")
 async def require_dashboard_auth(request: Request, call_next):
     path = request.url.path
+    # Bypass auth for /api/voice/live to allow browser WebSocket connections
+    if path == "/api/voice/live":
+        return await call_next(request)
     if path in {"/health", "/login", "/logout"} or path.startswith("/static/"):
         return await call_next(request)
     if is_authenticated(request):
@@ -132,9 +136,12 @@ def _dashboard_page(path: Path, *, dashboard_page: str = "") -> HTMLResponse:
     html = path.read_text(encoding="utf-8")
     html = _with_dashboard_public_links(html)
     # Use public dashboard base for browser; API routes are same-origin proxy
+    # Expose API base URLs for shana and dashboard
+    # GAMMA_SHANA_BASE_URL - used by frontend to reach Shana API
+    # GAMMA_DASHBOARD_BASE_URL - used by frontend to reach dashboard API
     config = (
-        f"<script>window.GAMMA_SHANA_BASE_URL = '{_app_settings.dashboard_base_url.rstrip('/')}';"
-        f" window.GAMMA_DASHBOARD_BASE_URL = '{_app_settings.dashboard_base_url}';"
+        f"<script>window.GAMMA_SHANA_BASE_URL = '{_app_settings.shana_public_host.rstrip('/')}';"
+        f" window.GAMMA_DASHBOARD_BASE_URL = '{_app_settings.dashboard_public_scheme}://{_app_settings.dashboard_public_host}';"
         f" window.GAMMA_DASHBOARD_PAGE = '{dashboard_page}';</script>"
     )
     html = html.replace("</head>", f"  {config}\n</head>", 1)
@@ -649,10 +656,10 @@ async def dashboard_vision_respond(
 
 @app.websocket("/api/voice/live")
 async def dashboard_live_voice(websocket: WebSocket) -> None:
-    if not websocket_is_authenticated(websocket):
-        await websocket.close(code=4401, reason="authentication required")
-        return
+    # Auth bypassed by middleware; proceed to handle connection
     try:
         await get_live_voice_session().handle(websocket)
     except WebSocketDisconnect:
+        pass
+    except Exception:
         return

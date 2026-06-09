@@ -99,7 +99,7 @@
   }
 
   function outputViewApiBase() {
-    var configured = window.GAMMA_SHANA_BASE_URL || '';
+    var configured = (window.GAMMA_SHANA_BASE_URL || '') + '/v1/';
     var statusUrl = latestData && latestData.shana && latestData.shana.url ? latestData.shana.url : '';
     return browserReachableApiBase(statusUrl || configured || '');
   }

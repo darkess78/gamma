@@ -128,14 +128,18 @@
       var apiHost = apiUrl.hostname;
       var apiIsLocal = apiHost === '127.0.0.1' || apiHost === 'localhost' || apiHost === '0.0.0.0' || apiHost === '::1';
       var browserIsLocal = browserHost === '127.0.0.1' || browserHost === 'localhost' || browserHost === '::1';
-      if (apiIsLocal && browserHost && !browserIsLocal) {
+      if (apiIsLocal && browserIsLocal) {
+        apiUrl.protocol = 'http:';
+      } else if (apiIsLocal && browserHost && !browserIsLocal) {
         apiUrl.hostname = browserHost;
+      } else if (browserHost && !apiIsLocal && window.location.protocol === 'https:') {
+        apiUrl.protocol = 'https:';
       }
       return apiUrl.toString().replace(/\/$/, '');
     } catch (error) {
       return value;
     }
-  }
+    }
 
   function updateOutputViewLinks() {
     var apiBase = outputViewApiBase();

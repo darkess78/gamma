@@ -19,9 +19,12 @@
 
   function setMonitorTheme(theme) {
     const selected = ['dashboard', 'compact', 'focus'].includes(theme) ? theme : 'dashboard';
+    const themeSelect = document.getElementById('themeSelect');
+    if (themeSelect && themeSelect.value !== selected) {
+      themeSelect.value = selected;
+    }
     document.body.classList.remove('theme-dashboard', 'theme-compact', 'theme-focus');
     document.body.classList.add(`theme-${selected}`);
-    document.getElementById('themeSelect').value = selected;
     localStorage.setItem('gammaMonitorTheme', selected);
   }
 

@@ -95,7 +95,7 @@ def test_with_tts():
     """Test TTS directly using the backend."""
     print("\n\n--- Testing TTS directly ---")
     
-    # Use the GPT-SoVITS API directly
+    # Use the managed Qwen TTS API directly.
     tts_url = "http://127.0.0.1:9882/tts"
     
     try:

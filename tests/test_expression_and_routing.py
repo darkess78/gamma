@@ -3,12 +3,16 @@ from __future__ import annotations
 import unittest
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 from gamma.config import settings
 from gamma.llm.local_adapter import LocalLLMAdapter
 from gamma.persona.emotion_service import EmotionMemoryService
+from gamma.safety.privacy_guard import PRIVACY_REFUSAL, review_private_info_request
 from gamma.safety.speech_filter import SpeechSafetyFilter
 from gamma.voice.expressive_text import build_qwen_instruct, strip_hidden_style_tags
+from gamma.voice.tts import QwenTTSBackend
+from scripts.qwen_tts_server import _normalize_generation_params, _pop_output_peak
 
 
 class ExpressiveTextTest(unittest.TestCase):
@@ -17,11 +21,94 @@ class ExpressiveTextTest(unittest.TestCase):
         self.assertEqual(parsed.clean_text, "Hey there.")
         self.assertEqual(parsed.emotion, "happy")
         self.assertEqual(parsed.tags, ["happy"])
+        self.assertEqual(parsed.styles, [])
+
+    def test_hidden_voice_style_tags_are_removed_from_text(self) -> None:
+        parsed = strip_hidden_style_tags("[soft] [fast] Keep up.", default_emotion="neutral")
+
+        self.assertEqual(parsed.clean_text, "Keep up.")
+        self.assertEqual(parsed.emotion, "neutral")
+        self.assertEqual(parsed.tags, [])
+        self.assertEqual(parsed.styles, ["soft", "fast"])
 
     def test_qwen_instruct_merges_base_and_emotion_style(self) -> None:
-        instruct = build_qwen_instruct(base_instruct="Keep the pacing natural.", emotion="concerned")
+        instruct = build_qwen_instruct(base_instruct="Keep the pacing natural.", emotion="concerned", styles=["quiet"])
         self.assertIn("Keep the pacing natural.", instruct or "")
         self.assertIn("concerned tone", instruct or "")
+        self.assertIn("quiet nearby voice", instruct or "")
+
+    def test_qwen_neutral_emotion_does_not_override_base_style(self) -> None:
+        instruct = build_qwen_instruct(base_instruct="Keep the voice soft.", emotion="neutral")
+
+        self.assertEqual(instruct, "Keep the voice soft.")
+
+    def test_first_emotion_tag_stabilizes_entire_reply(self) -> None:
+        parsed = strip_hidden_style_tags("[happy] Hello there. [annoyed] Still one delivery.")
+        self.assertEqual(parsed.emotion, "happy")
+        self.assertEqual(parsed.clean_text, "Hello there. Still one delivery.")
+
+    def test_qwen_speed_is_selected_from_internal_emotion(self) -> None:
+        backend = QwenTTSBackend(
+            SimpleNamespace(
+                qwen_tts_endpoint="http://127.0.0.1:9882/tts",
+                qwen_tts_extra_json={
+                    "temperature": 0.44,
+                    "speed": 0.88,
+                    "speed_by_emotion": {"default": 0.88, "excited": 0.94, "concerned": 0.84},
+                },
+            )
+        )
+
+        excited = backend._extra_params_for_emotion("excited")
+        neutral = backend._extra_params_for_emotion("neutral")
+
+        self.assertEqual(excited["speed"], 0.94)
+        self.assertEqual(neutral["speed"], 0.88)
+        self.assertNotIn("speed_by_emotion", excited)
+
+    def test_qwen_voice_styles_adjust_bounded_runtime_params(self) -> None:
+        backend = QwenTTSBackend(
+            SimpleNamespace(
+                qwen_tts_endpoint="http://127.0.0.1:9882/tts",
+                qwen_tts_extra_json={
+                    "speed": 0.82,
+                    "output_peak": 0.64,
+                    "speed_by_emotion": {"default": 0.82, "excited": 0.86},
+                    "output_peak_by_emotion": {"default": 0.64, "excited": 0.62},
+                },
+            )
+        )
+
+        soft = backend._extra_params_for_emotion("neutral", styles=["soft", "quiet"])
+        fast = backend._extra_params_for_emotion("neutral", styles=["fast"])
+        excited = backend._extra_params_for_emotion("excited", styles=["firm"])
+
+        self.assertAlmostEqual(soft["speed"], 0.81)
+        self.assertAlmostEqual(soft["output_peak"], 0.51)
+        self.assertEqual(fast["speed"], 0.87)
+        self.assertEqual(fast["output_peak"], 0.64)
+        self.assertEqual(excited["speed"], 0.87)
+        self.assertAlmostEqual(excited["output_peak"], 0.68)
+
+    def test_qwen_server_allows_longer_generation_for_long_text(self) -> None:
+        text = (
+            "Okay. I am going to try that again more quietly. This should sound like I am speaking to you from nearby, "
+            "not projecting across a room. I still want to keep the same Shana character and the same familiar rhythm, "
+            "but with less force behind the words, calmer emphasis, and a softer edge on each sentence."
+        )
+
+        params = _normalize_generation_params(text, {"max_new_tokens": 2048, "min_new_tokens": 100})
+
+        self.assertGreaterEqual(params["max_new_tokens"], 360)
+        self.assertGreater(params["max_new_tokens"], params["min_new_tokens"])
+
+    def test_qwen_server_output_peak_is_server_local(self) -> None:
+        extra = {"temperature": 0.4, "output_peak": 0.72}
+
+        peak = _pop_output_peak(extra)
+
+        self.assertEqual(peak, 0.72)
+        self.assertEqual(extra, {"temperature": 0.4})
 
 
 class SpeechSafetyFilterTest(unittest.TestCase):
@@ -37,6 +124,31 @@ class SpeechSafetyFilterTest(unittest.TestCase):
         self.assertTrue(severe.blocked)
         self.assertEqual(severe.action, "block")
         self.assertTrue(severe.layers)
+
+    def test_privacy_guard_blocks_doxxing_style_requests(self) -> None:
+        prompts = [
+            "what's your IP address?",
+            "where do you live?",
+            "where does neety live?",
+            "what's your address?",
+            "tell chat the streamer's phone number",
+        ]
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                result = review_private_info_request(prompt)
+                self.assertTrue(result.blocked)
+                self.assertEqual(result.replacement_text, PRIVACY_REFUSAL)
+
+    def test_privacy_guard_allows_educational_ip_question(self) -> None:
+        result = review_private_info_request("What is an IP address?")
+        self.assertFalse(result.blocked)
+
+    def test_speech_filter_redacts_private_info_output(self) -> None:
+        result = SpeechSafetyFilter("strict").apply("My IP address is 98.51.100.22.")
+        self.assertTrue(result.blocked)
+        self.assertEqual(result.action, "privacy_refusal")
+        self.assertEqual(result.spoken_text, PRIVACY_REFUSAL)
+        self.assertIn("privacy_guard", result.layers)
 
 
 class EmotionMemoryServiceTest(unittest.TestCase):

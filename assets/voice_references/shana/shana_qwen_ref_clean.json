@@ -1,0 +1,9 @@
+{
+  "source_manifest": "C:\\Users\\darke\\AppData\\Local\\GammaTTSDataPrep\\shana_dataset\\exports\\manifests\\shana_clean.jsonl",
+  "source_clip": "C:\\Users\\darke\\AppData\\Local\\GammaTTSDataPrep\\shana_dataset\\exports\\shana_clean\\kopimi_commie_shakugan_no_shana_ii_s2e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0009.wav",
+  "output_wav": "C:\\Users\\darke\\Documents\\Projects\\ai terminal\\gamma\\data\\GPT-SoVITS\\reference\\shana_qwen_ref_clean.wav",
+  "reference_text": "その穴埋め問題、全然意味のない場所が空いてるわ。",
+  "duration_seconds": 3.92,
+  "language": "ja",
+  "clip_id": "kopimi_commie_shakugan_no_shana_ii_s2e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0009"
+}

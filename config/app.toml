@@ -1,2 +1,3 @@
-tts_provider = "qwen-tts"
-tts_profile = "qwen_evil33"
+tts_provider = "stub"
+tts_profile = ""
+local_llm_enable_routing = true

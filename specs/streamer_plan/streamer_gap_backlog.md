@@ -33,13 +33,13 @@ stream performer + safe action layer + ops layer
 | Conversation core | Present | Keep | Keep |
 | Persona and memory | Present | Keep | Keep |
 | Voice turn-taking | Present but rough | Improve latency and interruption | Continuous reliable live speech |
-| Event routing | Missing | Add unified event router | Expand to all stream inputs |
-| Priority handling | Missing | Add attention ranking | Mature scoring and policy routing |
-| Stream outputs | Missing | Add subtitles and simple output events | Full OBS/avatar/overlay control |
+| Event routing | Partial | Extend existing `gamma.stream` event schema and stream brain | Expand to all stream inputs |
+| Priority handling | Partial | Improve stream-brain attention ranking | Mature scoring and policy routing |
+| Stream outputs | Partial | Extend output events into synced subtitles and speech controls | Full OBS/avatar/overlay control |
 | Tool execution | Basic only | Add safe action planning | Add tiered permissions and approvals |
 | Moderator controls | Missing | Add operator channel | Add live moderation workflows |
 | Game integrations | Missing | None yet or one simple turn-based adapter | Multiple bounded plugin integrations |
-| Replay/evaluation | Missing | Add event logging | Add regression and replay harness |
+| Replay/evaluation | Partial | Extend traces into deterministic replay harnesses | Add regression and replay harness |
 
 ## Workstreams
 
@@ -50,17 +50,20 @@ What exists now:
 - `gamma/conversation/service.py`
 - `gamma/persona/loader.py`
 - `gamma/memory/service.py`
+- `gamma/stream/models.py`
+- `gamma/stream/brain.py`
+- stream trace/output/replay scaffolding
 
 What is missing:
-- one schema for all incoming events
-- routing and ranking across input sources
-- turn policy separate from raw reply generation
+- Twitch/EventSub ingestion
+- stronger routing and ranking across input sources
+- richer turn policy and queueing for public chat
 
 Target outcome:
 - Gamma decides what to respond to, not just how to respond
 
 Recommended backlog:
-- define a normalized event model
+- extend the normalized event model
 - define event sources:
   - mic transcript
   - owner command
@@ -76,6 +79,7 @@ Recommended backlog:
   - defer
   - tool action
   - moderation escalation
+- implement the concrete Twitch module plan in `specs/streamer_plan/twitch_stream_module.md`
 
 ### 2. Voice Performance
 This is the most visible quality surface.
@@ -104,11 +108,12 @@ Recommended backlog:
 This is where the system starts feeling like a performer.
 
 What exists now:
-- almost nothing beyond voice playback and dashboard display
+- stream output event models and logging
+- voice playback and dashboard display
 - `gamma/avatar_events/` currently looks like a model shell, not a runtime
 
 What is missing:
-- subtitle event output
+- synchronized subtitle event output
 - expression state output
 - speaking-state output
 - OBS output/control
@@ -148,9 +153,9 @@ Recommended backlog:
 This is essential before public exposure.
 
 What exists now:
-- no real Twitch/EventSub pipeline
-- no ranked chat path
-- no mod console workflow
+- no real Twitch/EventSub pipeline yet
+- early stream-brain chat decisions
+- no full mod console workflow
 
 What is missing:
 - stream chat ingestion
@@ -162,6 +167,7 @@ Target outcome:
 - public inputs become structured, screened events rather than raw prompt text
 
 Recommended backlog:
+- implement `specs/streamer_plan/twitch_stream_module.md` as the first concrete stream-input module
 - add ingestion adapters
 - add chat summarization/ranking
 - add mod priority override channel
@@ -193,9 +199,10 @@ This is what turns iteration into engineering instead of improvisation.
 What exists now:
 - some runtime status and timing surfaces
 - dashboard status views
+- stream traces, output logs, and replay scaffolding
 
 What is missing:
-- replayable event traces
+- deterministic Twitch-style replay runner
 - eval suite for policy and latency regressions
 - canned adversarial test sets
 

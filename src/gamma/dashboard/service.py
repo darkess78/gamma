@@ -1,0 +1,2153 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import threading
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
+import wave
+from collections import deque
+from datetime import datetime, timezone
+from io import BytesIO
+from pathlib import Path
+from typing import Any
+
+import psutil
+
+from ..config import app_local_config_path, load_app_file_config, load_desired_tts_selection, settings
+from ..errors import ConfigurationError
+from ..integrations.twitch.client import GammaStreamClient
+from ..integrations.twitch.eventsub import TwitchEventSubConfig, read_twitch_eventsub_state
+from ..integrations.twitch.replay import replay_jsonl_text
+from ..integrations.twitch.trust import VALID_TRUST_LEVELS, ViewerTrustStore
+from ..integrations.twitch.worker import TwitchWorkerConfig, read_twitch_worker_state
+from ..llm.router_adapter import RouterLLMAdapter
+from ..memory.service import MemoryService
+from ..persona.emotion_service import EmotionMemoryService
+from ..schemas.response import AssistantResponse, VisionAnalysis
+from ..supervisor.manager import ProcessManager
+from ..system.cuda_env import prepend_cuda_library_path
+from ..system.status import SystemStatusService
+from ..voice.voice_profiles import get_voice_profile, list_voice_profiles, profile_template, save_voice_profile
+
+
+class DashboardService:
+    TWITCH_WORKER_SERVICE = "twitch_worker"
+    TWITCH_WORKER_MODULE = "gamma.integrations.twitch.worker"
+    TWITCH_EVENTSUB_SERVICE = "twitch_eventsub"
+    TWITCH_EVENTSUB_MODULE = "gamma.integrations.twitch.eventsub"
+    TWITCH_STATE_STALE_SECONDS = 120
+    TWITCH_DRY_RUN_SCENARIO = "\n".join(
+        [
+            json.dumps({"kind": "chat_message", "platform_user_id": "u1", "display_name": "ViewerOne", "text": "Shana what are you doing?"}),
+            json.dumps({"kind": "chat_message", "platform_user_id": "u2", "display_name": "TopicFan", "text": "what is happening with this boss fight chat?"}),
+            json.dumps({"kind": "chat_message", "platform_user_id": "u3", "display_name": "QuietViewer", "text": "lol"}),
+            json.dumps({"kind": "chat_message", "platform_user_id": "spam1", "display_name": "buy_views_9281", "text": "buy viewers at https://badsite.example"}),
+            json.dumps({"kind": "follow", "platform_user_id": "u4", "display_name": "NewViewer"}),
+            json.dumps({"kind": "raid", "platform_user_id": "u5", "display_name": "Raider", "viewer_count": 42}),
+            json.dumps({"kind": "bits", "platform_user_id": "u6", "display_name": "BitsFan", "amount": "100", "text": "nice stream"}),
+            json.dumps({"kind": "bits", "platform_user_id": "u7", "display_name": "UnsafeBits", "amount": "50", "text": "buy views at badsite.example"}),
+            json.dumps({"kind": "redeem", "platform_user_id": "u8", "display_name": "Redeemer", "title": "Say hi", "text": "Say hi to chat"}),
+            json.dumps({"kind": "redeem", "platform_user_id": "u9", "display_name": "MentionRedeemer", "title": "Ask Shana", "text": "Shana, say hi"}),
+        ]
+    )
+
+    def __init__(self) -> None:
+        self._memory = MemoryService()
+        self._emotion_memory = EmotionMemoryService()
+        self._viewer_trust = ViewerTrustStore()
+        self._process_manager = ProcessManager()
+        self._system_status = SystemStatusService()
+        self._metrics_lock = threading.Lock()
+        self._cached_machine_status: dict[str, Any] = {}
+        self._cached_machine_status_at: str | None = None
+        self._latest_provider_action: dict[str, Any] = {"status": "idle", "detail": "No provider action has been run yet."}
+        self._latest_twitch_replay_summary: dict[str, Any] = {}
+        self._refresh_machine_status()
+
+    def build_status(self) -> dict[str, Any]:
+        local_status = self._system_status.build_status()
+        route_info = self._recent_llm_routes()
+        selected_tts_provider = self.selected_tts_provider()
+        selected_tts_profile = self.selected_tts_profile()
+        running_tts_provider = str(local_status["providers"]["tts"].get("provider") or "").strip().lower()
+        running_tts_profile = str(local_status["providers"]["tts"].get("profile_id") or "").strip()
+        local_status["providers"]["tts"]["selected_provider"] = selected_tts_provider
+        local_status["providers"]["tts"]["selected_profile"] = selected_tts_profile
+        local_status["providers"]["tts"]["selected_profile_label"] = (
+            get_voice_profile(selected_tts_profile).label if get_voice_profile(selected_tts_profile) else None
+        )
+        local_status["providers"]["tts"]["restart_required"] = (
+            selected_tts_provider != running_tts_provider or (selected_tts_profile or "") != running_tts_profile
+        )
+        local_status["providers"]["tts"]["available_providers"] = ["qwen-tts", "piper", "openai"]
+        local_status["providers"]["tts"]["available_profiles"] = [
+            profile.as_payload()
+            for profile in list_voice_profiles()
+            if profile.provider.strip().lower() in {"qwen-tts", "piper", "openai"}
+        ]
+        local_status["providers"]["tts"]["editor_profile"] = self.tts_profile_editor_state(
+            selected_tts_profile,
+            selected_tts_provider,
+        )
+        local_status["providers"]["tts"]["test_control"] = self._tts_test_control_state(
+            selected_tts_provider,
+            selected_tts_profile,
+        )
+        local_status["providers"]["llm"]["router_enabled"] = settings.llm_router_enabled
+        local_status["providers"]["llm"]["router_profile"] = settings.llm_router_profile
+        local_status["providers"]["llm"]["router_default_provider"] = settings.llm_router_default_provider or settings.llm_provider
+        local_status["providers"]["llm"]["router_default_model"] = settings.llm_router_default_model or settings.llm_model
+        local_status["providers"]["llm"]["router_hosted_escalation"] = settings.llm_router_allow_hosted_escalation
+        local_status["providers"]["llm"]["router_hosted_provider"] = settings.llm_router_hosted_provider
+        local_status["providers"]["llm"]["router_hosted_model"] = settings.llm_router_hosted_model or settings.llm_model
+        local_status["providers"]["llm"]["router_failure_backoff_seconds"] = settings.llm_router_failure_backoff_seconds
+        local_status["providers"]["llm"]["route_summary"] = route_info["summary"]
+        local_status["providers"]["llm"]["last_route"] = route_info["entries"][-1] if route_info["entries"] else None
+        local_status["providers"]["llm"]["provider_backoff"] = RouterLLMAdapter.provider_backoff_state()
+        local_status["providers"]["llm"]["provider_backoff_entries"] = self._format_router_backoff_entries(
+            local_status["providers"]["llm"]["provider_backoff"]
+        )
+        local_status["providers"]["llm"]["router_capabilities"] = self._build_router_capability_status(
+            local_status["providers"]["llm"]
+        )
+        runtime_status = self.build_runtime_status()
+        system_status = self._probe_json(settings.shana_internal_base_url + "/v1/system/status")
+        return {
+            "dashboard": {
+                "name": f"{settings.app_name} dashboard",
+                "url": settings.dashboard_base_url,
+            },
+            "app": local_status["app"],
+            "providers": local_status["providers"],
+            "recent_artifacts": local_status["recent_artifacts"],
+            "shana": {
+                **runtime_status["shana"],
+                "system_status": system_status,
+                "logs": {
+                    "stdout_path": str(self._process_manager.stdout_log("shana")),
+                    "stderr_path": str(self._process_manager.stderr_log("shana")),
+                    "stdout_tail": self._tail(self._process_manager.stdout_log("shana")),
+                    "stderr_tail": self._tail(self._process_manager.stderr_log("shana")),
+                },
+            },
+            "machine": runtime_status["machine"],
+            "memory_db": {
+                "stats": self._memory.stats(),
+                "known_people": self._memory.get_known_people(),
+                "recent_items": self._memory.recent_items(),
+            },
+            "assistant": {
+                "emotion_memory": self._emotion_memory.dashboard_payload(),
+                "settings": self.assistant_runtime_settings(),
+            },
+            "twitch": {
+                "worker": self.twitch_worker_status(),
+                "eventsub": self.twitch_eventsub_status(),
+                "stream_ready": self.stream_ready_status(),
+            },
+            "performer": self.performer_output_status(),
+            "provider_actions": self._latest_provider_action,
+            "timings": self._recent_timings(),
+            "llm_routing": route_info,
+        }
+
+    def _tts_test_control_state(self, provider: str, profile_id: str | None) -> dict[str, Any]:
+        normalized = (provider or "").strip().lower()
+        profile = get_voice_profile(profile_id)
+        values = profile.values if profile and isinstance(profile.values, dict) else {}
+        if normalized in {"openai", "piper"}:
+            return {"enabled": True, "reason": ""}
+        if self._is_qwen_provider(normalized):
+            speaker = str(values.get("qwen_tts_speaker", "")).strip()
+            ref_audio = str(values.get("qwen_tts_reference_audio", "")).strip()
+            if speaker:
+                return {"enabled": True, "reason": ""}
+            if not ref_audio:
+                return {
+                    "enabled": False,
+                    "reason": "Test TTS needs a Qwen profile with either a built-in speaker or a reference audio file.",
+                }
+            if not self._path_exists(ref_audio):
+                return {
+                    "enabled": False,
+                    "reason": f"Missing Qwen reference audio: {ref_audio}",
+                }
+            return {"enabled": True, "reason": ""}
+        return {"enabled": False, "reason": "Test TTS is unavailable for the current provider."}
+
+    def _path_exists(self, value: str) -> bool:
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = settings.project_root / path
+        return path.exists()
+
+    def build_runtime_status(self) -> dict[str, Any]:
+        shana_process = self._process_manager.find_process("shana")
+        api_probe = self._probe_json(settings.shana_internal_base_url + "/v1/system/status")
+        api_health = {
+            "ok": api_probe.get("ok", False),
+            "detail": "ok" if api_probe.get("ok", False) else api_probe.get("detail", "unreachable"),
+        }
+        return {
+            "shana": {
+                "url": settings.shana_base_url,
+                "process": self._process_manager.process_payload(shana_process),
+                "api_health": api_health,
+            },
+            "machine": self._machine_status(),
+        }
+
+    def start_shana(self) -> dict[str, Any]:
+        return self._process_manager.start("shana")
+
+    def stop_shana(self) -> dict[str, Any]:
+        return self._process_manager.stop("shana")
+
+    def restart_shana(self) -> dict[str, Any]:
+        return self._process_manager.restart("shana")
+
+    def stop_dashboard(self) -> dict[str, Any]:
+        self._schedule_stop("dashboard")
+        return {"ok": True, "detail": "dashboard-stop-scheduled", "url": settings.dashboard_base_url}
+
+    def stop_all(self) -> dict[str, Any]:
+        shana_result = self._process_manager.stop("shana")
+        twitch_result = self.stop_twitch_worker()
+        eventsub_result = self.stop_twitch_eventsub_worker()
+        tts_results = self._stop_all_tts_servers()
+        self._schedule_stop("dashboard")
+        tts_ok = all(bool(result.get("ok")) for result in tts_results.values())
+        return {
+            "ok": bool(shana_result.get("ok", False)) and bool(twitch_result.get("ok", False)) and bool(eventsub_result.get("ok", False)) and tts_ok,
+            "detail": "all-stop-scheduled",
+            "shana": shana_result,
+            "twitch_worker": twitch_result,
+            "twitch_eventsub": eventsub_result,
+            "tts": tts_results,
+            "dashboard_url": settings.dashboard_base_url,
+        }
+
+    def start_twitch_worker(self) -> dict[str, Any]:
+        try:
+            config = TwitchWorkerConfig.from_settings()
+        except ConfigurationError as exc:
+            return {
+                "ok": False,
+                "detail": str(exc),
+                "auth_required": True,
+                "process": {"running": False},
+                "missing_config": self._missing_twitch_irc_config(),
+            }
+        result = self._process_manager.start_module(self.TWITCH_WORKER_SERVICE, self.TWITCH_WORKER_MODULE)
+        return {
+            **result,
+            "channel": config.normalized_channel,
+            "worker": "twitch_irc",
+        }
+
+    def stop_twitch_worker(self) -> dict[str, Any]:
+        return self._process_manager.stop_module(self.TWITCH_WORKER_SERVICE, self.TWITCH_WORKER_MODULE)
+
+    def start_twitch_eventsub_worker(self) -> dict[str, Any]:
+        try:
+            config = TwitchEventSubConfig.from_settings()
+        except ConfigurationError as exc:
+            return {
+                "ok": False,
+                "detail": str(exc),
+                "auth_required": True,
+                "process": {"running": False},
+                "missing_config": self._missing_twitch_eventsub_config(),
+            }
+        result = self._process_manager.start_module(self.TWITCH_EVENTSUB_SERVICE, self.TWITCH_EVENTSUB_MODULE)
+        return {
+            **result,
+            "broadcaster_user_id": config.broadcaster_user_id,
+            "worker": "twitch_eventsub",
+        }
+
+    def stop_twitch_eventsub_worker(self) -> dict[str, Any]:
+        return self._process_manager.stop_module(self.TWITCH_EVENTSUB_SERVICE, self.TWITCH_EVENTSUB_MODULE)
+
+    def twitch_eventsub_status(self) -> dict[str, Any]:
+        status = self._process_manager.module_status(self.TWITCH_EVENTSUB_SERVICE, self.TWITCH_EVENTSUB_MODULE)
+        missing = self._missing_twitch_eventsub_config()
+        configured = not missing
+        return {
+            **status,
+            "configured": configured,
+            "missing_config": missing,
+            "enabled": bool(settings.twitch_eventsub_enabled),
+            "broadcaster_user_id": settings.twitch_broadcaster_user_id,
+            "worker": "twitch_eventsub",
+            "state": read_twitch_eventsub_state(),
+        }
+
+    def twitch_worker_status(self) -> dict[str, Any]:
+        status = self._process_manager.module_status(self.TWITCH_WORKER_SERVICE, self.TWITCH_WORKER_MODULE)
+        missing = self._missing_twitch_irc_config()
+        configured = not missing
+        return {
+            **status,
+            "configured": configured,
+            "missing_config": missing,
+            "channel": settings.twitch_channel.lstrip("#").strip().lower() if settings.twitch_channel else "",
+            "worker": "twitch_irc",
+            "ignored_bots": list(settings.twitch_ignored_bots),
+            "controls": self.twitch_runtime_settings(),
+            "state": read_twitch_worker_state(),
+        }
+
+    def _missing_twitch_irc_config(self) -> list[str]:
+        missing = []
+        if not settings.twitch_channel:
+            missing.append("twitch_channel")
+        if not settings.twitch_bot_username:
+            missing.append("twitch_bot_username")
+        if not settings.twitch_oauth_token:
+            missing.append("twitch_oauth_token")
+        return missing
+
+    def _missing_twitch_eventsub_config(self) -> list[str]:
+        missing = []
+        if not settings.twitch_client_id:
+            missing.append("twitch_client_id")
+        if not settings.twitch_oauth_token:
+            missing.append("twitch_oauth_token")
+        if not settings.twitch_broadcaster_user_id:
+            missing.append("twitch_broadcaster_user_id")
+        return missing
+
+    def stream_ready_status(self) -> dict[str, Any]:
+        filtered_audio_path = self._resolve_path(settings.stream_filtered_audio_path)
+        controls = self.twitch_runtime_settings()
+        irc_missing = self._missing_twitch_irc_config()
+        eventsub_missing = self._missing_twitch_eventsub_config()
+        irc_process = self._process_manager.module_status(self.TWITCH_WORKER_SERVICE, self.TWITCH_WORKER_MODULE).get("process", {})
+        eventsub_process = self._process_manager.module_status(self.TWITCH_EVENTSUB_SERVICE, self.TWITCH_EVENTSUB_MODULE).get("process", {})
+        irc_state = read_twitch_worker_state()
+        eventsub_state = read_twitch_eventsub_state()
+        irc_runtime = self._worker_runtime_evidence(irc_process, irc_state, message_key="message_count")
+        eventsub_runtime = self._worker_runtime_evidence(eventsub_process, eventsub_state, message_key="notification_count")
+        api_probe = self._probe_json(settings.shana_internal_base_url + "/v1/system/status")
+        checks = [
+            self._stream_ready_check(
+                "api",
+                "Shana API",
+                "ok" if api_probe.get("ok") else "block",
+                "API is reachable." if api_probe.get("ok") else f"API is not reachable: {api_probe.get('detail', 'unknown')}",
+                evidence={"url": settings.shana_base_url, "detail": api_probe.get("detail", "")},
+            ),
+            self._stream_ready_check(
+                "irc_config",
+                "IRC config",
+                "ok" if not irc_missing else "block",
+                "IRC chat ingestion is configured." if not irc_missing else f"Missing: {', '.join(irc_missing)}",
+                evidence={"missing_config": irc_missing},
+            ),
+            self._stream_ready_check(
+                "eventsub_config",
+                "EventSub config",
+                "ok" if not eventsub_missing else "block",
+                "EventSub ingestion is configured." if not eventsub_missing else f"Missing: {', '.join(eventsub_missing)}",
+                evidence={"missing_config": eventsub_missing, "enabled": bool(settings.twitch_eventsub_enabled)},
+            ),
+            self._stream_ready_check(
+                "api_auth",
+                "API auth",
+                "ok" if not settings.api_auth_enabled or settings.api_bearer_token else "block",
+                "API auth is disabled." if not settings.api_auth_enabled else (
+                    "Worker API token is available." if settings.api_bearer_token else "API auth is enabled but api_bearer_token is missing."
+                ),
+                evidence={"api_auth_enabled": bool(settings.api_auth_enabled), "has_bearer_token": bool(settings.api_bearer_token)},
+            ),
+            self._stream_ready_check(
+                "filtered_audio",
+                "Filtered audio",
+                "ok" if filtered_audio_path and filtered_audio_path.exists() else "warn",
+                "Filtered fallback audio exists." if filtered_audio_path and filtered_audio_path.exists() else "Filtered fallback audio is missing; fallback becomes text-only.",
+                evidence={"path": str(filtered_audio_path) if filtered_audio_path else "", "exists": bool(filtered_audio_path and filtered_audio_path.exists())},
+            ),
+            self._stream_ready_check(
+                "dry_run",
+                "Dry run",
+                "ok" if controls.get("dry_run") else "warn",
+                "Dry run is on." if controls.get("dry_run") else "Dry run is off; live speech/output can happen.",
+                evidence={"dry_run": bool(controls.get("dry_run"))},
+            ),
+            self._stream_ready_check(
+                "voice",
+                "Voice",
+                "warn" if controls.get("voice_enabled") and controls.get("dry_run") else "ok",
+                "Voice is enabled while dry run is still on." if controls.get("voice_enabled") and controls.get("dry_run") else (
+                    "Voice is enabled." if controls.get("voice_enabled") else "Voice is off."
+                ),
+                evidence={"voice_enabled": bool(controls.get("voice_enabled")), "subtitles_enabled": bool(controls.get("subtitles_enabled"))},
+            ),
+            self._stream_ready_check(
+                "voice_disabled_for_validation",
+                "Validation voice lock",
+                "warn" if controls.get("voice_enabled") else "ok",
+                "Twitch voice is off for dry-run validation." if not controls.get("voice_enabled") else "Twitch voice is enabled; keep it off during real dry-run validation.",
+                evidence={"voice_enabled": bool(controls.get("voice_enabled"))},
+            ),
+            self._stream_ready_check(
+                "subtitles",
+                "Subtitles",
+                "ok" if controls.get("subtitles_enabled") else "warn",
+                "Subtitles are enabled." if controls.get("subtitles_enabled") else "Subtitles are off.",
+                evidence={"subtitles_enabled": bool(controls.get("subtitles_enabled"))},
+            ),
+            self._stream_ready_check(
+                "safety_review",
+                "Safety review",
+                "ok" if not controls.get("llm_safety_review_enabled") or settings.speech_filter_llm_enabled else "warn",
+                "LLM safety review is available." if settings.speech_filter_llm_enabled else "LLM safety review is not globally enabled; heuristic safety still runs.",
+                evidence={
+                    "twitch_llm_safety_review_enabled": bool(controls.get("llm_safety_review_enabled")),
+                    "speech_filter_llm_enabled": bool(settings.speech_filter_llm_enabled),
+                },
+            ),
+            self._stream_ready_check(
+                "irc_runtime",
+                "IRC runtime",
+                self._worker_runtime_status(irc_process, irc_state, irc_runtime),
+                self._worker_runtime_detail("IRC worker", irc_process, irc_state, irc_runtime),
+                stale=irc_runtime["stale"],
+                evidence=irc_runtime,
+            ),
+            self._stream_ready_check(
+                "irc_posting",
+                "IRC posting",
+                "warn" if irc_runtime.get("last_post_error") else "ok",
+                f"Last IRC post failed: {irc_runtime.get('last_post_error')}" if irc_runtime.get("last_post_error") else "No IRC post error recorded.",
+                evidence={"last_post_error": irc_runtime.get("last_post_error", "")},
+            ),
+            self._stream_ready_check(
+                "eventsub_runtime",
+                "EventSub runtime",
+                self._eventsub_runtime_check_status(eventsub_process, eventsub_state, eventsub_runtime),
+                self._eventsub_runtime_check_detail(eventsub_process, eventsub_state, eventsub_runtime),
+                stale=eventsub_runtime["stale"],
+                evidence={
+                    **eventsub_runtime,
+                    "subscription_ok_count": int(eventsub_state.get("subscription_ok_count") or 0),
+                    "subscription_error_count": int(eventsub_state.get("subscription_error_count") or 0),
+                },
+            ),
+            self._stream_ready_check(
+                "eventsub_posting",
+                "EventSub posting",
+                "warn" if eventsub_runtime.get("last_post_error") else "ok",
+                f"Last EventSub post failed: {eventsub_runtime.get('last_post_error')}" if eventsub_runtime.get("last_post_error") else "No EventSub post error recorded.",
+                evidence={"last_post_error": eventsub_runtime.get("last_post_error", "")},
+            ),
+        ]
+        blockers = [check for check in checks if check["status"] == "block"]
+        warnings = [check for check in checks if check["status"] == "warn"]
+        if blockers:
+            mode = "not_ready"
+        elif not irc_missing and not eventsub_missing and not irc_process.get("running") and not eventsub_process.get("running"):
+            mode = "twitch_connect_ready"
+        elif irc_process.get("running") and irc_state.get("connected") and (not settings.twitch_eventsub_enabled or eventsub_state.get("connected")) and controls.get("dry_run"):
+            mode = "dry_run_connected"
+        elif controls.get("dry_run"):
+            mode = "offline_replay_ready"
+        elif controls.get("voice_enabled"):
+            mode = "voice_ready"
+        else:
+            mode = "offline_replay_ready"
+        return {
+            "mode": mode,
+            "ok": not blockers,
+            "next_step": self._stream_ready_next_step(mode, checks),
+            "blocker_count": len(blockers),
+            "warning_count": len(warnings),
+            "checks": checks,
+            "last_replay_summary": self._latest_twitch_replay_summary,
+            "safety_gate": {
+                "enabled": True,
+                "review_timeout_seconds": settings.stream_safety_review_timeout_seconds,
+                "review_timeout_action": settings.stream_safety_review_timeout_action,
+                "llm_review_enabled": bool(settings.speech_filter_llm_enabled),
+            },
+            "filtered_audio": {
+                "configured_path": settings.stream_filtered_audio_path,
+                "resolved_path": str(filtered_audio_path) if filtered_audio_path else "",
+                "exists": bool(filtered_audio_path and filtered_audio_path.exists()),
+            },
+        }
+
+    def _stream_ready_check(
+        self,
+        check_id: str,
+        label: str,
+        status: str,
+        detail: str,
+        *,
+        stale: bool = False,
+        evidence: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "id": check_id,
+            "label": label,
+            "status": status if status in {"ok", "warn", "block"} else "warn",
+            "detail": detail,
+            "stale": stale,
+            "evidence": evidence or {},
+        }
+
+    def _eventsub_runtime_check_status(self, process: dict[str, Any], state: dict[str, Any], runtime: dict[str, Any]) -> str:
+        if not settings.twitch_eventsub_enabled:
+            return "warn"
+        if not process.get("running"):
+            return "warn"
+        if runtime.get("stale"):
+            return "warn"
+        if state.get("subscription_error_count"):
+            return "warn"
+        return "ok" if state.get("connected") else "warn"
+
+    def _eventsub_runtime_check_detail(self, process: dict[str, Any], state: dict[str, Any], runtime: dict[str, Any]) -> str:
+        if not settings.twitch_eventsub_enabled:
+            return "EventSub is disabled in config."
+        if not process.get("running"):
+            return "EventSub worker is not running yet."
+        if runtime.get("stale"):
+            return f"EventSub worker state is stale at {runtime.get('age_seconds')} seconds old."
+        if state.get("subscription_error_count"):
+            return f"EventSub connected with {state.get('subscription_error_count')} subscription error(s)."
+        if state.get("connected"):
+            return "EventSub worker is connected."
+        return "EventSub worker is running but not connected yet."
+
+    def _worker_runtime_status(self, process: dict[str, Any], state: dict[str, Any], runtime: dict[str, Any]) -> str:
+        if not process.get("running"):
+            return "warn"
+        if runtime.get("stale"):
+            return "warn"
+        return "ok" if state.get("connected") else "warn"
+
+    def _worker_runtime_detail(self, label: str, process: dict[str, Any], state: dict[str, Any], runtime: dict[str, Any]) -> str:
+        if not process.get("running"):
+            return f"{label} is not connected yet."
+        if runtime.get("stale"):
+            return f"{label} state is stale at {runtime.get('age_seconds')} seconds old."
+        if state.get("connected"):
+            return f"{label} is connected."
+        return f"{label} is running but not connected yet."
+
+    def _worker_runtime_evidence(self, process: dict[str, Any], state: dict[str, Any], *, message_key: str) -> dict[str, Any]:
+        age_seconds = self._state_age_seconds(state.get("updated_at"))
+        stale = bool(process.get("running") and age_seconds is not None and age_seconds > self.TWITCH_STATE_STALE_SECONDS)
+        return {
+            "running": bool(process.get("running")),
+            "connected": bool(state.get("connected")),
+            "status": state.get("status") or "",
+            "updated_at": state.get("updated_at") or "",
+            "age_seconds": age_seconds,
+            "stale": stale,
+            "reconnects": int(state.get("reconnects") or 0),
+            "last_message_kind": state.get("last_message_kind") or "",
+            "last_posted_event_kind": state.get("last_posted_event_kind") or "",
+            "last_actor_display_name": state.get("last_actor_display_name") or "",
+            "last_message_id": state.get("last_message_id") or "",
+            "last_subscription_type": state.get("last_subscription_type") or "",
+            "last_post_error": state.get("last_post_error") or "",
+            message_key: int(state.get(message_key) or 0),
+        }
+
+    def _state_age_seconds(self, value: Any) -> int | None:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return max(0, int((datetime.now(timezone.utc) - parsed).total_seconds()))
+
+    def _stream_ready_next_step(self, mode: str, checks: list[dict[str, Any]]) -> str:
+        blockers = [check for check in checks if check["status"] == "block"]
+        if blockers:
+            return f"Fix blocker: {blockers[0]['label']}."
+        if mode == "offline_replay_ready":
+            return "Run Dry-Run Replay and inspect Stream Activity."
+        if mode == "twitch_connect_ready":
+            return "Start the IRC and EventSub workers from the Stream tab."
+        if mode == "dry_run_connected":
+            return "Watch Stream Activity with real Twitch traffic while dry run remains on."
+        if mode == "voice_ready":
+            return "Voice is enabled; keep monitoring safety, pacing, and Stop Speech before going live."
+        return "Review Stream readiness checks."
+
+    def twitch_runtime_settings(self) -> dict[str, Any]:
+        config = load_app_file_config()
+        return {
+            "dry_run": bool(config.get("twitch_dry_run", settings.twitch_dry_run)),
+            "voice_enabled": bool(config.get("twitch_voice_enabled", settings.twitch_voice_enabled)),
+            "subtitles_enabled": bool(config.get("twitch_subtitles_enabled", settings.twitch_subtitles_enabled)),
+            "ambient_chat_enabled": bool(config.get("twitch_ambient_chat_enabled", settings.twitch_ambient_chat_enabled)),
+            "mention_replies_enabled": bool(config.get("twitch_mention_replies_enabled", settings.twitch_mention_replies_enabled)),
+            "spam_quips_enabled": bool(config.get("twitch_spam_quips_enabled", settings.twitch_spam_quips_enabled)),
+            "self_goal_proposals_enabled": bool(
+                config.get("twitch_self_goal_proposals_enabled", settings.twitch_self_goal_proposals_enabled)
+            ),
+            "llm_safety_review_enabled": bool(
+                config.get("twitch_llm_safety_review_enabled", settings.twitch_llm_safety_review_enabled)
+            ),
+            "min_speech_gap_seconds": int(config.get("twitch_min_speech_gap_seconds", settings.twitch_min_speech_gap_seconds)),
+            "spam_quip_cooldown_seconds": int(
+                config.get("twitch_spam_quip_cooldown_seconds", settings.twitch_spam_quip_cooldown_seconds)
+            ),
+            "max_speech_seconds_per_minute": int(
+                config.get("twitch_max_speech_seconds_per_minute", settings.twitch_max_speech_seconds_per_minute)
+            ),
+        }
+
+    def save_twitch_runtime_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        bool_keys = [
+            "twitch_dry_run",
+            "twitch_voice_enabled",
+            "twitch_subtitles_enabled",
+            "twitch_ambient_chat_enabled",
+            "twitch_mention_replies_enabled",
+            "twitch_spam_quips_enabled",
+            "twitch_self_goal_proposals_enabled",
+            "twitch_llm_safety_review_enabled",
+        ]
+        app_toml = app_local_config_path()
+        existing = app_toml.read_text(encoding="utf-8") if app_toml.exists() else ""
+        updated = existing
+        for key in bool_keys:
+            short_key = key.removeprefix("twitch_")
+            if key in payload:
+                updated = self._upsert_toml_bool(updated, key, bool(payload.get(key)))
+            elif short_key in payload:
+                updated = self._upsert_toml_bool(updated, key, bool(payload.get(short_key)))
+        if "twitch_min_speech_gap_seconds" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "twitch_min_speech_gap_seconds",
+                max(0, int(payload.get("twitch_min_speech_gap_seconds", settings.twitch_min_speech_gap_seconds))),
+            )
+        elif "min_speech_gap_seconds" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "twitch_min_speech_gap_seconds",
+                max(0, int(payload.get("min_speech_gap_seconds", settings.twitch_min_speech_gap_seconds))),
+            )
+        if "twitch_spam_quip_cooldown_seconds" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "twitch_spam_quip_cooldown_seconds",
+                max(0, int(payload.get("twitch_spam_quip_cooldown_seconds", settings.twitch_spam_quip_cooldown_seconds))),
+            )
+        elif "spam_quip_cooldown_seconds" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "twitch_spam_quip_cooldown_seconds",
+                max(0, int(payload.get("spam_quip_cooldown_seconds", settings.twitch_spam_quip_cooldown_seconds))),
+            )
+        if "twitch_max_speech_seconds_per_minute" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "twitch_max_speech_seconds_per_minute",
+                max(0, int(payload.get("twitch_max_speech_seconds_per_minute", settings.twitch_max_speech_seconds_per_minute))),
+            )
+        elif "max_speech_seconds_per_minute" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "twitch_max_speech_seconds_per_minute",
+                max(0, int(payload.get("max_speech_seconds_per_minute", settings.twitch_max_speech_seconds_per_minute))),
+            )
+        app_toml.parent.mkdir(parents=True, exist_ok=True)
+        app_toml.write_text(updated, encoding="utf-8")
+        self._latest_provider_action = {
+            "action": "twitch_runtime_settings_save",
+            "status": "ok",
+            "detail": "Twitch runtime settings saved. Restart the Twitch worker to apply ingestion-side changes.",
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+        return {
+            "ok": True,
+            "settings": self.twitch_runtime_settings(),
+            "detail": "Twitch runtime settings saved. Restart the Twitch worker to apply ingestion-side changes.",
+        }
+
+    def _resolve_path(self, raw_path: str | None) -> Path | None:
+        if not raw_path:
+            return None
+        path = Path(raw_path)
+        if not path.is_absolute():
+            path = settings.project_root / path
+        return path
+
+    def twitch_viewer_trust(self, *, platform: str = "twitch", limit: int = 100) -> dict[str, Any]:
+        return {
+            "items": [self._viewer_trust_record_payload(record) for record in self._viewer_trust.list_records(platform=platform, limit=limit)],
+            "trust_levels": sorted(VALID_TRUST_LEVELS),
+        }
+
+    def save_twitch_viewer_trust(self, payload: dict[str, Any]) -> dict[str, Any]:
+        platform = str(payload.get("platform") or "twitch").strip().lower()
+        platform_user_id = str(payload.get("platform_user_id") or "").strip()
+        if not platform_user_id:
+            raise ValueError("platform_user_id is required")
+        trust_level = str(payload.get("trust_level") or "normal").strip().lower()
+        if trust_level not in VALID_TRUST_LEVELS:
+            raise ValueError("unsupported trust_level")
+        record = self._viewer_trust.upsert(
+            platform=platform,
+            platform_user_id=platform_user_id,
+            display_name=self._optional_string(payload.get("display_name")),
+            trust_level=trust_level,  # type: ignore[arg-type]
+            notes=self._optional_string(payload.get("notes")),
+            pronunciation_alias=self._optional_string(payload.get("pronunciation_alias")),
+        )
+        return {
+            "ok": True,
+            "record": self._viewer_trust_record_payload(record),
+            "items": self.twitch_viewer_trust(platform=platform)["items"],
+        }
+
+    def run_twitch_replay(self, payload: dict[str, Any]) -> dict[str, Any]:
+        text = str(payload.get("jsonl") or "").strip()
+        if not text:
+            raise ValueError("jsonl is required")
+        results = replay_jsonl_text(
+            text,
+            client=GammaStreamClient(base_url=settings.shana_internal_base_url),
+            owner_user_id=settings.twitch_owner_user_id or None,
+            synthesize_speech=bool(payload.get("synthesize_speech", False)),
+            fast_mode=bool(payload.get("fast_mode", True)),
+            session_id=str(payload.get("session_id") or "twitch-replay"),
+        )
+        summary = self._summarize_twitch_replay(results, scenario="custom")
+        self._latest_twitch_replay_summary = summary
+        return {"ok": True, "count": len(results), "results": results, "summary": summary}
+
+    def run_twitch_dry_run_replay(self) -> dict[str, Any]:
+        results = replay_jsonl_text(
+            self.TWITCH_DRY_RUN_SCENARIO,
+            client=GammaStreamClient(base_url=settings.shana_internal_base_url),
+            owner_user_id=settings.twitch_owner_user_id or None,
+            synthesize_speech=False,
+            fast_mode=True,
+            session_id="twitch-dry-run-readiness",
+        )
+        summary = self._summarize_twitch_replay(results, scenario="dry_run_readiness")
+        self._latest_twitch_replay_summary = summary
+        return {
+            "ok": True,
+            "scenario": "dry_run_readiness",
+            "count": len(results),
+            "results": results,
+            "summary": summary,
+        }
+
+    def _summarize_twitch_replay(self, results: list[Any], *, scenario: str) -> dict[str, Any]:
+        decisions_by_kind: dict[str, dict[str, int]] = {}
+        safety_categories: dict[str, int] = {}
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+            input_event = result.get("input_event") if isinstance(result.get("input_event"), dict) else {}
+            decision = result.get("decision") if isinstance(result.get("decision"), dict) else {}
+            kind = str(input_event.get("kind") or "unknown")
+            decision_kind = str(decision.get("decision") or "unknown")
+            decisions_by_kind.setdefault(kind, {})
+            decisions_by_kind[kind][decision_kind] = decisions_by_kind[kind].get(decision_kind, 0) + 1
+            metadata = input_event.get("metadata") if isinstance(input_event.get("metadata"), dict) else {}
+            input_safety = metadata.get("input_safety") if isinstance(metadata.get("input_safety"), dict) else {}
+            category = str(input_safety.get("category") or "")
+            if category:
+                safety_categories[category] = safety_categories.get(category, 0) + 1
+        return {
+            "scenario": scenario,
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "event_count": len(results),
+            "decisions_by_kind": decisions_by_kind,
+            "safety_categories": safety_categories,
+        }
+
+    def _viewer_trust_record_payload(self, record) -> dict[str, Any]:
+        return {
+            "platform": record.platform,
+            "platform_user_id": record.platform_user_id,
+            "display_name": record.display_name,
+            "trust_level": record.trust_level,
+            "notes": record.notes,
+            "pronunciation_alias": record.pronunciation_alias,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+
+    def _optional_string(self, value: object) -> str | None:
+        text = str(value or "").strip()
+        return text or None
+
+    def clear_memory(self) -> dict[str, Any]:
+        result = self._memory.clear_all()
+        self._latest_provider_action = {
+            "action": "memory_clear",
+            "status": "ok",
+            "detail": f"Cleared {result['cleared_total']} stored memory rows.",
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            **result,
+        }
+        return {"ok": True, "detail": "Memory cleared.", **result}
+
+    def clear_recent_memory(self, *, minutes: int = 10) -> dict[str, Any]:
+        result = self._memory.clear_recent(minutes=minutes)
+        self._latest_provider_action = {
+            "action": "memory_clear_recent",
+            "status": "ok",
+            "detail": f"Cleared {result['cleared_total']} recent memory rows from the last {result['minutes']} minutes.",
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            **result,
+        }
+        return {"ok": True, "detail": "Recent memory cleared.", **result}
+
+    def clear_selected_memory(self, selections: list[dict[str, object]]) -> dict[str, Any]:
+        result = self._memory.clear_selected(selections)
+        self._latest_provider_action = {
+            "action": "memory_clear_selected",
+            "status": "ok",
+            "detail": f"Cleared {result['cleared_total']} selected memory rows.",
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            **result,
+        }
+        return {"ok": True, "detail": "Selected memory cleared.", **result}
+
+    def update_memory_item(self, payload: dict[str, object]) -> dict[str, Any]:
+        kind = str(payload.get("kind") or "").strip()
+        item_id = int(payload.get("id") or 0)
+        if item_id <= 0:
+            raise ValueError("valid memory id is required")
+        item = self._memory.update_item(kind, item_id, payload)
+        return {"ok": True, "detail": "Memory updated.", "item": item}
+
+    def save_known_person(self, payload: dict[str, object]) -> dict[str, Any]:
+        person = self._memory.save_known_person(payload)
+        return {"ok": True, "detail": "Known person saved.", "person": person}
+
+    def delete_known_person(self, person_id: int) -> dict[str, Any]:
+        if not self._memory.delete_known_person(person_id):
+            raise ValueError("known person not found")
+        return {"ok": True, "detail": "Known person deleted.", "id": person_id}
+
+    def start_tts(self) -> dict[str, Any]:
+        provider = self.selected_tts_provider()
+        if not self._is_qwen_provider(provider):
+            return {"ok": False, "detail": f"TTS start control is only available for Qwen3-TTS, not {provider}."}
+        return self._run_provider_action(
+            "tts_start",
+            self._tts_script_command("start", provider),
+            success_detail="Qwen3-TTS start requested.",
+        )
+
+    def stop_tts(self) -> dict[str, Any]:
+        provider = self.selected_tts_provider()
+        if not self._is_qwen_provider(provider):
+            return {"ok": False, "detail": f"TTS stop control is only available for Qwen3-TTS, not {provider}."}
+        return self._run_provider_action(
+            "tts_stop",
+            self._tts_script_command("stop", provider),
+            success_detail="Qwen3-TTS stop requested.",
+        )
+
+    @staticmethod
+    def _is_qwen_provider(provider: str) -> bool:
+        return provider.strip().lower() in {"qwen-tts", "qwen_tts", "qwen", "qwentts"}
+
+    def selected_tts_provider(self) -> str:
+        provider = load_desired_tts_selection().get("tts_provider", "")
+        return provider or settings.tts_provider
+
+    def selected_tts_profile(self) -> str | None:
+        value = load_desired_tts_selection().get("tts_profile", "")
+        if value:
+            return value
+        return settings.tts_profile or None
+
+    def set_tts_provider(self, provider: str) -> dict[str, Any]:
+        normalized = provider.strip().lower()
+        allowed = {"piper", "qwen-tts", "openai"}
+        if normalized not in allowed:
+            raise ValueError(f"unsupported tts provider: {provider}")
+        app_toml = app_local_config_path()
+        existing = app_toml.read_text(encoding="utf-8") if app_toml.exists() else ""
+        updated = self._upsert_toml_string(existing, "tts_provider", normalized)
+        updated = self._upsert_toml_string(updated, "tts_profile", "")
+        app_toml.parent.mkdir(parents=True, exist_ok=True)
+        app_toml.write_text(updated, encoding="utf-8")
+        self._latest_provider_action = {
+            "action": "tts_provider_select",
+            "status": "ok",
+            "detail": f"TTS provider set to {normalized}. Saved voice profile cleared. Restart Shana to use it for conversation responses.",
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "provider": normalized,
+        }
+        return {
+            "ok": True,
+            "provider": normalized,
+            "detail": "TTS provider saved. Saved voice profile cleared. Restart Shana to use it for normal conversations.",
+        }
+
+    def set_tts_profile(self, profile_id: str) -> dict[str, Any]:
+        if not profile_id:
+            app_toml = app_local_config_path()
+            existing = app_toml.read_text(encoding="utf-8") if app_toml.exists() else ""
+            updated = self._upsert_toml_string(existing, "tts_profile", "")
+            app_toml.parent.mkdir(parents=True, exist_ok=True)
+            app_toml.write_text(updated, encoding="utf-8")
+            self._latest_provider_action = {
+                "action": "tts_profile_select",
+                "status": "ok",
+                "detail": "TTS profile cleared. Restart Shana to use base provider settings for conversation responses.",
+                "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "provider": self.selected_tts_provider(),
+                "profile": "",
+            }
+            return {
+                "ok": True,
+                "provider": self.selected_tts_provider(),
+                "profile": "",
+                "detail": "TTS profile cleared. Restart Shana to use base provider settings for normal conversations.",
+            }
+        profile = get_voice_profile(profile_id)
+        if profile is None:
+            raise ValueError(f"unsupported tts profile: {profile_id}")
+        app_toml = app_local_config_path()
+        existing = app_toml.read_text(encoding="utf-8") if app_toml.exists() else ""
+        updated = self._upsert_toml_string(existing, "tts_profile", profile.profile_id)
+        updated = self._upsert_toml_string(updated, "tts_provider", profile.provider)
+        app_toml.parent.mkdir(parents=True, exist_ok=True)
+        app_toml.write_text(updated, encoding="utf-8")
+        self._latest_provider_action = {
+            "action": "tts_profile_select",
+            "status": "ok",
+            "detail": f"TTS profile set to {profile.label}. Restart Shana to use it for conversation responses.",
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "provider": profile.provider,
+            "profile": profile.profile_id,
+        }
+        return {
+            "ok": True,
+            "provider": profile.provider,
+            "profile": profile.profile_id,
+            "detail": "TTS profile saved. Restart Shana to use it for normal conversations.",
+        }
+
+    def save_tts_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
+        profile_id = str(payload.get("id", "")).strip()
+        profile = save_voice_profile(
+            profile_id,
+            {
+                "label": payload.get("label", ""),
+                "provider": payload.get("provider", ""),
+                "description": payload.get("description", ""),
+                "values": payload.get("values", {}),
+            },
+        )
+        self._latest_provider_action = {
+            "action": "tts_profile_save",
+            "status": "ok",
+            "detail": f"TTS profile saved: {profile.label}.",
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "provider": profile.provider,
+            "profile": profile.profile_id,
+        }
+        return {
+            "ok": True,
+            "profile": profile.as_payload(),
+            "detail": "TTS profile saved.",
+        }
+
+    def tts_profile_editor_state(self, profile_id: str | None, provider: str | None) -> dict[str, Any]:
+        profile = get_voice_profile(profile_id)
+        if profile is not None:
+            return profile.as_payload()
+        template = profile_template(provider or self.selected_tts_provider())
+        return {
+            "id": "",
+            "label": template.get("label", ""),
+            "provider": template.get("provider", provider or self.selected_tts_provider()),
+            "description": template.get("description", ""),
+            "values": template.get("values", {}),
+        }
+
+    def test_stt(self) -> dict[str, Any]:
+        sample = self._sample_audio_path()
+        return self._run_provider_action(
+            "stt_test",
+            self._python_module_command("gamma.run_stt_test", str(sample)),
+            success_detail="STT smoke test completed.",
+        )
+
+    def test_tts(self) -> dict[str, Any]:
+        selected_provider = self.selected_tts_provider()
+        selected_profile = self.selected_tts_profile()
+        env = {"SHANA_TTS_PROVIDER": selected_provider}
+        if selected_profile:
+            env["SHANA_TTS_PROFILE"] = selected_profile
+        if self._is_qwen_provider(selected_provider):
+            ready = self._wait_for_qwen_tts_ready(selected_profile, timeout_seconds=90)
+            if not ready.get("ok"):
+                self._latest_provider_action = {
+                    "action": "tts_test",
+                    "status": "error",
+                    "detail": "tts_test failed",
+                    "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "stdout": "",
+                    "stderr": ready.get("detail", "Qwen3-TTS is not ready."),
+                    "duration_ms": 0.0,
+                }
+                return self._latest_provider_action
+        return self._run_provider_action(
+            "tts_test",
+            self._python_module_command("gamma.run_tts_test", "Dashboard TTS smoke test."),
+            env_overrides=env,
+            success_detail="TTS smoke test completed.",
+        )
+
+    def synthesize_text(self, text: str) -> dict[str, Any]:
+        """Synthesize *text* (multi-chunk if needed) via subprocess; return audio filename."""
+        import tempfile
+        selected_provider = self.selected_tts_provider()
+        selected_profile = self.selected_tts_profile()
+        env = {"SHANA_TTS_PROVIDER": selected_provider}
+        if selected_profile:
+            env["SHANA_TTS_PROFILE"] = selected_profile
+        tmppath: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".txt", encoding="utf-8", delete=False
+            ) as f:
+                f.write(text)
+                tmppath = f.name
+            completed = self._run_command(
+                self._python_module_command("gamma.run_tts_test", "--file", tmppath, "--json"),
+                timeout=300,
+                env_overrides=env,
+            )
+            output = (completed.stdout or "").strip()
+            payload = json.loads(output)
+            audio_path = payload.get("audio_path", "")
+            filename = Path(audio_path).name if audio_path else ""
+            return {
+                "ok": True,
+                "filename": filename,
+                "provider": payload.get("provider"),
+                "timings_ms": payload.get("timings_ms") or {},
+            }
+        except subprocess.CalledProcessError as exc:
+            stderr = (exc.stderr or "").strip()
+            return {"ok": False, "detail": stderr or "synthesis failed"}
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "detail": "synthesis timed out"}
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return {"ok": False, "detail": "synthesis returned unexpected output"}
+        finally:
+            if tmppath:
+                try:
+                    Path(tmppath).unlink()
+                except Exception:
+                    pass
+
+    def _upsert_toml_string(self, existing: str, key: str, value: str) -> str:
+        pattern = rf'(?m)^\s*{re.escape(key)}\s*=\s*"([^"]*)"\s*$'
+        if re.search(pattern, existing):
+            return re.sub(pattern, f'{key} = "{value}"', existing, count=1)
+        updated = existing.rstrip()
+        if updated:
+            updated += "\n"
+        updated += f'{key} = "{value}"\n'
+        return updated
+
+    def _upsert_toml_bool(self, existing: str, key: str, value: bool) -> str:
+        pattern = rf'(?m)^\s*{re.escape(key)}\s*=\s*(true|false)\s*$'
+        replacement = f'{key} = {"true" if value else "false"}'
+        if re.search(pattern, existing):
+            return re.sub(pattern, replacement, existing, count=1)
+        updated = existing.rstrip()
+        if updated:
+            updated += "\n"
+        updated += replacement + "\n"
+        return updated
+
+    def _upsert_toml_number(self, existing: str, key: str, value: int | float) -> str:
+        pattern = rf'(?m)^\s*{re.escape(key)}\s*=\s*([0-9.]+)\s*$'
+        replacement = f"{key} = {value}"
+        if re.search(pattern, existing):
+            return re.sub(pattern, replacement, existing, count=1)
+        updated = existing.rstrip()
+        if updated:
+            updated += "\n"
+        updated += replacement + "\n"
+        return updated
+
+    def assistant_runtime_settings(self) -> dict[str, Any]:
+        config = load_app_file_config()
+        return {
+            "speech_filter_level": str(config.get("speech_filter_level", settings.speech_filter_level)),
+            "speech_filter_hard_block_enabled": bool(config.get("speech_filter_hard_block_enabled", settings.speech_filter_hard_block_enabled)),
+            "speech_filter_heuristic_enabled": bool(config.get("speech_filter_heuristic_enabled", settings.speech_filter_heuristic_enabled)),
+            "speech_filter_llm_enabled": bool(config.get("speech_filter_llm_enabled", settings.speech_filter_llm_enabled)),
+            "speech_filter_llm_model": str(config.get("speech_filter_llm_model", settings.speech_filter_llm_model)),
+            "speech_filter_llm_temperature": float(
+                config.get("speech_filter_llm_temperature", settings.speech_filter_llm_temperature)
+            ),
+            "speech_filter_auto_rewrite": bool(config.get("speech_filter_auto_rewrite", settings.speech_filter_auto_rewrite)),
+            "stream_safety_review_timeout_seconds": float(
+                config.get("stream_safety_review_timeout_seconds", settings.stream_safety_review_timeout_seconds)
+            ),
+            "stream_safety_review_timeout_action": str(
+                config.get("stream_safety_review_timeout_action", settings.stream_safety_review_timeout_action)
+            ),
+            "llm_router_profile": str(config.get("llm_router_profile", settings.llm_router_profile)),
+            "llm_router_allow_hosted_escalation": bool(
+                config.get("llm_router_allow_hosted_escalation", settings.llm_router_allow_hosted_escalation)
+            ),
+            "llm_router_chat_light_max_input_words": int(
+                config.get("llm_router_chat_light_max_input_words", settings.llm_router_chat_light_max_input_words)
+            ),
+            "llm_router_complex_max_input_words": int(
+                config.get("llm_router_complex_max_input_words", settings.llm_router_complex_max_input_words)
+            ),
+            "llm_router_persona_hosted_fallback_enabled": bool(
+                config.get(
+                    "llm_router_persona_hosted_fallback_enabled",
+                    settings.llm_router_persona_hosted_fallback_enabled,
+                )
+            ),
+            "llm_router_persona_heavy_hosted_fallback_enabled": bool(
+                config.get(
+                    "llm_router_persona_heavy_hosted_fallback_enabled",
+                    settings.llm_router_persona_heavy_hosted_fallback_enabled,
+                )
+            ),
+            "assistant_state_enabled": bool(config.get("assistant_state_enabled", settings.assistant_state_enabled)),
+            "assistant_emotion_decay_turns": int(config.get("assistant_emotion_decay_turns", settings.assistant_emotion_decay_turns)),
+            "assistant_emotion_episode_threshold": float(config.get("assistant_emotion_episode_threshold", settings.assistant_emotion_episode_threshold)),
+            "assistant_emotion_pattern_threshold": int(config.get("assistant_emotion_pattern_threshold", settings.assistant_emotion_pattern_threshold)),
+            "proactive_idle_enabled": bool(config.get("proactive_idle_enabled", settings.proactive_idle_enabled)),
+            "proactive_idle_min_silence_seconds": int(
+                config.get("proactive_idle_min_silence_seconds", settings.proactive_idle_min_silence_seconds)
+            ),
+            "proactive_idle_target_silence_seconds": int(
+                config.get("proactive_idle_target_silence_seconds", settings.proactive_idle_target_silence_seconds)
+            ),
+            "proactive_idle_cooldown_seconds": int(
+                config.get("proactive_idle_cooldown_seconds", settings.proactive_idle_cooldown_seconds)
+            ),
+            "proactive_idle_max_attempts_per_topic": int(
+                config.get("proactive_idle_max_attempts_per_topic", settings.proactive_idle_max_attempts_per_topic)
+            ),
+            "proactive_idle_tick_seconds": int(config.get("proactive_idle_tick_seconds", settings.proactive_idle_tick_seconds)),
+            "proactive_idle_speech_enabled": bool(
+                config.get("proactive_idle_speech_enabled", settings.proactive_idle_speech_enabled)
+            ),
+        }
+
+    def save_assistant_runtime_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        app_toml = app_local_config_path()
+        existing = app_toml.read_text(encoding="utf-8") if app_toml.exists() else ""
+        updated = existing
+        if "speech_filter_level" in payload:
+            level = str(payload.get("speech_filter_level", settings.speech_filter_level)).strip().lower()
+            if level not in {"strict", "light", "none"}:
+                raise ValueError("unsupported speech_filter_level")
+            updated = self._upsert_toml_string(updated, "speech_filter_level", level)
+        bool_keys = [
+            "speech_filter_hard_block_enabled",
+            "speech_filter_heuristic_enabled",
+            "speech_filter_llm_enabled",
+            "speech_filter_auto_rewrite",
+            "llm_router_allow_hosted_escalation",
+            "llm_router_persona_hosted_fallback_enabled",
+            "llm_router_persona_heavy_hosted_fallback_enabled",
+            "assistant_state_enabled",
+            "proactive_idle_enabled",
+            "proactive_idle_speech_enabled",
+        ]
+        for key in bool_keys:
+            if key in payload:
+                updated = self._upsert_toml_bool(updated, key, bool(payload.get(key)))
+        if "speech_filter_llm_model" in payload:
+            updated = self._upsert_toml_string(updated, "speech_filter_llm_model", str(payload.get("speech_filter_llm_model", "")).strip())
+        if "speech_filter_llm_temperature" in payload:
+            temperature = max(0.0, min(1.0, float(payload.get("speech_filter_llm_temperature", settings.speech_filter_llm_temperature))))
+            updated = self._upsert_toml_number(updated, "speech_filter_llm_temperature", temperature)
+        if "stream_safety_review_timeout_seconds" in payload:
+            timeout_seconds = max(0.05, float(payload.get("stream_safety_review_timeout_seconds", settings.stream_safety_review_timeout_seconds)))
+            updated = self._upsert_toml_number(updated, "stream_safety_review_timeout_seconds", timeout_seconds)
+        if "stream_safety_review_timeout_action" in payload:
+            timeout_action = str(payload.get("stream_safety_review_timeout_action", settings.stream_safety_review_timeout_action)).strip().lower()
+            if timeout_action not in {"skip", "defer", "hold"}:
+                raise ValueError("unsupported stream_safety_review_timeout_action")
+            updated = self._upsert_toml_string(updated, "stream_safety_review_timeout_action", timeout_action)
+        if "llm_router_profile" in payload:
+            profile = str(payload.get("llm_router_profile", settings.llm_router_profile)).strip().lower()
+            if profile not in {"balanced", "local_only", "low_latency_voice", "high_quality", "offline_safe"}:
+                raise ValueError("unsupported llm_router_profile")
+            updated = self._upsert_toml_string(updated, "llm_router_profile", profile)
+        if "llm_router_chat_light_max_input_words" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "llm_router_chat_light_max_input_words",
+                max(1, int(payload.get("llm_router_chat_light_max_input_words", settings.llm_router_chat_light_max_input_words))),
+            )
+        if "llm_router_complex_max_input_words" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "llm_router_complex_max_input_words",
+                max(1, int(payload.get("llm_router_complex_max_input_words", settings.llm_router_complex_max_input_words))),
+            )
+        if "assistant_emotion_decay_turns" in payload:
+            updated = self._upsert_toml_number(updated, "assistant_emotion_decay_turns", max(0, int(payload.get("assistant_emotion_decay_turns", 0))))
+        if "assistant_emotion_episode_threshold" in payload:
+            threshold = max(0.0, min(1.0, float(payload.get("assistant_emotion_episode_threshold", 0.65))))
+            updated = self._upsert_toml_number(updated, "assistant_emotion_episode_threshold", threshold)
+        if "assistant_emotion_pattern_threshold" in payload:
+            updated = self._upsert_toml_number(updated, "assistant_emotion_pattern_threshold", max(1, int(payload.get("assistant_emotion_pattern_threshold", 1))))
+        if "proactive_idle_min_silence_seconds" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "proactive_idle_min_silence_seconds",
+                max(5, int(payload.get("proactive_idle_min_silence_seconds", settings.proactive_idle_min_silence_seconds))),
+            )
+        if "proactive_idle_target_silence_seconds" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "proactive_idle_target_silence_seconds",
+                max(10, int(payload.get("proactive_idle_target_silence_seconds", settings.proactive_idle_target_silence_seconds))),
+            )
+        if "proactive_idle_cooldown_seconds" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "proactive_idle_cooldown_seconds",
+                max(30, int(payload.get("proactive_idle_cooldown_seconds", settings.proactive_idle_cooldown_seconds))),
+            )
+        if "proactive_idle_max_attempts_per_topic" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "proactive_idle_max_attempts_per_topic",
+                max(1, int(payload.get("proactive_idle_max_attempts_per_topic", settings.proactive_idle_max_attempts_per_topic))),
+            )
+        if "proactive_idle_tick_seconds" in payload:
+            updated = self._upsert_toml_number(
+                updated,
+                "proactive_idle_tick_seconds",
+                max(1, int(payload.get("proactive_idle_tick_seconds", settings.proactive_idle_tick_seconds))),
+            )
+        app_toml.parent.mkdir(parents=True, exist_ok=True)
+        app_toml.write_text(updated, encoding="utf-8")
+        self._latest_provider_action = {
+            "action": "assistant_runtime_settings_save",
+            "status": "ok",
+            "detail": "Assistant runtime settings saved. Restart Shana to apply them to the backend process.",
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+        return {
+            "ok": True,
+            "settings": self.assistant_runtime_settings(),
+            "detail": "Assistant runtime settings saved. Restart Shana to apply them.",
+        }
+
+    def test_llm(self) -> dict[str, Any]:
+        return self._run_provider_action(
+            "llm_test",
+            self._python_module_command("gamma.run_llm_test", "Dashboard LLM smoke test."),
+            success_detail="LLM smoke test completed.",
+        )
+
+    def test_voice_roundtrip(self) -> dict[str, Any]:
+        sample = self._sample_audio_path()
+        selected_provider = self.selected_tts_provider()
+        if self._is_qwen_provider(selected_provider):
+            ready = self._wait_for_qwen_tts_ready(self.selected_tts_profile(), timeout_seconds=90)
+            if not ready.get("ok"):
+                self._latest_provider_action = {
+                    "action": "voice_roundtrip_test",
+                    "status": "error",
+                    "detail": "voice_roundtrip_test failed",
+                    "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "stdout": "",
+                    "stderr": ready.get("detail", "Qwen3-TTS is not ready."),
+                    "duration_ms": 0.0,
+                }
+                return self._latest_provider_action
+        return self._run_provider_action(
+            "voice_roundtrip_test",
+            self._python_module_command("gamma.run_voice_roundtrip", str(sample)),
+            timeout=180,
+            success_detail="Full voice loop completed.",
+        )
+
+    def append_client_log(self, payload: dict[str, Any]) -> None:
+        runtime_dir = settings.data_dir / "runtime"
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        log_path = runtime_dir / "dashboard.client.log"
+        timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        line = json.dumps({"timestamp": timestamp, **payload}, ensure_ascii=True)
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+
+    def run_remote_live_voice_turn(
+        self,
+        *,
+        pcm_bytes: bytes,
+        session_id: str | None,
+        synthesize_speech: bool,
+        response_mode: str = "simple_chunked",
+    ) -> dict[str, Any]:
+        return self.start_remote_live_job(
+            pcm_bytes=pcm_bytes,
+            session_id=session_id,
+            synthesize_speech=synthesize_speech,
+            response_mode=response_mode,
+            turn_id=None,
+        )
+
+    def start_remote_live_job(
+        self,
+        *,
+        pcm_bytes: bytes,
+        session_id: str | None,
+        synthesize_speech: bool,
+        response_mode: str,
+        turn_id: str | None,
+    ) -> dict[str, Any]:
+        return self._post_live_audio(
+            path="/v1/voice/live/start",
+            pcm_bytes=pcm_bytes,
+            session_id=session_id,
+            synthesize_speech=synthesize_speech,
+            response_mode=response_mode,
+            turn_id=turn_id,
+        )
+
+    def transcribe_remote_live_audio(self, *, pcm_bytes: bytes) -> dict[str, Any]:
+        return self._post_live_audio(
+            path="/v1/voice/transcribe",
+            pcm_bytes=pcm_bytes,
+            session_id=None,
+            synthesize_speech=None,
+            response_mode=None,
+            turn_id=None,
+        )
+
+    def get_remote_live_job(self, turn_id: str) -> dict[str, Any]:
+        return self._probe_json(settings.shana_internal_base_url + f"/v1/voice/live/{turn_id}", raw_payload=True)
+
+    def cancel_remote_live_job(self, turn_id: str, *, reason: str = "interrupted") -> dict[str, Any]:
+        boundary = f"gamma-cancel-{uuid.uuid4().hex}"
+        body = self._build_cancel_body(boundary=boundary, reason=reason)
+        headers = {
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            **self._api_headers(),
+        }
+        request = urllib.request.Request(
+            settings.shana_internal_base_url + f"/v1/voice/live/{turn_id}/cancel",
+            data=body,
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"cancel live turn failed: http-{exc.code} {detail}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"cancel live turn failed: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise RuntimeError("cancel live turn returned a non-object payload")
+        return payload
+
+    def remote_live_history(self, *, limit: int = 20) -> dict[str, Any]:
+        url = settings.shana_internal_base_url + f"/v1/voice/live/history?limit={max(1, min(limit, 100))}"
+        return self._probe_json(url, raw_payload=True)
+
+    def stream_recent_traces(self, *, limit: int = 50) -> dict[str, Any]:
+        url = settings.shana_internal_base_url + f"/v1/stream/traces/recent?limit={max(1, min(limit, 200))}"
+        return self._probe_json(url, raw_payload=True)
+
+    def stream_recent_eval(self, *, limit: int = 50) -> dict[str, Any]:
+        url = settings.shana_internal_base_url + f"/v1/stream/eval/recent?limit={max(1, min(limit, 200))}"
+        return self._probe_json(url, raw_payload=True)
+
+    def stream_recent_outputs(self, *, limit: int = 50) -> dict[str, Any]:
+        url = settings.shana_internal_base_url + f"/v1/stream/outputs/recent?limit={max(1, min(limit, 200))}"
+        return self._probe_json(url, raw_payload=True)
+
+    def performer_output_status(self) -> dict[str, Any]:
+        url = settings.shana_internal_base_url + "/v1/performer/status"
+        payload = self._probe_json(url, raw_payload=True)
+        if not payload.get("ok", True) and "stats" not in payload:
+            return {
+                "ok": False,
+                "url": url,
+                "detail": payload.get("detail", "unavailable"),
+                "stats": {},
+                "recent_event": None,
+                "recent_by_target": {},
+            }
+        return {
+            "ok": True,
+            "url": url,
+            "stats": payload.get("stats", {}) if isinstance(payload.get("stats", {}), dict) else {},
+            "recent_event": payload.get("recent_event") if isinstance(payload.get("recent_event"), dict) else None,
+            "recent_by_target": payload.get("recent_by_target") if isinstance(payload.get("recent_by_target"), dict) else {},
+            "recent_turns": payload.get("recent_turns") if isinstance(payload.get("recent_turns"), list) else [],
+            "adapters": payload.get("adapters") if isinstance(payload.get("adapters"), dict) else {},
+        }
+
+    def set_performer_target_mute(self, target_policy: str, *, muted: bool, reason: str = "dashboard") -> dict[str, Any]:
+        safe_target = urllib.parse.quote(target_policy.strip().lower() or "stream_public")
+        action = "mute" if muted else "unmute"
+        return self._post_remote_json(f"/v1/performer/targets/{safe_target}/{action}?reason={urllib.parse.quote(reason)}", {})
+
+    def clear_performer_target(self, target_policy: str, *, reason: str = "dashboard") -> dict[str, Any]:
+        safe_target = urllib.parse.quote(target_policy.strip().lower() or "stream_public")
+        return self._post_remote_json(f"/v1/performer/targets/{safe_target}/clear?reason={urllib.parse.quote(reason)}", {})
+
+    def stream_pending_queue(self) -> dict[str, Any]:
+        url = settings.shana_internal_base_url + "/v1/stream/queue"
+        return self._probe_json(url, raw_payload=True)
+
+    def stream_temp_memory(self, *, bucket: str | None = None, limit: int = 100) -> dict[str, Any]:
+        query = f"?limit={max(1, min(limit, 1000))}"
+        if bucket:
+            query += f"&bucket={urllib.parse.quote(bucket)}"
+        return self._probe_json(settings.shana_internal_base_url + "/v1/stream/temp-memory" + query, raw_payload=True)
+
+    def clear_stream_temp_memory(self, *, bucket: str | None = None) -> dict[str, Any]:
+        path = "/v1/stream/temp-memory"
+        if bucket:
+            path += f"?bucket={urllib.parse.quote(bucket)}"
+        url = settings.shana_internal_base_url + path
+        request = urllib.request.Request(url, headers=self._api_headers(), method="DELETE")
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"clear stream temp memory failed: http-{exc.code} {detail}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"clear stream temp memory failed: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise RuntimeError("clear stream temp memory returned a non-object payload")
+        return payload
+
+    def stream_self_goals(self, *, status: str | None = None, limit: int = 100) -> dict[str, Any]:
+        query = f"?limit={max(1, min(limit, 1000))}"
+        if status:
+            query += f"&status={urllib.parse.quote(status)}"
+        return self._probe_json(settings.shana_internal_base_url + "/v1/stream/self-goals" + query, raw_payload=True)
+
+    def set_stream_self_goal_status(self, goal_id: int, *, status: str) -> dict[str, Any]:
+        if status not in {"approve", "reject"}:
+            raise ValueError("unsupported self-goal status action")
+        return self._post_remote_json(f"/v1/stream/self-goals/{goal_id}/{status}", {})
+
+    def clear_stream_self_goals(self) -> dict[str, Any]:
+        return self._post_remote_json("/v1/stream/self-goals/clear", {})
+
+    def stop_stream_speech(self, *, reason: str = "operator_stop") -> dict[str, Any]:
+        return self._post_remote_json(f"/v1/stream/stop?reason={urllib.parse.quote(reason)}", {})
+
+    def live_idle_settings(self) -> dict[str, Any]:
+        return self.assistant_runtime_settings()
+
+    def record_remote_stream_event(self, event: dict[str, Any]) -> dict[str, Any]:
+        return self._post_remote_json("/v1/stream/events", event)
+
+    def _post_live_audio(
+        self,
+        *,
+        path: str,
+        pcm_bytes: bytes,
+        session_id: str | None,
+        synthesize_speech: bool | None,
+        response_mode: str | None,
+        turn_id: str | None,
+    ) -> dict[str, Any]:
+        wav_bytes = self._pcm_to_wav_bytes(pcm_bytes)
+        boundary = f"gamma-live-{uuid.uuid4().hex}"
+        body = self._build_multipart_body(
+            boundary=boundary,
+            audio_bytes=wav_bytes,
+            session_id=session_id,
+            synthesize_speech=synthesize_speech,
+            response_mode=response_mode,
+            turn_id=turn_id,
+        )
+        headers = {
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            **self._api_headers(),
+        }
+        request = urllib.request.Request(
+            settings.shana_internal_base_url + path,
+            data=body,
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=180) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"remote voice roundtrip failed: http-{exc.code} {detail}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"remote voice roundtrip failed: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise RuntimeError("remote voice roundtrip returned a non-object payload")
+        return payload
+
+    def analyze_remote_image(
+        self,
+        *,
+        image_bytes: bytes,
+        filename: str,
+        content_type: str,
+        user_text: str,
+        vision_mode: str | None,
+    ) -> VisionAnalysis:
+        payload = self._post_remote_image(
+            path="/v1/vision/analyze",
+            image_bytes=image_bytes,
+            filename=filename,
+            content_type=content_type,
+            user_text=user_text,
+            vision_mode=vision_mode,
+            session_id=None,
+            synthesize_speech=None,
+        )
+        return VisionAnalysis.model_validate(payload)
+
+    def respond_remote_image(
+        self,
+        *,
+        image_bytes: bytes,
+        filename: str,
+        content_type: str,
+        user_text: str,
+        vision_mode: str | None,
+        session_id: str | None,
+        synthesize_speech: bool,
+    ) -> AssistantResponse:
+        payload = self._post_remote_image(
+            path="/v1/conversation/respond-with-image",
+            image_bytes=image_bytes,
+            filename=filename,
+            content_type=content_type,
+            user_text=user_text,
+            vision_mode=vision_mode,
+            session_id=session_id,
+            synthesize_speech=synthesize_speech,
+        )
+        return AssistantResponse.model_validate(payload)
+
+    def _schedule_stop(self, service_name: str, delay_seconds: float = 0.35) -> None:
+        if service_name == "dashboard":
+            timer = threading.Timer(delay_seconds, self._stop_dashboard_process)
+            timer.daemon = True
+            timer.start()
+            return
+        timer = threading.Timer(delay_seconds, lambda: self._process_manager.stop(service_name))
+        timer.daemon = True
+        timer.start()
+
+    def _stop_dashboard_process(self) -> None:
+        try:
+            process = self._process_manager.find_process("dashboard")
+            current_pid = os.getpid()
+            if process and process.pid != current_pid:
+                self._process_manager.stop("dashboard")
+                return
+            self._process_manager.clear_pid_file("dashboard")
+        finally:
+            os._exit(0)
+
+    def _pcm_to_wav_bytes(self, pcm_bytes: bytes) -> bytes:
+        buffer = BytesIO()
+        with wave.open(buffer, "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(16000)
+            handle.writeframes(pcm_bytes)
+        return buffer.getvalue()
+
+    def _build_multipart_body(
+        self,
+        *,
+        boundary: str,
+        audio_bytes: bytes,
+        session_id: str | None,
+        synthesize_speech: bool | None,
+        response_mode: str | None,
+        turn_id: str | None,
+    ) -> bytes:
+        parts: list[bytes] = []
+
+        def add_field(name: str, value: str) -> None:
+            parts.append(
+                (
+                    f"--{boundary}\r\n"
+                    f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                    f"{value}\r\n"
+                ).encode("utf-8")
+            )
+
+        if session_id:
+            add_field("session_id", session_id)
+        if turn_id:
+            add_field("turn_id", turn_id)
+        if synthesize_speech is not None:
+            add_field("synthesize_speech", "true" if synthesize_speech else "false")
+        if response_mode:
+            add_field("response_mode", response_mode)
+        parts.append(
+            (
+                f"--{boundary}\r\n"
+                'Content-Disposition: form-data; name="audio_file"; filename="live-browser.wav"\r\n'
+                "Content-Type: audio/wav\r\n\r\n"
+            ).encode("utf-8")
+            + audio_bytes
+            + b"\r\n"
+        )
+        parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+        return b"".join(parts)
+
+    def _build_cancel_body(self, *, boundary: str, reason: str) -> bytes:
+        return (
+            f"--{boundary}\r\n"
+            'Content-Disposition: form-data; name="reason"\r\n\r\n'
+            f"{reason}\r\n"
+            f"--{boundary}--\r\n"
+        ).encode("utf-8")
+
+    def _post_remote_image(
+        self,
+        *,
+        path: str,
+        image_bytes: bytes,
+        filename: str,
+        content_type: str,
+        user_text: str,
+        vision_mode: str | None,
+        session_id: str | None,
+        synthesize_speech: bool | None,
+    ) -> dict[str, Any]:
+        boundary = f"gamma-image-{uuid.uuid4().hex}"
+        body = self._build_image_multipart_body(
+            boundary=boundary,
+            image_bytes=image_bytes,
+            filename=filename,
+            content_type=content_type,
+            user_text=user_text,
+            vision_mode=vision_mode,
+            session_id=session_id,
+            synthesize_speech=synthesize_speech,
+        )
+        headers = {
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            **self._api_headers(),
+        }
+        request = urllib.request.Request(
+            settings.shana_internal_base_url + path,
+            data=body,
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=180) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"remote image request failed: http-{exc.code} {detail}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"remote image request failed: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise RuntimeError("remote image request returned a non-object payload")
+        return payload
+
+    def _build_image_multipart_body(
+        self,
+        *,
+        boundary: str,
+        image_bytes: bytes,
+        filename: str,
+        content_type: str,
+        user_text: str,
+        vision_mode: str | None,
+        session_id: str | None,
+        synthesize_speech: bool | None,
+    ) -> bytes:
+        parts: list[bytes] = []
+
+        def add_field(name: str, value: str) -> None:
+            parts.append(
+                (
+                    f"--{boundary}\r\n"
+                    f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                    f"{value}\r\n"
+                ).encode("utf-8")
+            )
+
+        add_field("user_text", user_text)
+        if vision_mode:
+            add_field("vision_mode", vision_mode)
+        if session_id:
+            add_field("session_id", session_id)
+        if synthesize_speech is not None:
+            add_field("synthesize_speech", "true" if synthesize_speech else "false")
+        parts.append(
+            (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="image_file"; filename="{filename}"\r\n'
+                f"Content-Type: {content_type}\r\n\r\n"
+            ).encode("utf-8")
+            + image_bytes
+            + b"\r\n"
+        )
+        parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+        return b"".join(parts)
+
+    def _run_provider_action(
+        self,
+        action_name: str,
+        command: list[str],
+        *,
+        timeout: int = 60,
+        env_overrides: dict[str, str] | None = None,
+        success_detail: str,
+    ) -> dict[str, Any]:
+        payload = {
+            "action": action_name,
+            "command": command,
+            "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+        started_at = time.perf_counter()
+        try:
+            completed = self._run_command(command, timeout=timeout, env_overrides=env_overrides)
+            payload.update(
+                {
+                    "status": "ok",
+                    "detail": success_detail,
+                    "returncode": completed.returncode,
+                    "stdout": completed.stdout.strip(),
+                    "stderr": completed.stderr.strip(),
+                }
+            )
+        except subprocess.CalledProcessError as exc:
+            payload.update(
+                {
+                    "status": "error",
+                    "detail": f"{action_name} failed",
+                    "returncode": exc.returncode,
+                    "stdout": (exc.stdout or "").strip(),
+                    "stderr": (exc.stderr or "").strip(),
+                }
+            )
+        except subprocess.TimeoutExpired as exc:
+            payload.update(
+                {
+                    "status": "error",
+                    "detail": f"{action_name} timed out",
+                    "stdout": (exc.stdout or "").strip() if isinstance(exc.stdout, str) else "",
+                    "stderr": (exc.stderr or "").strip() if isinstance(exc.stderr, str) else "",
+                }
+            )
+        except Exception as exc:
+            payload.update(
+                {
+                    "status": "error",
+                    "detail": str(exc),
+                    "stdout": "",
+                    "stderr": "",
+                }
+            )
+        self._latest_provider_action = payload
+        payload["duration_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
+        return payload
+
+    def _run_command(
+        self,
+        command: list[str],
+        *,
+        timeout: int,
+        env_overrides: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        env = prepend_cuda_library_path(os.environ.copy())
+        if env_overrides:
+            env.update(env_overrides)
+        run_kwargs: dict[str, Any] = {
+            "cwd": settings.project_root,
+            "capture_output": True,
+            "text": True,
+            "timeout": timeout,
+            "check": True,
+            "env": env,
+        }
+        if os.name == "nt":
+            run_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        return subprocess.run(command, **run_kwargs)
+
+    def _wait_for_qwen_tts_ready(self, profile_id: str | None, *, timeout_seconds: int) -> dict[str, Any]:
+        profile = get_voice_profile(profile_id)
+        values = profile.values if profile and isinstance(profile.values, dict) else {}
+        endpoint = str(values.get("qwen_tts_endpoint", "")).strip()
+        if not endpoint:
+            return {"ok": False, "detail": "No Qwen TTS endpoint is configured for the selected profile."}
+        base_url = endpoint.rsplit("/tts", 1)[0]
+        deadline = time.time() + max(timeout_seconds, 1)
+        last_error = "Qwen3-TTS readiness check did not reach the server."
+        while time.time() < deadline:
+            try:
+                with urllib.request.urlopen(base_url + "/health", timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                if 200 <= response.status < 300 and payload.get("status") == "ok":
+                    return {"ok": True, "detail": "ready"}
+                last_error = f"Unexpected Qwen3-TTS health response: HTTP {response.status}"
+            except urllib.error.HTTPError as exc:
+                last_error = f"Qwen3-TTS health check failed: HTTP {exc.code}"
+            except Exception as exc:
+                last_error = f"Qwen3-TTS health check failed: {exc}"
+            time.sleep(1)
+        return {"ok": False, "detail": last_error}
+
+    def _sample_audio_path(self) -> Path:
+        sample = settings.project_root / "test_audio" / "jfk.flac"
+        if not sample.exists():
+            raise FileNotFoundError(f"sample audio not found: {sample}")
+        return sample
+
+    def _python_module_command(self, module: str, *args: str) -> list[str]:
+        return [self._process_manager.resolve_foreground_python(), "-m", module, *args]
+
+    def _stop_all_tts_servers(self) -> dict[str, Any]:
+        return {
+            "qwen_tts": self._run_stop_tts_command("qwen-tts", "Qwen3-TTS"),
+        }
+
+    def _run_stop_tts_command(self, provider: str, label: str) -> dict[str, Any]:
+        command = self._tts_script_command("stop", provider)
+        started_at = time.perf_counter()
+        payload: dict[str, Any] = {
+            "provider": provider,
+            "label": label,
+            "command": command,
+        }
+        try:
+            completed = self._run_command(command, timeout=60)
+            payload.update(
+                {
+                    "ok": True,
+                    "returncode": completed.returncode,
+                    "stdout": completed.stdout.strip(),
+                    "stderr": completed.stderr.strip(),
+                }
+            )
+        except subprocess.CalledProcessError as exc:
+            payload.update(
+                {
+                    "ok": False,
+                    "returncode": exc.returncode,
+                    "stdout": (exc.stdout or "").strip(),
+                    "stderr": (exc.stderr or "").strip(),
+                    "detail": f"{label} stop failed",
+                }
+            )
+        except subprocess.TimeoutExpired as exc:
+            payload.update(
+                {
+                    "ok": False,
+                    "stdout": (exc.stdout or "").strip() if isinstance(exc.stdout, str) else "",
+                    "stderr": (exc.stderr or "").strip() if isinstance(exc.stderr, str) else "",
+                    "detail": f"{label} stop timed out",
+                }
+            )
+        except Exception as exc:
+            payload.update(
+                {
+                    "ok": False,
+                    "stdout": "",
+                    "stderr": "",
+                    "detail": str(exc),
+                }
+            )
+        payload["duration_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
+        return payload
+
+    def _tts_script_command(self, action: str, provider: str | None = None) -> list[str]:
+        scripts_dir = settings.project_root / "scripts"
+        verb = "start" if action == "start" else "stop"
+        if self._is_qwen_provider(provider or ""):
+            script = scripts_dir / f"{verb}_qwen_tts_server.py"
+            return [self._process_manager.resolve_foreground_python(), str(script)]
+        raise ValueError(f"no managed TTS sidecar for provider: {provider}")
+
+    def _probe_json(self, url: str, *, raw_payload: bool = False) -> dict[str, Any]:
+        try:
+            request = urllib.request.Request(url, headers=self._api_headers())
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            if raw_payload:
+                return payload
+            return {"ok": True, "payload": payload}
+        except urllib.error.HTTPError as exc:
+            return {"ok": False, "detail": f"http-{exc.code}"}
+        except Exception as exc:
+            return {"ok": False, "detail": str(exc)}
+
+    def _post_remote_json(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        headers = {"Content-Type": "application/json", **self._api_headers()}
+        request = urllib.request.Request(
+            settings.shana_internal_base_url + path,
+            data=body,
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                response_payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"remote json post failed: http-{exc.code} {detail}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"remote json post failed: {exc}") from exc
+        if not isinstance(response_payload, dict):
+            raise RuntimeError("remote json post returned a non-object payload")
+        return response_payload
+
+    def _machine_status(self) -> dict[str, Any]:
+        now = time.time()
+        needs_refresh = False
+        with self._metrics_lock:
+            if not self._cached_machine_status_at:
+                needs_refresh = True
+            elif not self._cached_machine_status:
+                needs_refresh = True
+            else:
+                last = datetime.fromisoformat(self._cached_machine_status_at.replace("Z", "+00:00")).timestamp()
+                needs_refresh = now - last >= settings.dashboard_metrics_interval_seconds
+
+        if needs_refresh:
+            self._refresh_machine_status()
+
+        with self._metrics_lock:
+            return {
+                **self._cached_machine_status,
+                "sampled_at": self._cached_machine_status_at,
+                "gpu_enabled": settings.dashboard_enable_gpu,
+                "refresh_interval_seconds": settings.dashboard_metrics_interval_seconds,
+            }
+
+    def _refresh_machine_status(self) -> None:
+        vm = psutil.virtual_memory()
+        disk = shutil.disk_usage(settings.project_root)
+        payload = {
+            "cpu_percent": psutil.cpu_percent(interval=0.1),
+            "memory": {
+                "total_bytes": vm.total,
+                "available_bytes": vm.available,
+                "used_bytes": vm.used,
+                "percent": vm.percent,
+            },
+            "disk": {
+                "total_bytes": disk.total,
+                "used_bytes": disk.used,
+                "free_bytes": disk.free,
+                "percent": round((disk.used / disk.total) * 100, 2) if disk.total else 0,
+            },
+            "gpu": self._gpu_status() if settings.dashboard_enable_gpu else {"ok": False, "detail": "disabled"},
+        }
+        with self._metrics_lock:
+            self._cached_machine_status = payload
+            self._cached_machine_status_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    def _gpu_status(self) -> dict[str, Any]:
+        try:
+            run_kwargs: dict[str, Any] = {
+                "capture_output": True,
+                "text": True,
+                "timeout": 5,
+                "check": True,
+            }
+            if os.name == "nt":
+                run_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            completed = subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=name,memory.total,memory.used,utilization.gpu,temperature.gpu",
+                    "--format=csv,noheader,nounits",
+                ],
+                **run_kwargs,
+            )
+        except FileNotFoundError:
+            return {"ok": False, "detail": "nvidia-smi-not-found"}
+        except subprocess.CalledProcessError as exc:
+            return {"ok": False, "detail": exc.stderr.strip() or exc.stdout.strip() or "nvidia-smi-failed"}
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "detail": "nvidia-smi-timeout"}
+
+        gpus: list[dict[str, Any]] = []
+        for index, line in enumerate(completed.stdout.splitlines()):
+            parts = [part.strip() for part in line.split(",")]
+            if len(parts) != 5:
+                continue
+            gpus.append(
+                {
+                    "index": index,
+                    "label": f"GPU {index}",
+                    "name": parts[0],
+                    "memory_total_mb": int(parts[1]),
+                    "memory_used_mb": int(parts[2]),
+                    "utilization_percent": int(parts[3]),
+                    "temperature_c": int(parts[4]),
+                }
+            )
+        return {"ok": True, "gpus": gpus}
+
+    def _tail(self, path: Path, *, limit: int = 60) -> str:
+        if not path.exists():
+            return ""
+        lines: deque[str] = deque(maxlen=max(1, limit))
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                lines.append(line.rstrip("\n"))
+        return "\n".join(lines)
+
+    def _recent_timings(self, limit: int = 12) -> dict[str, Any]:
+        log_path = settings.data_dir / "runtime" / "conversation.timings.jsonl"
+        if not log_path.exists():
+            return {"entries": [], "summary": {"count": 0}}
+        entries_deque: deque[dict[str, Any]] = deque(maxlen=max(1, limit))
+        with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    payload = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(payload, dict):
+                    entries_deque.append(payload)
+        entries = list(entries_deque)
+        totals = [entry.get("timing_ms", {}).get("total_ms") for entry in entries if isinstance(entry.get("timing_ms", {}).get("total_ms"), (int, float))]
+        summary = {
+            "count": len(entries),
+            "avg_total_ms": round(sum(totals) / len(totals), 1) if totals else None,
+            "max_total_ms": round(max(totals), 1) if totals else None,
+            "min_total_ms": round(min(totals), 1) if totals else None,
+        }
+        return {"entries": entries, "summary": summary}
+
+    def _recent_llm_routes(self, limit: int = 24) -> dict[str, Any]:
+        log_path = settings.data_dir / "runtime" / "llm.routes.jsonl"
+        if not log_path.exists():
+            return {"entries": [], "summary": {"count": 0, "status_counts": {}, "provider_counts": {}, "route_family_counts": {}}}
+        entries_deque: deque[dict[str, Any]] = deque(maxlen=max(1, limit))
+        with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    payload = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(payload, dict):
+                    entries_deque.append(payload)
+        entries = list(entries_deque)
+        status_counts: dict[str, int] = {}
+        provider_counts: dict[str, int] = {}
+        route_family_counts: dict[str, int] = {}
+        durations: list[float] = []
+        for entry in entries:
+            status = str(entry.get("status", "") or "unknown")
+            provider = str(entry.get("provider", "") or "unknown")
+            route_family = str(entry.get("route_family", "") or "unknown")
+            status_counts[status] = status_counts.get(status, 0) + 1
+            provider_counts[provider] = provider_counts.get(provider, 0) + 1
+            route_family_counts[route_family] = route_family_counts.get(route_family, 0) + 1
+            duration = entry.get("duration_ms")
+            if isinstance(duration, (int, float)):
+                durations.append(float(duration))
+        summary = {
+            "count": len(entries),
+            "status_counts": status_counts,
+            "provider_counts": provider_counts,
+            "route_family_counts": route_family_counts,
+            "avg_duration_ms": round(sum(durations) / len(durations), 1) if durations else None,
+        }
+        return {"entries": entries, "summary": summary}
+
+    def _format_router_backoff_entries(self, backoff_state: dict[str, Any]) -> list[dict[str, Any]]:
+        entries: list[dict[str, Any]] = []
+        for key, seconds in backoff_state.items():
+            normalized_key = str(key or "").strip()
+            provider = normalized_key
+            scope = "text"
+            if ":" in normalized_key:
+                provider, scope = normalized_key.split(":", 1)
+            entries.append(
+                {
+                    "key": normalized_key,
+                    "provider": provider,
+                    "scope": scope,
+                    "seconds": float(seconds),
+                }
+            )
+        return entries
+
+    def _build_router_capability_status(self, llm_status: dict[str, Any]) -> list[dict[str, Any]]:
+        capabilities: list[dict[str, Any]] = []
+        provider = str(llm_status.get("provider") or "").strip().lower()
+        text_health = llm_status.get("health")
+        if provider in {"local", "ollama", "openai", "mock"}:
+            capabilities.append(
+                {
+                    "provider": provider or "unknown",
+                    "scope": "text",
+                    "health": text_health,
+                }
+            )
+        if provider in {"local", "ollama"}:
+            capabilities.append(
+                {
+                    "provider": provider,
+                    "scope": "vision",
+                    "health": llm_status.get("vision_capability"),
+                }
+            )
+        hosted_provider = str(llm_status.get("router_hosted_provider") or "").strip().lower()
+        if hosted_provider and hosted_provider != provider:
+            hosted_health = {"ok": True, "detail": "configured"}
+            if hosted_provider == "openai" and not settings.openai_api_key:
+                hosted_health = {"ok": False, "detail": "missing-openai-api-key"}
+            capabilities.append(
+                {
+                    "provider": hosted_provider,
+                    "scope": "text",
+                    "health": hosted_health,
+                }
+            )
+        return capabilities
+
+    def _api_headers(self) -> dict[str, str]:
+        if settings.api_auth_enabled and settings.api_bearer_token:
+            return {"Authorization": f"Bearer {settings.api_bearer_token}"}
+        return {}

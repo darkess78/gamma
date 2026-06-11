@@ -8,4 +8,4 @@ if not exist "%PYTHON_EXE%" (
   pause
   exit /b 1
 )
-start "" "%PYTHON_EXE%" "%REPO_ROOT%\scripts\open_gamma_windows.py"
+start "" "%PYTHON_EXE%" "%REPO_ROOT%\scripts\open_gamma.py"

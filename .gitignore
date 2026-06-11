@@ -7,7 +7,6 @@ config/voices.local.toml
 .venv*/
 .python-version
 .codex
-AGENTS.md
 
 # Python build/cache artifacts
 __pycache__/
@@ -24,14 +23,27 @@ htmlcov/
 
 # Local runtime state / generated outputs
 *.db
-data/
+*.db.backup-*
+data/*
+!data/README.md
 *.wav
 *.mp3
 *.flac.json
 *.wav.json
+!assets/
+!assets/voice_references/
+!assets/voice_references/shana/
+!assets/voice_references/shana/*.wav
+!assets/audio/
+!assets/audio/system/
+!assets/audio/system/filtered.wav
+!assets/voice_datasets/
+!assets/voice_datasets/shana/
+!assets/voice_datasets/shana/**/*.wav
 
 # Large/private local assets
-imagegen/
+helper_projects/GammaTTSDataPrep/build/
+helper_projects/imagegen/
 research/
 .claude/
 

@@ -9,6 +9,8 @@ Suggested reading order:
 2. `architecture.md`
 3. `phase1.md`
 4. domain-specific specs like `voice.md`, `memory.md`, `persona.md`
-5. `streamer_plan/streamer_roadmap.md` for the staged AI-streamer architecture direction
-6. `streamer_plan/streamer_roadmap_current.md` for the mature current-state target architecture
-7. `streamer_plan/streamer_gap_backlog.md` for the bridge from the current repo to the target state
+5. `llm_router.md` for current LLM routing scope and future router upgrades
+6. `streamer_plan/streamer_roadmap.md` for the staged AI-streamer architecture direction
+7. `streamer_plan/streamer_roadmap_current.md` for the mature current-state target architecture
+8. `streamer_plan/streamer_gap_backlog.md` for the bridge from the current repo to the target state
+9. `shana_output_bus.md` for the planned three-PC output bus, performer, dashboard monitor, VTuber, and Discord communication architecture

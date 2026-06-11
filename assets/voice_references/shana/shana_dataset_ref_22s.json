@@ -1,0 +1,84 @@
+{
+  "output_wav": "assets/voice_references/shana/shana_dataset_ref_22s.wav",
+  "reference_text_file": "assets/voice_references/shana/shana_dataset_ref_22s.txt",
+  "source_manifest": "assets/voice_datasets/shana/manifests/shana_all.jsonl",
+  "selection_rule": "Manual subset of clean Shana rows where training_candidate=true and text_agreement=match; chosen for natural spoken delivery and phrase variety.",
+  "silence_seconds_between_clips": 0.18,
+  "total_seconds": 23.96,
+  "language": "ja",
+  "selected": [
+    {
+      "clip_id": "kopimi_commie_shakugan_no_shana_13_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0005",
+      "clip_path": "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_13_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0005.wav",
+      "duration_seconds": 1.5,
+      "text": "お前たちのは違う",
+      "text_agreement": "match",
+      "text_agreement_score": 1.0
+    },
+    {
+      "clip_id": "kopimi_commie_shakugan_no_shana_13_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0009_trim_004000_006100",
+      "clip_path": "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_13_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0009_trim_004000_006100.wav",
+      "duration_seconds": 2.1,
+      "text": "それって、これのこと?",
+      "text_agreement": "match",
+      "text_agreement_score": 1.0
+    },
+    {
+      "clip_id": "kopimi_commie_shakugan_no_shana_18_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0005",
+      "clip_path": "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_18_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0005.wav",
+      "duration_seconds": 4.1,
+      "text": "いつかここを出て行く時も 一緒に",
+      "text_agreement": "match",
+      "text_agreement_score": 1.0
+    },
+    {
+      "clip_id": "kopimi_commie_shakugan_no_shana_ii_s2e02_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0023",
+      "clip_path": "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e02_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0023.wav",
+      "duration_seconds": 2.0,
+      "text": "ユージは強くなれるよ",
+      "text_agreement": "match",
+      "text_agreement_score": 1.0
+    },
+    {
+      "clip_id": "kopimi_commie_shakugan_no_shana_ii_s2e06_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0024_trim_002100_004000",
+      "clip_path": "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e06_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0024_trim_002100_004000.wav",
+      "duration_seconds": 1.9,
+      "text": "うん、美味しい",
+      "text_agreement": "match",
+      "text_agreement_score": 1.0
+    },
+    {
+      "clip_id": "kopimi_commie_shakugan_no_shana_ii_s2e11_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0024",
+      "clip_path": "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e11_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0024.wav",
+      "duration_seconds": 3.0,
+      "text": "どうすればいいか、気持ちが教えてくれる",
+      "text_agreement": "match",
+      "text_agreement_score": 1.0
+    },
+    {
+      "clip_id": "kopimi_commie_shakugan_no_shana_ii_s2e20_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0018",
+      "clip_path": "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e20_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0018.wav",
+      "duration_seconds": 1.46,
+      "text": "でももう心配ない",
+      "text_agreement": "match",
+      "text_agreement_score": 1.0
+    },
+    {
+      "clip_id": "kopimi_commie_shakugan_no_shana_s01e03_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0013",
+      "clip_path": "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e03_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0013.wav",
+      "duration_seconds": 3.78,
+      "text": "私に教えるつもりがあるなら、ちゃんと勉強してから出直しなさい",
+      "text_agreement": "match",
+      "text_agreement_score": 1.0
+    },
+    {
+      "clip_id": "kopimi_commie_shakugan_no_shana_s01e03_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0025",
+      "clip_path": "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e03_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0025.wav",
+      "duration_seconds": 2.5,
+      "text": "それでもまだ残してやった方よ",
+      "text_agreement": "match",
+      "text_agreement_score": 1.0
+    }
+  ],
+  "note": "Reference text is machine-generated but has exact normalized agreement between the small and large-v3 Whisper passes."
+}

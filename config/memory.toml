@@ -1,5 +1,6 @@
 enabled = true
 backend = "sqlite"
 write_mode = "selective"
+personality = "entertainer"
 profile_enabled = true
 episodic_enabled = true

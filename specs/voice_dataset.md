@@ -22,7 +22,7 @@ What it does not do:
 GUI behavior:
 - runs staging and extraction in a worker thread so the window stays responsive
 - streams live logs from the pipeline, including each extracted candidate speech clip
-- loads `manifest.jsonl` after a run and lets you tag clips as `Shana`, `Shana-noisy`, `Not Shana`, or `Reject`
+- loads `manifest.jsonl` after a run and lets you tag clips as `Shana`, `Shana-light-noise`, `Shana-heavy-noise`, `Not Shana`, or `Reject`
 - plays extracted `.wav` clips directly inside the review pane on Windows
 - can rank the review queue by acoustic similarity to your confirmed `Shana` labels
 - can scan for exact and near-duplicate clips in the review queue
@@ -36,12 +36,13 @@ GUI behavior:
 Important limitation:
 - the GUI cannot truly tell you "this is Shana speaking"
 - it can only show that a candidate speech segment was extracted
-- `Shana / Shana-noisy / Not Shana / Reject` is a manual review decision in the current workflow
+- `Shana / Shana-light-noise / Shana-heavy-noise / Not Shana / Reject` is a manual review decision in the current workflow
 - the similarity ranking is heuristic triage from seeded Shana clips, not robust speaker identification
 
 Recommended labeling:
 - `Shana`: clean solo lines suitable for core training
-- `Shana-noisy`: mostly Shana, but with tolerable background bleed or mild contamination
+- `Shana-light-noise`: mostly Shana with minor contamination that may still be usable for some training passes
+- `Shana-heavy-noise`: mostly Shana, but with enough bleed or contamination that it should stay separated from cleaner data
 - `Not Shana`: valid speech clip, wrong speaker
 - `Reject`: unusable clip due to overlap, heavy SFX, music, or corruption
 
@@ -57,13 +58,17 @@ data/shana_dataset/exports/
 ```
 
 Packaged app storage:
-- the Windows executable now defaults its working data to `%LOCALAPPDATA%\GammaTTSDataPrep`
-- staging and dataset paths entered as relative paths are resolved under that persistent folder
-- this avoids losing extracted clips and labels when `dist/GammaTTSDataPrep` is rebuilt
+- when launched from source with `python -m gamma.run_tts_dataset_gui`, the GUI defaults its working data to `data/tts_data_prep`
+- when launched as the packaged Windows executable from this repo's `dist/GammaTTSDataPrep` folder, it also defaults its working data to `data/tts_data_prep`
+- when the packaged executable is moved outside the repo, it falls back to `%LOCALAPPDATA%\GammaTTSDataPrep`
+- set `GAMMA_TTS_DATA_PREP_ROOT` to override either default
+- staging and dataset paths entered as relative paths are resolved under the active working data folder
+- the repo-local default is ignored by git through `data/`, so reviewed clips are available to local Gamma tooling without committing large or copyrighted media
+- the packaged default still avoids losing extracted clips and labels when `dist/GammaTTSDataPrep` is rebuilt
 
 Ranking note:
 - the seeded similarity ranking currently uses only clips labeled `Shana` as the clean reference set
-- `Shana-noisy` clips are exported separately but are not used as seed references by default
+- `Shana-light-noise` and `Shana-heavy-noise` clips are exported separately but are not used as seed references by default
 
 Duplicate note:
 - `Find Duplicates` marks byte-identical WAV clips as exact duplicates
@@ -118,7 +123,7 @@ Build a Windows executable:
 
 ```bash
 py -3.12 -m pip install pyinstaller
-py -3.12 scripts/build_tts_dataset_gui_exe.py
+py -3.12 helper_projects/GammaTTSDataPrep/scripts/build_exe.py
 ```
 
 Expected output:
@@ -128,11 +133,11 @@ dist/GammaTTSDataPrep/GammaTTSDataPrep.exe
 ```
 
 Packaging notes:
-- the executable is built from `packaging/tts_dataset_gui.spec`
+- the executable is built from `helper_projects/GammaTTSDataPrep/packaging/tts_dataset_gui.spec`
 - `ffmpeg` and `ffprobe` are still external runtime requirements
 - the build currently produces a folder-based app, not a single-file exe, to avoid extra startup and packaging friction
 - only launch `dist/GammaTTSDataPrep/GammaTTSDataPrep.exe`
-- do not launch `build/tts_dataset_gui/tts_dataset_gui/GammaTTSDataPrep.exe`; that is a PyInstaller intermediate artifact and will fail because it does not carry the final `_internal` runtime folder
+- do not launch `helper_projects/GammaTTSDataPrep/build/tts_dataset_gui/GammaTTSDataPrep.exe`; that is a PyInstaller intermediate artifact and will fail because it does not carry the final `_internal` runtime folder
 
 Staging behavior:
 - copies into a local directory before any processing

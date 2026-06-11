@@ -44,10 +44,10 @@ Inputs
 
 | Layer | Mature target behavior | Gamma today |
 |---|---|---|
-| Multi-source ingestion | Pulls from mic, chat, moderation, donations, game state, and stream state | Missing |
-| Event router | Normalizes all events into one internal schema | Missing |
-| Priority engine | Decides what gets attention now, later, or never | Missing |
-| Turn policy | Chooses reply, ignore, acknowledge, act, or defer | Missing |
+| Multi-source ingestion | Pulls from mic, chat, moderation, donations, game state, and stream state | Missing real Twitch/EventSub ingestion |
+| Event router | Normalizes all events into one internal schema | Partial |
+| Priority engine | Decides what gets attention now, later, or never | Partial |
+| Turn policy | Chooses reply, ignore, acknowledge, act, or defer | Partial |
 | Context builder | Produces short structured prompts instead of transcript stuffing | Partial |
 | Persona and boundaries | Stable identity, safety posture, relationship handling | Present |
 | Core LLM | Main conversational planner and responder | Present |
@@ -57,7 +57,7 @@ Inputs
 | Performer layer | Avatar state, expressions, subtitles, lip sync, scene cues | Mostly missing |
 | Stream control | OBS overlays, scenes, captions, alerts, status widgets | Missing |
 | Game/tool runtime | Turn-based or bounded-control plugins with explicit contracts | Missing |
-| Replay/eval/ops | Replayed sessions, regression checks, human override, observability | Missing |
+| Replay/eval/ops | Replayed sessions, regression checks, human override, observability | Partial traces/replay scaffolding |
 
 ## Mature Runtime Pattern
 
@@ -178,10 +178,10 @@ OPS LAYER
 - limited tool framework
 
 ### Next
-- event router
-- priority engine
-- turn policy layer
-- stream-facing output events
+- implement `specs/streamer_plan/twitch_stream_module.md`
+- strengthen priority engine
+- strengthen turn policy layer
+- synchronize stream-facing output events
 
 ### After That
 - OBS and subtitle control

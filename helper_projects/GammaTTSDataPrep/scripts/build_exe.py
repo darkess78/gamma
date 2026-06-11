@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+def main() -> int:
+    repo_root = Path(__file__).resolve().parents[3]
+    spec_path = repo_root / "helper_projects" / "GammaTTSDataPrep" / "packaging" / "tts_dataset_gui.spec"
+    dist_dir = repo_root / "dist"
+    build_dir = repo_root / "helper_projects" / "GammaTTSDataPrep" / "build"
+    intermediate_exe_path = build_dir / "tts_dataset_gui" / "GammaTTSDataPrep.exe"
+
+    if not spec_path.exists():
+        raise SystemExit(f"PyInstaller spec not found: {spec_path}")
+    try:
+        import PyInstaller  # noqa: F401
+    except Exception as exc:  # noqa: BLE001
+        raise SystemExit(
+            "PyInstaller is not installed in the current environment.\n"
+            "Install it first with: py -3.12 -m pip install pyinstaller"
+        ) from exc
+
+    build_dir.mkdir(parents=True, exist_ok=True)
+    dist_dir.mkdir(parents=True, exist_ok=True)
+
+    command = [
+        sys.executable,
+        "-m",
+        "PyInstaller",
+        "--noconfirm",
+        "--clean",
+        "--distpath",
+        str(dist_dir),
+        "--workpath",
+        str(build_dir),
+        str(spec_path),
+    ]
+    completed = subprocess.run(command, cwd=repo_root, check=False)
+    if completed.returncode != 0:
+        raise SystemExit(completed.returncode)
+
+    exe_path = dist_dir / "GammaTTSDataPrep" / "GammaTTSDataPrep.exe"
+    if not exe_path.exists():
+        raise SystemExit(f"Build completed but expected executable was not found: {exe_path}")
+
+    # PyInstaller also drops a bootloader exe into the workpath. That file is
+    # not a runnable distribution because it depends on sibling build artifacts
+    # that are only present in the final dist folder.
+    if intermediate_exe_path.exists():
+        intermediate_exe_path.unlink()
+
+    print(f"Built executable: {exe_path}")
+    print(f"Removed intermediate build executable: {intermediate_exe_path}")
+    print("ffmpeg and ffprobe must still be installed separately and available on PATH.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

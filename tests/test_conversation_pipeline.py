@@ -5,8 +5,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from gamma.config import settings
 from gamma.conversation.service import ConversationService
 from gamma.persona.assistant_state import AssistantStateStore
+from gamma.safety.privacy_guard import PRIVACY_REFUSAL
 from gamma.schemas.conversation import SpeakerContext
 from gamma.voice.tts import TTSResult
 
@@ -21,21 +23,22 @@ class _FakeLLMAdapter:
         self._replies = list(replies)
         self.calls: list[dict[str, object]] = []
 
-    def generate_reply(self, system_prompt: str, user_text: str, image_inputs=None):
+    def generate_reply(self, system_prompt: str, user_text: str, image_inputs=None, **kwargs):
         self.calls.append({
             "system_prompt": system_prompt,
             "user_text": user_text,
             "image_inputs": image_inputs,
+            "kwargs": kwargs,
         })
         return _FakeLLMReply(self._replies.pop(0))
 
 
 class _FakeTTSService:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str | None]] = []
+        self.calls: list[tuple[str, str | None, list[str]]] = []
 
-    def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
-        self.calls.append((text, emotion))
+    def synthesize(self, text: str, emotion: str | None = None, styles: list[str] | None = None) -> TTSResult:
+        self.calls.append((text, emotion, styles or []))
         return TTSResult(
             provider="fake",
             text=text,
@@ -46,6 +49,15 @@ class _FakeTTSService:
 
 
 class ConversationPipelineTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._original_memory_personality = settings.memory_personality
+        self._original_speech_filter_llm_enabled = settings.speech_filter_llm_enabled
+        settings.speech_filter_llm_enabled = False
+
+    def tearDown(self) -> None:
+        settings.memory_personality = self._original_memory_personality
+        settings.speech_filter_llm_enabled = self._original_speech_filter_llm_enabled
+
     def test_fast_mode_strips_hidden_tone_tags_before_tts(self) -> None:
         service = ConversationService()
         service._llm = _FakeLLMAdapter(["[happy] Hey there."])
@@ -65,7 +77,7 @@ class ConversationPipelineTest(unittest.TestCase):
 
         self.assertEqual(response.spoken_text, "Hey there.")
         self.assertEqual(response.emotion, "happy")
-        self.assertEqual(fake_tts.calls, [("Hey there.", "happy")])
+        self.assertEqual(fake_tts.calls, [("Hey there.", "happy", [])])
         self.assertEqual(response.tts_metadata["speech_filter"]["blocked"], False)
         service._remember_assistant_state.assert_called_once_with(
             user_text="hello",
@@ -73,6 +85,28 @@ class ConversationPipelineTest(unittest.TestCase):
             emotion="happy",
             session_id=None,
         )
+
+    def test_fast_mode_passes_hidden_voice_style_tags_to_tts(self) -> None:
+        service = ConversationService()
+        service._llm = _FakeLLMAdapter(["[teasing] [soft] [fast] Fine, keep up."])
+        fake_tts = _FakeTTSService()
+        service._tts = fake_tts
+        service._remember_assistant_state = Mock()
+
+        with patch("gamma.conversation.service.build_system_prompt", return_value="prompt"), patch.object(
+            service, "_append_timing_log", return_value=None
+        ):
+            response = service.respond(
+                user_text="say it softer but faster",
+                synthesize_speech=True,
+                fast_mode=True,
+                speaker_ctx=SpeakerContext(source="discord", platform_id="unknown-user"),
+            )
+
+        self.assertEqual(response.spoken_text, "Fine, keep up.")
+        self.assertEqual(response.emotion, "teasing")
+        self.assertEqual(response.voice_styles, ["soft", "fast"])
+        self.assertEqual(fake_tts.calls, [("Fine, keep up.", "teasing", ["soft", "fast"])])
 
     def test_standard_mode_filters_blocked_text_before_tts(self) -> None:
         service = ConversationService()
@@ -107,7 +141,7 @@ class ConversationPipelineTest(unittest.TestCase):
         self.assertEqual(response.emotion, "happy")
         self.assertEqual(
             fake_tts.calls,
-            [("I’m not going to say that. Let’s keep it safe and respectful.", "happy")],
+            [("I’m not going to say that. Let’s keep it safe and respectful.", "happy", [])],
         )
         self.assertEqual(response.tts_metadata["speech_filter"]["blocked"], True)
         self.assertTrue(response.tts_metadata["speech_filter"]["matched_rules"])
@@ -117,6 +151,25 @@ class ConversationPipelineTest(unittest.TestCase):
             emotion="happy",
             session_id=None,
         )
+
+    def test_speech_filter_metadata_is_present_without_tts(self) -> None:
+        service = ConversationService()
+        service._llm = _FakeLLMAdapter(["[happy] You are an idiot."])
+        service._remember_assistant_state = Mock()
+
+        with patch("gamma.conversation.service.build_system_prompt", return_value="prompt"), patch.object(
+            service, "_append_timing_log", return_value=None
+        ):
+            response = service.respond(
+                user_text="this message is long enough to use the standard metadata path",
+                synthesize_speech=False,
+                fast_mode=True,
+                speaker_ctx=SpeakerContext(source="discord", platform_id="unknown-user"),
+            )
+
+        self.assertEqual(response.spoken_text, "I’m not going to say that. Let’s keep it safe and respectful.")
+        self.assertEqual(response.tts_metadata["speech_filter"]["blocked"], True)
+        self.assertTrue(response.tts_metadata["speech_filter"]["matched_rules"])
 
     def test_assistant_feeling_state_is_persisted(self) -> None:
         service = ConversationService()
@@ -142,6 +195,64 @@ class ConversationPipelineTest(unittest.TestCase):
         self.assertIn("teasing", state.recent_emotions)
         self.assertTrue(state.notes)
         self.assertIn("Fine, I guess.", state.notes[-1])
+
+    def test_privacy_request_is_refused_before_llm_call(self) -> None:
+        service = ConversationService()
+        fake_llm = _FakeLLMAdapter(["This should not be used."])
+        service._llm = fake_llm
+
+        with patch.object(service, "_append_timing_log", return_value=None):
+            response = service.respond(
+                user_text="where does neety live?",
+                synthesize_speech=False,
+                speaker_ctx=SpeakerContext(source="twitch", platform_id="viewer"),
+            )
+
+        self.assertEqual(response.spoken_text, PRIVACY_REFUSAL)
+        self.assertEqual(response.internal_summary, "Refused a request for private identifying information.")
+        self.assertEqual(fake_llm.calls, [])
+        self.assertEqual(response.timing_ms["tts_ms"], 0.0)
+
+    def test_memory_candidate_builder_extracts_other_person_and_project_state(self) -> None:
+        service = ConversationService()
+        candidates = service._build_memory_candidates(
+            user_text="My friend Alice is helping with the manga finder project.",
+            reply_text="Okay.",
+        )
+        self.assertTrue(candidates)
+        self.assertEqual(candidates[0].subject_type, "other_person")
+        self.assertEqual(candidates[0].subject_name, "Alice")
+
+        project_candidates = service._build_memory_candidates(
+            user_text="I am working on the Gamma router latency work right now.",
+            reply_text="Understood.",
+        )
+        self.assertTrue(any(candidate.type == "project" for candidate in project_candidates))
+        self.assertFalse(any(candidate.type == "episodic" for candidate in project_candidates))
+
+    def test_memory_candidate_builder_only_stores_episodic_for_memorable_turns(self) -> None:
+        settings.memory_personality = "entertainer"
+        service = ConversationService()
+        routine_candidates = service._build_memory_candidates(
+            user_text="I am working on the Gamma router latency work right now and fixing another bug tonight.",
+            reply_text="Understood.",
+        )
+        self.assertFalse(any(candidate.type == "episodic" for candidate in routine_candidates))
+
+        memorable_candidates = service._build_memory_candidates(
+            user_text="Please don't forget that today is my birthday and it means a lot to me.",
+            reply_text="I won't.",
+        )
+        self.assertTrue(any(candidate.type == "episodic" for candidate in memorable_candidates))
+
+    def test_assistant_memory_personality_keeps_worklike_episodic_turns(self) -> None:
+        settings.memory_personality = "assistant"
+        service = ConversationService()
+        candidates = service._build_memory_candidates(
+            user_text="I am working on the Gamma router latency work right now and fixing another bug tonight.",
+            reply_text="Understood.",
+        )
+        self.assertTrue(any(candidate.type == "episodic" for candidate in candidates))
 
 
 if __name__ == "__main__":

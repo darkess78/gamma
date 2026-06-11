@@ -96,10 +96,11 @@ def _resolved_model_id() -> Path | str:
 # ---------------------------------------------------------------------------
 _model = None
 _model_sr: int = 24000
+_resolved_device: str = ""
 
 
 def _load_model():
-    global _model, _model_sr
+    global _model, _model_sr, _resolved_device
     if _model is not None:
         return _model
 
@@ -134,6 +135,7 @@ def _load_model():
         # FlashAttention2 not used — incompatible with Windows native CUDA builds
     )
     _model = model
+    _resolved_device = str(device_map)
     log.info("Model loaded on %s", device_map)
     return _model
 
@@ -158,7 +160,7 @@ def _adaptive_token_bounds(text: str) -> tuple[int, int]:
     words = max(len(text.split()), 1)
     chars = len(text)
     adaptive_min = max(12, min(96, words * 3 + 8, chars // 2 + 8))
-    adaptive_max = max(96, min(640, adaptive_min + 64, words * 10 + 48, chars * 3))
+    adaptive_max = max(160, min(1200, words * 12 + 96, chars * 3))
     return adaptive_min, adaptive_max
 
 
@@ -188,6 +190,15 @@ def _normalize_generation_params(text: str, extra: dict[str, Any]) -> dict[str, 
     return normalized
 
 
+def _pop_output_peak(extra: dict[str, Any]) -> float:
+    raw = extra.pop("output_peak", extra.pop("peak", 0.95))
+    try:
+        peak = float(raw)
+    except (TypeError, ValueError):
+        peak = 0.95
+    return max(0.35, min(0.95, peak))
+
+
 def synthesize(body: dict[str, Any]) -> bytes:
     import numpy as np
 
@@ -210,6 +221,7 @@ def synthesize(body: dict[str, Any]) -> bytes:
     # At 12Hz codec rate, 100 tokens ≈ 8.3s minimum — ensures the model can't
     # fire EOS while speech is still in progress, even for longer utterances.
     extra = _normalize_generation_params(text, extra)
+    output_peak = _pop_output_peak(extra)
 
     mtype = _model_type()
 
@@ -274,15 +286,19 @@ def synthesize(body: dict[str, Any]) -> bytes:
         fade_out = np.linspace(1.0, 0.0, fade_out_samples, dtype=np.float32)
         audio[-fade_out_samples:] *= fade_out
 
-    # Pad with silence: 60ms at start, 400ms at end — extra room ensures the
+    # Pad with silence: a slightly longer front pad protects the beginning of
+    # chunked live playback from losing consonant attacks during browser/audio
+    # transitions, while the end pad gives the decoded tail room to decay.
+    # This slightly increases chunk duration, but improves intelligibility.
+    # Pad with silence: 120ms at start, 400ms at end — extra room ensures the
     # decoded tail has space to fully decay before playback stops.
-    pad_start = int(sr * 0.060)
+    pad_start = int(sr * 0.120)
     pad_end = int(sr * 0.400)
     audio = np.concatenate([np.zeros(pad_start, dtype=np.float32), audio, np.zeros(pad_end, dtype=np.float32)])
 
     peak = np.max(np.abs(audio))
     if peak > 0:
-        audio = audio / peak * 0.95
+        audio = audio / peak * output_peak
 
     return _numpy_to_wav_bytes(audio, int(sr))
 
@@ -303,7 +319,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if self.path in {"/health", "/health/"}:
-            self._send(200, b'{"status":"ok"}')
+            self._send(200, json.dumps({
+                "status": "ok",
+                "model": MODEL_ID,
+                "device": _resolved_device or DEVICE_STR,
+                "dtype": DTYPE_STR,
+            }).encode())
         else:
             self._send(404, b'{"error":"not found"}')
 

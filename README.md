@@ -25,9 +25,7 @@ Current persona target: **Shana**.
 - `openai` - hosted transcription via the OpenAI SDK
 
 ### TTS
-- `stub` - local placeholder WAV output for end-to-end testing
 - `piper` - local offline TTS for stable low-latency speech
-- `local` / `gpt-sovits` - local HTTP-backed GPT-SoVITS path
 - `qwen-tts` - local HTTP-backed Qwen TTS path
 - `openai` - hosted TTS via the OpenAI SDK
 - optional RVC post-process can be layered on top of Piper for slower converted-voice tests
@@ -41,12 +39,11 @@ You can choose providers independently for each subsystem:
 | --- | --- | --- |
 | LLM | `openai` | `local` or `ollama` |
 | STT | `openai` | `local` or `faster-whisper` |
-| TTS | `openai` | `piper`, `local`, `gpt-sovits`, or `qwen-tts` |
+| TTS | `openai` | `piper` or `qwen-tts` |
 
 `local` does not mean the same backend everywhere:
 - LLM `local` = Ollama-compatible chat model
 - STT `local` = `faster-whisper`
-- TTS `local` = GPT-SoVITS
 - TTS `piper` = local offline ONNX voice synthesis
 
 Examples:
@@ -72,14 +69,10 @@ SHANA_PIPER_CONFIG_PATH=./data/piper/en_US-lessac-medium.onnx.json
 # Fully local development
 SHANA_LLM_PROVIDER=ollama
 SHANA_STT_PROVIDER=local
-SHANA_TTS_PROVIDER=stub
+SHANA_TTS_PROVIDER=qwen-tts
 ```
 
-For low-latency local speech, prefer Piper as the default TTS path and keep RVC disabled during normal conversation. If you want a slower converted voice test, use:
-
-```bash
-python -m gamma.run_tts_test_henya "test phrase"
-```
+For low-latency local speech, prefer Piper as the default TTS path and keep RVC disabled during normal conversation. If you want a slower converted voice test, select a preset RVC-backed profile in the dashboard or set `SHANA_TTS_PROFILE=henya_rvc` before running a TTS smoke test.
 
 Smoke-test output modes:
 
@@ -87,25 +80,24 @@ Smoke-test output modes:
 python -m gamma.run_tts_test "test phrase"
 python -m gamma.run_tts_test --compact "test phrase"
 python -m gamma.run_tts_test --json "test phrase"
-python -m gamma.run_tts_test_henya --compact "test phrase"
 ```
 
 RVC layering:
 - RVC is an optional post-process on top of generated WAV output; it is not a standalone TTS provider
 - the intended local low-latency stack is `Piper -> optional RVC`
 - keep `SHANA_RVC_ENABLED=false` for normal realtime conversation
-- use `python -m gamma.run_tts_test_henya ...` when you want the slower Henya-converted path
+- use an RVC-backed voice profile such as `henya_rvc` when you want the slower converted path
 - Gamma now auto-discovers an RVC checkout in common sibling locations such as `../RVC/Retrieval-based-Voice-Conversion-WebUI-main`
 - Gamma also auto-discovers the RVC Python interpreter from an adjacent `.venv` when present
 - `SHANA_RVC_MODEL_NAME` is still required; `SHANA_RVC_INDEX_PATH` is optional when Gamma can find a matching `.index`
 
 Dashboard behavior:
 - the TTS profile dropdown lets you choose a named voice profile, not just a raw provider
-- named TTS voice profiles load from `config/voices.example.toml`, then `config/voices.toml`, then `config/voices.local.toml`
+- named TTS voice profiles load from `config/voices.example.toml`, then `config/voices.presets.toml`, then `config/voices.toml`, then `config/voices.local.toml`
 - the TTS dropdown persists machine-local selections to `config/app.local.toml`
 - `Test TTS` uses the selected provider immediately
 - conversation and live voice flows use the provider loaded by the running Shana process, so restart Shana after changing provider or profile if you want the active service to switch too
-- dashboard TTS start/stop controls only apply to managed local sidecars such as GPT-SoVITS or Qwen TTS
+- dashboard TTS start/stop controls apply to the managed Qwen TTS sidecar
 
 For local vision with Ollama, use a multimodal model and enable it explicitly:
 
@@ -159,16 +151,21 @@ Recommended starting points:
   - Browser voice through the dashboard is the most portable interactive path.
 
 ## Project layout
-- `gamma/main.py` - FastAPI app entrypoint
-- `gamma/api/routes.py` - API routes
-- `gamma/conversation/service.py` - main conversation pipeline
-- `gamma/memory/service.py` - SQLite-backed memory service
-- `gamma/llm/` - model adapters
-- `gamma/voice/` - STT, TTS, and controller logic
+- `src/gamma/main.py` - FastAPI app entrypoint
+- `src/gamma/api/routes.py` - API routes
+- `src/gamma/conversation/service.py` - main conversation pipeline
+- `src/gamma/memory/service.py` - SQLite-backed memory service
+- `src/gamma/llm/` - model adapters
+- `src/gamma/voice/` - STT, TTS, and controller logic
 - `config/` - runtime, persona, and memory configuration
+- `assets/` - small versioned source/runtime assets
+- `data/` - local runtime state, generated outputs, models, and working datasets
+- `helper_projects/` - support projects that are useful for Gamma but not part of the core runtime package
 - `specs/` - project notes and architecture docs
 
 ## Quick start
+
+Run project commands from the repo-local virtual environment. On Linux/macOS, activate `.venv` before using `python`, `pytest`, or any Gamma CLI; alternatively call `.venv/bin/python` directly. On Windows, use the `.venv\Scripts` equivalents. Do not rely on the system Python for normal repo work.
 
 ### Linux / macOS
 
@@ -176,7 +173,7 @@ Recommended starting points:
 cp .env.example .env
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e .
+python -m pip install -e ".[dev]"
 ```
 
 ### Windows (PowerShell)
@@ -185,8 +182,10 @@ python -m pip install -e .
 Copy-Item .env.example .env
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e .
+python -m pip install -e ".[dev]"
 ```
+
+Use `python -m pip install -e .` only when you need runtime dependencies without development and test tools.
 
 The repo-local `.venv` is platform-specific. Create it from the OS and shell you plan to use; do not copy `.venv` between Windows and Linux.
 
@@ -227,25 +226,27 @@ App config loads in this order:
 
 Voice profile config loads in this order:
 1. `config/voices.example.toml`
-2. `config/voices.toml`
-3. `config/voices.local.toml`
+2. `config/voices.presets.toml`
+3. `config/voices.toml`
+4. `config/voices.local.toml`
 
 Then `.env` and process environment variables override file-based values.
 
 Use the files like this:
 - `config/*.example.toml`: shareable defaults and examples kept in git
+- `config/voices.presets.toml`: repo presets for local testing voices that are useful but not canonical defaults
 - `config/app.toml` and `config/voices.toml`: shareable repo defaults when they are machine-agnostic
 - `config/app.local.toml` and `config/voices.local.toml`: machine-local overrides ignored by git
 - `.env`: secrets and environment overrides
 
-`config/models.toml` supplies provider/model defaults, `config/memory.toml` supplies memory defaults, and `config/persona.toml` plus the persona YAML files feed prompt construction.
+`config/models.toml` supplies provider/model defaults, `config/memory.toml` supplies memory defaults, and `config/persona.yaml` is the editable structured persona source used during prompt construction.
 
 ## Example environment
 
 ```env
 SHANA_LLM_PROVIDER=mock
 SHANA_STT_PROVIDER=stub
-SHANA_TTS_PROVIDER=stub
+SHANA_TTS_PROVIDER=qwen-tts
 SHANA_MEMORY_ENABLED=true
 SHANA_MEMORY_WRITE_MODE=selective
 ```
@@ -257,7 +258,7 @@ SHANA_LLM_PROVIDER=ollama
 SHANA_LOCAL_LLM_ENDPOINT=http://127.0.0.1:11434
 SHANA_LOCAL_LLM_MODEL=llama3.2:3b
 SHANA_STT_PROVIDER=faster-whisper
-SHANA_TTS_PROVIDER=stub
+SHANA_TTS_PROVIDER=qwen-tts
 ```
 
 For a dual-GPU Linux machine, a sensible split is:
@@ -319,7 +320,7 @@ python scripts/stop_services.py
 Platform wrappers also exist:
 - Cross-platform Python launchers: `scripts/open_gamma.py`, `scripts/start_shana.py`, `scripts/start_dashboard.py`, `scripts/start_gamma_tray.py`, `scripts/stop_services.py`
 - Linux convenience wrappers: `scripts/*_linux.sh`
-- Windows convenience wrappers: `scripts/*_windows.cmd`, `scripts/*_windows.py`
+- Windows convenience wrappers: `scripts/*_windows.cmd`
 
 Notes:
 - the dashboard polls local service state and machine metrics
@@ -327,7 +328,7 @@ Notes:
 - shared background process launch now resolves the active interpreter from `SHANA_PYTHON`, the current process, repo virtualenvs, and platform-native fallbacks on both Windows and Linux
 - local STT runs in-process with Shana
 - Piper runs in-process and has no managed sidecar
-- GPT-SoVITS and Qwen TTS can be managed as local sidecars when configured with local endpoints
+- Qwen TTS can be managed as a local sidecar when configured with a local endpoint
 - Ollama remains external; Gamma health-checks it but does not manage its lifecycle
 - tray support on Linux depends on the desktop environment exposing a usable system tray and a graphical session with `DISPLAY` or `WAYLAND_DISPLAY`
 
@@ -440,7 +441,7 @@ Dashboard/service-control notes:
 - `Start Shana` and `Stop Shana` control the assistant API and any managed local TTS sidecar
 - `Test STT` validates the in-process STT path
 - `Start TTS` and `Stop TTS` only apply to managed sidecars
-- when the active provider is Piper, OpenAI, or stub, the dashboard disables TTS start/stop and leaves `Test TTS` available
+- when the active provider is Piper or OpenAI, the dashboard disables TTS start/stop and leaves `Test TTS` available
 
 ## Live Browser Voice
 
@@ -462,23 +463,24 @@ The current implementation is still phrase-based, not true streaming word-by-wor
 
 A standalone GUI tool for preparing TTS training datasets from anime source media.
 
-**Entry point:** `gamma/run_tts_dataset_gui.py`  
-**Spec:** `packaging/tts_dataset_gui.spec`  
-**Build script:** `packaging/build.bat`
+**Project folder:** `helper_projects/GammaTTSDataPrep/`
+**Entry point:** `src/gamma/run_tts_dataset_gui.py`
+**Spec:** `helper_projects/GammaTTSDataPrep/packaging/tts_dataset_gui.spec`
+**Build script:** `helper_projects/GammaTTSDataPrep/packaging/build.bat`
 
 ### Building
 
 Windows:
 
 ```bat
-packaging\build.bat
+helper_projects\GammaTTSDataPrep\packaging\build.bat
 ```
 
 Linux / macOS:
 
 ```bash
-chmod +x packaging/build.sh
-./packaging/build.sh
+chmod +x helper_projects/GammaTTSDataPrep/packaging/build.sh
+./helper_projects/GammaTTSDataPrep/packaging/build.sh
 ```
 
 Both scripts run PyInstaller against the spec using the repo `.venv` and print the output path when done. The full distribution lands in `dist/GammaTTSDataPrep/`.
@@ -503,10 +505,11 @@ Requires `ffmpeg` and `ffprobe` on `PATH` for video file handling. The `demucs` 
 The repo excludes local or heavyweight assets such as:
 - `.env`
 - `.venv/`
-- `data/`
-- `imagegen/`
+- `helper_projects/imagegen/`
 - local databases
 - generated audio artifacts
+
+Use `assets/` for small, versioned source/runtime assets that are safe to commit. Use `data/` for local runtime state, generated output, models, sidecar installs, logs, and working datasets. See `assets/README.md` and `data/README.md` for the folder boundary.
 
 ## Status
 

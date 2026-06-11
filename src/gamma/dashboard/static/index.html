@@ -460,14 +460,29 @@
             </div>
           </div>
           <div class="action-group">
-            <div class="action-title">Tuning</div>
+            <div class="action-title">Capture Tuning</div>
             <div class="action-buttons action-stack">
               <label class="range-row" title="Choose how Shana chunks live replies. Incremental is lower-latency but more experimental.">Response mode <select class="text-input" id="liveResponseMode"><option value="simple_chunked">Simple chunked</option><option value="incremental_experimental">Incremental experimental</option></select></label>
-              <label class="range-row" title="Choose whether interruption detection is based only on audio level or confirmed transcript activity.">Barge-in mode <select class="text-input" id="liveBargeInMode"><option value="amplitude">Amplitude only</option><option value="transcript">Transcript-confirmed</option></select></label>
               <label class="range-row" title="Minimum detected mic energy before live voice treats your input as speech. Higher values ignore more background noise.">Speech threshold <input id="liveSpeechThreshold" type="range" min="8" max="40" step="1" value="18"><span id="liveSpeechThresholdValue">0.018</span></label>
-              <label class="range-row" title="How long your speech must continue before it counts as an interrupt request while Shana is already talking.">Interrupt speech ms <input id="liveInterruptSpeechMs" type="range" min="80" max="800" step="20" value="260"><span id="liveInterruptSpeechMsValue">260</span></label>
+              <label class="checkbox-row" title="Estimate the room noise floor while idle and raise the speech threshold when needed."><input id="liveAdaptiveNoiseEnabled" type="checkbox" checked> Adaptive noise threshold</label>
+              <label class="range-row" title="Multiplier applied to the measured room noise. Increase this if fans or keyboard noise open turns.">Noise multiplier <input id="liveNoiseMultiplier" type="number" min="1.2" max="5" step="0.1" value="2.2" class="text-input"><span>x</span></label>
+              <label class="range-row" title="Speech may fall to this fraction of the opening threshold before it is considered silence. This prevents choppy turn detection.">Release ratio <input id="liveVadReleaseRatio" type="number" min="0.3" max="0.95" step="0.05" value="0.65" class="text-input"><span>x</span></label>
               <label class="range-row" title="How much silence must pass before live voice closes your turn and sends it for STT/LLM processing.">Silence ms <input id="liveSilenceMs" type="range" min="400" max="1800" step="50" value="900"><span id="liveSilenceMsValue">900</span></label>
               <label class="range-row" title="Minimum duration of a captured turn before silence is allowed to submit it.">Minimum turn ms <input id="liveMinimumTurnMs" type="number" min="150" max="3000" step="50" value="550" class="text-input"><span>ms</span></label>
+              <label class="range-row" title="Force-submit a turn after this duration even if background sound prevents silence detection.">Maximum turn sec <input id="liveMaximumTurnSeconds" type="number" min="3" max="120" step="1" value="30" class="text-input"><span>sec</span></label>
+              <label class="range-row" title="How often the backend may run partial STT while you are speaking. Lower values update subtitles faster but use more GPU.">Partial STT ms <input id="livePartialIntervalMs" type="number" min="250" max="3000" step="50" value="1100" class="text-input"><span>ms</span></label>
+              <label class="range-row" title="Minimum captured speech required before the first partial transcript is attempted.">Partial audio ms <input id="livePartialMinAudioMs" type="number" min="200" max="3000" step="50" value="500" class="text-input"><span>ms</span></label>
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">Barge-in Recognition</div>
+            <div class="action-buttons action-stack">
+              <label class="range-row" title="Transcript-confirmed mode uses STT and echo checks before interrupting. Amplitude-only mode is retained for diagnostics.">Barge-in mode <select class="text-input" id="liveBargeInMode"><option value="transcript">Transcript-confirmed</option><option value="amplitude">Amplitude only</option></select></label>
+              <label class="range-row" title="How long your speech must continue before it counts as an interrupt candidate while Shana is talking.">Interrupt speech ms <input id="liveInterruptSpeechMs" type="range" min="80" max="800" step="20" value="260"><span id="liveInterruptSpeechMsValue">260</span></label>
+              <label class="range-row" title="Recent microphone audio included in each transcript confirmation probe. Longer probes improve recognition but add latency.">Probe audio ms <input id="liveInterruptProbeMs" type="number" min="250" max="2000" step="50" value="900" class="text-input"><span>ms</span></label>
+              <label class="range-row" title="Minimum recognized words required to interrupt. Direct commands such as stop, wait, no, hey, or Shana may interrupt with one word.">Minimum words <input id="liveInterruptMinWords" type="number" min="1" max="8" step="1" value="2" class="text-input"><span>words</span></label>
+              <label class="range-row" title="Number of successful transcript probes required before playback stops. Use 2 in noisy rooms.">Confirmations <input id="liveInterruptConfirmations" type="number" min="1" max="3" step="1" value="1" class="text-input"><span>probes</span></label>
+              <label class="checkbox-row" title="Reject probe transcripts that substantially match the words Shana is currently speaking."><input id="liveRejectPlaybackEcho" type="checkbox" checked> Reject playback echo</label>
               <label class="range-row" title="Minimum delay after an interruption before another barge-in can fire, reducing repeated triggers from echo or background noise.">Barge cooldown <input id="liveBargeCooldownMs" type="number" min="0" max="5000" step="50" value="750" class="text-input"><span>ms</span></label>
             </div>
           </div>
@@ -632,6 +647,7 @@
       <section class="panel wide panel-fill" data-dashboard-tab="memory">
         <div class="panel-head">
           <h2>Latest Memories</h2>
+          <button class="secondary" onclick="addMemoryItem()" title="Create a profile fact or episodic memory manually.">Add Memory</button>
         </div>
         <div class="render" id="recentMemories">No stored memories yet.</div>
       </section>
@@ -683,29 +699,65 @@
   </div>
   <div id="memoryRecordModal" class="modal-shell" hidden>
     <div class="modal-backdrop" onclick="closeMemoryRecordModal()"></div>
-    <div class="modal-card">
+    <div class="modal-card memory-record-modal-card">
       <div class="panel-head">
         <h2 id="memoryRecordTitle">Edit Memory</h2>
         <button class="ghost" type="button" onclick="closeMemoryRecordModal()">Close</button>
       </div>
       <input id="memoryRecordMode" type="hidden">
       <input id="memoryRecordId" type="hidden">
-      <input id="memoryRecordKind" type="hidden">
-      <div class="action-stack">
-        <input class="text-input" id="memoryRecordName" placeholder="Person or subject name" title="The human-readable person or subject this record belongs to.">
-        <input class="text-input" id="memoryRecordRelationship" placeholder="Relationship to owner" title="How this person relates to the owner, such as friend, moderator, or viewer.">
+      <div class="memory-record-form">
+        <label class="field-label">Name or subject
+          <input class="text-input" id="memoryRecordName" placeholder="Person or subject name" title="The human-readable person or subject this record belongs to.">
+        </label>
+        <label class="field-label">Relationship to owner
+          <input class="text-input" id="memoryRecordRelationship" placeholder="Friend, moderator, viewer..." title="How this person relates to the owner.">
+        </label>
         <div id="memoryPersonFields">
-          <select class="text-input" id="memoryPersonTrust" title="Controls whether this person may use tools and read or write trusted memory.">
-            <option value="owner">Owner</option><option value="trusted">Trusted</option><option value="guest">Guest</option><option value="public">Public</option>
-          </select>
-          <textarea class="text-area" id="memoryPersonAccounts" placeholder="platform | account id | display name" title="One linked account per line. Example: twitch | 12345 | ViewerName"></textarea>
+          <label class="field-label">Trust level
+            <select class="text-input" id="memoryPersonTrust" title="Controls whether this person may use tools and read or write trusted memory.">
+              <option value="owner">Owner</option><option value="trusted">Trusted</option><option value="guest">Guest</option><option value="public">Public</option>
+            </select>
+          </label>
+          <div class="memory-account-heading">
+            <strong>Linked accounts</strong>
+            <button class="ghost" type="button" onclick="addPersonAccountRow()">Add Account</button>
+          </div>
+          <div id="memoryPersonAccounts" class="memory-account-list"></div>
+          <datalist id="memoryPlatformSuggestions"><option value="twitch"><option value="discord"><option value="youtube"><option value="game"></datalist>
         </div>
-        <div id="memoryItemFields" hidden>
-          <input class="text-input" id="memoryRecordCategory" placeholder="Category or tags" title="Profile category or comma-separated episodic tags.">
-          <input class="text-input" id="memoryRecordConfidence" type="number" min="0" max="1" step="0.05" title="Confidence for facts or importance for episodic memories.">
+        <div id="memoryItemFields" class="memory-item-fields" hidden>
+          <label class="field-label">Memory type
+            <select class="text-input" id="memoryRecordKind" title="Profile facts are durable facts; episodic memories describe events or interactions.">
+              <option value="profile_fact">Profile fact</option>
+              <option value="episodic">Episodic memory</option>
+            </select>
+          </label>
+          <label class="field-label">Subject scope
+            <select class="text-input" id="memoryRecordSubjectType">
+              <option value="primary_user">Owner / Neety</option>
+              <option value="other_person">Another person</option>
+              <option value="assistant">Shana</option>
+              <option value="general">General</option>
+            </select>
+          </label>
+          <label class="field-label">Category or tags
+            <input class="text-input" id="memoryRecordCategory" placeholder="preference, project, stream..." title="Profile category or comma-separated episodic tags.">
+          </label>
+          <label class="field-label">Confidence or importance
+            <input class="text-input" id="memoryRecordConfidence" type="number" min="0" max="1" step="0.05" title="Confidence for facts or importance for episodic memories.">
+          </label>
+          <label class="field-label">Session ID (episodic, optional)
+            <input class="text-input" id="memoryRecordSessionId" placeholder="Optional conversation session">
+          </label>
         </div>
-        <textarea class="text-area" id="memoryRecordText" placeholder="Memory text or person notes"></textarea>
-        <button class="secondary" type="button" onclick="saveMemoryRecord()">Save</button>
+        <label class="field-label memory-record-text-label"><span id="memoryRecordTextLabel">Notes</span>
+          <textarea class="text-area" id="memoryRecordText" placeholder="Memory text or person notes"></textarea>
+        </label>
+        <div class="memory-record-actions">
+          <button class="ghost" type="button" onclick="closeMemoryRecordModal()">Cancel</button>
+          <button class="secondary" type="button" onclick="saveMemoryRecord()">Save</button>
+        </div>
       </div>
     </div>
   </div>
@@ -713,10 +765,10 @@
   <script src="/static/init.js?v=20260529"></script>
   <script src="/static/providers.js?v=20260529"></script>
   <script src="/static/stream.js?v=20260529"></script>
-  <script src="/static/nav.js?v=20260611a"></script>
-  <script src="/static/memory.js?v=20260529"></script>
+  <script src="/static/nav.js?v=20260611d"></script>
+  <script src="/static/memory.js?v=20260611d"></script>
   <script src="/static/api.js?v=20260529"></script>
-  <script src="/static/live.js?v=20260529"></script>
+  <script src="/static/live.js?v=20260611d"></script>
   <script src="/static/render.js?v=20260529"></script>
   <script src="/static/controls.js?v=20260611a"></script>
   <script src="/static/status.js?v=20260611c"></script>

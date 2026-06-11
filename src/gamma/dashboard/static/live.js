@@ -22,6 +22,8 @@
   var liveInterruptProbePending = false;
   var liveInterruptProbeChunks = [];
   var liveInterruptProbeBytes = 0;
+  var liveInterruptConfirmationCount = 0;
+  var liveNoiseFloor = 0.004;
   var selectedVisionFile = null;
   var selectedVisionPreviewUrl = null;
   var subtitlePopup = null;
@@ -111,6 +113,38 @@
     return input ? Number(input.value || 750) : 750;
   }
 
+  function liveNumberValue(id, fallback) {
+    var input = document.getElementById(id);
+    var value = input ? Number(input.value) : fallback;
+    return isFinite(value) ? value : fallback;
+  }
+
+  function liveCheckboxValue(id, fallback) {
+    var input = document.getElementById(id);
+    return input ? !!input.checked : fallback;
+  }
+
+  function currentEffectiveSpeechThreshold() {
+    var manual = currentSpeechThreshold();
+    if (!liveCheckboxValue('liveAdaptiveNoiseEnabled', true)) return manual;
+    return Math.max(manual, liveNoiseFloor * liveNumberValue('liveNoiseMultiplier', 2.2));
+  }
+
+  function currentReleaseThreshold() {
+    return currentEffectiveSpeechThreshold() * liveNumberValue('liveVadReleaseRatio', 0.65);
+  }
+
+  function currentMaximumTurnMs() {
+    return liveNumberValue('liveMaximumTurnSeconds', 30) * 1000;
+  }
+
+  function liveSessionSettings() {
+    return {
+      partial_interval_ms: liveNumberValue('livePartialIntervalMs', 1100),
+      partial_min_audio_ms: liveNumberValue('livePartialMinAudioMs', 500)
+    };
+  }
+
   function bargeInEnabled() {
     var input = document.getElementById('liveBargeInEnabled');
     return !!(input && input.checked);
@@ -127,7 +161,8 @@
       type: 'start_turn',
       session_id: document.getElementById('voiceSessionId').value.trim() || null,
       synthesize_speech: document.getElementById('voiceSynthesizeSpeech').checked,
-      response_mode: currentLiveResponseMode()
+      response_mode: currentLiveResponseMode(),
+      live_settings: liveSessionSettings()
     }));
     updateLiveStatus('Listening...');
   }
@@ -136,7 +171,15 @@
     if (!liveTurnOpen || liveAwaitingReply) {
       return;
     }
-    if ((nowMs - liveTurnStartedAt) < currentMinimumTurnMs()) {
+    var turnDuration = nowMs - liveTurnStartedAt;
+    if (turnDuration >= currentMaximumTurnMs()) {
+      liveTurnOpen = false;
+      liveAwaitingReply = true;
+      liveSocket.send(JSON.stringify({ type: 'end_turn' }));
+      updateLiveStatus('Maximum turn length reached. Thinking...');
+      return;
+    }
+    if (turnDuration < currentMinimumTurnMs()) {
       return;
     }
     if ((nowMs - liveLastSpeechAt) < currentSilenceMs()) {
@@ -178,6 +221,7 @@
     liveInterruptProbePending = false;
     liveInterruptProbeChunks = [];
     liveInterruptProbeBytes = 0;
+    liveInterruptConfirmationCount = 0;
     setSubtitleState({ transcript: '', reply: '', partial: '' });
     if (!stopAudio) {
       return;
@@ -318,9 +362,10 @@
       clearInterruptProbe();
       return false;
     }
-    if (level < currentSpeechThreshold()) {
+    var interruptThreshold = liveInterruptSpeechStartedAt ? currentReleaseThreshold() : currentEffectiveSpeechThreshold();
+    if (level < interruptThreshold) {
       liveInterruptSpeechStartedAt = 0;
-      clearInterruptProbe();
+      if (!liveInterruptProbePending) clearInterruptProbe();
       return false;
     }
     if (!liveCanInterruptCurrentReply()) {
@@ -348,7 +393,8 @@
     var chunk = new Uint8Array(buffer.slice(0));
     liveInterruptProbeChunks.push(chunk);
     liveInterruptProbeBytes += chunk.length;
-    while (liveInterruptProbeBytes > 64000 && liveInterruptProbeChunks.length > 1) {
+    var maximumBytes = Math.max(8000, liveNumberValue('liveInterruptProbeMs', 900) * 32);
+    while (liveInterruptProbeBytes > maximumBytes && liveInterruptProbeChunks.length > 1) {
       var removed = liveInterruptProbeChunks.shift();
       liveInterruptProbeBytes -= removed.length;
     }
@@ -381,22 +427,6 @@
     return Math.sqrt(sum / Math.max(1, floatBuffer.length));
   }
 
-  function maybeCloseLiveTurn(nowMs) {
-    if (!liveTurnOpen || liveAwaitingReply) {
-      return;
-    }
-    if ((nowMs - liveTurnStartedAt) < currentMinimumTurnMs()) {
-      return;
-    }
-    if ((nowMs - liveLastSpeechAt) < currentSilenceMs()) {
-      return;
-    }
-    liveTurnOpen = false;
-    liveAwaitingReply = true;
-    liveSocket.send(JSON.stringify({ type: 'end_turn' }));
-    updateLiveStatus('Thinking...');
-  }
-
   function handleLiveAudio(event) {
     var input = event.inputBuffer.getChannelData(0);
     var level = rmsLevel(input);
@@ -412,8 +442,11 @@
     if (liveMicMuted) {
       return;
     }
+    if (!liveTurnOpen && !liveAwaitingReply && level < currentSpeechThreshold()) {
+      liveNoiseFloor = (liveNoiseFloor * 0.97) + (level * 0.03);
+    }
     if (liveAwaitingReply) {
-      if (level >= currentSpeechThreshold()) {
+      if (level >= currentReleaseThreshold()) {
         appendInterruptProbeChunk(pcm.buffer);
       }
       if (updateInterruptCandidate(nowMs, level) && !liveInterruptProbePending) {
@@ -425,15 +458,23 @@
           var probeBase64 = interruptProbeBase64();
           if (probeBase64) {
             liveInterruptProbePending = true;
-            liveSocket.send(JSON.stringify({ type: 'interrupt_probe', audio_base64: probeBase64 }));
+            liveSocket.send(JSON.stringify({
+              type: 'interrupt_probe',
+              audio_base64: probeBase64,
+              minimum_words: liveNumberValue('liveInterruptMinWords', 2),
+              reject_echo: liveCheckboxValue('liveRejectPlaybackEcho', true),
+              assistant_text: liveCurrentChunk ? String(liveCurrentChunk.text || '') : ''
+            }));
           }
         }
       }
       return;
     }
 
-    if (level >= currentSpeechThreshold()) {
+    if (level >= currentEffectiveSpeechThreshold()) {
       maybeOpenLiveTurn(nowMs);
+      liveLastSpeechAt = nowMs;
+    } else if (liveTurnOpen && level >= currentReleaseThreshold()) {
       liveLastSpeechAt = nowMs;
     }
 
@@ -573,8 +614,21 @@
       queueLiveReplyChunk(payload.chunk || null, payload.turn_id || '');
     } else if (payload.type === 'interrupt_probe_result') {
       liveInterruptProbePending = false;
-      if (payload.text) interruptLiveReply();
-      else clearInterruptProbe();
+      if (payload.confirmed) {
+        liveInterruptConfirmationCount += 1;
+        if (liveInterruptConfirmationCount >= liveNumberValue('liveInterruptConfirmations', 1)) {
+          interruptLiveReply();
+        } else {
+          liveInterruptSpeechStartedAt = 0;
+          liveInterruptProbeChunks = [];
+          liveInterruptProbeBytes = 0;
+          updateLiveStatus('Barge-in speech confirmed once; waiting for another confirmation.');
+        }
+      } else {
+        liveInterruptConfirmationCount = 0;
+        clearInterruptProbe();
+        updateLiveStatus('Barge-in ignored: ' + String(payload.reason || 'speech was not confirmed') + '.');
+      }
     } else if (payload.type === 'turn_result') {
       setLiveSubtitle('', payload.transcript || '', payload.reply_text || '');
       renderLiveMeta(payload.job || null);
@@ -673,10 +727,12 @@
     target.textContent = [
       'Socket: ' + (socketStates[liveSocket.readyState] || liveSocket.readyState),
       'Audio context: ' + (liveAudioContext ? liveAudioContext.state : 'not started'),
-      'Mic level: ' + liveLastLevel.toFixed(4) + ' | threshold: ' + currentSpeechThreshold().toFixed(3),
+      'Mic level: ' + liveLastLevel.toFixed(4) + ' | manual threshold: ' + currentSpeechThreshold().toFixed(3)
+        + ' | effective: ' + currentEffectiveSpeechThreshold().toFixed(3) + ' | noise floor: ' + liveNoiseFloor.toFixed(4),
       'Turn open: ' + liveTurnOpen + ' | awaiting reply: ' + liveAwaitingReply,
       'Playback queue: ' + livePlaybackQueue.length + ' | active: ' + livePlaybackActive,
-      'Barge-in: ' + (bargeInEnabled() ? currentBargeInMode() : 'disabled') + ' | cooldown: ' + currentBargeCooldownMs() + ' ms',
+      'Barge-in: ' + (bargeInEnabled() ? currentBargeInMode() : 'disabled') + ' | cooldown: ' + currentBargeCooldownMs()
+        + ' ms | confirmations: ' + liveInterruptConfirmationCount + '/' + liveNumberValue('liveInterruptConfirmations', 1),
       'Last event: ' + liveLastEvent,
       lastPayload ? 'Last payload: ' + JSON.stringify(lastPayload, null, 2) : ''
     ].filter(Boolean).join('\n');

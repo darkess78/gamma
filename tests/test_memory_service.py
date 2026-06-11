@@ -91,6 +91,35 @@ class MemoryServiceTest(unittest.TestCase):
         removed = self.service.clear_selected([{"kind": item["kind"], "id": item["id"]}])
         self.assertEqual(removed["cleared_total"], 1)
 
+    def test_memory_items_can_be_created_manually(self) -> None:
+        self.service = MemoryService()
+        profile = self.service.create_item(
+            {
+                "kind": "profile_fact",
+                "summary": "Neety prefers transcript-confirmed barge-in.",
+                "category": "preference",
+                "confidence": 0.95,
+                "subject_type": "primary_user",
+                "subject_name": "Neety",
+            }
+        )
+        episode = self.service.create_item(
+            {
+                "kind": "episodic",
+                "summary": "Tested the live voice dashboard.",
+                "category": "testing,voice",
+                "confidence": 0.7,
+                "subject_type": "primary_user",
+                "subject_name": "Neety",
+                "session_id": "manual-test",
+            }
+        )
+
+        self.assertEqual(profile["kind"], "profile_fact")
+        self.assertEqual(profile["summary"], "Neety prefers transcript-confirmed barge-in")
+        self.assertEqual(episode["kind"], "episodic")
+        self.assertEqual(episode["session_id"], "manual-test")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -411,6 +411,17 @@ async def update_memory_item(request: Request) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.post("/api/memory/item/create")
+async def create_memory_item(request: Request) -> dict:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="object payload is required")
+    try:
+        return get_dashboard_service().create_memory_item(payload)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/memory/people")
 async def save_known_person(request: Request) -> dict:
     payload = await request.json()

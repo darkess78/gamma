@@ -173,52 +173,102 @@
     if (modal) modal.hidden = true;
   }
 
+  function setMemoryRecordMode(mode) {
+    var isPerson = mode === 'person';
+    document.getElementById('memoryRecordMode').value = mode;
+    document.getElementById('memoryPersonFields').hidden = !isPerson;
+    document.getElementById('memoryItemFields').hidden = isPerson;
+    document.getElementById('memoryRecordTextLabel').textContent = isPerson ? 'Person notes' : 'Memory text';
+  }
+
+  function addPersonAccountRow(account) {
+    account = account || {};
+    var list = document.getElementById('memoryPersonAccounts');
+    if (!list) return;
+    var row = document.createElement('div');
+    row.className = 'memory-account-row';
+    row.innerHTML = '<input class="text-input memory-account-platform" list="memoryPlatformSuggestions" placeholder="Platform" title="Examples: Twitch, Discord, YouTube, game, or another service.">'
+      + '<input class="text-input memory-account-id" placeholder="Account or user ID" title="Use the stable platform ID when available, not only a display name.">'
+      + '<input class="text-input memory-account-display" placeholder="Display name">'
+      + '<button class="ghost danger-outline" type="button" title="Remove this linked identity">Remove</button>';
+    row.querySelector('.memory-account-platform').value = String(account.platform || 'twitch').toLowerCase();
+    row.querySelector('.memory-account-id').value = account.platform_user_id || '';
+    row.querySelector('.memory-account-display').value = account.display_name || '';
+    row.querySelector('button').addEventListener('click', function () { row.remove(); });
+    list.appendChild(row);
+  }
+
+  function setPersonAccountRows(accounts) {
+    var list = document.getElementById('memoryPersonAccounts');
+    if (!list) return;
+    list.innerHTML = '';
+    (accounts && accounts.length ? accounts : [{}]).forEach(addPersonAccountRow);
+  }
+
+  function collectPersonAccounts() {
+    return Array.prototype.map.call(document.querySelectorAll('#memoryPersonAccounts .memory-account-row'), function (row) {
+      return {
+        platform: row.querySelector('.memory-account-platform').value.trim(),
+        platform_user_id: row.querySelector('.memory-account-id').value.trim(),
+        display_name: row.querySelector('.memory-account-display').value.trim()
+      };
+    }).filter(function (account) { return account.platform && account.platform_user_id; });
+  }
+
   function editMemoryItem(id, kind) {
     var item = (memoryData().recent_items || []).find(function (entry) {
       return Number(entry.id) === Number(id) && entry.kind === kind;
     });
     if (!item) return;
-    document.getElementById('memoryRecordMode').value = 'memory';
+    setMemoryRecordMode('memory');
     document.getElementById('memoryRecordId').value = item.id;
     document.getElementById('memoryRecordKind').value = item.kind;
     document.getElementById('memoryRecordName').value = item.subject_name || '';
     document.getElementById('memoryRecordRelationship').value = item.relationship_to_user || '';
+    document.getElementById('memoryRecordSubjectType').value = item.subject_type || 'primary_user';
     document.getElementById('memoryRecordCategory').value = item.category || '';
     document.getElementById('memoryRecordConfidence').value = item.confidence == null ? 0.5 : item.confidence;
+    document.getElementById('memoryRecordSessionId').value = item.session_id || '';
     document.getElementById('memoryRecordText').value = item.summary || '';
-    document.getElementById('memoryPersonFields').hidden = true;
-    document.getElementById('memoryItemFields').hidden = false;
     openRecordModal('Edit Memory');
   }
 
   function editKnownPerson(id) {
     var person = (memoryData().known_people || []).find(function (entry) { return Number(entry.id) === Number(id); });
     if (!person) return;
-    document.getElementById('memoryRecordMode').value = 'person';
+    setMemoryRecordMode('person');
     document.getElementById('memoryRecordId').value = person.id;
     document.getElementById('memoryRecordName').value = person.name || '';
     document.getElementById('memoryRecordRelationship').value = person.relationship_to_user || '';
     document.getElementById('memoryPersonTrust').value = person.trust || 'guest';
     document.getElementById('memoryRecordText').value = person.notes || '';
-    document.getElementById('memoryPersonAccounts').value = (person.accounts || []).map(function (account) {
-      return [account.platform, account.platform_user_id, account.display_name || ''].join(' | ');
-    }).join('\n');
-    document.getElementById('memoryPersonFields').hidden = false;
-    document.getElementById('memoryItemFields').hidden = true;
+    setPersonAccountRows(person.accounts || []);
     openRecordModal('Edit Known Person');
   }
 
   function addKnownPerson() {
-    document.getElementById('memoryRecordMode').value = 'person';
+    setMemoryRecordMode('person');
     document.getElementById('memoryRecordId').value = '';
-    document.getElementById('memoryRecordName').value = 'Example Viewer';
-    document.getElementById('memoryRecordRelationship').value = 'stream viewer';
+    document.getElementById('memoryRecordName').value = '';
+    document.getElementById('memoryRecordRelationship').value = '';
     document.getElementById('memoryPersonTrust').value = 'guest';
-    document.getElementById('memoryRecordText').value = 'Example record. Replace these values with the real person details.';
-    document.getElementById('memoryPersonAccounts').value = 'twitch | example_twitch_id | ExampleViewer\ndiscord | example_discord_id | Example Viewer';
-    document.getElementById('memoryPersonFields').hidden = false;
-    document.getElementById('memoryItemFields').hidden = true;
+    document.getElementById('memoryRecordText').value = '';
+    setPersonAccountRows([]);
     openRecordModal('Add Known Person');
+  }
+
+  function addMemoryItem() {
+    setMemoryRecordMode('memory');
+    document.getElementById('memoryRecordId').value = '';
+    document.getElementById('memoryRecordKind').value = 'profile_fact';
+    document.getElementById('memoryRecordName').value = 'Neety';
+    document.getElementById('memoryRecordRelationship').value = 'owner';
+    document.getElementById('memoryRecordSubjectType').value = 'primary_user';
+    document.getElementById('memoryRecordCategory').value = '';
+    document.getElementById('memoryRecordConfidence').value = '0.8';
+    document.getElementById('memoryRecordSessionId').value = '';
+    document.getElementById('memoryRecordText').value = '';
+    openRecordModal('Add Memory');
   }
 
   async function saveMemoryRecord() {
@@ -232,17 +282,16 @@
     var path = '/api/memory/people';
     if (mode === 'person') {
       payload.trust = document.getElementById('memoryPersonTrust').value;
-      payload.accounts = document.getElementById('memoryPersonAccounts').value.split('\n').map(function (line) {
-        var parts = line.split('|').map(function (value) { return value.trim(); });
-        return { platform: parts[0] || '', platform_user_id: parts[1] || '', display_name: parts[2] || '' };
-      }).filter(function (account) { return account.platform && account.platform_user_id; });
+      payload.accounts = collectPersonAccounts();
     } else {
-      path = '/api/memory/item';
+      path = payload.id ? '/api/memory/item' : '/api/memory/item/create';
       payload.kind = document.getElementById('memoryRecordKind').value;
       payload.summary = payload.notes;
       payload.subject_name = payload.name;
+      payload.subject_type = document.getElementById('memoryRecordSubjectType').value;
       payload.category = document.getElementById('memoryRecordCategory').value.trim();
       payload.confidence = Number(document.getElementById('memoryRecordConfidence').value || 0.5);
+      payload.session_id = document.getElementById('memoryRecordSessionId').value.trim();
     }
     await action(path, { body: payload });
     closeMemoryRecordModal();
@@ -555,6 +604,8 @@
   window.deleteMemoryItem = deleteMemoryItem;
   window.editKnownPerson = editKnownPerson;
   window.addKnownPerson = addKnownPerson;
+  window.addPersonAccountRow = addPersonAccountRow;
+  window.addMemoryItem = addMemoryItem;
   window.deleteKnownPerson = deleteKnownPerson;
   window.saveMemoryRecord = saveMemoryRecord;
   window.closeMemoryRecordModal = closeMemoryRecordModal;

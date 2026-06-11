@@ -302,40 +302,55 @@
   }
 
   function persistLiveControlDefaults() {
-    var responseMode = document.getElementById('liveResponseMode');
-    var bargeInMode = document.getElementById('liveBargeInMode');
-    var speech = document.getElementById('liveSpeechThreshold');
-    var interruptSpeech = document.getElementById('liveInterruptSpeechMs');
-    var silence = document.getElementById('liveSilenceMs');
-    var bargeIn = document.getElementById('liveBargeInEnabled');
-    if (responseMode) localStorage.setItem('gammaLiveResponseMode', responseMode.value);
-    if (bargeInMode) localStorage.setItem('gammaLiveBargeInMode', bargeInMode.value);
-    if (speech) localStorage.setItem('gammaLiveSpeechThreshold', speech.value);
-    if (interruptSpeech) localStorage.setItem('gammaLiveInterruptSpeechMs', interruptSpeech.value);
-    if (silence) localStorage.setItem('gammaLiveSilenceMs', silence.value);
-    if (bargeIn) localStorage.setItem('gammaLiveBargeIn', bargeIn.checked ? 'true' : 'false');
+    liveControlIds().forEach(function (id) {
+      var control = document.getElementById(id);
+      if (!control) return;
+      localStorage.setItem('gammaLiveControl.' + id, control.type === 'checkbox' ? String(control.checked) : control.value);
+    });
     updateLiveControlLabels();
   }
 
   function loadLiveControlDefaults() {
-    var savedResponseMode = localStorage.getItem('gammaLiveResponseMode');
-    var savedBargeInMode = localStorage.getItem('gammaLiveBargeInMode');
-    var savedSpeech = localStorage.getItem('gammaLiveSpeechThreshold');
-    var savedInterruptSpeech = localStorage.getItem('gammaLiveInterruptSpeechMs');
-    var savedSilence = localStorage.getItem('gammaLiveSilenceMs');
-    var savedBargeIn = localStorage.getItem('gammaLiveBargeIn');
-    var responseMode = document.getElementById('liveResponseMode');
-    var bargeInMode = document.getElementById('liveBargeInMode');
-    var speech = document.getElementById('liveSpeechThreshold');
-    var interruptSpeech = document.getElementById('liveInterruptSpeechMs');
-    var silence = document.getElementById('liveSilenceMs');
-    var bargeIn = document.getElementById('liveBargeInEnabled');
-    if (savedResponseMode && responseMode) responseMode.value = savedResponseMode;
-    if (savedBargeInMode && bargeInMode) bargeInMode.value = savedBargeInMode;
-    if (savedSpeech && speech) speech.value = savedSpeech;
-    if (savedInterruptSpeech && interruptSpeech) interruptSpeech.value = savedInterruptSpeech;
-    if (savedSilence && silence) silence.value = savedSilence;
-    if (savedBargeIn !== null && bargeIn) bargeIn.checked = savedBargeIn === 'true';
+    var legacyKeys = {
+      liveResponseMode: 'gammaLiveResponseMode',
+      liveBargeInMode: 'gammaLiveBargeInMode',
+      liveSpeechThreshold: 'gammaLiveSpeechThreshold',
+      liveInterruptSpeechMs: 'gammaLiveInterruptSpeechMs',
+      liveSilenceMs: 'gammaLiveSilenceMs',
+      liveBargeInEnabled: 'gammaLiveBargeIn'
+    };
+    liveControlIds().forEach(function (id) {
+      var control = document.getElementById(id);
+      if (!control) return;
+      var saved = localStorage.getItem('gammaLiveControl.' + id);
+      if (saved === null && legacyKeys[id]) saved = localStorage.getItem(legacyKeys[id]);
+      if (saved === null) return;
+      if (control.type === 'checkbox') control.checked = saved === 'true';
+      else control.value = saved;
+    });
+  }
+
+  function liveControlIds() {
+    return [
+      'liveResponseMode',
+      'liveBargeInMode',
+      'liveSpeechThreshold',
+      'liveAdaptiveNoiseEnabled',
+      'liveNoiseMultiplier',
+      'liveVadReleaseRatio',
+      'liveInterruptSpeechMs',
+      'liveSilenceMs',
+      'liveMinimumTurnMs',
+      'liveMaximumTurnSeconds',
+      'livePartialIntervalMs',
+      'livePartialMinAudioMs',
+      'liveInterruptProbeMs',
+      'liveInterruptMinWords',
+      'liveInterruptConfirmations',
+      'liveRejectPlaybackEcho',
+      'liveBargeCooldownMs',
+      'liveBargeInEnabled'
+    ];
   }
 
   function loadVisionHistory() {
@@ -578,14 +593,7 @@
     initSectionState(entry[0], entry[1]);
   });
   loadLiveControlDefaults();
-  [
-    'liveResponseMode',
-    'liveBargeInMode',
-    'liveSpeechThreshold',
-    'liveInterruptSpeechMs',
-    'liveSilenceMs',
-    'liveBargeInEnabled'
-  ].forEach(function (id) {
+  liveControlIds().forEach(function (id) {
     var control = document.getElementById(id);
     if (control) control.addEventListener('change', persistLiveControlDefaults);
   });

@@ -139,7 +139,9 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('href="http://192.168.1.50:8001/dashboard/monitor"', dashboard.body.decode("utf-8"))
         self.assertIn('rel="icon" href="/static/favicon.svg"', dashboard.body.decode("utf-8"))
         self.assertNotIn('src="/static/monitor.js', dashboard.body.decode("utf-8"))
-        self.assertIn('src="/static/nav.js?v=20260611a"', dashboard.body.decode("utf-8"))
+        self.assertIn('src="/static/nav.js?v=20260611d"', dashboard.body.decode("utf-8"))
+        self.assertIn('src="/static/live.js?v=20260611d"', dashboard.body.decode("utf-8"))
+        self.assertIn('src="/static/memory.js?v=20260611d"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/status.js?v=20260611c"', dashboard.body.decode("utf-8"))
         self.assertEqual(monitor_redirect.status_code, 307)
         self.assertEqual(monitor_redirect.headers["location"], "/dashboard/monitor")
@@ -589,6 +591,12 @@ class DashboardRoutesTest(unittest.TestCase):
             response = anyio.run(main.update_memory_item, _JsonRequest(item_payload))
         self.assertTrue(response["ok"])
         method.assert_called_once_with(item_payload)
+
+        create_payload = {"kind": "episodic", "summary": "Manually added"}
+        with patch.object(self.mock_service, "create_memory_item", return_value={"ok": True}) as method:
+            response = anyio.run(main.create_memory_item, _JsonRequest(create_payload))
+        self.assertTrue(response["ok"])
+        method.assert_called_once_with(create_payload)
 
         person_payload = {"name": "Viewer", "accounts": [{"platform": "twitch", "platform_user_id": "1"}]}
         with patch.object(self.mock_service, "save_known_person", return_value={"ok": True}) as method:

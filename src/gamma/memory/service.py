@@ -505,6 +505,45 @@ class MemoryService:
                 "platform_user_id": identity.platform_user_id,
             }
 
+    def create_item(self, payload: dict[str, object]) -> dict[str, object]:
+        kind = _normalize_identity(payload.get("kind"), limit=40).lower()
+        summary = _normalize_whitespace(str(payload.get("summary") or ""))
+        if not summary:
+            raise ValueError("summary is required")
+        subject_type = _normalize_identity(payload.get("subject_type"), limit=40) or "primary_user"
+        if subject_type not in {"primary_user", "other_person", "assistant", "general"}:
+            raise ValueError("unsupported subject type")
+        subject_name = _normalize_subject_name(str(payload.get("subject_name") or ""))
+        relationship = _normalize_subject_name(str(payload.get("relationship_to_user") or ""))
+
+        with Session(self._engine) as session:
+            if kind == "profile_fact":
+                item = ProfileFact(
+                    category=_normalize_identity(payload.get("category"), limit=80) or "manual",
+                    fact_text=_canonicalize_profile_text(summary),
+                    confidence=max(0.0, min(1.0, float(payload.get("confidence", 0.8)))),
+                    subject_type=subject_type,
+                    subject_name=subject_name,
+                    relationship_to_user=relationship,
+                )
+            elif kind == "episodic":
+                item = EpisodicMemory(
+                    session_id=_normalize_identity(payload.get("session_id"), limit=120) or None,
+                    summary=summary,
+                    importance=max(0.0, min(1.0, float(payload.get("confidence", 0.5)))),
+                    tags=_normalize_identity(payload.get("category"), limit=500),
+                    subject_type=subject_type,
+                    subject_name=subject_name,
+                    relationship_to_user=relationship,
+                )
+            else:
+                raise ValueError("unsupported memory kind")
+            session.add(item)
+            session.commit()
+            session.refresh(item)
+            item_id = item.id
+        return next(row for row in self.recent_items(limit=1000) if row["kind"] == kind and row["id"] == item_id)
+
     def update_item(self, kind: str, item_id: int, payload: dict[str, object]) -> dict[str, object]:
         with Session(self._engine) as session:
             if kind == "profile_fact":

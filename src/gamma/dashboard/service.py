@@ -834,6 +834,10 @@ class DashboardService:
         item = self._memory.update_item(kind, item_id, payload)
         return {"ok": True, "detail": "Memory updated.", "item": item}
 
+    def create_memory_item(self, payload: dict[str, object]) -> dict[str, Any]:
+        item = self._memory.create_item(payload)
+        return {"ok": True, "detail": "Memory created.", "item": item}
+
     def save_known_person(self, payload: dict[str, object]) -> dict[str, Any]:
         person = self._memory.save_known_person(payload)
         return {"ok": True, "detail": "Known person saved.", "person": person}

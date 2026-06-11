@@ -464,6 +464,8 @@ The dashboard live page should become one input client plus one optional monitor
 Status: mostly implemented.
 - Dashboard live voice publishes monitor-targeted performer events.
 - Live voice chunks include audio, subtitle, expression, actor/input context, and terminal clear/end events.
+- The live control surface exposes persisted capture and interruption policy, including adaptive noise thresholding, VAD release hysteresis, turn limits, partial-STT cadence, transcript probe duration, minimum recognized words, repeated confirmation, and playback-echo rejection.
+- Transcript-confirmed barge-in is validated by the backend before the client cancels an active spoken turn; amplitude-only interruption remains available as a diagnostic fallback.
 
 ### Phase 5: VTube Studio Adapter
 

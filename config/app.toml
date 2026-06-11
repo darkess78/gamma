@@ -1,3 +1,10 @@
 tts_provider = "stub"
 tts_profile = ""
+database_url = "sqlite:///./data/memory/gamma.db"
+llm_router_enabled = true
+llm_router_profile = "balanced"
+speech_filter_llm_enabled = true
+speech_filter_llm_model = "gemma4:e4b"
+speech_filter_banned_words_path = "./config/safety_banned_words.txt"
+stream_safety_review_timeout_seconds = 5.0
 local_llm_enable_routing = true

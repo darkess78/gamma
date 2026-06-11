@@ -45,6 +45,7 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 ## Memory
 
 - SQLite-backed memory service using SQLModel.
+- Runtime memory database stored under `data/memory/gamma.db` with WAL mode, busy timeout, foreign-key enforcement, and composite lookup indexes.
 - Profile facts and episodic memories are stored separately.
 - Selective memory candidate generation from conversation turns.
 - Subject metadata for primary user, other people, relationship labels, and known people.
@@ -77,6 +78,7 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - LLM factory chooses the active provider from configuration.
 - Router adapter supports routing between local/default/hosted paths.
 - Router profiles, hosted escalation, fallback controls, backoff state, and capability reporting are implemented.
+- Balanced routing is enabled: short/helper work prefers the configured small local worker while default and heavy persona work remains on the primary model.
 - Route traces are captured and surfaced in dashboard status.
 - Ollama model capability probing exists for local model metadata and vision support checks.
 - Image-capable LLM calls are represented through `LLMImageInput`.
@@ -250,6 +252,8 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - Configurable speech filter level and layer enablement.
 - Stream safety review timeout and timeout action are configurable.
 - Stream/Twitch safety behavior can skip, fall back, or use filtered audio depending on decision and runtime controls.
+- Public synthesized speech runs fast checks before output, then runs TTS and the small-model reviewer concurrently; a late block clears active output and plays the cached filtered WAV/subtitle.
+- An operator-editable banned phrase file augments contextual hard-block and heuristic rules.
 - Matched rules, action, blocked status, and layer metadata can be attached to TTS metadata.
 - Rewrite guard exists for safe text rewrite actions.
 

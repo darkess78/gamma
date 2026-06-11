@@ -162,7 +162,7 @@ class Settings:
     app_name: str = str(_setting("SHANA_APP_NAME", _config_value(APP_CONFIG, "app_name", default="gamma")))
     project_root: Path = PROJECT_ROOT
     database_url: str = str(
-        _setting("SHANA_DATABASE_URL", _config_value(APP_CONFIG, "database_url", default="sqlite:///./gamma.db"))
+        _setting("SHANA_DATABASE_URL", _config_value(APP_CONFIG, "database_url", default="sqlite:///./data/memory/gamma.db"))
     )
     memory_top_k: int = _as_int(_setting("SHANA_MEMORY_TOP_K", _config_value(APP_CONFIG, "memory_top_k", default=5)), default=5)
     data_dir: Path = PROJECT_ROOT / "data"
@@ -738,6 +738,12 @@ class Settings:
         _setting("SHANA_SPEECH_FILTER_AUTO_REWRITE", _config_value(APP_CONFIG, "speech_filter_auto_rewrite", default=True)),
         default=True,
     )
+    speech_filter_banned_words_path: str = str(
+        _setting(
+            "SHANA_SPEECH_FILTER_BANNED_WORDS_PATH",
+            _config_value(APP_CONFIG, "speech_filter_banned_words_path", default="./config/safety_banned_words.txt"),
+        )
+    ).strip()
     stream_filtered_audio_path: str = str(
         _setting("SHANA_STREAM_FILTERED_AUDIO_PATH", _config_value(APP_CONFIG, "stream_filtered_audio_path", default="./assets/audio/system/filtered.wav"))
     ).strip()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from sqlalchemy import Index
 from sqlmodel import Field, SQLModel
 
 
@@ -10,6 +11,8 @@ def _utc_now() -> datetime:
 
 
 class ProfileFact(SQLModel, table=True):
+    __table_args__ = (Index("ix_profilefact_subject_created", "subject_type", "subject_name", "created_at"),)
+
     id: int | None = Field(default=None, primary_key=True)
     category: str
     fact_text: str
@@ -21,6 +24,8 @@ class ProfileFact(SQLModel, table=True):
 
 
 class EpisodicMemory(SQLModel, table=True):
+    __table_args__ = (Index("ix_episodicmemory_session_created", "session_id", "created_at"),)
+
     id: int | None = Field(default=None, primary_key=True)
     session_id: str | None = Field(default=None, index=True)
     summary: str
@@ -43,6 +48,8 @@ class KnownPerson(SQLModel, table=True):
 
 
 class PersonIdentity(SQLModel, table=True):
+    __table_args__ = (Index("ix_personidentity_platform_user", "platform", "platform_user_id"),)
+
     id: int | None = Field(default=None, primary_key=True)
     person_id: int = Field(foreign_key="knownperson.id", index=True)
     platform: str = Field(index=True)

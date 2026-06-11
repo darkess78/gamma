@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -120,6 +121,10 @@ def _network_safe_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if artifact_name:
         network_payload["audio_artifact"] = artifact_name
         network_payload["audio_url"] = f"{settings.shana_base_url}/v1/audio/artifacts/{artifact_name}"
+        return network_payload
+    if _is_filtered_system_audio(audio_path):
+        network_payload["audio_content_type"] = "audio/wav"
+        network_payload["audio_base64"] = base64.b64encode(Path(audio_path).read_bytes()).decode("ascii")
     return network_payload
 
 
@@ -134,3 +139,15 @@ def _audio_artifact_name(audio_path: str) -> str | None:
     if resolved_audio.parent != resolved_output_dir:
         return None
     return resolved_audio.name
+
+
+def _is_filtered_system_audio(audio_path: str) -> bool:
+    if not audio_path:
+        return False
+    configured = Path(settings.stream_filtered_audio_path)
+    if not configured.is_absolute():
+        configured = settings.project_root / configured
+    try:
+        return Path(audio_path).resolve() == configured.resolve() and configured.is_file()
+    except OSError:
+        return False

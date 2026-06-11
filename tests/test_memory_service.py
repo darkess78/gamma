@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from sqlalchemy import text
 
 from gamma.config import settings
 from gamma.memory.service import MemoryService
@@ -119,6 +120,24 @@ class MemoryServiceTest(unittest.TestCase):
         self.assertEqual(profile["summary"], "Neety prefers transcript-confirmed barge-in")
         self.assertEqual(episode["kind"], "episodic")
         self.assertEqual(episode["session_id"], "manual-test")
+
+    def test_sqlite_uses_wal_and_scalable_query_indexes(self) -> None:
+        self.service = MemoryService()
+        with self.service._engine.connect() as connection:
+            journal_mode = connection.execute(text("PRAGMA journal_mode")).scalar_one()
+            index_names = {
+                row[0]
+                for row in connection.execute(
+                    text("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'ix_%'")
+                )
+            }
+
+        stats = self.service.stats()
+        self.assertEqual(str(journal_mode).lower(), "wal")
+        self.assertEqual(stats["journal_mode"], "wal")
+        self.assertIn("database_size_bytes", stats)
+        self.assertIn("ix_personidentity_platform_user", index_names)
+        self.assertIn("ix_episodicmemory_session_created", index_names)
 
 
 if __name__ == "__main__":

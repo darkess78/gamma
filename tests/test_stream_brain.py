@@ -12,9 +12,11 @@ from gamma.schemas.response import AssistantResponse, ToolCall, ToolExecutionRes
 from gamma.stream.actions import ActionPlanner
 from gamma.stream.brain import StreamBrain
 from gamma.stream.models import StreamActor, StreamInputEvent, StreamTurnResult, TurnDecision
+from gamma.stream.output import OutputDispatchResult
 from gamma.stream.self_goals import StreamSelfGoalStore
 from gamma.stream.temp_memory import StreamTempMemoryStore
 from gamma.stream.trace import StreamTraceStore
+from gamma.voice.tts import TTSResult
 
 
 class _FakeConversation:
@@ -103,6 +105,32 @@ class _SlowReviewer:
     def review(self, _text: str) -> LLMReviewDecision:
         time.sleep(0.2)
         return LLMReviewDecision(action="allow", reason="late", confidence=1.0)
+
+
+class _SlowBlockReviewer:
+    def review(self, _text: str) -> LLMReviewDecision:
+        time.sleep(0.05)
+        return LLMReviewDecision(action="block", reason="late-unsafe", confidence=1.0)
+
+
+class _FakeSpeechSynthesizer:
+    def synthesize(self, text: str, emotion: str | None = None, styles: list[str] | None = None) -> TTSResult:
+        return TTSResult(
+            provider="test",
+            text=text,
+            audio_path="audio.wav",
+            content_type="audio/wav",
+            metadata={"emotion": emotion, "styles": styles or []},
+        )
+
+
+class _RecordingDispatcher:
+    def __init__(self) -> None:
+        self.calls: list[list] = []
+
+    def dispatch(self, events):
+        self.calls.append(list(events))
+        return OutputDispatchResult()
 
 
 class _FakeClock:
@@ -654,6 +682,44 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual(result.decision.reason, "stream_safety_review_timeout")
         self.assertIsNone(result.assistant_response)
         self.assertEqual(result.output_events, [])
+
+    def test_twitch_parallel_safety_interrupts_late_blocked_speech(self) -> None:
+        dispatcher = _RecordingDispatcher()
+        conversation = _FakeConversation()
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(settings, "speech_filter_llm_enabled", True),
+            patch.object(settings, "stream_safety_review_timeout_seconds", 1.0),
+        ):
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+                safety_reviewer=_SlowBlockReviewer(),
+                speech_synthesizer=_FakeSpeechSynthesizer(),
+                output_dispatcher=dispatcher,  # type: ignore[arg-type]
+            )
+            result = brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana say hello",
+                    actor=StreamActor(source="twitch", platform_id="u1"),
+                    metadata={"twitch_controls": {"voice_enabled": True, "subtitles_enabled": True}},
+                ),
+                synthesize_speech=True,
+            )
+            deadline = time.monotonic() + 1.0
+            while len(dispatcher.calls) < 2 and time.monotonic() < deadline:
+                time.sleep(0.01)
+
+        self.assertFalse(conversation.calls[0]["synthesize_speech"])
+        self.assertTrue(conversation.calls[0]["defer_llm_safety_review"])
+        self.assertTrue(result.safety_decision["review_pending"])
+        self.assertEqual(result.assistant_response.audio_path if result.assistant_response else None, "audio.wav")
+        self.assertGreaterEqual(len(dispatcher.calls), 2)
+        override = dispatcher.calls[-1]
+        self.assertTrue(any(event.payload.get("clear_pending") for event in override))
+        self.assertTrue(any(event.type == "subtitle_line" and event.payload.get("text") == "filtered" for event in override))
+        self.assertFalse(any("I heard you" in str(event.payload) for event in override))
 
     def test_stream_route_delegates_to_brain(self) -> None:
         from gamma.api.routes import stream_event

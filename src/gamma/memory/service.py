@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Iterable
 
 from sqlmodel import Session, SQLModel, create_engine, delete, select
+from sqlalchemy import event, func, or_
 from sqlalchemy.pool import NullPool
 
 from ..config import settings
@@ -121,6 +122,8 @@ class MemoryService:
             # trigger noisy ResourceWarnings in short-lived test/service instances.
             engine_kwargs["poolclass"] = NullPool
         self._engine = create_engine(settings.database_url, connect_args=connect_args, **engine_kwargs)
+        if settings.database_url.startswith("sqlite"):
+            event.listen(self._engine, "connect", self._configure_sqlite_connection)
         self._engine_finalizer = weakref.finalize(self, self._engine.dispose)
         SQLModel.metadata.create_all(self._engine)
         self._ensure_compatible_schema()
@@ -128,6 +131,17 @@ class MemoryService:
     def close(self) -> None:
         if self._engine_finalizer.alive:
             self._engine_finalizer()
+
+    @staticmethod
+    def _configure_sqlite_connection(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA busy_timeout=5000")
+        finally:
+            cursor.close()
 
     def _ensure_compatible_schema(self) -> None:
         if not settings.database_url.startswith("sqlite"):
@@ -159,6 +173,18 @@ class MemoryService:
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_episodicmemory_subject_name ON episodicmemory (subject_name)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_profilefact_subject_type ON profilefact (subject_type)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_profilefact_subject_name ON profilefact (subject_name)")
+            conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_profilefact_subject_created "
+                "ON profilefact (subject_type, subject_name, created_at)"
+            )
+            conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_episodicmemory_session_created "
+                "ON episodicmemory (session_id, created_at)"
+            )
+            conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_personidentity_platform_user "
+                "ON personidentity (platform, platform_user_id)"
+            )
 
     def _ensure_sqlite_columns(self, conn, table_name: str, columns_to_add: dict[str, str]) -> None:
         result = conn.exec_driver_sql(f"PRAGMA table_info({table_name})")
@@ -180,8 +206,8 @@ class MemoryService:
                 statement = statement.where(ProfileFact.subject_type == subject_type)
             if subject_name:
                 statement = statement.where(ProfileFact.subject_name == _normalize_subject_name(subject_name))
-            facts = list(session.exec(statement))
-        return facts[: limit or settings.memory_top_k]
+            facts = list(session.exec(statement.limit(limit or settings.memory_top_k)))
+        return facts
 
     def search_memories(
         self,
@@ -201,7 +227,22 @@ class MemoryService:
                 statement = statement.where(EpisodicMemory.subject_type == subject_type)
             if subject_name:
                 statement = statement.where(EpisodicMemory.subject_name == _normalize_subject_name(subject_name))
-            memories = list(session.exec(statement.order_by(EpisodicMemory.importance.desc(), EpisodicMemory.id.desc())))
+            if terms:
+                term_filters = []
+                for term in terms:
+                    term_filters.extend(
+                        (
+                            func.lower(EpisodicMemory.summary).contains(term),
+                            func.lower(EpisodicMemory.tags).contains(term),
+                        )
+                    )
+                statement = statement.where(or_(*term_filters))
+            candidate_limit = max((limit or settings.memory_top_k) * 20, 100)
+            memories = list(
+                session.exec(
+                    statement.order_by(EpisodicMemory.importance.desc(), EpisodicMemory.id.desc()).limit(candidate_limit)
+                )
+            )
         if not terms:
             return memories[: limit or settings.memory_top_k]
 
@@ -684,18 +725,21 @@ class MemoryService:
         db_path = _sqlite_path_from_url(settings.database_url)
         with Session(self._engine) as session:
             self._materialize_people_from_facts(session)
-            profile_count = len(list(session.exec(select(ProfileFact))))
-            episodic_count = len(list(session.exec(select(EpisodicMemory))))
-            scoped_episodic_count = len(
-                list(session.exec(select(EpisodicMemory).where(EpisodicMemory.session_id.is_not(None))))
+            profile_count = int(session.exec(select(func.count()).select_from(ProfileFact)).one())
+            episodic_count = int(session.exec(select(func.count()).select_from(EpisodicMemory)).one())
+            scoped_episodic_count = int(
+                session.exec(
+                    select(func.count()).select_from(EpisodicMemory).where(EpisodicMemory.session_id.is_not(None))
+                ).one()
             )
-            known_people_count = len(
-                list(session.exec(select(KnownPerson)))
-            )
+            known_people_count = int(session.exec(select(func.count()).select_from(KnownPerson)).one())
             session.commit()
+        database_size_bytes = db_path.stat().st_size if db_path and db_path.exists() else 0
         return {
             "backend": "sqlite",
             "database": str(db_path or settings.database_url),
+            "database_size_bytes": database_size_bytes,
+            "journal_mode": "wal",
             "profile_count": profile_count,
             "episodic_count": episodic_count,
             "session_scoped_episodic_count": scoped_episodic_count,

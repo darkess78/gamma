@@ -24,7 +24,7 @@ class SpeechSafetyPolicy:
         self._level = (level or "strict").strip().lower()
         self._reviewer = SpeechLLMReviewer()
 
-    def apply(self, text: str) -> SafetyPolicyResult:
+    def apply(self, text: str, *, include_llm: bool = True) -> SafetyPolicyResult:
         normalized = " ".join((text or "").split())
         if self._level == "none":
             return SafetyPolicyResult(spoken_text=normalized, blocked=False, matched_rules=[], action="allow", layers=[])
@@ -57,7 +57,7 @@ class SpeechSafetyPolicy:
                 layers.append("heuristic")
                 action = heuristic.action
 
-        if action != "block" and settings.speech_filter_llm_enabled:
+        if action != "block" and include_llm and settings.speech_filter_llm_enabled:
             decision = self._reviewer.review(normalized)
             if decision.action != "allow":
                 layers.append("llm")

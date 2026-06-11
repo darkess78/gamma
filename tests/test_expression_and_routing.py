@@ -170,11 +170,13 @@ class EmotionMemoryServiceTest(unittest.TestCase):
 class LocalRoutingTest(unittest.TestCase):
     def setUp(self) -> None:
         self._original_enable = settings.local_llm_enable_routing
+        self._original_router_enabled = settings.llm_router_enabled
         self._original_light = settings.local_llm_light_model
         self._original_tagging = settings.local_llm_tagging_model
         self._original_primary = settings.local_llm_model
         self._original_max_words = settings.local_llm_light_max_input_words
         settings.local_llm_enable_routing = True
+        settings.llm_router_enabled = False
         settings.local_llm_model = "gpt-oss:20b"
         settings.local_llm_light_model = "qwen2.5:7b"
         settings.local_llm_tagging_model = "qwen2.5:3b"
@@ -182,6 +184,7 @@ class LocalRoutingTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         settings.local_llm_enable_routing = self._original_enable
+        settings.llm_router_enabled = self._original_router_enabled
         settings.local_llm_light_model = self._original_light
         settings.local_llm_tagging_model = self._original_tagging
         settings.local_llm_model = self._original_primary

@@ -53,6 +53,7 @@ class ConversationService:
         fast_mode: bool = False,
         brief_mode: bool = False,
         micro_mode: bool = False,
+        defer_llm_safety_review: bool = False,
     ) -> AssistantResponse:
         return self._respond(
             user_text=user_text,
@@ -62,6 +63,7 @@ class ConversationService:
             fast_mode=fast_mode,
             brief_mode=brief_mode,
             micro_mode=micro_mode,
+            defer_llm_safety_review=defer_llm_safety_review,
         )
 
     def respond_with_image(
@@ -132,6 +134,7 @@ class ConversationService:
         micro_mode: bool = False,
         image: VisionImage | None = None,
         vision_analysis: VisionAnalysis | None = None,
+        defer_llm_safety_review: bool = False,
     ) -> AssistantResponse:
         stripped = user_text.strip()
         if not stripped:
@@ -282,7 +285,10 @@ class ConversationService:
                 timing["memory_persist_ms"] = 0.0
                 timing["total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
                 expressive = strip_hidden_style_tags(final_reply_text, default_emotion="neutral")
-                safe_spoken = self._speech_filter.apply(expressive.clean_text)
+                safe_spoken = self._speech_filter.apply(
+                    expressive.clean_text,
+                    include_llm=not defer_llm_safety_review,
+                )
 
                 response = AssistantResponse(
                     spoken_text=safe_spoken.spoken_text,
@@ -379,7 +385,10 @@ class ConversationService:
             all_tool_results = inferred_results + extra_results
             expressive = strip_hidden_style_tags(final_reply_text, default_emotion=extracted["emotion"])
             response_emotion = self._normalize_emotion(expressive.emotion)
-            safe_spoken = self._speech_filter.apply(expressive.clean_text)
+            safe_spoken = self._speech_filter.apply(
+                expressive.clean_text,
+                include_llm=not defer_llm_safety_review,
+            )
             final_reply_text = safe_spoken.spoken_text
 
             memory_candidates = (

@@ -18,8 +18,8 @@ class SpeechSafetyFilter:
     def __init__(self, level: str = "strict") -> None:
         self._policy = SpeechSafetyPolicy(level)
 
-    def apply(self, text: str) -> SpeechFilterResult:
-        result = self._policy.apply(text)
+    def apply(self, text: str, *, include_llm: bool = True) -> SpeechFilterResult:
+        result = self._policy.apply(text, include_llm=include_llm)
         return SpeechFilterResult(
             spoken_text=result.spoken_text,
             blocked=result.blocked,

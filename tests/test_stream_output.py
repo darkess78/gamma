@@ -102,6 +102,23 @@ class StreamOutputTest(unittest.TestCase):
         self.assertEqual(performer_event.payload["audio_artifact"], "tts-test.wav")  # type: ignore[union-attr]
         self.assertEqual(performer_event.payload["audio_url"], "http://192.168.1.50:8000/v1/audio/artifacts/tts-test.wav")  # type: ignore[union-attr]
 
+    def test_filtered_system_audio_is_embedded_for_remote_performers(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            audio_path = Path(temp_dir) / "filtered.wav"
+            audio_path.write_bytes(b"RIFF-filtered")
+            with patch.object(settings, "stream_filtered_audio_path", str(audio_path)):
+                stream_event = StreamOutputEvent(
+                    input_event_id="in-1",
+                    turn_id="turn-1",
+                    type="speech_started",
+                    payload={"audio_path": str(audio_path), "audio_content_type": "audio/wav"},
+                )
+                performer_event = performer_event_from_stream_output(stream_event)
+
+        self.assertNotIn("audio_path", performer_event.payload)  # type: ignore[union-attr]
+        self.assertEqual(performer_event.payload["audio_content_type"], "audio/wav")  # type: ignore[union-attr]
+        self.assertTrue(performer_event.payload["audio_base64"])  # type: ignore[union-attr]
+
     def test_stream_output_events_include_input_actor_context(self) -> None:
         input_event = StreamInputEvent(
             kind="chat_message",

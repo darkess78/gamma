@@ -1,0 +1,11 @@
+# One case-insensitive phrase per line. Keep this list limited to speech that
+# must never reach public output. Fast heuristics and the safety reviewer cover
+# broader context-sensitive cases.
+kill yourself
+kys
+heil hitler
+go die
+should die
+nigger
+faggot
+retard

@@ -159,7 +159,7 @@ Recommended starting points:
 - `src/gamma/voice/` - STT, TTS, and controller logic
 - `config/` - runtime, persona, and memory configuration
 - `assets/` - small versioned source/runtime assets
-- `data/` - local runtime state, generated outputs, models, and working datasets
+- `data/` - local runtime state, generated outputs, models, working datasets, and the SQLite database under `data/memory/`
 - `helper_projects/` - support projects that are useful for Gamma but not part of the core runtime package
 - `specs/` - project notes and architecture docs
 

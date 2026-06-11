@@ -7,6 +7,8 @@ Gamma currently has a narrow deterministic router:
 - explicit call-purpose routing for conversation draft, metadata extraction, tool finalization, vision analysis, and live voice helper passes
 - optional hosted escalation for heavier normal conversation turns
 
+The balanced deterministic router is enabled in shared runtime configuration. `gemma4:e4b` handles short conversation and helper work, while `gpt-oss:20b` remains the primary/default model for heavier and persona-sensitive work. This routing uses deterministic request context and does not add a classifier call to every turn.
+
 This document describes the deeper router direction that may be added later. It is a future-work spec, not a statement that all items below are implemented today.
 
 ## Goals

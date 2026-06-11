@@ -289,10 +289,11 @@ Required flow:
 4. If fast checks pass, start TTS generation and LLM safety review in parallel.
 5. Public subtitles wait for approval or scheduled playback.
 6. If the LLM reviewer passes before playback, play normally.
-7. If the reviewer is slow before playback would begin, delay Shana briefly.
-8. If the timeout exceeds the configured cap, skip, defer, or hold for dashboard review depending on mode.
-9. If the reviewer fails, discard generated audio and play `filtered`.
-10. Shana's future context receives only safe metadata, not the unsafe candidate text.
+7. If TTS finishes first, playback may begin while the bounded reviewer remains active.
+8. If a late reviewer blocks, publish an output clear immediately, stop current speech/subtitles, and play the cached `filtered` audio with a `filtered` subtitle.
+9. A reviewer timeout does not produce `filtered`; the timeout is recorded and the unsafe candidate is not promoted into stream memory.
+10. If the reviewer fails before playback starts, discard generated audio and play `filtered`.
+11. Shana's future context receives only safe metadata, not the unsafe candidate text.
 
 Unsafe candidate text may be shown in the dashboard by default for the owner. It must not be passed back into Shana's prompt context, stored in temp memory, or used in normal replay prompts.
 

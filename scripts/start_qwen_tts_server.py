@@ -23,22 +23,6 @@ import time
 import urllib.request
 from pathlib import Path
 
-# Use venv Python if available
-repo_root = Path(__file__).resolve().parents[1]
-venv_path = repo_root / ".venv"
-venv_python = venv_path / "bin" / "python"
-if venv_path.exists() and venv_python.exists():
-    venv_python_path = str(venv_python.resolve().parent)
-    if venv_python_path not in sys.path:
-        sys.path.insert(0, venv_python_path)
-    # Ensure gamma repo is in path
-    gamma_path = str(repo_root)
-    if gamma_path not in sys.path:
-        sys.path.insert(0, gamma_path)
-    python_exe = str(venv_python.resolve())
-elif sys.executable:
-    python_exe = sys.executable
-
 from dotenv import load_dotenv
 
 from gamma.system.python_runtime import resolve_python_executable
@@ -131,18 +115,13 @@ def main() -> int:
     env = os.environ.copy()
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("PYTHONUTF8", "1")
-    # Add venv to PATH so subprocess uses venv python automatically
-    venv_bin = str(venv_python)
-    env["PATH"] = os.pathsep.join([venv_bin, os.pathsep.join(env["PATH"].split(os.pathsep))])
-    # Also add venv to PYTHONPATH as backup
-    venv_lib = venv_path / "lib"
-    if venv_lib.exists():
-        venv_lib_path = str(venv_lib)
-        if "PYTHONPATH" in env:
-            if venv_lib_path not in env["PYTHONPATH"]:
-                env["PYTHONPATH"] = venv_lib_path + ":" + env["PYTHONPATH"]
-        else:
-            env["PYTHONPATH"] = venv_lib_path + ":" + str(repo_root)
+    requested_device = env.get("QWEN_TTS_DEVICE", "").strip().lower()
+    if requested_device.startswith("cuda:") and "CUDA_VISIBLE_DEVICES" not in env:
+        physical_index = requested_device.split(":", 1)[1].strip()
+        if physical_index.isdigit():
+            env["CUDA_VISIBLE_DEVICES"] = physical_index
+            env["QWEN_TTS_PHYSICAL_DEVICE"] = requested_device
+            env["QWEN_TTS_DEVICE"] = "cuda:0"
 
     with stdout_log.open("ab") as stdout_handle, stderr_log.open("ab") as stderr_handle:
         kwargs = {
@@ -151,8 +130,15 @@ def main() -> int:
             "stdout": stdout_handle,
             "stderr": stderr_handle,
         }
-        # Use venv_python directly as executable
-        process = subprocess.Popen([venv_python, str(server_script)], **kwargs, start_new_session=True)
+        if os.name == "nt":
+            kwargs["creationflags"] = (
+                getattr(subprocess, "DETACHED_PROCESS", 0)
+                | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            )
+        else:
+            kwargs["start_new_session"] = True
+        process = subprocess.Popen([python_exe, str(server_script)], **kwargs)
 
     print(f"Qwen3-TTS server started. Waiting for model to load (may take up to 90s)...")
     deadline = time.time() + 90

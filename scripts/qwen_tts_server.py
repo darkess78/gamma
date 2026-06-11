@@ -71,6 +71,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 MODEL_ID = os.getenv("QWEN_TTS_MODEL", "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
 DTYPE_STR = os.getenv("QWEN_TTS_DTYPE", "float32")
 DEVICE_STR = os.getenv("QWEN_TTS_DEVICE", "auto")
+REPORTED_DEVICE = os.getenv("QWEN_TTS_PHYSICAL_DEVICE", "").strip()
 PORT = int(os.getenv("QWEN_TTS_PORT", "9882"))
 HOST = os.getenv("QWEN_TTS_HOST", "127.0.0.1")
 LOCAL_FILES_ONLY = os.getenv("QWEN_TTS_LOCAL_FILES_ONLY", "").strip().lower() in {"1", "true", "yes", "on"}
@@ -322,7 +323,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps({
                 "status": "ok",
                 "model": MODEL_ID,
-                "device": _resolved_device or DEVICE_STR,
+                "device": REPORTED_DEVICE or _resolved_device or DEVICE_STR,
                 "dtype": DTYPE_STR,
             }).encode())
         else:

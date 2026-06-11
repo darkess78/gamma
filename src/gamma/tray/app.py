@@ -13,7 +13,21 @@ from ..supervisor.manager import ProcessManager
 
 
 class TrayApp:
+    """Tray application.
+    
+    Attributes:
+        _manager: Process manager.
+        _icon: Tray icon.
+    
+    Methods:
+        __init__: Initialize tray app.
+    """
+
     def __init__(self) -> None:
+        """Initialize tray app.
+        
+        Sets up tray icon with menu items.
+        """
         self._manager = ProcessManager()
         self._icon = pystray.Icon(
             "gamma-tray",
@@ -32,19 +46,34 @@ class TrayApp:
         )
 
     def run(self) -> None:
+        """Run tray app.
+        \n        Starts the tray application.
+        """
         self._icon.run(self._setup)
 
     def _setup(self, icon: pystray.Icon) -> None:
+        """Setup tray icon.
+        
+        Args:
+            icon: Tray icon.
+        """
         self._refresh_title()
         threading.Thread(target=self._periodic_refresh, daemon=True).start()
 
     def _periodic_refresh(self) -> None:
+        """Periodic refresh.
+        \n        Refreshes title and menu periodically.
+        """
         while True:
             self._refresh_title()
             self._icon.update_menu()
             threading.Event().wait(5)
 
     def _refresh_title(self) -> None:
+        """Refresh title.
+        
+        Updates tray icon title with services status.
+        """
         dashboard_running = self._manager.find_process("dashboard") is not None
         shana_running = self._manager.find_process("shana") is not None
         dashboard_state = "up" if dashboard_running else "down"
@@ -52,6 +81,11 @@ class TrayApp:
         self._icon.title = f"Gamma tray | dashboard {dashboard_state} | shana {shana_state}"
 
     def _build_icon(self) -> Image.Image:
+        """Build icon.
+        
+        Returns:
+            Image.Image: Icon image.
+        """
         size = 64
         image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         draw = ImageDraw.Draw(image)
@@ -61,35 +95,82 @@ class TrayApp:
         return image
 
     def _open_dashboard(self, icon: pystray.Icon, item: pystray.MenuItem) -> None:
+        """Open dashboard.
+        
+        Args:
+            icon: Tray icon.
+            item: Menu item.
+        """
         self._manager.start("dashboard")
         webbrowser.open(settings.dashboard_base_url)
 
     def _start_dashboard(self, icon: pystray.Icon, item: pystray.MenuItem) -> None:
+        """Start dashboard.
+        
+        Args:
+            icon: Tray icon.
+            item: Menu item.
+        """
         self._manager.start("dashboard")
         self._refresh_title()
 
     def _start_shana(self, icon: pystray.Icon, item: pystray.MenuItem) -> None:
+        """Start shana.
+        
+        Args:
+            icon: Tray icon.
+            item: Menu item.
+        """
         self._manager.start("shana")
         self._refresh_title()
 
     def _restart_shana(self, icon: pystray.Icon, item: pystray.MenuItem) -> None:
+        """Restart shana.
+        
+        Args:
+            icon: Tray icon.
+            item: Menu item.
+        """
         self._manager.restart("shana")
         self._refresh_title()
 
     def _stop_shana(self, icon: pystray.Icon, item: pystray.MenuItem) -> None:
+        """Stop shana.
+        
+        Args:
+            icon: Tray icon.
+            item: Menu item.
+        """
         self._manager.stop("shana")
         self._refresh_title()
 
     def _quit_tray(self, icon: pystray.Icon, item: pystray.MenuItem) -> None:
+        """Quit tray.
+        
+        Args:
+            icon: Tray icon.
+            item: Menu item.
+        """
         icon.stop()
 
     def _quit_all(self, icon: pystray.Icon, item: pystray.MenuItem) -> None:
+        """Quit all.
+        
+        Args:
+            icon: Tray icon.
+            item: Menu item.
+        """
         self._manager.stop("shana")
         self._manager.stop("dashboard")
         icon.stop()
 
 
 def main() -> int:
+    """Main entry point.
+    
+    Returns:
+        int: Exit code.
+    """
     if os.name != "nt" and not (os.getenv("DISPLAY") or os.getenv("WAYLAND_DISPLAY")):
         raise SystemExit("Gamma tray requires a graphical Linux session with DISPLAY or WAYLAND_DISPLAY set.")
     TrayApp().run()

@@ -33,7 +33,10 @@ _INLINE_TICK_RE = re.compile(r"`([^`]*)`")
 
 
 class ConversationService:
+    """Orchestrates conversation responses, memory, tools, and voice."""
+
     def __init__(self) -> None:
+        """Initialize conversation service with dependencies."""
         self._memory = MemoryService()
         self._llm = None
         self._tts = None
@@ -55,6 +58,21 @@ class ConversationService:
         micro_mode: bool = False,
         defer_llm_safety_review: bool = False,
     ) -> AssistantResponse:
+        """Respond to a user text message.
+        
+        Args:
+            user_text: User message text.
+            session_id: Optional session identifier.
+            synthesize_speech: Whether to generate TTS audio.
+            speaker_ctx: Optional speaker context.
+            fast_mode: Fast path without metadata extraction.
+            brief_mode: Brief response mode.
+            micro_mode: Micro-reply mode.
+            defer_llm_safety_review: Defer LLM safety review.
+            
+        Returns:
+            AssistantResponse with spoken text and timing.
+        """
         return self._respond(
             user_text=user_text,
             session_id=session_id,
@@ -78,6 +96,21 @@ class ConversationService:
         synthesize_speech: bool = False,
         speaker_ctx: SpeakerContext | None = None,
     ) -> AssistantResponse:
+        """Respond to a user message with image analysis.
+        
+        Args:
+            user_text: User message text.
+            image_bytes: Image bytes.
+            image_media_type: Image MIME type.
+            image_filename: Optional filename.
+            vision_mode: Optional vision mode.
+            session_id: Optional session identifier.
+            synthesize_speech: Whether to generate TTS audio.
+            speaker_ctx: Optional speaker context.
+            
+        Returns:
+            AssistantResponse with vision analysis and reply.
+        """
         image = self._vision.prepare_image(
             image_bytes=image_bytes,
             media_type=image_media_type,
@@ -107,6 +140,18 @@ class ConversationService:
         image_filename: str | None = None,
         vision_mode: str | None = None,
     ) -> VisionAnalysis:
+        """Analyze an image using vision service.
+        
+        Args:
+            user_text: Optional user text context.
+            image_bytes: Image bytes.
+            image_media_type: Image MIME type.
+            image_filename: Optional filename.
+            vision_mode: Optional vision mode.
+            
+        Returns:
+            VisionAnalysis with structured image data.
+        """
         image = self._vision.prepare_image(
             image_bytes=image_bytes,
             media_type=image_media_type,
@@ -120,6 +165,11 @@ class ConversationService:
         )
 
     def memory_stats(self) -> dict[str, str | int]:
+        """Get memory service statistics.
+        
+        Returns:
+            dict: Memory stats string data.
+        """
         return self._memory.stats()
 
     def _respond(

@@ -7,6 +7,11 @@ from .voice.controller import AudioBackendError, MissingBinaryError, VoiceLoopCo
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build CLI parser.
+    
+    Returns:
+        argparse.ArgumentParser: CLI parser.
+    """
     parser = argparse.ArgumentParser(description="Run Gamma with a voice mode controller.")
     parser.add_argument(
         "--mode",
@@ -32,6 +37,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Run voice mode.
+    
+    Runs CLI loop for voice interaction.
+    """
     args = build_parser().parse_args()
     if args.list_devices:
         devices = available_recording_devices()

@@ -15,6 +15,18 @@ def normalize_chat_message(
     session_id: str | None = "twitch",
     twitch_controls: dict[str, Any] | None = None,
 ) -> StreamInputEvent:
+    """Normalize a Twitch chat message into a stream input event.
+    
+    Args:
+        message: TwitchChatMessage object to normalize.
+        owner_user_id: Optional Twitch owner user ID.
+        trust_level: Trust level: owner, trusted, regular, normal, new_viewer, suspicious, blocked.
+        session_id: Optional session identifier.
+        twitch_controls: Optional Twitch controls dict.
+        
+    Returns:
+        StreamInputEvent: Normalized chat input event with priority and metadata.
+    """
     platform_user_id = _clean_optional(message.platform_user_id)
     display_name = _clean_optional(message.display_name)
     is_owner = bool(owner_user_id and platform_user_id and platform_user_id == owner_user_id)
@@ -52,6 +64,17 @@ def normalize_replay_event(
     trust_level: TrustLevel = "new_viewer",
     session_id: str | None = "twitch-replay",
 ) -> StreamInputEvent:
+    """Normalize a Twitch replay event into a stream input event.
+    
+    Args:
+        event: TwitchReplayEvent object to normalize.
+        owner_user_id: Optional Twitch owner user ID.
+        trust_level: Trust level.
+        session_id: Optional session identifier.
+        
+    Returns:
+        StreamInputEvent: Normalized event with appropriate text and priority.
+    """
     if event.kind == "chat_message":
         return normalize_chat_message(
             TwitchChatMessage(
@@ -134,6 +157,14 @@ def normalize_replay_event(
 
 
 def _raid_text(event: TwitchReplayEvent) -> str:
+    """Generate text for raid event.
+    
+    Args:
+        event: TwitchReplayEvent with raid kind.
+        
+    Returns:
+        str: Raid text including viewer count if available.
+    """
     alias = safe_username_alias(event.display_name)
     if event.viewer_count:
         return f"{alias} raided with {event.viewer_count} viewers."
@@ -141,12 +172,28 @@ def _raid_text(event: TwitchReplayEvent) -> str:
 
 
 def _redeem_text(event: TwitchReplayEvent) -> str:
+    """Generate text for channel point redeem.
+    
+    Args:
+        event: TwitchReplayEvent with redeem kind.
+        
+    Returns:
+        str: Redeem text including title and detail if available.
+    """
     title = (event.title or "channel point redeem").strip()
     detail = (event.text or "").strip()
     return f"{title}: {detail}" if detail else title
 
 
 def _bits_text(event: TwitchReplayEvent) -> str:
+    """Generate text for bits cheering event.
+    
+    Args:
+        event: TwitchReplayEvent with bits kind.
+        
+    Returns:
+        str: Bits text including amount and detail if available.
+    """
     alias = safe_username_alias(event.display_name)
     amount = (event.amount or "").strip()
     detail = (event.text or "").strip()
@@ -158,12 +205,28 @@ def _bits_text(event: TwitchReplayEvent) -> str:
 
 
 def _subscription_text(event: TwitchReplayEvent) -> str:
+    """Generate text for subscription.
+    
+    Args:
+        event: TwitchReplayEvent with subscription kind.
+        
+    Returns:
+        str: Subscription text including title and detail if available.
+    """
     alias = safe_username_alias(event.display_name)
     detail = (event.text or event.title or "").strip()
     return f"{alias} subscribed: {detail}" if detail else f"{alias} subscribed."
 
 
 def _donation_text(event: TwitchReplayEvent) -> str:
+    """Generate text for donation.
+    
+    Args:
+        event: TwitchReplayEvent with donation kind.
+        
+    Returns:
+        str: Donation text including amount and detail if available.
+    """
     alias = safe_username_alias(event.display_name)
     amount = (event.amount or "").strip()
     detail = (event.text or "").strip()
@@ -175,6 +238,14 @@ def _donation_text(event: TwitchReplayEvent) -> str:
 
 
 def _clean_optional(value: str | None) -> str | None:
+    """Clean optional string by stripping whitespace.
+    
+    Args:
+        value: String value or None.
+        
+    Returns:
+        str | None: Stripped string or None.
+    """
     if value is None:
         return None
     value = value.strip()

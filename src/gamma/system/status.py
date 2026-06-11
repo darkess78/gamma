@@ -24,6 +24,15 @@ from ..voice.voice_profiles import list_voice_profiles, resolve_tts_config
 
 
 def probe_ollama_health(endpoint: str, *, timeout_seconds: int = 5) -> dict[str, Any]:
+    """Probe Ollama health and get model list.
+    
+    Args:
+        endpoint: Ollama base URL.
+        timeout_seconds: Request timeout.
+    
+    Returns:
+        dict: {"ok": ...} with model list on success.
+    """
     try:
         with urllib.request.urlopen(endpoint.rstrip("/") + "/api/tags", timeout=timeout_seconds) as response:
             payload = json.loads(response.read().decode("utf-8"))
@@ -37,11 +46,41 @@ def probe_ollama_health(endpoint: str, *, timeout_seconds: int = 5) -> dict[str,
 
 
 class SystemStatusService:
+    """Gathers runtime status about Gamma components.
+    
+    Attributes:
+        _memory: Memory service instance.
+        _emotion_memory: Emotion memory service instance.
+    
+    Methods:
+        build_status: Get full runtime status payload.
+        _check_ollama_health: Check Ollama endpoint.
+        _check_local_llm_vision_capability: Check local LLM vision support.
+        _local_vision_model_name: Get local LLM vision model name.
+        _check_qwen_tts_health: Check Qwen TTS endpoint.
+        _check_stt_health: Check STT provider health.
+        _check_http_docs_health: Check HTTP docs endpoint.
+        _check_http_health: Check HTTP health endpoint.
+        _check_tts_health: Check TTS provider health.
+        _check_piper_health: Check Piper TTS health.
+        _check_rvc_health: Check RVC health.
+        _recent_artifacts: List recent audio artifacts.
+    """
+
     def __init__(self) -> None:
+        """Initialize SystemStatusService.
+        
+        Sets up memory and emotion memory services for status checks.
+        """
         self._memory = MemoryService()
         self._emotion_memory = EmotionMemoryService()
 
     def build_status(self) -> dict[str, Any]:
+        """Build full runtime status payload.
+        
+        Returns:
+            dict: Status including app info, provider health, memory stats, artifacts.
+        """
         tts_cfg = resolve_tts_config()
         return {
             "app": {
@@ -118,9 +157,19 @@ class SystemStatusService:
         }
 
     def _check_ollama_health(self) -> dict[str, Any]:
+        """Check Ollama health.
+        
+        Returns:
+            dict: Ollama probe result.
+        """
         return probe_ollama_health(settings.local_llm_endpoint, timeout_seconds=5)
 
     def _check_local_llm_vision_capability(self) -> dict[str, Any]:
+        """Check local LLM vision capability.
+        
+        Returns:
+            dict: Vision capability probe result.
+        """
         if not settings.local_llm_supports_vision:
             return {"ok": False, "detail": "vision-disabled-in-config"}
         model_name = self._local_vision_model_name()
@@ -131,18 +180,36 @@ class SystemStatusService:
         )
 
     def _local_vision_model_name(self) -> str:
+        """Get local LLM vision model name.
+        
+        Returns:
+            str: Configured or default local LLM model name.
+        """
         configured = (settings.local_llm_vision_model or "").strip()
         if configured:
             return configured
         return settings.local_llm_model
 
     def _check_qwen_tts_health(self, tts_cfg: Any) -> dict[str, Any]:
+        """Check Qwen TTS endpoint health.
+        
+        Args:
+            tts_cfg: TTS configuration.
+        
+        Returns:
+            dict: HTTP health check result.
+        """
         if not tts_cfg.qwen_tts_endpoint:
             return {"ok": False, "detail": "no-endpoint-configured"}
         base_url = tts_cfg.qwen_tts_endpoint.rsplit("/tts", 1)[0]
         return self._check_http_health(base_url + "/health")
 
     def _check_stt_health(self) -> dict[str, Any]:
+        """Check STT provider health.
+        
+        Returns:
+            dict: STT health check result.
+        """
         provider = settings.stt_provider.strip().lower()
         if provider in {"faster-whisper", "faster_whisper", "local", "whisper"}:
             if importlib.util.find_spec("faster_whisper") is None:
@@ -167,6 +234,14 @@ class SystemStatusService:
         return {"ok": False, "detail": f"unsupported-provider: {provider}"}
 
     def _check_http_docs_health(self, base_url: str) -> dict[str, Any]:
+        """Check HTTP docs health.
+        
+        Args:
+            base_url: HTTP base URL.
+        
+        Returns:
+            dict: {"ok": ...} with status.
+        """
         try:
             with urllib.request.urlopen(base_url + "/docs", timeout=5) as response:
                 ok = 200 <= response.status < 400
@@ -177,6 +252,14 @@ class SystemStatusService:
             return {"ok": False, "detail": str(exc)}
 
     def _check_http_health(self, url: str) -> dict[str, Any]:
+        """Check HTTP health endpoint.
+        
+        Args:
+            url: HTTP health endpoint URL.
+        
+        Returns:
+            dict: {"ok": ...} with optional server metadata.
+        """
         try:
             with urllib.request.urlopen(url, timeout=5) as response:
                 ok = 200 <= response.status < 400
@@ -199,6 +282,14 @@ class SystemStatusService:
             return {"ok": False, "detail": str(exc)}
 
     def _check_tts_health(self, tts_cfg: Any) -> dict[str, Any]:
+        """Check TTS provider health.
+        
+        Args:
+            tts_cfg: TTS configuration.
+        
+        Returns:
+            dict: TTS health check result.
+        """
         provider = tts_cfg.provider.strip().lower()
         if provider == "piper":
             piper = self._check_piper_health(tts_cfg)
@@ -213,6 +304,14 @@ class SystemStatusService:
         return {"ok": True, "detail": "not-local"}
 
     def _check_piper_health(self, tts_cfg: Any) -> dict[str, Any]:
+        """Check Piper TTS health.
+        
+        Args:
+            tts_cfg: TTS configuration.
+        
+        Returns:
+            dict: Piper health check result.
+        """
         executable = (tts_cfg.piper_executable or "").strip()
         model_path = (tts_cfg.piper_model_path or "").strip()
         if not executable:
@@ -236,6 +335,14 @@ class SystemStatusService:
         return {"ok": True, "detail": "ready"}
 
     def _check_rvc_health(self, tts_cfg: Any) -> dict[str, Any]:
+        """Check RVC health.
+        
+        Args:
+            tts_cfg: TTS configuration.
+        
+        Returns:
+            dict: RVC health check result.
+        """
         rvc_root = discover_rvc_project_root(tts_cfg.rvc_project_root)
         if rvc_root is None:
             return {"ok": False, "detail": "missing-rvc-project-root"}
@@ -262,6 +369,14 @@ class SystemStatusService:
         }
 
     def _recent_artifacts(self, limit: int = 12) -> list[dict[str, Any]]:
+        """List recent audio artifacts.
+        
+        Args:
+            limit: Optional max artifacts to list (default 12).
+        
+        Returns:
+            list[dict[str, Any]]: List of artifact info.
+        """
         artifacts: list[dict[str, Any]] = []
         if not settings.audio_output_dir.exists():
             return artifacts

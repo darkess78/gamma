@@ -40,6 +40,7 @@ _CANCEL_EVENT: threading.Event | None = None
 
 @dataclass(slots=True)
 class SegmentCandidate:
+    """TTS segment candidate."""
     source_path: Path
     clip_path: Path
     episode_id: str
@@ -54,6 +55,11 @@ class SegmentCandidate:
     compression_ratio: float | None
 
     def as_dict(self) -> dict[str, object]:
+        """Return dict representation.
+        
+        Returns:
+            dict[str, object]: Segment dict.
+        """
         return {
             "source_path": str(self.source_path),
             "clip_path": str(self.clip_path),
@@ -71,11 +77,21 @@ class SegmentCandidate:
 
 
 def set_cancel_event(cancel_event: threading.Event | None) -> None:
+    """Set cancel event.
+    
+    Args:
+        cancel_event: Cancel event.
+    """
     global _CANCEL_EVENT
     _CANCEL_EVENT = cancel_event
 
 
 def is_cancelled() -> bool:
+    """Check if cancelled.
+    
+    Returns:
+        bool: True if cancelled.
+    """
     return _CANCEL_EVENT is not None and _CANCEL_EVENT.is_set()
 
 
@@ -687,6 +703,14 @@ def write_outputs(out_dir: Path, candidates: Sequence[SegmentCandidate], args: a
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Run main.
+    
+    Args:
+        argv: Command line arguments (default: sys.argv[1:]).
+    
+    Returns:
+        int: Exit code.
+    """
     args = parse_args(argv or sys.argv[1:])
     input_path = Path(args.input_path).expanduser().resolve()
     out_dir = Path(args.out_dir).expanduser().resolve()
@@ -720,6 +744,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Wrote {len(all_candidates)} clips to {out_dir}")
     print(f"Review candidates in {out_dir / 'REVIEW.md'} before using them for training.")
     return 0
+
+
+def _utc_now() -> datetime:
+    """Get UTC now.
+    
+    Returns:
+        datetime: UTC now.
+    """
+    return datetime.now(timezone.utc)
 
 
 if __name__ == "__main__":

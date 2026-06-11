@@ -9,15 +9,21 @@ from .models import StreamTurnResult, utc_now
 
 
 class StreamTraceStore:
-    """Append-only replay trace for stream policy and generation decisions."""
+    """Append-only replay trace for stream policy and generation decisions.
+
+    Tracks streaming decisions, safety filters, and output events to a JSONL file.
+    Provides methods for appending traces and reading recent records.
+    """
 
     rotate_bytes = 10 * 1024 * 1024
 
     def __init__(self, path: Path | None = None) -> None:
+        """Initialize stream trace store with JSONL file path."""
         self.path = path or settings.data_dir / "runtime" / "stream_traces" / "current.jsonl"
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def append(self, result: StreamTurnResult) -> None:
+        """Append a trace record to the JSONL file."""
         self._rotate_if_needed()
         payload = {
             "recorded_at": utc_now(),
@@ -35,6 +41,7 @@ class StreamTraceStore:
             handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
     def read_recent(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        """Read recent trace records from JSONL file."""
         if not self.path.exists():
             return []
         items: list[dict[str, Any]] = []
@@ -49,6 +56,7 @@ class StreamTraceStore:
         return items[-max(1, limit):]
 
     def _rotate_if_needed(self) -> None:
+        """Rotate JSONL file when size exceeds ROTATE_BYTES threshold."""
         if not self.path.exists():
             return
         try:

@@ -6,6 +6,14 @@ from .voice.stt import STTService
 
 
 def main() -> None:
+    """Run STT test.
+    
+    Args:
+         source: Audio file source (from command line).
+    
+    Prints:
+        Transcribed text.
+    """
     if len(sys.argv) < 2:
         raise SystemExit("usage: python -m gamma.run_stt_test <audio-file>")
     source = sys.argv[1]

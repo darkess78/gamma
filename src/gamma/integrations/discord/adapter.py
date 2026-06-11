@@ -10,6 +10,18 @@ from ...stream.models import StreamActor, StreamInputEvent
 
 @dataclass(slots=True)
 class DiscordMessage:
+    """Represents a Discord message from a user.
+    
+    Attributes:
+        text: Message content.
+        user_id: Discord user ID.
+        display_name: User display name.
+        channel_id: Channel ID where message was sent.
+        guild_id: Guild/server ID where message was sent.
+        message_id: Message ID.
+        roles: User roles in the channel/guild.
+        metadata: Additional message metadata.
+    """
     text: str
     user_id: str
     display_name: str | None = None
@@ -22,6 +34,17 @@ class DiscordMessage:
 
 @dataclass(slots=True)
 class DiscordVoiceUtterance:
+    """Represents a Discord voice utterance (transcribed).
+    
+    Attributes:
+        transcript: ASR transcript of the voice message.
+        user_id: Discord user ID of speaker.
+        display_name: User display name.
+        channel_id: Channel ID where voice was sent.
+        guild_id: Guild/server ID where voice was sent.
+        roles: User roles in the channel/guild.
+        metadata: Additional utterance metadata.
+    """
     transcript: str
     user_id: str
     display_name: str | None = None
@@ -37,6 +60,16 @@ def normalize_discord_message(
     session_id: str | None = "discord",
     identity_resolver: IdentityResolver | None = None,
 ) -> StreamInputEvent:
+    """Normalize a Discord message into a stream input event.
+    
+    Args:
+        message: DiscordMessage object to convert.
+        session_id: Optional session identifier.
+        identity_resolver: Identity resolver for Discord platform.
+        
+    Returns:
+        StreamInputEvent: Normalized input event for processing.
+    """
     profile = (identity_resolver or IdentityResolver()).resolve(SpeakerContext(source="discord", platform_id=message.user_id))
     roles = _roles(message.roles, is_owner=profile.is_owner, trust=profile.trust)
     return StreamInputEvent(
@@ -65,6 +98,16 @@ def normalize_discord_voice(
     session_id: str | None = "discord-voice",
     identity_resolver: IdentityResolver | None = None,
 ) -> StreamInputEvent:
+    """Normalize a Discord voice utterance into a stream input event.
+    
+    Args:
+        utterance: DiscordVoiceUtterance object to convert.
+        session_id: Optional session identifier.
+        identity_resolver: Identity resolver for Discord platform.
+        
+    Returns:
+        StreamInputEvent: Normalized input event with input_modality='voice'.
+    """
     profile = (identity_resolver or IdentityResolver()).resolve(SpeakerContext(source="discord", platform_id=utterance.user_id))
     roles = _roles(utterance.roles, is_owner=profile.is_owner, trust=profile.trust)
     return StreamInputEvent(
@@ -88,6 +131,19 @@ def normalize_discord_voice(
 
 
 def _roles(raw_roles: list[str], *, is_owner: bool, trust: str) -> list[str]:
+    """Build role list from raw roles, adding owner and trust roles.
+    
+    Adds 'owner' role if user is owner, and adds trust level (trusted/guest) if not already present.
+    Skips duplicate roles (e.g., 'trusted' already in list).
+    
+    Args:
+        raw_roles: Raw list of Discord roles.
+        is_owner: Whether the user is the server owner.
+        trust: Trust level: 'owner', 'trusted', 'guest', or 'public'.
+        
+    Returns:
+        list[str]: Normalized role list.
+    """
     roles = [str(role).strip().lower() for role in raw_roles if str(role).strip()]
     if is_owner and "owner" not in roles:
         roles.insert(0, "owner")
@@ -97,5 +153,13 @@ def _roles(raw_roles: list[str], *, is_owner: bool, trust: str) -> list[str]:
 
 
 def _clean(value: str | None) -> str | None:
+    """Normalize a string value, stripping whitespace.
+    
+    Args:
+        value: String value or None.
+        
+    Returns:
+        str | None: Stripped string or None.
+    """
     text = str(value or "").strip()
     return text or None

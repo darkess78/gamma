@@ -8,14 +8,29 @@ TrustLevel = Literal["owner", "trusted", "guest", "public"]
 
 @dataclass
 class SpeakerProfile:
+    """Speaker identity profile with trust level.
+    
+    Attributes:
+        name: Speaker name.
+        trust: Trust level (owner|trusted|guest|public).
+        notes: Speaker notes.
+        is_owner: True only for the configured owner entry.
+        resolved_via: How profile was resolved (assumed|discord|game|voice).
+    
+    Properties:
+        memory_write_allowed: True if trust is owner or trusted.
+        memory_read_allowed: True if trust is owner or trusted.
+        tools_allowed: True if trust is owner or trusted.
+        subject_type: Memory subject_type ('primary_user'|'other_person').
+    
+    Methods:
+        describe: Return profile description string.
+    """
     name: str
     trust: TrustLevel
     notes: str = ""
-    # True only for the configured owner entry
+    resolved_via: str = "assumed"
     is_owner: bool = False
-
-    # Derived from how this profile was resolved
-    resolved_via: str = "assumed"   # e.g. "discord", "game", "voice", "assumed"
 
     @property
     def memory_write_allowed(self) -> bool:

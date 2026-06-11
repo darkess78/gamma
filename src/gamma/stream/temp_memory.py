@@ -17,6 +17,20 @@ STREAM_TEMP_MEMORY_BUCKETS = {"chat_mood", "event_history", "owner_directives"}
 
 @dataclass(frozen=True, slots=True)
 class StreamTempMemoryRecord:
+    """Stream temp memory record.
+    
+    Attributes:
+        id: Record ID.
+        bucket: Bucket name (chat_mood|event_history|owner_directives).
+        key: Record key.
+        value: Record value.
+        metadata: Record metadata.
+        created_at: Creation timestamp.
+        updated_at: Update timestamp.
+    
+    Methods:
+        as_payload: Convert to payload dict.
+    """
     id: int
     bucket: str
     key: str
@@ -26,6 +40,11 @@ class StreamTempMemoryRecord:
     updated_at: str
 
     def as_payload(self) -> dict[str, Any]:
+        """Convert to payload dict.
+        
+        Returns:
+            dict[str, Any]: Payload dict.
+        """
         return {
             "id": self.id,
             "bucket": self.bucket,
@@ -38,13 +57,40 @@ class StreamTempMemoryRecord:
 
 
 class StreamTempMemoryStore:
+    """Stream temp memory store.
+    
+    Attributes:
+        database_url: Database URL.
+        path: SQLite path.
+    
+    Methods:
+        __init__: Initialize temp memory store.
+        record_turn: Record turn result.
+        upsert: Upsert memory record.
+        add: Add memory record.
+        get: Get record by bucket and key.
+        get_by_id: Get record by ID.
+        list_records: List records.
+        clear: Clear bucket.
+    """
+
     def __init__(self, *, database_url: str | None = None) -> None:
+        """Initialize temp memory store.
+        
+        Args:
+            database_url: Database URL (default from settings).
+        """
         self.database_url = database_url or settings.database_url
         self.path = _sqlite_path_from_url(self.database_url)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 
     def record_turn(self, result: StreamTurnResult) -> None:
+        """Record turn result.
+        
+        Args:
+            result: StreamTurnResult to record.
+        """
         if not _is_public_stream_result(result):
             return
         input_event = result.input_event
@@ -77,6 +123,20 @@ class StreamTempMemoryStore:
         )
 
     def upsert(self, *, bucket: str, key: str, value: str, metadata: dict[str, Any] | None = None) -> StreamTempMemoryRecord:
+        """Upsert memory record.
+        
+        Args:
+            bucket: Bucket name.
+            key: Record key.
+            value: Record value.
+            metadata: Optional metadata.
+        
+        Returns:
+            StreamTempMemoryRecord: Upserted record.
+        
+        Raises:
+            ConfigurationError: If write failed.
+        """
         _validate_bucket(bucket)
         normalized_key = " ".join((key or "").split())[:120] or "default"
         now = _utc_now()
@@ -104,6 +164,20 @@ class StreamTempMemoryStore:
         return record
 
     def add(self, *, bucket: str, key: str, value: str, metadata: dict[str, Any] | None = None) -> StreamTempMemoryRecord:
+        """Add memory record.
+        
+        Args:
+            bucket: Bucket name.
+            key: Record key.
+            value: Record value.
+            metadata: Optional metadata.
+        
+        Returns:
+            StreamTempMemoryRecord: Added record.
+        
+        Raises:
+            ConfigurationError: If write failed.
+        """
         _validate_bucket(bucket)
         now = _utc_now()
         with self._connect() as conn:
@@ -122,6 +196,15 @@ class StreamTempMemoryStore:
         return record
 
     def get(self, *, bucket: str, key: str) -> StreamTempMemoryRecord | None:
+        """Get record by bucket and key.
+        
+        Args:
+            bucket: Bucket name.
+            key: Record key.
+        
+        Returns:
+            StreamTempMemoryRecord | None: Record or None.
+        """
         with self._connect() as conn:
             row = conn.execute(
                 """
@@ -134,6 +217,14 @@ class StreamTempMemoryStore:
         return _record_from_row(row) if row else None
 
     def get_by_id(self, record_id: int) -> StreamTempMemoryRecord | None:
+        """Get record by ID.
+        
+        Args:
+            record_id: Record ID.
+        
+        Returns:
+            StreamTempMemoryRecord | None: Record or None.
+        """
         with self._connect() as conn:
             row = conn.execute(
                 """
@@ -146,6 +237,15 @@ class StreamTempMemoryStore:
         return _record_from_row(row) if row else None
 
     def list_records(self, *, bucket: str | None = None, limit: int = 100) -> dict[str, Any]:
+        """List records.
+        
+        Args:
+            bucket: Optional bucket filter.
+            limit: Optional max limit (default 100).
+        
+        Returns:
+            dict[str, Any]: Records data.
+        """
         params: list[object] = []
         where = ""
         if bucket:
@@ -170,6 +270,14 @@ class StreamTempMemoryStore:
         }
 
     def clear(self, *, bucket: str | None = None) -> dict[str, Any]:
+        """Clear records.
+        
+        Args:
+            bucket: Optional bucket to clear (default all).
+        
+        Returns:
+            dict[str, Any]: Clear confirmation.
+        """
         if bucket:
             _validate_bucket(bucket)
         with self._connect() as conn:

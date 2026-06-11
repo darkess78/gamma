@@ -7,6 +7,14 @@ from .conversation.service import ConversationService
 
 
 def main() -> None:
+    """Run LLM test.
+    
+    Args:
+        text: Test input (default from command line).
+    
+    Prints:
+        JSON with input, reply, emotion, internal_summary.
+    """
     text = " ".join(sys.argv[1:]).strip() or "Dashboard LLM smoke test."
     response = ConversationService().respond(text, synthesize_speech=False)
     print(

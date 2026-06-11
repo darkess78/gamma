@@ -16,10 +16,19 @@ class LocalLLMAdapter(LLMAdapter):
 
     Uses the local Ollama HTTP API so the conversation layer can switch
     between hosted GPT and a local model without changing its interface.
+
+    Attributes:
+        supports_vision: Whether configured local model supports vision.
+
+    Methods:
+        generate_reply: Generate text responses via Ollama.
+        _model_name_for_request: Resolve model name for request.
+        _routed_model_name: Select model based on routing rules.
     """
 
     @property
     def supports_vision(self) -> bool:
+        """Check if local model supports vision inputs."""
         return settings.local_llm_supports_vision
 
     def generate_reply(
@@ -31,6 +40,23 @@ class LocalLLMAdapter(LLMAdapter):
         call_context: LLMCallContext | None = None,
         model_override: str | None = None,
     ) -> LLMReply:
+        """Generate text response via local Ollama endpoint.
+        
+        Args:
+            system_prompt: System prompt for the model.
+            user_text: User message text.
+            image_inputs: Optional list of image inputs.
+            call_context: Ignored (for interface compatibility).
+            model_override: Optional model name override.
+            
+        Returns:
+            LLMReply with generated text.
+            
+        Raises:
+            ConfigurationError: If vision enabled but model doesn't support it
+            or if model capability check fails.
+            ExternalServiceError: If request fails or returns empty response.
+        """
         _ = call_context
         if image_inputs:
             if not self.supports_vision:
@@ -94,6 +120,17 @@ class LocalLLMAdapter(LLMAdapter):
         user_text: str = "",
         model_override: str | None = None,
     ) -> str:
+        """Resolve model name for request.
+        
+        Args:
+            has_images: Whether request has image inputs.
+            system_prompt: System prompt for routing decision.
+            user_text: User text for routing decision.
+            model_override: Optional model name override.
+            
+        Returns:
+            str: Model name to use.
+        """
         if model_override:
             return model_override
         if has_images:
@@ -107,6 +144,15 @@ class LocalLLMAdapter(LLMAdapter):
         return settings.local_llm_model
 
     def _routed_model_name(self, *, system_prompt: str, user_text: str) -> str | None:
+        """Select model based on routing rules.
+        
+        Args:
+            system_prompt: System prompt context.
+            user_text: User text for routing.
+            
+        Returns:
+            str | None: Selected model or None if no routing applies.
+        """
         tagging_model = (settings.local_llm_tagging_model or "").strip()
         light_model = (settings.local_llm_light_model or "").strip()
         system_lower = system_prompt.lower()

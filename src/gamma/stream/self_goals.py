@@ -17,6 +17,21 @@ VALID_SELF_GOAL_STATUSES = {"proposed", "approved", "rejected", "cleared"}
 
 @dataclass(frozen=True, slots=True)
 class StreamSelfGoal:
+    """Stream self goal.
+    
+    Attributes:
+        id: Goal ID.
+        title: Goal title.
+        description: Goal description.
+        status: Goal status (proposed|approved|rejected|cleared).
+        source: Goal source.
+        metadata: Goal metadata.
+        created_at: Creation timestamp.
+        updated_at: Update timestamp.
+    
+    Methods:
+        as_payload: Convert to payload dict.
+    """
     id: int
     title: str
     description: str
@@ -27,6 +42,11 @@ class StreamSelfGoal:
     updated_at: str
 
     def as_payload(self) -> dict[str, Any]:
+        """Convert to payload dict.
+        
+        Returns:
+            dict[str, Any]: Payload dict.
+        """
         return {
             "id": self.id,
             "title": self.title,
@@ -40,13 +60,49 @@ class StreamSelfGoal:
 
 
 class StreamSelfGoalStore:
+    """Stream self goal store.
+    
+    Attributes:
+        database_url: Database URL.
+        path: SQLite path.
+    
+    Methods:
+        __init__: Initialize self goal store.
+        propose: Propose self goal.
+        set_status: Set self goal status.
+        get: Get self goal.
+        clear: Clear self goals.
+        get_approved: Get approved self goals.
+        get_rejected: Get rejected self goals.
+    """
+
     def __init__(self, *, database_url: str | None = None) -> None:
+        """Initialize self goal store.
+        
+        Args:
+            database_url: Database URL (default from settings).
+        """
         self.database_url = database_url or settings.database_url
         self.path = _sqlite_path_from_url(self.database_url)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 
     def propose(self, *, title: str, description: str, source: str = "stream_brain", metadata: dict[str, Any] | None = None) -> StreamSelfGoal:
+        """Propose self goal.
+        
+        Args:
+            title: Goal title.
+            description: Goal description.
+            source: Goal source (default stream_brain).
+            metadata: Optional goal metadata.
+        
+        Returns:
+            StreamSelfGoal: Proposed goal.
+        
+        Raises:
+            ValueError: If title or description not provided.
+            ConfigurationError: If goal write failed.
+        """
         normalized_title = " ".join(title.split())[:160]
         normalized_description = " ".join(description.split())[:500]
         if not normalized_title or not normalized_description:
@@ -86,6 +142,18 @@ class StreamSelfGoalStore:
         return record
 
     def set_status(self, goal_id: int, *, status: str) -> StreamSelfGoal:
+        """Set self goal status.
+        
+        Args:
+            goal_id: Goal ID.
+            status: New status.
+        
+        Returns:
+            StreamSelfGoal: Updated goal.
+        
+        Raises:
+            KeyError: If goal not found.
+        """
         _validate_status(status)
         now = _utc_now()
         with self._connect() as conn:

@@ -25,12 +25,33 @@ class StreamEvalReport(BaseModel):
 
 class StreamReplayService:
     def __init__(self, trace_store: StreamTraceStore | None = None) -> None:
+        """Initialize replay service with optional trace store.
+        
+        Args:
+            trace_store: Optional trace store; creates default if not provided.
+        """
         self._trace_store = trace_store or StreamTraceStore()
 
     def recent_traces(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        """Get recent traces from the trace store.
+        
+        Args:
+            limit: Maximum number of traces to retrieve.
+            
+        Returns:
+            list[dict[str, Any]]: Recent trace records.
+        """
         return self._trace_store.read_recent(limit=limit)
 
     def evaluate_recent(self, *, limit: int = 50) -> StreamEvalReport:
+        """Evaluate recent traces for policy violations.
+        
+        Args:
+            limit: Maximum number of traces to evaluate.
+            
+        Returns:
+            StreamEvalReport: Evaluation report with findings.
+        """
         traces = self.recent_traces(limit=limit)
         findings: list[StreamEvalFinding] = []
         for trace in traces:
@@ -42,6 +63,14 @@ class StreamReplayService:
         )
 
     def _evaluate_trace(self, trace: dict[str, Any]) -> list[StreamEvalFinding]:
+        """Evaluate a single trace for policy violations.
+        
+        Args:
+            trace: Trace record dict from recent_traces.
+            
+        Returns:
+            list[StreamEvalFinding]: List of policy violation findings.
+        """
         trace_id = self._string_or_none(trace.get("trace_id"))
         input_event = trace.get("input_event") if isinstance(trace.get("input_event"), dict) else {}
         decision = trace.get("decision") if isinstance(trace.get("decision"), dict) else {}
@@ -101,7 +130,26 @@ class StreamReplayService:
         return findings
 
     def _finding(self, trace_id: str | None, severity: EvalSeverity, rule: str, message: str) -> StreamEvalFinding:
+        """Create an evaluation finding from parameters.
+        
+        Args:
+            trace_id: Trace ID or None.
+            severity: Severity level: info, warning, or error.
+            rule: Rule identifier.
+            message: Human-readable violation message.
+            
+        Returns:
+            StreamEvalFinding: New finding with the given details.
+        """
         return StreamEvalFinding(trace_id=trace_id, severity=severity, rule=rule, message=message)
 
     def _string_or_none(self, value: object) -> str | None:
+        """Convert non-None str values, strip empty strings.
+        
+        Args:
+            value: Any object value.
+            
+        Returns:
+            str | None: String value or None.
+        """
         return value if isinstance(value, str) and value else None

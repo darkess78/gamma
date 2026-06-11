@@ -27,18 +27,43 @@ from .safety.speech_filter import SpeechSafetyFilter
 
 
 def _utc_now() -> str:
+    """Get UTC timestamp as ISO format string.
+    
+    Returns:
+        str: UTC timestamp in ISO format.
+    """
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _write_status(path: Path, payload: dict) -> None:
+    """Write status payload to file.
+    
+    Args:
+        path: Output path.
+        payload: Status payload.
+    """
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
 def _write_output(path: Path, payload: dict) -> None:
+    """Write output payload to file.
+    
+    Args:
+        path: Output path.
+        payload: Output payload.
+    """
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
 def _read_live_tts_audio_bytes(tts_result: Any) -> bytes:
+    """Read TTS audio bytes.
+    
+    Args:
+        tts_result: TTS result with audio_path.
+    
+    Returns:
+        bytes: Audio bytes.
+    """
     audio_path = Path(tts_result.audio_path)
     audio_bytes = audio_path.read_bytes()
     _cleanup_live_tts_artifact(audio_path)
@@ -46,6 +71,11 @@ def _read_live_tts_audio_bytes(tts_result: Any) -> bytes:
 
 
 def _cleanup_live_tts_artifact(audio_path: Path) -> None:
+    """Clean up live TTS artifact.
+    
+    Args:
+        audio_path: Audio path to clean up.
+    """
     try:
         resolved_audio_path = audio_path.resolve()
         resolved_output_dir = settings.audio_output_dir.resolve()
@@ -62,6 +92,14 @@ def _cleanup_live_tts_artifact(audio_path: Path) -> None:
 
 
 def _serialize_turn_state(turn_state: AssistantTurnState) -> dict[str, Any]:
+    """Serialize turn state.
+    
+    Args:
+        turn_state: Assistant turn state.
+    
+    Returns:
+        dict[str, Any]: Serialized state.
+    """
     return {
         "assistant_reply_so_far": turn_state.assistant_reply_so_far,
         "sentences": [
@@ -78,6 +116,14 @@ def _serialize_turn_state(turn_state: AssistantTurnState) -> dict[str, Any]:
 
 
 def _normalize_estimated_sentence_count(planner_state: dict[str, Any]) -> int:
+    """Normalize estimated sentence count.
+    
+    Args:
+        planner_state: Planner state dict.
+    
+    Returns:
+        int: Normalized sentence count (1-4).
+    """
     try:
         estimated = int(planner_state.get("estimated_sentence_count", 2) or 2)
     except (TypeError, ValueError):
@@ -86,6 +132,14 @@ def _normalize_estimated_sentence_count(planner_state: dict[str, Any]) -> int:
 
 
 def _append_memory_fast_path(conversation: ConversationService, *, user_text: str, reply_text: str, session_id: str | None) -> None:
+    """Append memory via fast path.
+    
+    Args:
+        conversation: Conversation service.
+        user_text: User text.
+        reply_text: Reply text.
+        session_id: Session ID.
+    """
     try:
         candidates = conversation._build_memory_candidates(user_text=user_text, reply_text=reply_text)
         if candidates:
@@ -95,6 +149,14 @@ def _append_memory_fast_path(conversation: ConversationService, *, user_text: st
 
 
 def _should_use_brief_mode(transcript: str) -> bool:
+    """Determine if brief mode should be used.
+    
+    Args:
+        transcript: User transcript.
+    
+    Returns:
+        bool: Whether to use brief mode.
+    """
     words = transcript.split()
     if len(words) <= 8:
         return True
@@ -116,6 +178,14 @@ def _should_use_brief_mode(transcript: str) -> bool:
 
 
 def _should_use_micro_mode(transcript: str) -> bool:
+    """Determine if micro mode should be used.
+    
+    Args:
+        transcript: User transcript.
+    
+    Returns:
+        bool: Whether to use micro mode.
+    """
     lowered = transcript.lower().strip()
     words = transcript.split()
     if len(words) <= 5:
@@ -136,6 +206,14 @@ def _should_use_micro_mode(transcript: str) -> bool:
 
 
 def _live_chunk_budget(reply_text: str) -> int:
+    """Get live chunk budget.
+    
+    Args:
+        reply_text: Reply text.
+    
+    Returns:
+        int: Number of chunks.
+    """
     words = len(reply_text.split())
     if words >= 130:
         return 5
@@ -186,6 +264,18 @@ def _stream_result_from_live_payload(
     response_emotion: str = "neutral",
     decision=None,
 ) -> StreamTurnResult:
+    """Create stream result from live payload.
+    
+    Args:
+        stream_event: Stream input event.
+        stream_brain: Stream brain.
+        payload: Live payload.
+        response_emotion: Response emotion.
+        decision: Decision (optional).
+    
+    Returns:
+        StreamTurnResult: Stream turn result.
+    """
     response = AssistantResponse(
         spoken_text=str(payload.get("reply_text", "") or ""),
         emotion=response_emotion if response_emotion in {"neutral", "happy", "teasing", "concerned", "excited", "embarrassed", "annoyed"} else "neutral",
@@ -247,6 +337,26 @@ def _run_simple_chunked(
     turn_state: AssistantTurnState,
     voice_affect: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Run simple chunked mode.
+    
+    Args:
+        started_at: Start time.
+        args: CLI args.
+        transcript: User transcript.
+        synthesize_speech: Whether to synthesize speech.
+        conversation: Conversation service.
+        stream_brain: Stream brain.
+        output_path: Output path.
+        status_path: Status path.
+        status_payload: Status payload.
+        response_mode: Response mode.
+        planner_state: Planner state.
+        turn_state: Turn state.
+        voice_affect: Voice affect (optional).
+    
+    Returns:
+        dict[str, Any]: Payload.
+    """
     conversation_started = time.perf_counter()
     stream_event = _live_voice_stream_event(
         turn_id=args.turn_id,

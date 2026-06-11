@@ -19,11 +19,26 @@ _BLOCK_PATTERNS = [
 
 @dataclass(slots=True)
 class HeuristicDecision:
+    """Heuristic decision.
+    
+    Attributes:
+        action: Decision action (allow|block).
+        matched_rules: Matched rule patterns.
+    """
     action: str
     matched_rules: list[str]
 
 
 def review(*, text: str, level: str) -> HeuristicDecision:
+    """Review text with heuristics.
+    
+    Args:
+        text: Input text.
+        level: Strictness level.
+    
+    Returns:
+        HeuristicDecision: Decision with action and matched rules.
+    """
     normalized = " ".join((text or "").split())
     blocked = [pattern.pattern for pattern in _BLOCK_PATTERNS if pattern.search(normalized)]
     if blocked:
@@ -33,4 +48,4 @@ def review(*, text: str, level: str) -> HeuristicDecision:
         return HeuristicDecision(action="allow", matched_rules=[])
     if level == "strict":
         return HeuristicDecision(action="block", matched_rules=softened)
-    return HeuristicDecision(action="allow", matched_rules=softened)
+    return HeuristicDecision(action="allow", matched_rules=softened),

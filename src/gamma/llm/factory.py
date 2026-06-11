@@ -6,6 +6,14 @@ from .base import LLMAdapter
 
 
 def build_llm_adapter() -> LLMAdapter:
+    """Build an LLM adapter based on settings.
+    
+    Returns:
+        LLMAdapter: Appropriate adapter for current configuration.
+        
+    Raises:
+        ConfigurationError: If unsupported LLM provider configured.
+    """
     if settings.llm_router_enabled:
         from .router_adapter import RouterLLMAdapter
 

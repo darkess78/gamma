@@ -9,6 +9,11 @@ from .voice.stt import STTService
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build CLI parser.
+    
+    Returns:
+        argparse.ArgumentParser: CLI parser.
+    """
     parser = argparse.ArgumentParser(description="Run a file-based voice roundtrip through STT -> LLM -> TTS.")
     parser.add_argument("audio_file", help="Path to an input audio file.")
     parser.add_argument(
@@ -24,6 +29,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Run voice roundtrip.
+    
+    Transcribes audio, generates response, and optionally saves JSON artifact.
+    """
     args = build_parser().parse_args()
 
     source = Path(args.audio_file).expanduser().resolve()

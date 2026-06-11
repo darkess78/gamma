@@ -21,17 +21,56 @@ ALLOWED_IMAGE_MEDIA_TYPES = {
 
 @dataclass(slots=True)
 class VisionImage:
+    """Represents an image ready for multimodal LLL analysis.
+
+    Attributes:
+        data: Raw image bytes.
+        media_type: MIME type (image/jpeg, image/png, image/webp, image/gif).
+        filename: Original filename or None.
+        stored_path: Path to stored image file or None.
+    """
     data: bytes
     media_type: str
     filename: str | None = None
     stored_path: Path | None = None
 
     def to_llm_input(self) -> LLMImageInput:
+        """Convert this image to an LLM multimodal input object.
+
+        Returns:
+            LLMImageInput: Ready for LLM vision input.
+        """
         return LLMImageInput(data=self.data, media_type=self.media_type, filename=self.filename)
 
 
 class VisionService:
+    """Vision service.
+    
+    Attributes:
+        No attributes defined.
+    
+    Methods:
+        prepare_image: Prepare and store an image.
+        analyze_image: Analyze image with LLM.
+        analyze_image_sync: Synchronous image analysis.
+        _ensure_llm_adapter: Ensure LLM adapter.
+        _analyze_image_async: Async image analysis.
+    """
+
     def prepare_image(self, *, image_bytes: bytes, media_type: str, filename: str | None = None) -> VisionImage:
+        """Prepare and store an image for vision analysis.
+        
+        Args:
+            image_bytes: Raw image file bytes.
+            media_type: MIME type (image/jpeg, image/png, image/webp, image/gif).
+            filename: Optional original filename for reference.
+        
+        Returns:
+            VisionImage: Prepared image with stored path.
+        
+        Raises:
+            ConversationError: If image is empty, media type not supported, or exceeds size limit.
+        """
         if not image_bytes:
             raise ConversationError("image_file must not be empty.")
         normalized_media_type = (media_type or "").strip().lower()
@@ -64,6 +103,20 @@ class VisionService:
         user_text: str | None = None,
         mode: str | None = None,
     ) -> VisionAnalysis:
+        """Analyze an image using the multimodal LLM adapter.
+
+        Args:
+            llm_adapter: LLM adapter with vision capabilities.
+            image: Prepared VisionImage object.
+            user_text: Optional user context or query about the image.
+            mode: Vision analysis mode (auto, screen, document, photo).
+
+        Returns:
+            VisionAnalysis: Structured analysis result.
+
+        Raises:
+            ConversationError: If LLM doesn't support vision or analysis fails.
+        """
         if not llm_adapter.supports_vision:
             raise ConversationError(
                 "The configured LLM provider does not support image analysis. Set SHANA_LLM_PROVIDER=openai to enable vision."
@@ -120,6 +173,19 @@ class VisionService:
         return self._normalize_analysis(payload)
 
     def _parse_json_object(self, raw: str) -> dict:
+        """Extract JSON object from LLM response text.
+
+        Strips markdown code fences and extracts the JSON between braces.
+
+        Args:
+            raw: Raw LLM response text.
+
+        Returns:
+            dict: Parsed JSON object.
+
+        Raises:
+            ValueError: If no valid JSON object is found.
+        """
         stripped = raw.strip()
         if stripped.startswith("```"):
             lines = stripped.splitlines()
@@ -132,6 +198,14 @@ class VisionService:
         return json.loads(stripped[start : end + 1])
 
     def _normalize_analysis(self, payload: dict) -> VisionAnalysis:
+        """Normalize raw LLM analysis payload to VisionAnalysis.
+
+        Args:
+            payload: Raw JSON analysis payload from LLM.
+
+        Returns:
+            VisionAnalysis: Normalized analysis result.
+        """
         image_type = str(payload.get("image_type", "unknown")).strip().lower() or "unknown"
         if image_type not in {"photo", "screenshot", "document", "drawing", "unknown"}:
             image_type = "unknown"
@@ -196,6 +270,16 @@ class VisionService:
         )
 
     def _normalize_string_list(self, value: object, *, limit: int, max_len: int) -> list[str]:
+        """Normalize and truncate a list of strings.
+
+        Args:
+            value: Raw list value from LLM payload.
+            limit: Maximum number of items to keep.
+            max_len: Maximum length per string item.
+
+        Returns:
+            list[str]: Normalized and truncated list of strings.
+        """
         if not isinstance(value, list):
             return []
         normalized: list[str] = []
@@ -206,6 +290,14 @@ class VisionService:
         return normalized
 
     def _normalize_text_blocks(self, value: object) -> list[VisionTextBlock]:
+        """Normalize raw text blocks from LLM payload.
+
+        Args:
+            value: Raw list of text block dicts from LLM.
+
+        Returns:
+            list[VisionTextBlock]: Normalized text blocks.
+        """
         if not isinstance(value, list):
             return []
         blocks: list[VisionTextBlock] = []
@@ -227,6 +319,14 @@ class VisionService:
         return blocks
 
     def _normalize_interface_elements(self, value: object) -> list[VisionInterfaceElement]:
+        """Normalize raw interface elements from LLM payload.
+
+        Args:
+            value: Raw list of interface element dicts from LLM.
+
+        Returns:
+            list[VisionInterfaceElement]: Normalized interface elements.
+        """
         if not isinstance(value, list):
             return []
         elements: list[VisionInterfaceElement] = []
@@ -252,6 +352,14 @@ class VisionService:
         return elements
 
     def _normalize_mode(self, value: str | None) -> str:
+        """Normalize vision analysis mode to a valid value.
+
+        Args:
+            value: Raw mode string or None.
+
+        Returns:
+            str: Normalized mode (auto, screen, document, photo).
+        """
         normalized = (value or "").strip().lower()
         if normalized in {"auto", "screen", "document", "photo"}:
             return normalized

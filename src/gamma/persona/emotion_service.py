@@ -13,14 +13,44 @@ _DEFAULT_PATH = settings.data_dir / "assistant_emotion_memory.json"
 
 
 def _utc_now() -> str:
+    """Get UTC now.
+    
+    Returns:
+        str: UTC now as ISO string.
+    """
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 class EmotionMemoryService:
+    """Emotion memory service.
+    
+    Attributes:
+        _path: Emotion memory path.
+    
+    Methods:
+        __init__: Initialize service.
+        load_bundle: Load bundle.
+        load_state: Load state.
+        relevant_context: Get relevant context.
+        update_from_turn: Update from turn.
+        dashboard_payload: Get dashboard payload.
+        _save: Save bundle.
+    """
+
     def __init__(self, path: Path | None = None) -> None:
+        """Initialize service.
+        
+        Args:
+            path: Emotion memory path (default from settings).
+        """
         self._path = path or _DEFAULT_PATH
 
     def load_bundle(self) -> dict[str, object]:
+        """Load bundle.
+        
+        Returns:
+            dict[str, object]: Bundle with state, episodes, patterns.
+        """
         if not self._path.exists():
             return {
                 "state": AssistantEmotionState(),
@@ -40,13 +70,27 @@ class EmotionMemoryService:
         return {"state": state, "episodes": episodes, "patterns": patterns}
 
     def load_state(self) -> AssistantEmotionState:
-        return self.load_bundle()["state"]  # type: ignore[return-value]
+        """Load state.
+        
+        Returns:
+            AssistantEmotionState: Loaded state.
+        """
+        return self.load_bundle()["state"]
 
     def relevant_context(self, *, user_text: str, limit: int = 3) -> dict[str, object]:
+        """Get relevant context.
+        
+        Args:
+            user_text: User text.
+            limit: Limit for episodes/patterns.
+        
+        Returns:
+            dict[str, object]: Relevant context.
+        """
         bundle = self.load_bundle()
-        state: AssistantEmotionState = bundle["state"]  # type: ignore[assignment]
-        episodes: list[EmotionalEpisode] = bundle["episodes"]  # type: ignore[assignment]
-        patterns: list[EmotionalPattern] = bundle["patterns"]  # type: ignore[assignment]
+        state: AssistantEmotionState = bundle["state"]
+        episodes: list[EmotionalEpisode] = bundle["episodes"]
+        patterns: list[EmotionalPattern] = bundle["patterns"]
         lowered = user_text.lower()
         relevant_episodes = [
             item for item in episodes
@@ -66,10 +110,18 @@ class EmotionMemoryService:
         }
 
     def update_from_turn(self, *, emotion: str, user_text: str, reply_text: str, session_id: str | None = None) -> None:
+        """Update from turn.
+        
+        Args:
+            emotion: Emotion.
+            user_text: User text.
+            reply_text: Reply text.
+            session_id: Session ID.
+        """
         bundle = self.load_bundle()
-        state: AssistantEmotionState = bundle["state"]  # type: ignore[assignment]
-        episodes: list[EmotionalEpisode] = bundle["episodes"]  # type: ignore[assignment]
-        patterns: list[EmotionalPattern] = bundle["patterns"]  # type: ignore[assignment]
+        state: AssistantEmotionState = bundle["state"]
+        episodes: list[EmotionalEpisode] = bundle["episodes"]
+        patterns: list[EmotionalPattern] = bundle["patterns"]
         extracted = extract_emotion_turn(emotion=emotion, user_text=user_text, reply_text=reply_text)
 
         state.current_emotion = extracted.emotion
@@ -123,10 +175,15 @@ class EmotionMemoryService:
         self._save(state=state, episodes=episodes, patterns=patterns)
 
     def dashboard_payload(self) -> dict[str, object]:
+        """Get dashboard payload.
+        
+        Returns:
+            dict[str, object]: Dashboard payload.
+        """
         bundle = self.load_bundle()
-        state: AssistantEmotionState = bundle["state"]  # type: ignore[assignment]
-        episodes: list[EmotionalEpisode] = bundle["episodes"]  # type: ignore[assignment]
-        patterns: list[EmotionalPattern] = bundle["patterns"]  # type: ignore[assignment]
+        state: AssistantEmotionState = bundle["state"]
+        episodes: list[EmotionalEpisode] = bundle["episodes"]
+        patterns: list[EmotionalPattern] = bundle["patterns"]
         return {
             "state": state.as_dict(),
             "episodes": [item.as_dict() for item in episodes[-8:]],
@@ -134,6 +191,13 @@ class EmotionMemoryService:
         }
 
     def _save(self, *, state: AssistantEmotionState, episodes: list[EmotionalEpisode], patterns: list[EmotionalPattern]) -> None:
+        """Save bundle.
+        
+        Args:
+            state: State.
+            episodes: Episodes.
+            patterns: Patterns.
+        """
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "state": state.as_dict(),

@@ -15,6 +15,18 @@ VALID_TRUST_LEVELS: set[str] = {"owner", "trusted", "regular", "normal", "new_vi
 
 @dataclass(frozen=True, slots=True)
 class ViewerTrustRecord:
+    """Immutable record of a viewer's trust level across platforms.
+    
+    Attributes:
+        platform: Platform name (discord, twitch, etc.).
+        platform_user_id: User ID on that platform.
+        display_name: User display name.
+        trust_level: Trust classification.
+        notes: Optional notes about the viewer.
+        pronunciation_alias: Pronunciation alias for the username.
+        created_at: When record was created.
+        updated_at: When record was last updated.
+    """
     platform: str
     platform_user_id: str
     display_name: str | None
@@ -26,13 +38,29 @@ class ViewerTrustRecord:
 
 
 class ViewerTrustStore:
+    """DAO for viewer trust records across platforms."""
+
     def __init__(self, *, database_url: str | None = None) -> None:
+        """Initialize trust store with optional database URL.
+        
+        Args:
+            database_url: SQLite database URL; uses settings default if None.
+        """
         self.database_url = database_url or settings.database_url
         self.path = _sqlite_path_from_url(self.database_url)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 
     def get(self, *, platform: str, platform_user_id: str) -> ViewerTrustRecord | None:
+        """Get trust record for a user on a platform.
+        
+        Args:
+            platform: Platform name.
+            platform_user_id: User ID on platform.
+            
+        Returns:
+            ViewerTrustRecord or None if no record exists.
+        """
         with self._connect() as conn:
             row = conn.execute(
                 """
@@ -48,6 +76,16 @@ class ViewerTrustStore:
         return _record_from_row(row)
 
     def trust_level_for(self, *, platform: str, platform_user_id: str | None, default: TrustLevel = "new_viewer") -> TrustLevel:
+        """Get trust level for a user, returning default if none.
+        
+        Args:
+            platform: Platform name.
+            platform_user_id: User ID or None.
+            default: Default level when no record exists.
+            
+        Returns:
+            TrustLevel.
+        """
         if not platform_user_id:
             return default
         record = self.get(platform=platform, platform_user_id=platform_user_id)
@@ -63,6 +101,19 @@ class ViewerTrustStore:
         notes: str | None = None,
         pronunciation_alias: str | None = None,
     ) -> ViewerTrustRecord:
+        """Insert or update a trust record.
+        
+        Args:
+            platform: Platform name.
+            platform_user_id: User ID on platform.
+            display_name: User display name.
+            trust_level: Trust level.
+            notes: Optional notes.
+            pronunciation_alias: Pronunciation alias.
+            
+        Returns:
+            ViewerTrustRecord with updated timestamp.
+        """
         _validate_trust_level(trust_level)
         now = _utc_now()
         existing = self.get(platform=platform, platform_user_id=platform_user_id)
@@ -100,6 +151,15 @@ class ViewerTrustStore:
         return record
 
     def list_records(self, *, platform: str | None = None, limit: int = 100) -> list[ViewerTrustRecord]:
+        """List trust records, optionally filtered by platform.
+        
+        Args:
+            platform: Optional platform filter.
+            limit: Maximum records to return.
+            
+        Returns:
+            list[ViewerTrustRecord]: Recent records, limited.
+        """
         params: list[object] = []
         where = ""
         if platform:
@@ -121,11 +181,13 @@ class ViewerTrustStore:
         return [_record_from_row(row) for row in rows]
 
     def _connect(self) -> sqlite3.Connection:
+        """Get database connection with row factory."""
         conn = sqlite3.connect(self.path)
         conn.row_factory = sqlite3.Row
         return conn
 
     def _ensure_schema(self) -> None:
+        """Ensure database schema exists."""
         with self._connect() as conn:
             conn.execute(
                 """
@@ -149,6 +211,14 @@ class ViewerTrustStore:
 
 
 def _sqlite_path_from_url(database_url: str) -> Path:
+    """Convert SQLite URL to Path, relative to project root if needed.
+    
+    Args:
+        database_url: SQLite database URL.
+        
+    Returns:
+        Path to the database file.
+    """
     prefix = "sqlite:///"
     if not database_url.startswith(prefix):
         raise ConfigurationError("viewer trust store currently requires a sqlite database_url")
@@ -160,11 +230,27 @@ def _sqlite_path_from_url(database_url: str) -> Path:
 
 
 def _validate_trust_level(trust_level: str) -> None:
+    """Validate trust level string.
+    
+    Args:
+        trust_level: Trust level to validate.
+        
+    Raises:
+        ValueError: If trust level is not valid.
+    """
     if trust_level not in VALID_TRUST_LEVELS:
         raise ValueError(f"unsupported viewer trust level: {trust_level}")
 
 
 def _record_from_row(row: sqlite3.Row) -> ViewerTrustRecord:
+    """Convert a database row into a ViewerTrustRecord.
+    
+    Args:
+        row: SQLite row.
+        
+    Returns:
+        ViewerTrustRecord.
+    """
     trust_level = str(row["trust_level"])
     _validate_trust_level(trust_level)
     return ViewerTrustRecord(
@@ -180,5 +266,10 @@ def _record_from_row(row: sqlite3.Row) -> ViewerTrustRecord:
 
 
 def _utc_now() -> str:
+    """Get current UTC time in ISO 8601 format.
+    
+    Returns:
+        str: UTC timestamp.
+    """
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 

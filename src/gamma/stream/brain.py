@@ -44,17 +44,56 @@ HIGH_PRIORITY_BYPASS_THRESHOLD = 20
 
 
 class StreamSafetyReviewer(Protocol):
+    """Protocol for stream safety reviewers.
+    
+    Methods:
+        review: Review text for safety issues.
+    """
+
     def review(self, text: str) -> LLMReviewDecision:
         ...
 
 
 class StreamSpeechSynthesizer(Protocol):
+    """Protocol for stream speech synthesizers.
+    
+    Methods:
+        synthesize: Synthesize text to speech.
+    """
+
     def synthesize(self, text: str, emotion: str | None = None, styles: list[str] | None = None) -> TTSResult:
         ...
 
 
 class StreamBrain:
-    """Policy boundary between public/live events and the conversation service."""
+    """Stream brain orchestrating policy, safety, and output events.
+    
+    Attributes:
+        _conversation: ConversationService instance.
+        _trace_store: StreamTraceStore instance.
+        _action_planner: ActionPlanner instance.
+        _output_dispatcher: StreamOutputDispatcher instance.
+        _pacer: StreamSpeechPacer instance.
+        _safety_reviewer: StreamSafetyReviewer instance.
+        _speech_synthesizer: StreamSpeechSynthesizer instance.
+        _temp_memory_store: StreamTempMemoryStore instance.
+        _self_goal_store: StreamSelfGoalStore instance.
+    
+    Methods:
+        __init__: Initialize StreamBrain.
+        handle_event: Handle stream input events.
+        decide: Make turn decision.
+        _review_stream_output: Review output stream safety.
+        _synthesize_with_parallel_review: Synthesize with parallel review.
+        _pacer.apply: Apply speech pacer.
+        _pacer.apply_budget: Apply budget decision.
+        _maybe_propose_self_goal: Propose self goal.
+        save_output_event: Save output event.
+        get_output_events: Get output events.
+        stream_self_goal_id: Self goal ID.
+        _stream_self_goal_approved: Check approved self goal.
+        _stream_self_goal_ignored: Check ignored self goal.
+    """
 
     def __init__(
         self,
@@ -68,6 +107,18 @@ class StreamBrain:
         temp_memory_store: StreamTempMemoryStore | None = None,
         self_goal_store: StreamSelfGoalStore | None = None,
     ) -> None:
+        """Initialize StreamBrain.
+        
+        Args:
+            conversation: Optional ConversationService (default ConversationService).
+            trace_store: Optional StreamTraceStore (default StreamTraceStore).
+            action_planner: Optional ActionPlanner (default ActionPlanner).
+            output_dispatcher: Optional StreamOutputDispatcher (default StreamOutputDispatcher).
+            safety_reviewer: Optional StreamSafetyReviewer (default SpeechLLMReviewer).
+            speech_synthesizer: Optional StreamSpeechSynthesizer.
+            temp_memory_store: Optional StreamTempMemoryStore (default StreamTempMemoryStore).
+            self_goal_store: Optional StreamSelfGoalStore (default StreamSelfGoalStore).
+        """
         self._conversation = conversation or ConversationService()
         self._trace_store = trace_store or StreamTraceStore()
         self._action_planner = action_planner or ActionPlanner()
@@ -431,9 +482,23 @@ class StreamBrain:
         self._trace_store.append(result)
 
     def pending_queue(self) -> dict:
+        """Get pending queue snapshot.
+        
+        Returns:
+            dict: Pending queue snapshot.
+        """
         return self._pacer.pending_snapshot()
 
     def stop_stream(self, *, reason: str = "operator_stop", live_cancellations: dict | None = None) -> StreamTurnResult:
+        """Stop stream speech.
+        
+        Args:
+            reason: Reason for stopping stream.
+            live_cancellations: Optional live cancellations.
+        
+        Returns:
+            StreamTurnResult: Stop stream result.
+        """
         started_at = time.perf_counter()
         self._pacer.clear_pending()
         metadata = {"reason": reason, "cleared_pending_queue": True}
@@ -482,6 +547,14 @@ class StreamBrain:
         return result
 
     def decide(self, event: StreamInputEvent) -> TurnDecision:
+        """Make turn decision from event.
+        
+        Args:
+            event: Stream input event.
+        
+        Returns:
+            TurnDecision: Turn decision.
+        """
         text = (event.text or "").strip()
         lowered = text.lower()
         input_safety = _input_safety(event)

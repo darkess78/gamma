@@ -16,6 +16,17 @@ _BASE_INTENSITY = {
 
 @dataclass(slots=True)
 class ExtractedEmotionTurn:
+    """Extracted emotion turn.
+    
+    Attributes:
+        emotion: Emotion name.
+        intensity: Emotion intensity.
+        emotional_target: Emotional target.
+        cause_summary: Cause summary.
+        trigger_type: Trigger type.
+        relationship_effect: Relationship effect.
+        pattern_text: Pattern text.
+    """
     emotion: str
     intensity: float
     emotional_target: str | None
@@ -26,6 +37,16 @@ class ExtractedEmotionTurn:
 
 
 def extract_emotion_turn(*, emotion: str, user_text: str, reply_text: str) -> ExtractedEmotionTurn:
+    """Extract emotion turn.
+    
+    Args:
+        emotion: Input emotion.
+        user_text: User text.
+        reply_text: Reply text.
+    
+    Returns:
+        ExtractedEmotionTurn: Extracted emotion turn.
+    """
     lowered = user_text.lower()
     normalized = emotion.strip().lower() if emotion else "neutral"
     intensity = _BASE_INTENSITY.get(normalized, 0.25)
@@ -72,4 +93,4 @@ def extract_emotion_turn(*, emotion: str, user_text: str, reply_text: str) -> Ex
         trigger_type=trigger_type,
         relationship_effect=relationship_effect,
         pattern_text=pattern_text,
-    )
+    ),

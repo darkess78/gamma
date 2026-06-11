@@ -16,6 +16,18 @@ _STT_NAME_PROMPT = "The assistant is named Shana. The owner is named Neety."
 
 
 def normalize_transcript(text: str) -> str:
+    """Normalize ASR transcript text.
+    
+    Args:
+        text: Raw transcript string from ASR.
+        
+    Returns:
+        str: Normalized text with casing and name corrections.
+        
+    Example:
+        >>> normalize_transcript("hey china shannon, what is gamma")
+        'Hey Shana, what is Gamma'
+    """
     normalized = " ".join(text.strip().split())
     if not normalized:
         return ""
@@ -31,20 +43,59 @@ def normalize_transcript(text: str) -> str:
 
 @dataclass(slots=True)
 class STTResult:
+    """ASR transcript result.
+    
+    Attributes:
+        text: Transcribed text string.
+    """
     text: str
 
 
 class STTBackend:
+    """Abstract base class for STT backend implementations.
+    
+    Attributes:
+        provider_name: Name of the STT provider.
+    
+    Subclasses:
+        FasterWhisperSTTBackend: Uses faster-whisper locally.
+        OpenAISTTBackend: Uses OpenAI for STT.
+        StubSTTBackend: Stub backend reading sidecar text files.
+    """
+
     provider_name: str = "unknown"
 
     def transcribe_audio(self, source: str) -> str:
+        """Transcribe audio source to text.
+        
+        Args:
+            source: Audio file path or URL.
+            
+        Returns:
+            str: Transcribed text.
+            
+        Raises:
+            NotImplementedError: Subclasses must implement.
+        """
         raise NotImplementedError
 
 
 class FasterWhisperSTTBackend(STTBackend):
+    """faster-whisper STT backend.
+    
+    Attributes:
+        provider_name: 'faster-whisper'.
+        _model: Loaded Whisper model instance.
+    """
+
     provider_name = "faster-whisper"
 
     def __init__(self) -> None:
+        """Initialize faster-whisper model.
+        
+        Sets up Whisper model with configured device and model settings.
+        Uses configured CUDA device if available.
+        """
         try:
             prepend_cuda_library_path()
             resolved_device = settings.stt_device
@@ -79,6 +130,17 @@ class FasterWhisperSTTBackend(STTBackend):
             raise ConfigurationError(f"Failed to initialize faster-whisper STT: {exc}") from exc
 
     def transcribe_audio(self, source: str) -> str:
+        """Transcribe audio file to text.
+        
+        Args:
+            source: Local audio file path.
+            
+        Returns:
+            str: Concatenated transcript text.
+            
+        Raises:
+            ExternalServiceError: If transcription fails.
+        """
         try:
             try:
                 segments, _info = self._model.transcribe(
@@ -94,9 +156,21 @@ class FasterWhisperSTTBackend(STTBackend):
 
 
 class OpenAISTTBackend(STTBackend):
+    """OpenAI-hosted STT backend.
+    
+    Attributes:
+        provider_name: 'openai'.
+        _client: OpenAI SDK client.
+    """
+
     provider_name = "openai"
 
     def __init__(self) -> None:
+        """Initialize OpenAI client.
+        
+        Raises:
+            ConfigurationError: If OPENAI_API_KEY not configured.
+        """
         if not settings.openai_api_key:
             raise ConfigurationError("OPENAI_API_KEY is required for SHANA_STT_PROVIDER=openai.")
         try:
@@ -106,6 +180,17 @@ class OpenAISTTBackend(STTBackend):
         self._client = OpenAI(api_key=settings.openai_api_key)
 
     def transcribe_audio(self, source: str) -> str:
+        """Transcribe audio file to text via OpenAI.
+        
+        Args:
+            source: Local audio file path.
+            
+        Returns:
+            str: Transcript text.
+            
+        Raises:
+            ExternalServiceError: If transcription fails or returns empty.
+        """
         audio_path = Path(source)
         if not audio_path.exists():
             raise ExternalServiceError(f"audio file not found: {audio_path}")
@@ -130,9 +215,28 @@ class OpenAISTTBackend(STTBackend):
 
 
 class StubSTTBackend(STTBackend):
+    """Stub STT backend for testing.
+    
+    Reads transcript from sidecar .txt files next to audio input.
+    
+    Attributes:
+        provider_name: 'stub'.
+    """
+
     provider_name = "stub"
 
     def transcribe_audio(self, source: str) -> str:
+        """Read transcript from sidecar .txt file.
+        
+        Args:
+            source: Audio file path (sidecar .txt read from same directory).
+            
+        Returns:
+            str: Transcript from sidecar file.
+            
+        Raises:
+            ExternalServiceError: If sidecar file not found.
+        """
         path = Path(source)
         txt_sidecar = path.with_suffix(".txt")
         if txt_sidecar.exists():
@@ -144,7 +248,18 @@ class StubSTTBackend(STTBackend):
 
 
 class STTService:
+    """STT service that selects backend by configuration.
+    
+    Attributes:
+        _backend: Selected STT backend instance.
+    """
+
     def __init__(self) -> None:
+        """Initialize STT service.
+        
+        Selects backend based on SHANA_STT_PROVIDER configuration.
+        Raises ConfigurationError for unsupported providers.
+        """
         provider = settings.stt_provider.strip().lower()
         if provider in {"faster-whisper", "faster_whisper", "whisper", "local"}:
             self._backend: STTBackend = FasterWhisperSTTBackend()
@@ -161,4 +276,12 @@ class STTService:
             raise ConfigurationError(f"Unsupported SHANA_STT_PROVIDER: {settings.stt_provider}")
 
     def transcribe_audio(self, source: str) -> str:
+        """Transcribe audio source to text.
+        
+        Args:
+            source: Audio file path or URL.
+            
+        Returns:
+            str: Normalized transcript text.
+        """
         return normalize_transcript(self._backend.transcribe_audio(source))

@@ -9,6 +9,11 @@ from .manager import ProcessManager
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build argument parser.
+    
+    Returns:
+        argparse.ArgumentParser: Argument parser.
+    """
     parser = argparse.ArgumentParser(description="Manage Gamma background services.")
     parser.add_argument("command", choices=["start", "stop", "restart", "status"])
     parser.add_argument("service", choices=["dashboard", "shana", "all"])
@@ -17,6 +22,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run(argv: list[str] | None = None) -> int:
+    """Run CLI.
+    
+    Args:
+        argv: Command line args (default sys.argv[1:]).
+    
+    Returns:
+        int: Exit code.
+    """
     parser = build_parser()
     args = parser.parse_args(argv)
     manager = ProcessManager()

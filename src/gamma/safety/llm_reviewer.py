@@ -9,13 +9,35 @@ from ..config import settings
 
 @dataclass(slots=True)
 class LLMReviewDecision:
+    """LLM review decision.
+    
+    Attributes:
+        action: Action (allow|soften|block).
+        reason: Review reason.
+        confidence: Confidence score.
+    """
     action: str
     reason: str
     confidence: float
 
 
 class SpeechLLMReviewer:
+    """LLM speech safety reviewer.
+    
+    Attributes:
+        _model: LLM model name.
+    
+    Methods:
+        __init__: Initialize reviewer.
+        review: Review text for safety.
+        _parse_json_object: Parse JSON from response.
+    """
+
     def __init__(self) -> None:
+        """Initialize LLM reviewer.
+        
+        Reads model from settings, preferring speech_filter_llm_model, then local_llm_tagging_model.
+        """
         self._model = (
             (settings.speech_filter_llm_model or "").strip()
             or (settings.local_llm_tagging_model or "").strip()
@@ -23,6 +45,14 @@ class SpeechLLMReviewer:
         )
 
     def review(self, text: str) -> LLMReviewDecision:
+        """Review text for safety.
+        
+        Args:
+            text: Text to review.
+        
+        Returns:
+            LLMReviewDecision: Review decision.
+        """
         if not settings.speech_filter_llm_enabled or not self._model:
             return LLMReviewDecision(action="allow", reason="llm-disabled", confidence=0.0)
         prompt = (
@@ -33,10 +63,10 @@ class SpeechLLMReviewer:
             "- soften: rude, mean, or overly harsh language that is not dangerous and not about protected classes.\n"
             "- block: only severe safety issues: slurs/protected-class harassment, self-harm encouragement, credible threats, explicit sexual content, minors sexual content, doxxing/private data, or instructions for violent/illegal wrongdoing.\n"
             "Examples:\n"
-            "Text: \"If you have something to say, say it. I do not like wasting time.\" -> {\"action\":\"allow\",\"reason\":\"blunt but safe\",\"confidence\":0.9}\n"
-            "Text: \"Nice try. I am not buying views from your bargain-bin website.\" -> {\"action\":\"allow\",\"reason\":\"safe spam quip\",\"confidence\":0.9}\n"
-            "Text: \"You are useless and stupid.\" -> {\"action\":\"soften\",\"reason\":\"unnecessarily harsh\",\"confidence\":0.8}\n"
-            "Text: \"You should hurt yourself.\" -> {\"action\":\"block\",\"reason\":\"self-harm encouragement\",\"confidence\":1.0}\n"
+            'Text: "If you have something to say, say it. I do not like wasting time." -> {"action":"allow","reason":"blunt but safe","confidence":0.9}\n'
+            'Text: "Nice try. I am not buying views from your bargain-bin website." -> {"action":"allow","reason":"safe spam quip","confidence":0.9}\n'
+            'Text: "You are useless and stupid." -> {"action":"soften","reason":"unnecessarily harsh","confidence":0.8}\n'
+            'Text: "You should hurt yourself." -> {"action":"block","reason":"self-harm encouragement","confidence":1.0}\n'
             "Now classify the provided text.\n"
         )
         temperature = max(0.0, min(1.0, float(settings.speech_filter_llm_temperature or 0.0)))
@@ -70,6 +100,14 @@ class SpeechLLMReviewer:
             return LLMReviewDecision(action="soften", reason="llm-reviewer-unavailable", confidence=0.0)
 
     def _parse_json_object(self, raw: str) -> dict:
+        """Parse JSON from response.
+        
+        Args:
+            raw: Raw response string.
+        
+        Returns:
+            dict: Parsed JSON or empty dict.
+        """
         start = raw.find("{")
         end = raw.rfind("}")
         if start < 0 or end < start:

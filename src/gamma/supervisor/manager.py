@@ -18,6 +18,18 @@ from ..voice.voice_profiles import resolve_tts_config
 
 @dataclass(frozen=True, slots=True)
 class ManagedService:
+    """Managed service.
+    
+    Attributes:
+        name: Service name.
+        module: Service module.
+        bind_host: Bind host.
+        public_host: Public host.
+        port: Port.
+    
+    Methods:
+        url: Get service URL.
+    """
     name: str
     module: str
     bind_host: str
@@ -26,11 +38,52 @@ class ManagedService:
 
     @property
     def url(self) -> str:
-        return f"http://{self.public_host}:{self.port}"
+        """Get service URL.
+        
+        Returns:
+            str: Service URL.
+        """
+        return f"http://{self.public_host}:{self.port}""
 
 
 class ProcessManager:
+    """Process manager.
+    
+    Attributes:
+        _runtime_dir: Runtime directory.
+        _services: Services dictionary.
+    
+    Methods:
+        __init__: Initialize manager.
+        service: Get service.
+        start: Start service.
+        stop: Stop service.
+        restart: Restart service.
+        status: Get service status.
+        start_module: Start module.
+        stop_module: Stop module.
+        module_status: Get module status.
+        find_module_process: Find module process.
+        find_module_processes: Find module processes.
+        looks_like_module_process: Check if process is module.
+        find_process: Find process.
+        find_processes: Find processes.
+        looks_like_service: Check if process is service.
+        process_payload: Get process payload.
+        pid_file: Get PID file.
+        clear_pid_file: Clear PID file.
+        stdout_log: Get stdout log.
+        stderr_log: Get stderr log.
+        _resolve_background_python: Resolve Python executable.
+        _start_shana_dependencies: Start Shana dependencies.
+        _stop_shana_dependencies: Stop Shana dependencies.
+    """
+
     def __init__(self) -> None:
+        """Initialize manager.
+        
+        Sets up services for background process management.
+        """
         self._runtime_dir = settings.data_dir / "runtime"
         self._runtime_dir.mkdir(parents=True, exist_ok=True)
         self._services = {
@@ -51,9 +104,25 @@ class ProcessManager:
         }
 
     def service(self, name: str) -> ManagedService:
+        """Get service.
+        
+        Args:
+            name: Service name.
+        
+        Returns:
+            ManagedService: Service instance.
+        """
         return self._services[name]
 
     def start(self, name: str) -> dict[str, Any]:
+        """Start service.
+        
+        Args:
+            name: Service name.
+        
+        Returns:
+            dict[str, Any]: Start result.
+        """
         service = self.service(name)
         existing = self.find_process(name)
         if existing:
@@ -121,6 +190,14 @@ class ProcessManager:
         }
 
     def stop(self, name: str) -> dict[str, Any]:
+        """Stop service.
+        
+        Args:
+            name: Service name.
+        
+        Returns:
+            dict[str, Any]: Stop result.
+        """
         processes = self.find_processes(name)
         if not processes:
             self.clear_pid_file(name)
@@ -148,11 +225,27 @@ class ProcessManager:
         return payload
 
     def restart(self, name: str) -> dict[str, Any]:
+        """Restart service.
+        
+        Args:
+            name: Service name.
+        
+        Returns:
+            dict[str, Any]: Restart result.
+        """
         stopped = self.stop(name)
         started = self.start(name)
         return {"ok": True, "detail": "restarted", "stop": stopped, "start": started}
 
     def status(self, name: str) -> dict[str, Any]:
+        """Get service status.
+        
+        Args:
+            name: Service name.
+        
+        Returns:
+            dict[str, Any]: Status dict.
+        """
         process = self.find_process(name)
         return {
             "service": name,
@@ -163,6 +256,16 @@ class ProcessManager:
         }
 
     def start_module(self, name: str, module: str, args: list[str] | None = None) -> dict[str, Any]:
+        """Start module.
+        
+        Args:
+            name: Service name.
+            module: Python module.
+            args: Module args.
+        
+        Returns:
+            dict[str, Any]: Start result.
+        """
         existing = self.find_module_process(name, module)
         if existing:
             return {"ok": True, "detail": "already-running", "process": self.process_payload(existing)}
@@ -202,6 +305,15 @@ class ProcessManager:
         }
 
     def stop_module(self, name: str, module: str) -> dict[str, Any]:
+        """Stop module.
+        
+        Args:
+            name: Service name.
+            module: Python module.
+        
+        Returns:
+            dict[str, Any]: Stop result.
+        """
         processes = self.find_module_processes(name, module)
         if not processes:
             self.clear_pid_file(name)
@@ -221,6 +333,15 @@ class ProcessManager:
         return {"ok": True, "detail": "stopped", "pids": stopped_pids}
 
     def module_status(self, name: str, module: str) -> dict[str, Any]:
+        """Get module status.
+        
+        Args:
+            name: Service name.
+            module: Python module.
+        
+        Returns:
+            dict[str, Any]: Status dict.
+        """
         process = self.find_module_process(name, module)
         return {
             "service": name,
@@ -231,10 +352,28 @@ class ProcessManager:
         }
 
     def find_module_process(self, name: str, module: str) -> psutil.Process | None:
+        """Find module process.
+        
+        Args:
+            name: Service name.
+            module: Python module.
+        
+        Returns:
+            psutil.Process | None: Process or None.
+        """
         processes = self.find_module_processes(name, module)
         return processes[0] if processes else None
 
     def find_module_processes(self, name: str, module: str) -> list[psutil.Process]:
+        """Find module processes.
+        
+        Args:
+            name: Service name.
+            module: Python module.
+        
+        Returns:
+            list[psutil.Process]: Process list.
+        """
         matches: dict[int, psutil.Process] = {}
         pid = self.read_pid_file(name)
         if pid is not None:
@@ -257,14 +396,39 @@ class ProcessManager:
         return sorted(matches.values(), key=lambda process: process.pid)
 
     def looks_like_module_process(self, process: psutil.Process, module: str) -> bool:
+        """Check if process is module.
+        
+        Args:
+            process: Process.
+            module: Python module.
+        
+        Returns:
+            bool: Whether process matches.
+        """
         cmdline = " ".join(process.cmdline()).lower()
         return f"-m {module}".lower() in cmdline
 
     def find_process(self, name: str) -> psutil.Process | None:
+        """Find process.
+        
+        Args:
+            name: Service name.
+        
+        Returns:
+            psutil.Process | None: Process or None.
+        """
         processes = self.find_processes(name)
         return processes[0] if processes else None
 
     def find_processes(self, name: str) -> list[psutil.Process]:
+        """Find processes.
+        
+        Args:
+            name: Service name.
+        
+        Returns:
+            list[psutil.Process]: Process list.
+        """
         matches: dict[int, psutil.Process] = {}
         pid = self.read_pid_file(name)
         if pid is not None:
@@ -301,6 +465,15 @@ class ProcessManager:
         return sorted(matches.values(), key=lambda process: process.pid)
 
     def looks_like_service(self, process: psutil.Process, name: str) -> bool:
+        """Check if process is service.
+        
+        Args:
+            process: Process.
+            name: Service name.
+        
+        Returns:
+            bool: Whether process matches.
+        """
         cmdline = " ".join(process.cmdline()).lower()
         return "uvicorn" in cmdline and self.service(name).module.lower() in cmdline
 

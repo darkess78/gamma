@@ -14,12 +14,28 @@ _ALLOWED_EMOTIONS = {"neutral", "happy", "teasing", "concerned", "excited", "emb
 
 @dataclass(slots=True)
 class AssistantFeelingState:
+    """Assistant feeling state.
+    
+    Attributes:
+        current_emotion: Current emotion.
+        recent_emotions: List of recent emotions.
+        notes: List of emotion notes.
+        updated_at: Update timestamp.
+    
+    Methods:
+        to_prompt_block: Generate prompt block.
+    """
     current_emotion: str = "neutral"
     recent_emotions: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     updated_at: str | None = None
 
     def to_prompt_block(self) -> str:
+        """Generate prompt block.
+        
+        Returns:
+            str: Prompt block string.
+        """
         lines = [f"current_emotion: {self.current_emotion}"]
         if self.recent_emotions:
             lines.append("recent_emotions: " + ", ".join(self.recent_emotions[-5:]))
@@ -32,10 +48,32 @@ class AssistantFeelingState:
 
 
 class AssistantStateStore:
+    """Assistant state store.
+    
+    Attributes:
+        _path: State file path.
+    
+    Methods:
+        __init__: Initialize store.
+        load: Load state.
+        update: Update state.
+        _build_note: Build emotion note.
+    """
+
     def __init__(self, path: Path | None = None) -> None:
+        """Initialize store.
+        
+        Args:
+            path: State file path (default from settings).
+        """
         self._path = path or _DEFAULT_STATE_PATH
 
     def load(self) -> AssistantFeelingState:
+        """Load state.
+        
+        Returns:
+            AssistantFeelingState: Loaded state.
+        """
         if not self._path.exists():
             return AssistantFeelingState()
         try:
@@ -60,6 +98,16 @@ class AssistantStateStore:
         )
 
     def update(self, *, emotion: str, user_text: str, reply_text: str) -> AssistantFeelingState:
+        """Update state.
+        
+        Args:
+            emotion: New emotion.
+            user_text: User text snippet.
+            reply_text: Reply text snippet.
+        
+        Returns:
+            AssistantFeelingState: Updated state.
+        """
         state = self.load()
         normalized = emotion.strip().lower() if emotion else "neutral"
         if normalized not in _ALLOWED_EMOTIONS:
@@ -89,6 +137,16 @@ class AssistantStateStore:
         return state
 
     def _build_note(self, *, user_text: str, reply_text: str, emotion: str) -> str | None:
+        """Build emotion note.
+        
+        Args:
+            user_text: User text.
+            reply_text: Reply text.
+            emotion: Emotion.
+        
+        Returns:
+            str | None: Note string or None.
+        """
         user_preview = " ".join(user_text.split())[:90]
         reply_preview = " ".join(reply_text.split())[:90]
         if not user_preview and not reply_preview:

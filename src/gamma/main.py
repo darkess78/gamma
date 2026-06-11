@@ -13,9 +13,18 @@ app.include_router(router)
 
 
 @app.middleware("http")
-async def require_api_auth(request: Request, call_next):
+async def require_api_auth(request: Request, call_next) -> Response:
+    """Require API auth.
+    
+    Args:
+        request: HTTP request.
+        call_next: Next handler.
+    
+    Returns:
+        Response: Response.
+    """
     path = request.url.path
-    if not settings.api_auth_enabled or not path.startswith("/v1/"):
+    if not settings.api_auth_enabled or not path.startswith("/"):
         return await call_next(request)
     auth_header = request.headers.get("authorization", "")
     expected = f"Bearer {settings.api_bearer_token}"
@@ -26,4 +35,9 @@ async def require_api_auth(request: Request, call_next):
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    """Health check.
+    
+    Returns:
+        dict: Health status.
+    """
     return {"status": "ok"}

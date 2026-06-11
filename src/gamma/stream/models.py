@@ -11,6 +11,11 @@ from ..schemas.response import AssistantResponse
 
 
 def utc_now() -> str:
+    """Return current UTC time as ISO 8601 formatted string.
+    
+    Returns:
+        str: Current UTC timestamp in "YYYY-MM-DDTHH:MM:SZ" format.
+    """
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
@@ -51,6 +56,11 @@ class StreamActor(BaseModel):
     roles: list[str] = Field(default_factory=list)
 
     def to_speaker_context(self) -> SpeakerContext:
+        """Convert actor to speaker context for identity resolution.
+        
+        Returns:
+            SpeakerContext: Speaker context with source and platform info.
+        """
         return SpeakerContext(source=self.source, platform_id=self.platform_id)
 
 
@@ -117,6 +127,18 @@ def output_events_from_response(
     turn_id: str,
     response: AssistantResponse,
 ) -> list[StreamOutputEvent]:
+    """Build output events from an assistant response.
+    
+    Creates subtitle, speech, emotion, and motion events based on the response.
+    
+    Args:
+        input_event: The original input event that triggered the response.
+        turn_id: Unique identifier for this turn.
+        response: AssistantResponse object with spoken text and metadata.
+        
+    Returns:
+        list[StreamOutputEvent]: List of output events matching the response.
+    """
     context = output_context_from_input(input_event)
     events = [
         StreamOutputEvent(
@@ -167,6 +189,15 @@ def output_events_from_response(
 
 
 def output_context_from_input(input_event: StreamInputEvent) -> dict[str, Any]:
+    """Extract output context from an input event.
+    
+    Args:
+        input_event: StreamInputEvent with event and actor data.
+        
+    Returns:
+        dict[str, Any]: Context dict with input kind, event_id, session_id,
+            and actor information (source, platform_id, display_name, roles).
+    """
     return {
         "input": {
             "kind": input_event.kind,

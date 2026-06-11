@@ -16,6 +16,14 @@ from .models import EpisodicMemory, KnownPerson, PersonIdentity, ProfileFact
 
 
 def _sqlite_path_from_url(database_url: str) -> Path | None:
+    """Get SQLite path from URL.
+    
+    Args:
+        database_url: Database URL.
+    
+    Returns:
+        Path | None: SQLite path or None.
+    """
     prefix = "sqlite:///"
     if not database_url.startswith(prefix):
         return None
@@ -27,16 +35,41 @@ def _sqlite_path_from_url(database_url: str) -> Path | None:
 
 
 def _normalize_whitespace(text: str) -> str:
+    """Remove extra whitespace from text.
+    
+    Args:
+        text: Input text.
+    
+    Returns:
+        str: Normalized text.
+    """
     return " ".join(text.strip().split())
 
 
 def _canonicalize_profile_text(text: str) -> str:
+    """Remove punctuation from profile text.
+    
+    Args:
+        text: Input text.
+    
+    Returns:
+        str: Canonicalized text.
+    """
     normalized = _normalize_whitespace(text)
     normalized = re.sub(r"[.!?]+$", "", normalized)
     return normalized.strip()
 
 
 def _profile_slot(category: str, fact_text: str) -> str | None:
+    """Map profile facts to canonical slots.
+    
+    Args:
+        category: Fact category (identity/preference/project).
+        fact_text: Fact text.
+    
+    Returns:
+        str | None: Canonical slot path or None.
+    """
     lowered = fact_text.lower().strip()
     if category == "identity" and lowered.startswith("my name is "):
         return "identity:name"
@@ -62,12 +95,28 @@ def _profile_slot(category: str, fact_text: str) -> str | None:
 
 
 def _memory_text_signature(text: str) -> str:
+    """Get signature for matching memory items.
+    
+    Args:
+        text: Input text.
+    
+    Returns:
+        str: Lowercase signature.
+    """
     normalized = _normalize_whitespace(text).lower()
     normalized = re.sub(r"[.!?]+$", "", normalized)
     return normalized.strip()
 
 
 def _episodic_signature(text: str) -> str:
+    """Get signature for matching episodic memory.
+    
+    Args:
+        text: Input text.
+    
+    Returns:
+        str: Lowercase episodic signature.
+    """
     normalized = _memory_text_signature(text)
     normalized = re.sub(r"\|\s*assistant replied:.*$", "", normalized)
     normalized = re.sub(r"^user said:\s*", "", normalized)
@@ -79,6 +128,15 @@ def _episodic_signature(text: str) -> str:
 
 
 def _extract_preference_subject(slot: str | None, fact_text: str) -> str | None:
+    """Extract preference subject from fact text.
+    
+    Args:
+        slot: Canonical slot path.
+        fact_text: Fact text.
+    
+    Returns:
+        str | None: Preference subject or None.
+    """
     if not slot or not slot.startswith("preference:"):
         return None
     lowered = _memory_text_signature(fact_text)
@@ -102,6 +160,14 @@ def _extract_preference_subject(slot: str | None, fact_text: str) -> str | None:
 
 
 def _normalize_subject_name(value: str | None) -> str | None:
+    """Normalize subject name to fixed length.
+    
+    Args:
+        value: Subject name.
+    
+    Returns:
+        str | None: Normalized name or None.
+    """
     if value is None:
         return None
     normalized = " ".join(value.strip().split())
@@ -113,13 +179,42 @@ def _normalize_identity(value: object, *, limit: int = 200) -> str:
 
 
 class MemoryService:
+    """Persistent episodic/profile memory storage.
+    
+    Attributes:
+        _engine: SQLAlchemy engine.
+        _engine_finalizer: Weakref to engine disposal callback.
+    
+    Methods:
+        __init__: Initialize memory service.
+        close: Close memory engine.
+        _configure_sqlite_connection: Configure SQLite connection.
+        _ensure_compatible_schema: Ensure schema is compatible.
+        _ensure_sqlite_columns: Add missing SQLite columns.
+        get_profile_facts: Get profile facts.
+        get_profile_facts_for_subject: Get profile facts for subject.
+        get_profile_facts_for_slot: Get profile facts for slot.
+        save_profile_fact: Save profile fact.
+        save_personal_memory: Save episodic memory.
+        clear_personal_memory: Clearepisodic memory.
+        _memory_text_signature: Get memory signature.
+        get_recent_episodic_memories: Get recent episodic memories.
+        get_all_episodic_memories: Get all episodic memories.
+        clear_episodic_memories: Clear episodic memories.
+        resolve_person_identity: Resolve person identity.
+    """
+
     def __init__(self) -> None:
+        """Initialize MemoryService.
+        
+        Creates SQLite engine if configured. Configures SQLite connection
+        to use WAL mode and synchronous=NORMAL for better performance.
+        Creates all tables and ensures schema compatibility.
+        """
         connect_args = {}
         engine_kwargs = {}
         if settings.database_url.startswith("sqlite"):
             connect_args["check_same_thread"] = False
-            # SQLite connections should close immediately after use; pooled file handles
-            # trigger noisy ResourceWarnings in short-lived test/service instances.
             engine_kwargs["poolclass"] = NullPool
         self._engine = create_engine(settings.database_url, connect_args=connect_args, **engine_kwargs)
         if settings.database_url.startswith("sqlite"):
@@ -129,11 +224,21 @@ class MemoryService:
         self._ensure_compatible_schema()
 
     def close(self) -> None:
+        """Close memory engine.
+        
+        Disposes the SQLite engine if not already disposed.
+        """
         if self._engine_finalizer.alive:
             self._engine_finalizer()
 
     @staticmethod
     def _configure_sqlite_connection(dbapi_connection, _connection_record) -> None:
+        """Configure SQLite connection.
+        
+        Args:
+            dbapi_connection: SQLite connection.
+            _connection_record: SQLAlchemy connection record.
+        """
         cursor = dbapi_connection.cursor()
         try:
             cursor.execute("PRAGMA journal_mode=WAL")
@@ -144,6 +249,11 @@ class MemoryService:
             cursor.close()
 
     def _ensure_compatible_schema(self) -> None:
+        """Ensure schema is compatible.
+        
+        Adds required columns and indexes for SQLite databases.
+        No-op for other database types.
+        """
         if not settings.database_url.startswith("sqlite"):
             return
         with self._engine.begin() as conn:
@@ -187,6 +297,13 @@ class MemoryService:
             )
 
     def _ensure_sqlite_columns(self, conn, table_name: str, columns_to_add: dict[str, str]) -> None:
+        """Add missing SQLite columns.
+        
+        Args:
+            conn: Database connection.
+            table_name: Table name.
+            columns_to_add: Column definitions to add.
+        """
         result = conn.exec_driver_sql(f"PRAGMA table_info({table_name})")
         existing = {row[1] for row in result.fetchall()}
         for name, definition in columns_to_add.items():
@@ -200,6 +317,16 @@ class MemoryService:
         subject_type: str | None = "primary_user",
         subject_name: str | None = None,
     ) -> list[ProfileFact]:
+        """Get profile facts.
+        
+        Args:
+            limit: Optional max facts (default from settings.memory_top_k).
+            subject_type: Subject type filter.
+            subject_name: Subject name filter.
+        
+        Returns:
+            list[ProfileFact]: Profile facts ordered by confidence.
+        """
         with Session(self._engine) as session:
             statement = select(ProfileFact).order_by(ProfileFact.confidence.desc(), ProfileFact.id.desc())
             if subject_type:
@@ -218,6 +345,18 @@ class MemoryService:
         subject_type: str | None = None,
         subject_name: str | None = None,
     ) -> list[EpisodicMemory]:
+        """Search memories by query.
+        
+        Args:
+            query: Search query terms.
+            session_id: Optional session filter.
+            limit: Optional max results (default from settings.memory_top_k).
+            subject_type: Optional subject type filter.
+            subject_name: Optional subject name filter.
+        
+        Returns:
+            list[EpisodicMemory]: Ranked memory results.
+        """
         terms = [term.strip().lower() for term in query.split() if len(term.strip()) >= 3]
         with Session(self._engine) as session:
             statement = select(EpisodicMemory)
@@ -256,6 +395,15 @@ class MemoryService:
         return [memory for _score, memory in scored[: limit or settings.memory_top_k]]
 
     def persist_candidates(self, candidates: Iterable[MemoryCandidate], session_id: str | None = None) -> int:
+        """Persist memory candidates.
+        
+        Args:
+            candidates: Iterable of MemoryCandidate objects.
+            session_id: Optional session ID for episodic memories.
+        
+        Returns:
+            int: Number of items saved.
+        """
         if not settings.memory_enabled or settings.memory_write_mode == "off":
             return 0
         saved = 0

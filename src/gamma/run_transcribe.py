@@ -26,6 +26,14 @@ from .run_prepare_tts_dataset import (
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
+    """Parse CLI arguments.
+    
+    Args:
+        argv: Command line arguments.
+    
+    Returns:
+        argparse.Namespace: Parsed arguments.
+    """
     parser = argparse.ArgumentParser(
         description="Transcribe a media file and print the full transcript.",
     )
@@ -97,10 +105,26 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def _is_pure_audio(path: Path) -> bool:
+    """Check if path is pure audio.
+    
+    Args:
+        path: Path to check.
+    
+    Returns:
+        bool: True if pure audio.
+    """
     return path.suffix.lower() in {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".opus", ".mka"}
 
 
 def _needs_ffmpeg(path: Path) -> bool:
+    """Check if ffmpeg is needed.
+    
+    Args:
+        path: Path to check.
+    
+    Returns:
+        bool: True if ffmpeg is needed.
+    """
     return path.suffix.lower() in MEDIA_EXTENSIONS and not _is_pure_audio(path)
 
 
@@ -162,6 +186,15 @@ def transcribe_file(args: argparse.Namespace) -> list[dict]:
 
 
 def format_transcript(segments: list[dict], timestamps: bool) -> str:
+    """Format transcript.
+    
+    Args:
+        segments: List of segment dicts.
+        timestamps: Whether to include timestamps.
+    
+    Returns:
+        str: Formatted transcript.
+    """
     lines: list[str] = []
     for seg in segments:
         text = seg["text"]
@@ -175,6 +208,14 @@ def format_transcript(segments: list[dict], timestamps: bool) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Run transcribe.
+    
+    Args:
+        argv: Command line arguments (default: sys.argv[1:]).
+    
+    Returns:
+        int: Exit code.
+    """
     args = parse_args(argv if argv is not None else sys.argv[1:])
     input_path = Path(args.input_path).expanduser().resolve()
 

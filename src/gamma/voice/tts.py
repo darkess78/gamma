@@ -38,6 +38,15 @@ from .voice_profiles import ResolvedTTSConfig, resolve_tts_config
 
 @dataclass(slots=True)
 class TTSResult:
+    """TTS synthesis output result.
+    
+    Attributes:
+        provider: TTS provider name.
+        text: Synthesized text.
+        audio_path: Path to generated audio file.
+        content_type: Audio MIME type.
+        metadata: Optional generation metadata.
+    """
     provider: str
     text: str
     audio_path: str
@@ -46,14 +55,60 @@ class TTSResult:
 
 
 class TTSBackend:
+    """Abstract base class for TTS backend implementations.
+    
+    Attributes:
+        provider_name: Name of the TTS provider.
+    
+    Subclasses:
+        OpenAITTSBackend: Uses OpenAI TTS API.
+        PiperTTSBackend: Uses Piper TTS binaries.
+        QwenTTSBackend: Uses qwen_tts_server HTTP backend.
+        StubTTSBackend: Generates simple tone waveform for testing.
+    """
+
     provider_name: str = "unknown"
 
     def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
+        """Synthesize text to audio.
+        
+        Args:
+            text: Text to synthesize.
+            emotion: Optional emotion style.
+            
+        Returns:
+            TTSResult: Generated audio file info.
+            
+        Raises:
+            NotImplementedError: Subclasses must implement.
+        """
         raise NotImplementedError
 
 
 class TTSService:
+    """TTS service that selects backend by configuration.
+    
+    Attributes:
+        _backend: Selected TTS backend instance.
+        _MAX_CHUNK_CHARS: Maximum characters per chunk.
+
+    Submethods:
+        synthesize: Synthesize text to audio.
+        synthesize_multipart: Synthesize in chunks for multipart output.
+        _split_text: Split text into manageable chunks.
+        _concat_wav_results: Concatenate WAV chunks.
+        synthesize: Main synthesis entry (calls backend + post-processing).
+        _maybe_apply_denoise: Apply spectral denoising.
+        _maybe_apply_rvc: Apply RVC post-processing.
+        _validate_wav_file: Validate WAV output.
+    """
+
     def __init__(self) -> None:
+        """Initialize TTS service.
+        
+        Selects backend based on SHANA_TTS_PROVIDER configuration.
+        Raises ConfigurationError for unsupported providers.
+        """
         self._cfg = resolve_tts_config()
         provider = self._cfg.provider.strip().lower()
         if provider == "openai":
@@ -75,7 +130,16 @@ class TTSService:
     _MAX_CHUNK_CHARS = 3800  # conservative limit; keeps all backends happy (OpenAI caps at 4096)
 
     def synthesize_multipart(self, text: str, emotion: str | None = None, styles: list[str] | None = None) -> TTSResult:
-        """Split *text* into paragraph/sentence chunks, synthesize each, and stitch WAV frames."""
+        """Synthesize text by splitting into chunks.
+        
+        Args:
+            text: Text to synthesize.
+            emotion: Optional emotion style.
+            styles: Optional list of voice styles.
+            
+        Returns:
+            TTSResult: Merged audio from all chunks.
+        """
         chunks = self._split_text(text)
         if not chunks:
             raise ValueError("text is empty after parsing")
@@ -85,6 +149,14 @@ class TTSService:
         return self._concat_wav_results(results)
 
     def _split_text(self, text: str) -> list[str]:
+        """Split text into paragraph/sentence chunks under size limit.
+        
+        Args:
+            text: Text to split.
+            
+        Returns:
+            list[str]: Chunks under MAX_CHUNK_CHARS each.
+        """
         import re
         paragraphs = re.split(r"\n\n+", text.strip())
         chunks: list[str] = []
@@ -113,6 +185,14 @@ class TTSService:
         return chunks
 
     def _concat_wav_results(self, results: list[TTSResult]) -> TTSResult:
+        """Concatenate WAV results into single file.
+        
+        Args:
+            results: List of TTSResult from chunks.
+            
+        Returns:
+            TTSResult: Merged WAV file.
+        """
         non_wav = [r for r in results if r.content_type != "audio/wav"]
         if non_wav:
             raise ConfigurationError(
@@ -151,6 +231,16 @@ class TTSService:
         )
 
     def synthesize(self, text: str, emotion: str | None = None, styles: list[str] | None = None) -> TTSResult:
+        """Generate audio from text with optional post-processing.
+        
+        Args:
+            text: Text to synthesize.
+            emotion: Optional emotion style.
+            styles: Optional list of voice styles.
+            
+        Returns:
+            TTSResult: Generated audio with timing metadata.
+        """
         started_at = time.perf_counter()
         expressive = strip_hidden_style_tags(text, default_emotion=emotion)
         voice_styles = list(expressive.styles)
@@ -174,6 +264,14 @@ class TTSService:
         return result
 
     def _maybe_apply_denoise(self, result: TTSResult) -> TTSResult:
+        """Apply spectral denoising if enabled.
+        
+        Args:
+            result: TTSResult to process.
+            
+        Returns:
+            TTSResult: Denoised result or original.
+        """
         if not self._cfg.denoise_enabled:
             return result
         if not _SCIPY_AVAILABLE:
@@ -216,6 +314,15 @@ class TTSService:
         )
 
     def _maybe_apply_rvc(self, result: TTSResult, *, emotion: str | None) -> TTSResult:
+        """Apply RVC voice conversion if enabled.
+        
+        Args:
+            result: TTSResult to process.
+            emotion: Emotion for RVC.
+            
+        Returns:
+            TTSResult: RVC-processed result or original.
+        """
         if not self._cfg.rvc_enabled:
             return result
         started_at = time.perf_counter()
@@ -307,6 +414,15 @@ class TTSService:
         )
 
     def _validate_wav_file(self, path: Path, *, provider_name: str) -> None:
+        """Validate WAV file produced by backend.
+        
+        Args:
+            path: WAV file path.
+            provider_name: Provider name for error messages.
+            
+        Raises:
+            ExternalServiceError: If invalid, empty, or silent WAV.
+        """
         try:
             with wave.open(str(path), "rb") as wav_file:
                 frame_count = wav_file.getnframes()
@@ -410,11 +526,24 @@ def _spectral_denoise(samples: "np.ndarray", sr: int, strength: float) -> "np.nd
 
 
 class QwenTTSBackend(BaseFileTTSBackend):
-    """Calls a locally running qwen_tts_server.py over HTTP."""
+    """Calls a locally running qwen_tts_server.py over HTTP.
+    
+    Attributes:
+        provider_name: 'qwen-tts'.
+        _cfg: Configuration for Qwen TTS service.
+    """
 
     provider_name = "qwen-tts"
 
     def __init__(self, cfg: ResolvedTTSConfig) -> None:
+        """Initialize Qwen TTS backend.
+        
+        Args:
+            cfg: ResolvedTTSConfig configuration.
+            
+        Raises:
+            ConfigurationError: If qwen_tts_endpoint not configured.
+        """
         self._cfg = cfg
         if not self._cfg.qwen_tts_endpoint:
             raise ConfigurationError(
@@ -424,6 +553,16 @@ class QwenTTSBackend(BaseFileTTSBackend):
             )
 
     def synthesize(self, text: str, emotion: str | None = None, styles: list[str] | None = None) -> TTSResult:
+        """Synthesize text via Qwen TTS HTTP API.
+        
+        Args:
+            text: Text to synthesize.
+            emotion: Optional emotion style.
+            styles: Optional list of voice styles.
+            
+        Returns:
+            TTSResult: Generated audio.
+        """
         started_at = time.perf_counter()
         payload: dict[str, Any] = {"text": self._normalize_text(text)}
 
@@ -489,6 +628,15 @@ class QwenTTSBackend(BaseFileTTSBackend):
         )
 
     def _extra_params_for_emotion(self, emotion: str | None, styles: list[str] | None = None) -> dict[str, Any]:
+        """Get extra params for emotion-based styling.
+        
+        Args:
+            emotion: Optional emotion string.
+            styles: Optional voice styles list.
+            
+        Returns:
+            dict[str, Any]: Extra params dict.
+        """
         extra = dict(self._cfg.qwen_tts_extra_json or {})
         speed_by_emotion = extra.pop("speed_by_emotion", None)
         if isinstance(speed_by_emotion, dict):
@@ -504,6 +652,12 @@ class QwenTTSBackend(BaseFileTTSBackend):
         return extra
 
     def _apply_voice_styles(self, extra: dict[str, Any], styles: list[str]) -> None:
+        """Apply voice styles to extra params.
+        
+        Args:
+            extra: Extra params dict to modify.
+            styles: Styles to apply.
+        """
         if not styles:
             return
         speed = self._float_param(extra.get("speed"), default=0.82)
@@ -531,12 +685,30 @@ class QwenTTSBackend(BaseFileTTSBackend):
         extra["output_peak"] = max(0.48, min(0.78, output_peak))
 
     def _float_param(self, value: Any, *, default: float) -> float:
+        """Convert value to float or return default.
+        
+        Args:
+            value: Value to convert.
+            default: Default if conversion fails.
+            
+        Returns:
+            float: Converted value or default.
+        """
         try:
             return float(value)
         except (TypeError, ValueError):
             return default
 
     def _select_emotion_speed(self, speed_by_emotion: dict[Any, Any], emotion: str | None) -> float | None:
+        """Select emotion-based speed.
+        
+        Args:
+            speed_by_emotion: Emotion to speed mapping.
+            emotion: Current emotion.
+            
+        Returns:
+            float | None: Speed for emotion or None.
+        """
         keys = []
         if emotion:
             keys.append(str(emotion).strip().lower())
@@ -552,6 +724,15 @@ class QwenTTSBackend(BaseFileTTSBackend):
         return None
 
     def _select_emotion_output_peak(self, output_peak_by_emotion: dict[Any, Any], emotion: str | None) -> float | None:
+        """Select emotion-based output peak.
+        
+        Args:
+            output_peak_by_emotion: Emotion to output peak mapping.
+            emotion: Current emotion.
+            
+        Returns:
+            float | None: Output peak for emotion or None.
+        """
         keys = []
         if emotion:
             keys.append(str(emotion).strip().lower())
@@ -567,6 +748,14 @@ class QwenTTSBackend(BaseFileTTSBackend):
         return None
 
     def _validate_wav_payload(self, audio_bytes: bytes) -> None:
+        """Validate WAV payload from Qwen backend.
+        
+        Args:
+            audio_bytes: WAV bytes.
+            
+        Raises:
+            ExternalServiceError: If invalid, empty, or silent WAV.
+        """
         try:
             with wave.open(_BytesReader(audio_bytes), "rb") as wav_file:
                 frame_count = wav_file.getnframes()
@@ -585,9 +774,25 @@ class QwenTTSBackend(BaseFileTTSBackend):
 
 
 class OpenAITTSBackend(BaseFileTTSBackend):
+    """OpenAI TTS API backend.
+    
+    Attributes:
+        provider_name: 'openai'.
+        _cfg: ResolvedTTSConfig configuration.
+        _client: OpenAI SDK client.
+    """
+
     provider_name = "openai"
 
     def __init__(self, cfg: ResolvedTTSConfig) -> None:
+        """Initialize OpenAI TTS backend.
+        
+        Args:
+            cfg: ResolvedTTSConfig configuration.
+            
+        Raises:
+            ConfigurationError: If OPENAI_API_KEY not configured.
+        """
         self._cfg = cfg
         api_key = settings.openai_api_key or os.getenv("OPENAI_API_KEY")
         if not api_key:
@@ -599,6 +804,15 @@ class OpenAITTSBackend(BaseFileTTSBackend):
         self._client = OpenAI(api_key=api_key)
 
     def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
+        """Synthesize text via OpenAI TTS API.
+        
+        Args:
+            text: Text to synthesize.
+            emotion: Optional emotion style.
+            
+        Returns:
+            TTSResult: Generated audio.
+        """
         started_at = time.perf_counter()
         normalized_text = self._normalize_text(text)
         prompt_text = normalized_text if not emotion else f"Emotion: {emotion}.\n\n{normalized_text}"
@@ -629,11 +843,26 @@ class OpenAITTSBackend(BaseFileTTSBackend):
 
 
 class _BytesReader:
+    """File-like object for bytes payload to read as stream."""
+
     def __init__(self, payload: bytes) -> None:
+        """Initialize bytes reader.
+        
+        Args:
+            payload: Raw bytes payload.
+        """
         self._payload = payload
         self._offset = 0
 
     def read(self, size: int = -1) -> bytes:
+        """Read bytes from offset.
+        
+        Args:
+            size: Number of bytes to read.
+            
+        Returns:
+            bytes: Read data or remaining payload.
+        """
         if size is None or size < 0:
             size = len(self._payload) - self._offset
         chunk = self._payload[self._offset : self._offset + size]
@@ -641,6 +870,15 @@ class _BytesReader:
         return chunk
 
     def seek(self, offset: int, whence: int = 0) -> int:
+        """Set file position.
+        
+        Args:
+            offset: Offset bytes.
+            whence: 0 from start, 1 from current, 2 from end.
+            
+        Returns:
+            int: New position.
+        """
         if whence == 0:
             self._offset = offset
         elif whence == 1:
@@ -652,16 +890,40 @@ class _BytesReader:
         return self._offset
 
     def tell(self) -> int:
+        """Get current position.
+        
+        Returns:
+            int: Current byte offset.
+        """
         return self._offset
 
     def close(self) -> None:
+        """No-op closure for compatibility."""
         return None
 
 
 class PiperTTSBackend(BaseFileTTSBackend):
+    """Piper TTS binary backend.
+    
+    Attributes:
+        provider_name: 'piper'.
+        _executable: Piper binary path.
+        _model_path: Model file path.
+        _config_path: Optional config path.
+        _speaker_id: Optional speaker ID.
+    """
+
     provider_name = "piper"
 
     def __init__(self, cfg: ResolvedTTSConfig) -> None:
+        """Initialize Piper TTS backend.
+        
+        Args:
+            cfg: ResolvedTTSConfig configuration.
+            
+        Raises:
+            ConfigurationError: If executable or model path not found.
+        """
         self._cfg = cfg
         executable = (self._cfg.piper_executable or "").strip()
         if not executable:
@@ -689,6 +951,15 @@ class PiperTTSBackend(BaseFileTTSBackend):
         self._speaker_id = (self._cfg.piper_speaker_id or "").strip() or None
 
     def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
+        """Synthesize text using Piper binary.
+        
+        Args:
+            text: Text to synthesize.
+            emotion: Optional emotion style.
+            
+        Returns:
+            TTSResult: Generated audio.
+        """
         started_at = time.perf_counter()
         path = self._target_path(".wav")
         command = [
@@ -743,6 +1014,18 @@ class PiperTTSBackend(BaseFileTTSBackend):
         )
 
     def _resolve_existing_path(self, raw_path: str, *, env_name: str) -> Path:
+        """Resolve existing path from environment.
+        
+        Args:
+            raw_path: Path string.
+            env_name: Environment variable name for resolution.
+            
+        Returns:
+            Path: Resolved existing path.
+            
+        Raises:
+            ConfigurationError: If path does not exist.
+        """
         path = Path(raw_path).expanduser()
         if not path.is_absolute():
             path = settings.project_root / path
@@ -752,13 +1035,38 @@ class PiperTTSBackend(BaseFileTTSBackend):
         return path
 
     def _validate_wav_file(self, path: Path) -> None:
+        """Validate WAV output from Piper.
+        
+        Args:
+            path: WAV file path.
+            
+        Raises:
+            ExternalServiceError: If invalid WAV file.
+        """
         TTSService._validate_wav_file(self, path, provider_name="Piper")
 
 
 class StubTTSBackend(BaseFileTTSBackend):
+    """Stub TTS backend for testing.
+    
+    Writes simple tone waveform; reads from sidecar .txt for text.
+    
+    Attributes:
+        provider_name: 'stub'.
+    """
+
     provider_name = "stub"
 
     def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
+        """Generate simple tone wave.
+        
+        Args:
+            text: Text to synthesize.
+            emotion: Optional emotion style (ignored for stub).
+            
+        Returns:
+            TTSResult: Simple tone audio.
+        """
         started_at = time.perf_counter()
         path = self._target_path(".wav")
         self._write_tone_wave(path, duration=max(0.18 * max(len(text.split()), 1), 0.35))
@@ -773,6 +1081,13 @@ class StubTTSBackend(BaseFileTTSBackend):
         )
 
     def _write_tone_wave(self, path: Path, duration: float, sample_rate: int = 16_000) -> None:
+        """Write simple tone WAV file.
+        
+        Args:
+            path: Output path.
+            duration: Duration in seconds.
+            sample_rate: WAV sample rate (default 16kHz).
+        """
         frame_count = int(duration * sample_rate)
         amplitude = 10_000
         frequency = 440.0

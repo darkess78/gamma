@@ -30,6 +30,16 @@ _RUDE_WORDS = {"idiot", "stupid", "shut up", "trash"}
 
 
 def classify_chat_text(text: str, *, display_name: str | None = None, trust_level: TrustLevel = "new_viewer") -> TwitchSafetyClassification:
+    """Classify a chat message for safety and priority.
+    
+    Args:
+        text: Chat message text to classify.
+        display_name: Message sender's display name.
+        trust_level: Viewer trust level.
+        
+    Returns:
+        TwitchSafetyClassification: Safety classification with safe text, priority, and reasons.
+    """
     raw = text.strip()
     lowered = raw.lower()
     reasons: list[str] = []
@@ -102,6 +112,15 @@ def classify_chat_text(text: str, *, display_name: str | None = None, trust_leve
 
 
 def _ambient_priority(raw: str, lowered: str) -> tuple[int, list[str]]:
+    """Calculate ambient chat priority and reasons.
+    
+    Args:
+        raw: Original raw text.
+        lowered: Lowercased version of text.
+        
+    Returns:
+        tuple[int, list[str]]: (Priority delta, list of ambient reasons).
+    """
     words = re.findall(r"[a-z0-9']+", lowered)
     if not words:
         return 0, []
@@ -126,6 +145,15 @@ def _ambient_priority(raw: str, lowered: str) -> tuple[int, list[str]]:
 
 
 def safe_username_alias(display_name: str | None, *, fallback: str = "a viewer") -> str:
+    """Generate a safe display name or fallback alias.
+    
+    Args:
+        display_name: Original display name.
+        fallback: Fallback string if name is unsafe.
+        
+    Returns:
+        str: Safe username or fallback.
+    """
     name = (display_name or "").strip()
     if not name:
         return fallback
@@ -145,6 +173,14 @@ def safe_username_alias(display_name: str | None, *, fallback: str = "a viewer")
 
 
 def _looks_like_known_bot(display_name: str | None) -> bool:
+    """Check if display name looks like a known chat bot.
+    
+    Args:
+        display_name: Display name to check.
+        
+    Returns:
+        bool: True if name matches known bot names.
+    """
     if not display_name:
         return False
     return display_name.strip().lower() in _BOT_WORDS

@@ -16,6 +16,14 @@ _ROUTE_TRACE = threading.local()
 
 @dataclass(slots=True)
 class RouteDecision:
+    """Routing decision for model selection.
+    
+    Attributes:
+        provider: LLM provider to use.
+        model: Model name or None.
+        reason: Why this route was chosen.
+        route_family: Type of turn (chat, voice, metadata, etc.).
+    """
     provider: str
     model: str | None
     reason: str
@@ -23,24 +31,68 @@ class RouteDecision:
 
 
 def begin_route_trace() -> None:
+    """Initialize a new route trace for logging decisions."""
     _ROUTE_TRACE.events = []
 
 
 def take_route_trace() -> list[dict[str, object]]:
+    """Retrieve and clear route trace events.
+    
+    Returns:
+        list[dict[str, object]]: List of route event records.
+    """
     events = list(getattr(_ROUTE_TRACE, "events", []))
     _ROUTE_TRACE.events = []
     return events
 
 
 class RouterLLMAdapter(LLMAdapter):
+    """Router LLM adapter for multi-provider routing.
+
+    Routes requests between local Ollama models and hosted services.
+
+    Attributes:
+        supports_vision: Whether any provider supports vision.
+
+    Methods:
+        __init__: Initialize adapters and health cache.
+        supports_vision: Check vision capability.
+        generate_reply: Route and generate reply text.
+        _route_candidates: Build routing candidates.
+        _route_request: Make primary routing decision.
+        _classify_route_family: Classify turn type.
+        _build_route_chain: Build fallback chain.
+        _route_for_vision: Route for vision requests.
+        _route_for_capabilities: Route by capability.
+        _hosted_route: Get hosted provider route.
+        _default_provider: Get default provider.
+        _default_model: Get default model.
+        _provider_supports_vision: Check vision capability.
+        _provider_availability: Check provider health.
+        _check_local_llm_health: Check local Ollama health.
+        _record_route_event: Record route decision event.
+        _mark_provider_failure: Add provider backoff.
+        _clear_provider_backoff: Clear backoff for provider.
+        _profile: Get routing profile.
+        _backoff_key: Generate backoff key.
+        _adapter_for_provider: Get adapter for provider.
+        _build_provider_adapter: Build new adapter.
+        _is_lightweight_text: Check lightweight text.
+        _persona_heavy_hosted_fallback_enabled: Persona fallback config.
+        _should_escalate_to_hosted: Escalation decision.
+        provider_backoff_state: Get backoff state.
+    """
+
     _provider_backoff_until_global: dict[str, float] = {}
 
     def __init__(self) -> None:
+        """Initialize router adapter with adapters and health cache."""
         self._adapters: dict[str, LLMAdapter] = {}
         self._health_cache: dict[tuple[str, str], tuple[float, dict[str, object]]] = {}
 
     @property
     def supports_vision(self) -> bool:
+        """Check if any provider supports vision inputs."""
         decision = self._route_for_capabilities(has_images=True)
         try:
             return self._adapter_for_provider(decision.provider).supports_vision
@@ -56,6 +108,21 @@ class RouterLLMAdapter(LLMAdapter):
         call_context: LLMCallContext | None = None,
         model_override: str | None = None,
     ) -> LLMReply:
+        """Route to available provider and generate reply.
+        
+        Args:
+            system_prompt: System prompt.
+            user_text: User text.
+            image_inputs: Optional image inputs.
+            call_context: Call context.
+            model_override: Optional model override.
+            
+        Returns:
+            LLMReply:
+            
+        Raises:
+            ConfigurationError: If no usable provider available.
+        """
         call_context = call_context or LLMCallContext()
         decisions = self._route_candidates(
             system_prompt=system_prompt,
@@ -150,6 +217,18 @@ class RouterLLMAdapter(LLMAdapter):
         call_context: LLMCallContext | None,
         model_override: str | None,
     ) -> list[RouteDecision]:
+        """Build list of route candidates.
+        
+        Args:
+            system_prompt: System prompt.
+            user_text: User text.
+            image_inputs: Optional image inputs.
+            call_context: Call context.
+            model_override: Optional model override.
+            
+        Returns:
+            list[RouteDecision]: Primary candidate plus fallbacks.
+        """
         route_family = self._classify_route_family(
             user_text=user_text,
             image_inputs=image_inputs,
@@ -176,6 +255,19 @@ class RouterLLMAdapter(LLMAdapter):
         model_override: str | None,
         route_family: str | None = None,
     ) -> RouteDecision:
+        """Make primary route decision for request parameters.
+        
+        Args:
+            system_prompt: System prompt.
+            user_text: User text.
+            image_inputs: Optional image inputs.
+            call_context: Call context.
+            model_override: Optional model override.
+            route_family: Optional route family classification.
+            
+        Returns:
+            RouteDecision: Primary route decision.
+        """
         route_family = route_family or self._classify_route_family(
             user_text=user_text,
             image_inputs=image_inputs,
@@ -251,6 +343,17 @@ class RouterLLMAdapter(LLMAdapter):
         call_context: LLMCallContext | None,
         model_override: str | None,
     ) -> str:
+        """Classify turn into route family.
+        
+        Args:
+            user_text: User text.
+            image_inputs: Optional image inputs.
+            call_context: Call context.
+            model_override: Optional model override.
+            
+        Returns:
+            str: Route family name.
+        """
         if model_override:
             return "explicit_override"
         if image_inputs:
@@ -274,6 +377,16 @@ class RouterLLMAdapter(LLMAdapter):
         return "chat_default"
 
     def _build_route_chain(self, *, primary: RouteDecision, route_family: str, has_images: bool) -> list[RouteDecision]:
+        """Build chain of route candidates with fallbacks.
+        
+        Args:
+            primary: Primary route decision.
+            route_family: Route family type.
+            has_images: Whether request has images.
+            
+        Returns:
+            list[RouteDecision]: Chain of candidates for fallback.
+        """
         candidates = [primary]
         default_route = RouteDecision(
             provider=self._default_provider(),
@@ -328,6 +441,11 @@ class RouterLLMAdapter(LLMAdapter):
         return candidates
 
     def _route_for_vision(self) -> RouteDecision:
+        """Route for vision input request.
+        
+        Returns:
+            RouteDecision: Provider supporting vision.
+        """
         default_provider = self._default_provider()
         if self._provider_supports_vision(default_provider):
             return RouteDecision(provider=default_provider, model=self._default_model(), reason="default-vision-route", route_family="vision")
@@ -344,11 +462,27 @@ class RouterLLMAdapter(LLMAdapter):
         return RouteDecision(provider=default_provider, model=self._default_model(), reason="fallback-vision-route", route_family="vision")
 
     def _route_for_capabilities(self, *, has_images: bool) -> RouteDecision:
+        """Route based on capability requirements.
+        
+        Args:
+            has_images: Whether request has image inputs.
+            
+        Returns:
+            RouteDecision: Route decision.
+        """
         if has_images:
             return self._route_for_vision()
         return RouteDecision(provider=self._default_provider(), model=self._default_model(), reason="default-capability-route")
 
     def _hosted_route(self, *, force: bool = False) -> RouteDecision | None:
+        """Get hosted provider route.
+        
+        Args:
+            force: Force hosted even if config disabled.
+            
+        Returns:
+            RouteDecision | None: Hosted route or None.
+        """
         if not force and not settings.llm_router_allow_hosted_escalation:
             return None
         if self._profile() in {"local_only", "offline_safe"}:
@@ -362,6 +496,11 @@ class RouterLLMAdapter(LLMAdapter):
         return RouteDecision(provider=provider, model=model, reason="hosted-escalation")
 
     def _default_provider(self) -> str:
+        """Get default provider based on profile.
+        
+        Returns:
+            str: Provider name.
+        """
         profile = self._profile()
         if profile in {"local_only", "offline_safe"}:
             return "local"
@@ -371,6 +510,11 @@ class RouterLLMAdapter(LLMAdapter):
         return settings.llm_provider.strip().lower()
 
     def _default_model(self) -> str | None:
+        """Get default model for current provider.
+        
+        Returns:
+            str | None: Model name or None.
+        """
         provider = self._default_provider()
         configured = (settings.llm_router_default_model or "").strip()
         if configured:
@@ -382,6 +526,14 @@ class RouterLLMAdapter(LLMAdapter):
         return None
 
     def _provider_supports_vision(self, provider: str) -> bool:
+        """Check if provider supports vision inputs.
+        
+        Args:
+            provider: Provider name.
+            
+        Returns:
+            bool: Whether vision is supported.
+        """
         if provider == "openai":
             return True
         if provider in {"local", "ollama"}:
@@ -396,6 +548,17 @@ class RouterLLMAdapter(LLMAdapter):
         has_images: bool,
         route_family: str | None = None,
     ) -> dict[str, object]:
+        """Check provider health and availability.
+        
+        Args:
+            provider: Provider name.
+            model: Model for hosted providers.
+            has_images: Whether request has images.
+            route_family: Route family for backoff key.
+            
+        Returns:
+            dict[str, object]: Health check result.
+        """
         normalized = provider.strip().lower()
         now = time.time()
         backoff_key = self._backoff_key(provider=normalized, has_images=has_images, route_family=route_family)
@@ -425,6 +588,11 @@ class RouterLLMAdapter(LLMAdapter):
         return result
 
     def _check_local_llm_health(self) -> dict[str, object]:
+        """Check local Ollama service health.
+        
+        Returns:
+            dict[str, object]: Health check with ok/detail flags.
+        """
         from ..system.status import probe_ollama_health
 
         health = probe_ollama_health(settings.local_llm_endpoint, timeout_seconds=5)
@@ -444,6 +612,21 @@ class RouterLLMAdapter(LLMAdapter):
         detail: str,
         fallback_index: int,
     ) -> dict[str, object]:
+        """Record route event for logging and metrics.
+        
+        Args:
+            decision: Route decision.
+            call_context: Call context.
+            user_text: User text.
+            has_images: Whether request has images.
+            status: Route status.
+            duration_ms: Execution duration.
+            detail: Event detail (truncated).
+            fallback_index: Fallback index or 0.
+            
+        Returns:
+            dict[str, object]: Logged event data.
+        """
         event = {
             "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "purpose": call_context.purpose,
@@ -477,6 +660,13 @@ class RouterLLMAdapter(LLMAdapter):
         return event
 
     def _mark_provider_failure(self, provider: str, *, has_images: bool, route_family: str | None = None) -> None:
+        """Add failure backoff for provider.
+        
+        Args:
+            provider: Provider name.
+            has_images: Whether request had image inputs.
+            route_family: Route family for backoff key.
+        """
         backoff_seconds = max(0, int(settings.llm_router_failure_backoff_seconds))
         if backoff_seconds <= 0:
             return
@@ -488,6 +678,13 @@ class RouterLLMAdapter(LLMAdapter):
         self._provider_backoff_until_global[key] = time.time() + backoff_seconds
 
     def _clear_provider_backoff(self, provider: str, *, has_images: bool, route_family: str | None = None) -> None:
+        """Clear failure backoff for provider.
+        
+        Args:
+            provider: Provider name.
+            has_images: Whether request had image inputs.
+            route_family: Route family for backoff key.
+        """
         key = self._backoff_key(
             provider=provider.strip().lower(),
             has_images=has_images,
@@ -496,6 +693,11 @@ class RouterLLMAdapter(LLMAdapter):
         self._provider_backoff_until_global.pop(key, None)
 
     def _profile(self) -> str:
+        """Get routing profile name.
+        
+        Returns:
+            str: Profile name or 'balanced' default.
+        """
         profile = (settings.llm_router_profile or "").strip().lower()
         if profile in {"balanced", "local_only", "low_latency_voice", "high_quality", "offline_safe"}:
             return profile
@@ -503,6 +705,11 @@ class RouterLLMAdapter(LLMAdapter):
 
     @classmethod
     def provider_backoff_state(cls) -> dict[str, float]:
+        """Get current provider backoff state.
+        
+        Returns:
+            dict[str, float]: Provider names and remaining backoff seconds.
+        """
         now = time.time()
         return {
             provider: round(until - now, 1)
@@ -511,16 +718,42 @@ class RouterLLMAdapter(LLMAdapter):
         }
 
     def _backoff_key(self, *, provider: str, has_images: bool, route_family: str | None) -> str:
+        """Generate unique backoff key for provider.
+        
+        Args:
+            provider: Provider name.
+            has_images: Whether using vision endpoint.
+            route_family: Route family.
+            
+        Returns:
+            str: Backoff key string.
+        """
         scope = "vision" if has_images else (route_family or "text")
         return f"{provider}:{scope}"
 
     def _adapter_for_provider(self, provider: str) -> LLMAdapter:
+        """Get or create adapter for provider.
+        
+        Args:
+            provider: Provider name.
+            
+        Returns:
+            LLMAdapter: Adapter instance.
+        """
         normalized = provider.strip().lower()
         if normalized not in self._adapters:
             self._adapters[normalized] = self._build_provider_adapter(normalized)
         return self._adapters[normalized]
 
     def _build_provider_adapter(self, provider: str) -> LLMAdapter:
+        """Build adapter for provider.
+        
+        Args:
+            provider: Provider name.
+            
+        Returns:
+            LLMAdapter: Built adapter instance.
+        """
         if provider == "openai":
             from .openai_adapter import OpenAIAdapter
 
@@ -536,6 +769,14 @@ class RouterLLMAdapter(LLMAdapter):
         raise ConfigurationError(f"Unsupported routed LLM provider: {provider}")
 
     def _is_lightweight_text(self, user_text: str) -> bool:
+        """Check if text is light/simple for routing.
+        
+        Args:
+            user_text: User text.
+            
+        Returns:
+            bool: True if text is lightweight.
+        """
         lowered = (user_text or "").lower()
         if len(lowered.split()) > settings.llm_router_chat_light_max_input_words:
             return False
@@ -555,9 +796,23 @@ class RouterLLMAdapter(LLMAdapter):
         return not any(marker in lowered for marker in complex_markers)
 
     def _persona_heavy_hosted_fallback_enabled(self) -> bool:
+        """Check if persona-heavy routing allows hosted fallback.
+        
+        Returns:
+            bool: True if fallback enabled.
+        """
         return bool(settings.llm_router_allow_hosted_escalation and settings.llm_router_persona_heavy_hosted_fallback_enabled)
 
     def _should_escalate_to_hosted(self, *, user_text: str, purpose: str) -> bool:
+        """Check if should escalate to hosted provider.
+        
+        Args:
+            user_text: User text.
+            purpose: Call purpose.
+            
+        Returns:
+            bool: True if escalation warranted.
+        """
         if not settings.llm_router_allow_hosted_escalation:
             return False
         if purpose not in {"conversation", "conversation_draft"}:

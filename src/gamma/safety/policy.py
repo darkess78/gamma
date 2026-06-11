@@ -12,6 +12,15 @@ from .rewrite_guard import rewrite_text
 
 @dataclass(slots=True)
 class SafetyPolicyResult:
+    """Safety policy result.
+    
+    Attributes:
+        spoken_text: Filtered spoken text.
+        blocked: Whether text was blocked.
+        matched_rules: Matched safety rules.
+        action: Action taken.
+        layers: Filter layers used.
+    """
     spoken_text: str
     blocked: bool
     matched_rules: list[str]
@@ -20,11 +29,36 @@ class SafetyPolicyResult:
 
 
 class SpeechSafetyPolicy:
+    """Speech safety policy.
+    
+    Attributes:
+        _level: Policy level string.
+        _reviewer: LLM reviewer instance.
+    
+    Methods:
+        __init__: Initialize policy.
+        apply: Apply policy to text.
+    """
+
     def __init__(self, level: str) -> None:
+        """Initialize policy.
+        
+        Args:
+            level: Policy level (none|minimal|comfortable|strict|safe).
+        """
         self._level = (level or "strict").strip().lower()
         self._reviewer = SpeechLLMReviewer()
 
     def apply(self, text: str, *, include_llm: bool = True) -> SafetyPolicyResult:
+        """Apply policy to text.
+        
+        Args:
+            text: Input text.
+            include_llm: Include LLM safety review.
+        
+        Returns:
+            SafetyPolicyResult: Policy result with spoken_text, blocked, matched_rules, action, layers.
+        """
         normalized = " ".join((text or "").split())
         if self._level == "none":
             return SafetyPolicyResult(spoken_text=normalized, blocked=False, matched_rules=[], action="allow", layers=[])

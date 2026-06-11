@@ -51,6 +51,17 @@ def build_system_prompt(
     session_id: str | None = None,
     speaker: "SpeakerProfile | None" = None,
 ) -> str:
+    """Build system prompt.
+    
+    Args:
+        memory_service: Memory service.
+        user_text: User text for runtime memory.
+        session_id: Session ID.
+        speaker: Speaker profile.
+    
+    Returns:
+        str: System prompt string.
+    """
     core = _cached_text(PERSONA_DIR / "core.md")
     boundaries = _cached_text(PERSONA_DIR / "boundaries.md")
     style = json.loads(_cached_text(PERSONA_DIR / "style.json") or "{}")
@@ -156,6 +167,11 @@ def build_system_prompt(
 
 
 def _load_core_memories() -> str:
+    """Load core memories.
+    
+    Returns:
+        str: Core memories or default message.
+    """
     raw = _cached_text(CORE_MEMORIES_PATH)
     if not raw:
         return "No core memories stored yet."
@@ -167,6 +183,14 @@ def _load_core_memories() -> str:
 
 
 def _build_speaker_block(speaker: "SpeakerProfile | None") -> str:
+    """Build speaker block.
+    
+    Args:
+        speaker: Speaker profile.
+    
+    Returns:
+        str: Speaker block string.
+    """
     if speaker is None:
         return (
             "Name: Owner (assumed)\n"
@@ -177,6 +201,14 @@ def _build_speaker_block(speaker: "SpeakerProfile | None") -> str:
 
 
 def _extract_named_people(text: str) -> list[str]:
+    """Extract named people from text.
+    
+    Args:
+        text: Input text.
+    
+    Returns:
+        list[str]: List of unique names found.
+    """
     if not text:
         return []
     matches = re.findall(r"\b(?:friend|brother|sister|partner|wife|husband|girlfriend|boyfriend|coworker|coworkers?|manager|mom|mother|dad|father)\s+([A-Z][a-z]+)\b", text)

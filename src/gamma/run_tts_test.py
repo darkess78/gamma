@@ -10,17 +10,31 @@ from .voice.tts import TTSService
 
 
 def _parse_args() -> argparse.Namespace:
+    """Parse command line args.
+    
+    Returns:
+        argparse.Namespace: Parsed arguments.
+    """
     parser = argparse.ArgumentParser()
-    parser.add_argument("text", nargs="*", help="Text to synthesize")
-    parser.add_argument("--file", dest="input_file", metavar="PATH", help="Path to .txt file to synthesize (auto-splits by paragraph)")
-    parser.add_argument("--emotion", default="neutral", help="Emotion to pass into TTS; defaults to neutral to match live voice.")
+    parser.add_argument("text", nargs="*".split(), help="Text to synthesize")
+    parser.add_argument("--file", dest="input_file", metavar="PATH", 
+                        help="Path to .txt file to synthesize (auto-splits by paragraph)")
+    parser.add_argument("--emotion", default="neutral", 
+                        help="Emotion to pass into TTS; defaults to neutral to match live voice.")
     parser.add_argument("--style", action="append", default=[], help="Hidden voice style to pass into TTS; may be repeated.")
-    parser.add_argument("--json", action="store_true", dest="json_output", help="Print raw JSON-style output")
-    parser.add_argument("--compact", action="store_true", help="Print a one-line timing summary")
+    parser.add_argument("--json", action="store_true", dest="json_output",
+                        help="Print raw JSON-style output")
+    parser.add_argument("--compact", action="store_true",
+                        help="Print a one-line timing summary")
     return parser.parse_args()
 
 
 def _print_pretty(result: dict) -> None:
+    """Print pretty result.
+    
+    Args:
+        result: TTS result dict.
+    """
     timings = result.get("timings_ms", {}) if isinstance(result.get("timings_ms"), dict) else {}
     print("TTS Smoke Test")
     print(f"Provider: {result.get('provider', 'n/a')}")

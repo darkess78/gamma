@@ -11,6 +11,14 @@ from dotenv import load_dotenv
 
 
 def _find_project_root() -> Path:
+    """Find project root.
+    
+    Returns:
+        Path: Project root path.
+    
+    Raises:
+        RuntimeError: If SHANA_PROJECT_ROOT is not set or paths don't exist.
+    """
     override = os.getenv("SHANA_PROJECT_ROOT")
     if override:
         root = Path(override).expanduser().resolve()

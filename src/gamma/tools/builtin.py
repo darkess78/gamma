@@ -14,52 +14,145 @@ _CORE_MEMORIES_PATH = settings.data_dir / "core_memories.md"
 
 
 class MemoryStatsTool(Tool):
+    """Memory stats tool.
+    
+    Attributes:
+        name: Tool name.
+        description: Tool description.
+        _memory: Memory service.
+    
+    Methods:
+        __init__: Initialize tool.
+        run: Run tool.
+    """
     name = "memory_stats"
     description = "Return memory database counts and configuration."
 
     def __init__(self) -> None:
+        """Initialize tool.
+        
+        Sets up memory service.
+        """
         self._memory = MemoryService()
 
     def run(self, **kwargs) -> ToolResult:
+        """Run tool.
+        
+        Args:
+            kwargs: Unused kwargs.
+        
+        Returns:
+            ToolResult: Tool result.
+        """
         _ = kwargs
         stats = self._memory.stats()
         return ToolResult(ok=True, output=json.dumps(stats, ensure_ascii=False, indent=2), metadata=stats)
 
 
 class KnownPeopleTool(Tool):
+    """Known people tool.
+    
+    Attributes:
+        name: Tool name.
+        description: Tool description.
+        _memory: Memory service.
+    
+    Methods:
+        __init__: Initialize tool.
+        run: Run tool.
+    """
     name = "known_people"
     description = "Return the currently stored known people list."
 
     def __init__(self) -> None:
+        """Initialize tool.
+        
+        Sets up memory service.
+        """
         self._memory = MemoryService()
 
     def run(self, **kwargs) -> ToolResult:
+        """Run tool.
+        
+        Args:
+            kwargs: Unused kwargs.
+        
+        Returns:
+            ToolResult: Tool result.
+        """
         _ = kwargs
         people = self._memory.get_known_people()
         return ToolResult(ok=True, output=json.dumps(people, ensure_ascii=False, indent=2), metadata={"count": len(people)})
 
 
 class ProviderStatusTool(Tool):
+    """Provider status tool.
+    
+    Attributes:
+        name: Tool name.
+        description: Tool description.
+        _system_status: System status service.
+    
+    Methods:
+        __init__: Initialize tool.
+        run: Run tool.
+    """
     name = "provider_status"
     description = "Return current LLM, STT, and TTS provider status and health."
 
     def __init__(self) -> None:
+        """Initialize tool.
+        
+        Sets up system status service.
+        """
         self._system_status = SystemStatusService()
 
     def run(self, **kwargs) -> ToolResult:
+        """Run tool.
+        
+        Args:
+            kwargs: Unused kwargs.
+        
+        Returns:
+            ToolResult: Tool result.
+        """
         _ = kwargs
         providers = self._system_status.build_status()["providers"]
         return ToolResult(ok=True, output=json.dumps(providers, ensure_ascii=False, indent=2), metadata=providers)
 
 
 class RecentArtifactsTool(Tool):
+    """Recent artifacts tool.
+    
+    Attributes:
+        name: Tool name.
+        description: Tool description.
+        _system_status: System status service.
+    
+    Methods:
+        __init__: Initialize tool.
+        run: Run tool.
+    """
     name = "recent_artifacts"
     description = "Return recently generated audio and JSON artifacts."
 
     def __init__(self) -> None:
+        """Initialize tool.
+        
+        Sets up system status service.
+        """
         self._system_status = SystemStatusService()
 
     def run(self, limit: int = 5, **kwargs) -> ToolResult:
+        """Run tool.
+        
+        Args:
+            limit: Limit for artifacts.
+            kwargs: Unused kwargs.
+        
+        Returns:
+            ToolResult: Tool result.
+        """
         _ = kwargs
         safe_limit = max(1, min(int(limit), 12))
         artifacts = self._system_status.build_status()["recent_artifacts"][:safe_limit]

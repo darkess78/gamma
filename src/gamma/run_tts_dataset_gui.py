@@ -2210,6 +2210,11 @@ class TTSDataPrepApp:
 
 
 def main() -> int:
+    """Run TTS data prep GUI.
+    
+    Returns:
+        int: Exit code.
+    """
     root = tk.Tk()
     app = TTSDataPrepApp(root)
     root.minsize(1180, 760)

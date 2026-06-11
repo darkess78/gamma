@@ -5,6 +5,16 @@ from urllib import error, request
 
 
 def fetch_ollama_model_details(*, endpoint: str, model: str, timeout_seconds: int) -> dict:
+    """Fetch model details from Ollama /api/show endpoint.
+    
+    Args:
+        endpoint: Ollama API base URL.
+        model: Model name.
+        timeout_seconds: Request timeout.
+        
+    Returns:
+        dict: Model details from /api/show response.
+    """
     body = json.dumps({"model": model}).encode("utf-8")
     req = request.Request(
         endpoint.rstrip("/") + "/api/show",
@@ -17,6 +27,16 @@ def fetch_ollama_model_details(*, endpoint: str, model: str, timeout_seconds: in
 
 
 def probe_ollama_model_capabilities(*, endpoint: str, model: str, timeout_seconds: int) -> dict:
+    """Probe model capabilities via Ollama /api/show.
+    
+    Args:
+        endpoint: Ollama API base URL.
+        model: Model name to probe.
+        timeout_seconds: Request timeout.
+        
+    Returns:
+        dict: Model info including capabilities, vision support, etc. or error dict.
+    """
     try:
         payload = fetch_ollama_model_details(endpoint=endpoint, model=model, timeout_seconds=timeout_seconds)
     except error.HTTPError as exc:

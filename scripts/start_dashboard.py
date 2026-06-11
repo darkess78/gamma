@@ -6,13 +6,24 @@ import sys
 import webbrowser
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = REPO_ROOT / "src"
+sys.path.insert(0, str(SRC_ROOT))
+
 from gamma.config import settings
 
 
 def main() -> int:
-    repo_root = Path(__file__).resolve().parents[1]
+    child_env = os.environ.copy()
+    existing_pythonpath = child_env.get("PYTHONPATH")
+    child_env["PYTHONPATH"] = (
+        f"{SRC_ROOT}{os.pathsep}{existing_pythonpath}"
+        if existing_pythonpath
+        else str(SRC_ROOT)
+    )
     kwargs: dict[str, object] = {
-        "cwd": repo_root,
+        "cwd": REPO_ROOT,
+        "env": child_env,
         "stdout": subprocess.DEVNULL,
         "stderr": subprocess.DEVNULL,
     }

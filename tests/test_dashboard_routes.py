@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+import urllib.error
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
@@ -14,6 +15,7 @@ from gamma.dashboard import main
 from gamma.dashboard.service import DashboardService
 from gamma.schemas.response import AssistantResponse, VisionAnalysis
 from gamma.schemas.voice import VoiceRoundtripResponse
+from gamma.system.status import SystemStatusService
 
 
 class _JsonRequest:
@@ -81,10 +83,45 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(response, {"runtime": "ok"})
         runtime_status.assert_called_once_with()
 
+    def test_internal_shana_url_uses_loopback_for_wildcard_bind(self) -> None:
+        with (
+            patch.object(settings, "shana_bind_host", "0.0.0.0"),
+            patch.object(settings, "shana_port", 8000),
+        ):
+            self.assertEqual(settings.shana_internal_base_url, "http://127.0.0.1:8000")
+
+    def test_runtime_status_probes_internal_shana_url(self) -> None:
+        service = DashboardService()
+        with (
+            patch.object(settings, "shana_bind_host", "0.0.0.0"),
+            patch.object(settings, "shana_port", 8000),
+            patch.object(service, "_probe_json", return_value={"ok": True}) as probe,
+            patch.object(service._process_manager, "find_process", return_value=None),
+            patch.object(service, "_machine_status", return_value={}),
+        ):
+            payload = service.build_runtime_status()
+
+        self.assertTrue(payload["shana"]["api_health"]["ok"])
+        probe.assert_called_once_with("http://127.0.0.1:8000/v1/system/status")
+
+    def test_local_sidecar_connection_refused_has_clear_health_detail(self) -> None:
+        error = urllib.error.URLError(ConnectionRefusedError(111, "Connection refused"))
+        with patch("gamma.system.status.urllib.request.urlopen", side_effect=error):
+            payload = SystemStatusService()._check_http_health("http://127.0.0.1:9882/health")
+
+        self.assertEqual(payload, {"ok": False, "detail": "sidecar-not-running"})
+
+    def test_favicon_is_served(self) -> None:
+        response = main.favicon()
+
+        self.assertEqual(response.media_type, "image/svg+xml")
+        self.assertEqual(Path(response.path), main.STATIC_DIR / "favicon.svg")
+
     def test_output_pages_are_served_with_shana_api_config(self) -> None:
         with (
+            patch.object(settings, "shana_public_scheme", "http"),
             patch.object(settings, "shana_public_host", "192.168.1.50"),
-            patch.object(settings, "shana_port", 8000),
+            patch.object(settings, "shana_public_port", 8000),
             patch.object(settings, "dashboard_public_host", "192.168.1.50"),
             patch.object(settings, "dashboard_public_port", 8001),
             patch.object(settings, "dashboard_public_scheme", "http"),
@@ -100,6 +137,10 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('window.GAMMA_DASHBOARD_BASE_URL = "http://192.168.1.50:8001"', dashboard.body.decode("utf-8"))
         self.assertIn('window.GAMMA_DASHBOARD_PAGE = "dashboard"', dashboard.body.decode("utf-8"))
         self.assertIn('href="http://192.168.1.50:8001/dashboard/monitor"', dashboard.body.decode("utf-8"))
+        self.assertIn('rel="icon" href="/static/favicon.svg"', dashboard.body.decode("utf-8"))
+        self.assertNotIn('src="/static/monitor.js', dashboard.body.decode("utf-8"))
+        self.assertIn('src="/static/nav.js?v=20260611a"', dashboard.body.decode("utf-8"))
+        self.assertIn('src="/static/status.js?v=20260611c"', dashboard.body.decode("utf-8"))
         self.assertEqual(monitor_redirect.status_code, 307)
         self.assertEqual(monitor_redirect.headers["location"], "/dashboard/monitor")
         self.assertEqual(monitor.status_code, 200)
@@ -149,6 +190,19 @@ class DashboardRoutesTest(unittest.TestCase):
                     self.assertEqual(response.media_type, "text/html")
                     self.assertIn(f'window.GAMMA_DASHBOARD_PAGE = "{page_name}"', response.body.decode("utf-8"))
 
+    def test_rendered_dashboard_uses_public_https_api_base(self) -> None:
+        with (
+            patch.object(settings, "shana_public_scheme", "https"),
+            patch.object(settings, "shana_public_host", "gamma.neety.me"),
+            patch.object(settings, "shana_public_port", 443),
+        ):
+            response = main.dashboard()
+
+        self.assertIn(
+            'window.GAMMA_SHANA_BASE_URL = "https://gamma.neety.me"',
+            response.body.decode("utf-8"),
+        )
+
     def test_rendered_dashboard_links_use_public_dashboard_base(self) -> None:
         with (
             patch.object(settings, "dashboard_public_scheme", "https"),
@@ -190,6 +244,54 @@ class DashboardRoutesTest(unittest.TestCase):
         twitch_redirect = main.dashboard_twitch_page()
         self.assertEqual(twitch_redirect.status_code, 307)
         self.assertEqual(twitch_redirect.headers["location"], "/dashboard/stream")
+
+    def test_dashboard_navigation_module_applies_page_visibility(self) -> None:
+        nav_script = (main.STATIC_DIR / "nav.js").read_text(encoding="utf-8")
+
+        self.assertIn("applyDashboardTabVisibility();", nav_script)
+        self.assertIn("window.toggleNavMenu = toggleNavMenu;", nav_script)
+        self.assertIn("window.toggleSection = toggleSection;", nav_script)
+
+    def test_status_module_loads_and_renders_api_status(self) -> None:
+        status_script = (main.STATIC_DIR / "status.js").read_text(encoding="utf-8")
+
+        self.assertIn("fetch('/api/status?_='", status_script)
+        self.assertIn("renderStatus(await response.json());", status_script)
+        self.assertIn("window.loadStatus = loadStatus;", status_script)
+        self.assertIn("window.selectTtsProfile = selectTtsProfile;", status_script)
+        self.assertIn("renderTtsControls((data.providers || {}).tts);", status_script)
+        self.assertNotIn("dashboardPage !== 'status'", status_script)
+        self.assertIn("formatMemory(data);", status_script)
+        self.assertIn("renderAssistant(data);", status_script)
+        self.assertIn("renderOverview(data);", status_script)
+
+    def test_monitor_has_stream_controls_and_status_reporting(self) -> None:
+        body = main.dashboard_monitor_page().body.decode("utf-8")
+
+        self.assertIn('src="/static/monitor.js?v=20260611b"', body)
+        self.assertIn("Server And Provider Status", body)
+        self.assertIn("/api/providers/tts/start", body)
+        self.assertIn("/api/providers/tts/stop", body)
+        self.assertIn("/api/shana/restart", body)
+
+    def test_requested_dashboard_controls_are_exported_by_modules(self) -> None:
+        scripts = "\n".join(
+            (main.STATIC_DIR / name).read_text(encoding="utf-8")
+            for name in ("api.js", "controls.js", "memory.js", "status.js")
+        )
+
+        for handler in (
+            "action",
+            "clearRecentMemory",
+            "saveAssistantSettings",
+            "saveTtsProfile",
+            "selectTtsProfile",
+            "selectTtsProvider",
+            "stopShanaOutput",
+            "ttsPlayerLoadLatest",
+        ):
+            with self.subTest(handler=handler):
+                self.assertIn(f"window.{handler} =", scripts)
 
     def test_toolbar_actions(self) -> None:
         action_map = {
@@ -481,6 +583,24 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(response["cleared_total"], 2)
         method.assert_called_once_with(items)
 
+    def test_memory_edit_and_known_person_routes(self) -> None:
+        item_payload = {"kind": "profile_fact", "id": 2, "summary": "Updated"}
+        with patch.object(self.mock_service, "update_memory_item", return_value={"ok": True}) as method:
+            response = anyio.run(main.update_memory_item, _JsonRequest(item_payload))
+        self.assertTrue(response["ok"])
+        method.assert_called_once_with(item_payload)
+
+        person_payload = {"name": "Viewer", "accounts": [{"platform": "twitch", "platform_user_id": "1"}]}
+        with patch.object(self.mock_service, "save_known_person", return_value={"ok": True}) as method:
+            response = anyio.run(main.save_known_person, _JsonRequest(person_payload))
+        self.assertTrue(response["ok"])
+        method.assert_called_once_with(person_payload)
+
+        with patch.object(self.mock_service, "delete_known_person", return_value={"ok": True}) as method:
+            response = main.delete_known_person(4)
+        self.assertTrue(response["ok"])
+        method.assert_called_once_with(4)
+
     def test_provider_test_buttons(self) -> None:
         action_map = {
             "/api/providers/llm/test": ("test_llm", {"status": "ok"}),
@@ -496,6 +616,33 @@ class DashboardRoutesTest(unittest.TestCase):
                     response = getattr(main, method_name)()
                 self.assertEqual(response, payload)
                 method.assert_called_once_with()
+
+    def test_tts_catalog_excludes_removed_local_and_stub_providers(self) -> None:
+        service = DashboardService()
+        with (
+            patch.object(service._system_status, "build_status", return_value={
+                "app": {},
+                "providers": {
+                    "llm": {"provider": "local"},
+                    "stt": {"provider": "faster-whisper"},
+                    "tts": {"provider": "qwen-tts", "profile_id": "", "health": {"ok": True}},
+                },
+                "recent_artifacts": [],
+            }),
+            patch.object(service, "build_runtime_status", return_value={"shana": {}, "machine": {}}),
+            patch.object(service, "_probe_json", return_value={"ok": True}),
+            patch.object(service, "selected_tts_provider", return_value="qwen-tts"),
+            patch.object(service, "selected_tts_profile", return_value=None),
+            patch.object(service, "performer_output_status", return_value={}),
+            patch.object(service, "twitch_worker_status", return_value={}),
+            patch.object(service, "twitch_eventsub_status", return_value={}),
+            patch.object(service, "stream_ready_status", return_value={}),
+        ):
+            payload = service.build_status()
+
+        self.assertEqual(payload["providers"]["tts"]["available_providers"], ["qwen-tts", "piper", "openai"])
+        self.assertNotIn("local", payload["providers"]["tts"]["available_providers"])
+        self.assertNotIn("stub", payload["providers"]["tts"]["available_providers"])
 
     def test_assistant_settings_routes(self) -> None:
         settings_payload = {
@@ -523,17 +670,17 @@ class DashboardRoutesTest(unittest.TestCase):
         method.assert_called_once_with(settings_payload)
 
     def test_tts_provider_profile_and_save_routes(self) -> None:
-        with patch.object(self.mock_service, "set_tts_provider", return_value={"ok": True, "provider": "stub"}) as method:
-            response = anyio.run(main.select_tts_provider, _JsonRequest({"provider": "stub"}))
-        self.assertEqual(response["provider"], "stub")
-        method.assert_called_once_with("stub")
+        with patch.object(self.mock_service, "set_tts_provider", return_value={"ok": True, "provider": "qwen-tts"}) as method:
+            response = anyio.run(main.select_tts_provider, _JsonRequest({"provider": "qwen-tts"}))
+        self.assertEqual(response["provider"], "qwen-tts")
+        method.assert_called_once_with("qwen-tts")
 
         with patch.object(self.mock_service, "set_tts_profile", return_value={"ok": True, "profile": "test"}) as method:
             response = anyio.run(main.select_tts_profile, _JsonRequest({"profile": "test"}))
         self.assertEqual(response["profile"], "test")
         method.assert_called_once_with("test")
 
-        payload = {"id": "new_profile", "provider": "stub", "values": {}}
+        payload = {"id": "new_profile", "provider": "qwen-tts", "values": {}}
         with patch.object(self.mock_service, "save_tts_profile", return_value={"ok": True, "profile": payload}) as method:
             response = anyio.run(main.save_tts_profile, _JsonRequest(payload))
         self.assertEqual(response["profile"], payload)

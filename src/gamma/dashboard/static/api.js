@@ -497,4 +497,15 @@
   viewMode = localStorage.getItem('gammaDashboardViewMode') || 'human';
   sectionHashes = {};
 
+  window.loadStreamActivity = loadStreamActivity;
+  window.loadTwitchViewerTrust = loadTwitchViewerTrust;
+  window.runTwitchDryRunReplay = runTwitchDryRunReplay;
+  window.runTwitchReplay = runTwitchReplay;
+  window.saveTwitchSettings = saveTwitchSettings;
+  window.saveTwitchViewerTrust = saveTwitchViewerTrust;
+  window.clearStreamSelfGoals = clearStreamSelfGoals;
+  window.clearStreamTempMemory = clearStreamTempMemory;
+  window.setStreamSelfGoalStatus = setStreamSelfGoalStatus;
+  window.stopShanaOutput = stopShanaOutput;
+  window.stopStreamSpeech = stopStreamSpeech;
 })();

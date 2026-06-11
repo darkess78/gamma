@@ -4,14 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shana Monitor</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <style>
     :root {
       --bg: #0d1117;
       --surface: #161b22;
+      --surface-2: #0d1117;
       --border: #30363d;
       --text: #c9d1d9;
       --muted: #8b949e;
-      --accent: #58a6ff;
+      --accent: #33c3b3;
       --success: #238636;
       --warning: #d29922;
       --danger: #da3633;
@@ -27,219 +29,158 @@
     body.theme-dashboard {
       --bg: #0e1218;
       --surface: #131a23;
-      --border: rgba(182, 206, 230, 0.12);
-      --text: #ecf2f8;
-      --muted: #9aa8b7;
-      --accent: #33c3b3;
-    }
-    body.theme-compact .grid {
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 10px;
-      padding: 14px;
-    }
-    body.theme-compact .panel {
-      padding: 12px;
-      border-radius: 8px;
-    }
-    body.theme-compact .subtitle-display {
-      min-height: 44px;
-      padding: 10px;
-      font-size: 18px;
-    }
-    body.theme-focus .grid {
-      grid-template-columns: minmax(320px, 1.4fr) minmax(260px, 0.8fr);
-      align-items: stretch;
-    }
-    body.theme-focus .subtitle-panel {
-      grid-column: 1 / -1;
-    }
-    body.theme-focus .subtitle-display {
-      min-height: 180px;
-      font-size: clamp(34px, 5vw, 64px);
-      line-height: 1.18;
+      --surface-2: #0d1117;
+      --border: rgba(182, 206, 230, 0.14);
     }
     .header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 16px 24px;
-      background: var(--surface);
+      gap: 16px;
+      padding: 14px 24px;
+      background: rgba(19, 26, 35, 0.97);
       border-bottom: 1px solid var(--border);
     }
-    .header h1 {
-      margin: 0;
-      font-size: 18px;
-      font-weight: 600;
-    }
-    .header-actions {
+    .header h1 { margin: 0; font-size: 18px; }
+    .header-actions, .button-row {
       display: flex;
       align-items: center;
       flex-wrap: wrap;
       gap: 8px;
     }
-    .btn {
-      padding: 8px 16px;
-      border-radius: 6px;
+    .btn, .select {
+      min-height: 36px;
+      padding: 8px 13px;
+      border-radius: 7px;
       border: 1px solid var(--border);
       background: var(--surface);
       color: var(--text);
+      font: inherit;
       font-size: 13px;
       cursor: pointer;
       text-decoration: none;
     }
     .btn:hover { background: #21262d; }
-    .btn.danger { border-color: var(--danger); color: var(--danger); }
-    .btn.danger:hover { background: rgba(218, 54, 51, 0.15); }
-    .btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
-    .btn.primary:hover { background: #76c4ff; }
-    .select {
-      padding: 8px 10px;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      background: var(--surface);
-      color: var(--text);
-      font-size: 13px;
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 16px;
-      padding: 24px;
-    }
-    .panel {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 16px;
-    }
-    .panel h2 {
-      margin: 0 0 12px;
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .metric {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 8px 0;
-      border-bottom: 1px solid var(--border);
-    }
-    .metric:last-child { border-bottom: none; }
-    .metric-label { color: var(--muted); font-size: 13px; }
-    .metric-value { font-family: monospace; font-size: 14px; }
-    .metric-value.active { color: var(--success); }
-    .metric-value.idle { color: var(--muted); }
-    .metric-value.error { color: var(--danger); }
-    .subtitle-display {
-      font-size: 24px;
-      line-height: 1.4;
-      min-height: 60px;
-      padding: 16px;
-      background: #0d1117;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      font-family: Georgia, "Times New Roman", serif;
-      color: var(--text);
-    }
-    .turn-info {
-      font-size: 12px;
-      color: var(--muted);
-      padding: 8px 0;
-    }
-    .connection-status {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      padding: 4px 8px;
-      border-radius: 4px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-    }
-    .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--muted);
-    }
-    .dot.connected { background: var(--success); }
-    .dot.disconnected { background: var(--danger); }
-    .queue-indicator {
-      font-size: 12px;
-      color: var(--muted);
-      padding: 4px 8px;
-      border-radius: 4px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-    }
-    .expression-display {
-      font-size: 16px;
-      padding: 8px;
-      background: #0d1117;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      text-align: center;
-      text-transform: capitalize;
-    }
-    .expression-neutral { color: var(--muted); }
-    .expression-happy { color: var(--success); }
-    .expression-sad { color: var(--warning); }
-    .expression-angry { color: var(--danger); }
-    .expression-surprised { color: #d2a8ff; }
-    .expression-love { color: #f97583; }
-    .expression-calm { color: #7ee787; }
-    .expression-confused { color: #d2a8ff; }
-    .expression-sleepy { color: #8b949e; }
-    .expression-excited { color: var(--accent); }
-    .expression-tired { color: var(--muted); }
-    .expression-bored { color: var(--muted); }
-    .expression-embarrassed { color: #f97583; }
-    .expression-proud { color: var(--success); }
-    .expression-determined { color: var(--accent); }
-    .expression-fearful { color: var(--danger); }
-    .expression-grateful { color: var(--success); }
-    .expression-pain { color: var(--danger); }
-    .expression-silly { color: #d2a8ff; }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #061411; font-weight: 700; }
+    .btn.danger { border-color: var(--danger); color: #ff9c99; }
+    .btn.warning { border-color: var(--warning); color: #f3c76e; }
     .audio-gate {
       margin: 16px 24px 0;
       padding: 12px 14px;
       border: 1px solid var(--border);
       border-radius: 8px;
       background: rgba(88, 166, 255, 0.1);
-      color: var(--text);
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
     }
-    .audio-gate.enabled {
-      background: rgba(35, 134, 54, 0.12);
+    .audio-gate.enabled { background: rgba(35, 134, 54, 0.14); }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 16px;
+      padding: 24px;
     }
-    .overlay-links {
-      display: flex;
-      gap: 8px;
-      padding: 16px 24px;
+    .panel {
+      grid-column: span 4;
+      min-width: 0;
       background: var(--surface);
-      border-top: 1px solid var(--border);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
     }
-    .overlay-links a {
-      color: var(--accent);
-      text-decoration: none;
+    .panel.wide { grid-column: span 6; }
+    .panel.full { grid-column: 1 / -1; }
+    .panel h2, .panel summary {
+      margin: 0 0 12px;
+      color: var(--muted);
       font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
-    .overlay-links a:hover { text-decoration: underline; }
+    .panel summary { cursor: pointer; margin-bottom: 0; }
+    .panel details[open] summary { margin-bottom: 14px; }
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .metric:last-child { border-bottom: 0; }
+    .metric-label { color: var(--muted); font-size: 13px; }
+    .metric-value { max-width: 70%; font-family: monospace; font-size: 13px; text-align: right; overflow-wrap: anywhere; }
+    .metric-value.active { color: #57d96f; }
+    .subtitle-panel { grid-column: span 8; }
+    .subtitle-display, .status-block {
+      min-height: 56px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-2);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .subtitle-display {
+      font: 24px/1.4 Georgia, "Times New Roman", serif;
+    }
+    .status-block { font: 13px/1.55 monospace; }
+    .connection-status { display: inline-flex; align-items: center; gap: 6px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .dot.connected { background: var(--success); }
+    .dot.disconnected { background: var(--danger); }
+    .expression-display {
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-2);
+      text-align: center;
+      text-transform: capitalize;
+    }
+    .control-group {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 14px;
+    }
+    .control-card {
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--surface-2);
+    }
+    .control-card strong { display: block; margin-bottom: 10px; }
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .status-card h3 { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+    .overlay-links { display: flex; gap: 14px; padding: 16px 24px; border-top: 1px solid var(--border); }
+    .overlay-links a { color: var(--accent); text-decoration: none; font-size: 13px; }
+    body.theme-compact .grid { gap: 10px; padding: 14px; }
+    body.theme-compact .panel { padding: 12px; }
+    body.theme-focus .subtitle-panel { grid-column: 1 / -1; }
+    body.theme-focus .subtitle-display { min-height: 180px; font-size: clamp(34px, 5vw, 64px); }
+    @media (max-width: 900px) {
+      .header { position: static; align-items: flex-start; flex-direction: column; }
+      .panel, .panel.wide, .subtitle-panel { grid-column: 1 / -1; }
+      .status-grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
-  <div class="header">
+  <header class="header">
     <h1>Shana Monitor</h1>
     <div class="header-actions">
       <a data-dashboard-link href="/dashboard" class="btn">Dashboard</a>
-      <a data-output-link="performer" href="/performer" class="btn">Performer Page</a>
-      <a data-output-link="subtitles" href="/overlay/subtitles" class="btn">Subtitle Overlay</a>
+      <a data-output-link="performer" href="/performer" class="btn">Performer</a>
+      <a data-output-link="subtitles" href="/overlay/subtitles" class="btn">Subtitles</a>
       <select id="themeSelect" class="select" onchange="setMonitorTheme(this.value)" title="Monitor layout">
         <option value="dashboard">Dashboard</option>
         <option value="compact">Compact</option>
@@ -249,461 +190,103 @@
       <button class="btn" id="muteButton" onclick="toggleMute()">Mute Monitor</button>
       <button class="btn danger" onclick="clearOutput()">Clear Output</button>
     </div>
-  </div>
+  </header>
 
   <div class="audio-gate" id="audioGate">
     <span id="audioGateText">Click Enable Audio once to allow future Shana monitor audio playback.</span>
     <button class="btn primary" onclick="enableAudio()">Enable Audio</button>
   </div>
 
-  <div class="grid">
-    <div class="panel">
+  <main class="grid">
+    <section class="panel">
       <h2>Connection</h2>
-      <div class="metric">
-        <span class="metric-label">Status</span>
-        <span class="connection-status" id="connectionStatus">
-          <span class="dot" id="connectionDot"></span>
-          <span id="connectionText">Connecting...</span>
-        </span>
-      </div>
-      <div class="metric">
-        <span class="metric-label">Subscriber ID</span>
-        <span class="metric-value" id="subscriberId">...</span>
-      </div>
-      <div class="metric">
-        <span class="metric-label">Resume From</span>
-        <span class="metric-value" id="resumeSequence">0</span>
-      </div>
-      <div class="metric">
-        <span class="metric-label">Replay Window</span>
-        <span class="metric-value" id="replayWindow">...</span>
-      </div>
-    </div>
-
-    <div class="panel">
+      <div class="metric"><span class="metric-label">Status</span><span class="connection-status"><span class="dot" id="connectionDot"></span><span id="connectionText">Connecting...</span></span></div>
+      <div class="metric"><span class="metric-label">Subscriber ID</span><span class="metric-value" id="subscriberId">Waiting for connection</span></div>
+      <div class="metric"><span class="metric-label">Resume From</span><span class="metric-value" id="resumeSequence">0</span></div>
+      <div class="metric"><span class="metric-label">Replay Window</span><span class="metric-value" id="replayWindow">Waiting for server</span></div>
+    </section>
+    <section class="panel">
       <h2>Turn State</h2>
-      <div class="metric">
-        <span class="metric-label">Turn ID</span>
-        <span class="metric-value" id="turnId">...</span>
-      </div>
-      <div class="metric">
-        <span class="metric-label">Sequence</span>
-        <span class="metric-value" id="turnSequence">...</span>
-      </div>
-      <div class="metric">
-        <span class="metric-label">State</span>
-        <span class="metric-value" id="turnState">...</span>
-      </div>
-      <div class="metric">
-        <span class="metric-label">Source</span>
-        <span class="metric-value" id="turnSource">...</span>
-      </div>
-      <div class="metric">
-        <span class="metric-label">Target Policy</span>
-        <span class="metric-value" id="turnPolicy">...</span>
-      </div>
-      <div class="metric">
-        <span class="metric-label">Input</span>
-        <span class="metric-value" id="turnInput">...</span>
-      </div>
-      <div class="metric">
-        <span class="metric-label">Actor</span>
-        <span class="metric-value" id="turnActor">...</span>
-      </div>
-    </div>
-
-    <div class="panel subtitle-panel">
+      <div class="metric"><span class="metric-label">Turn ID</span><span class="metric-value" id="turnId">No active turn</span></div>
+      <div class="metric"><span class="metric-label">Sequence</span><span class="metric-value" id="turnSequence">No events received</span></div>
+      <div class="metric"><span class="metric-label">State</span><span class="metric-value" id="turnState">Idle</span></div>
+      <div class="metric"><span class="metric-label">Source</span><span class="metric-value" id="turnSource">No active source</span></div>
+      <div class="metric"><span class="metric-label">Target</span><span class="metric-value" id="turnPolicy">No active target</span></div>
+      <div class="metric"><span class="metric-label">Input</span><span class="metric-value" id="turnInput">No current input</span></div>
+      <div class="metric"><span class="metric-label">Actor</span><span class="metric-value" id="turnActor">No current actor</span></div>
+    </section>
+    <section class="panel subtitle-panel">
       <h2>Subtitle</h2>
       <div class="subtitle-display" id="subtitleDisplay">Waiting for subtitle...</div>
-    </div>
-
-    <div class="panel">
+    </section>
+    <section class="panel">
       <h2>Expression</h2>
-      <div class="expression-display expression-neutral" id="expressionDisplay">neutral</div>
-    </div>
-
-    <div class="panel">
+      <div class="expression-display" id="expressionDisplay">neutral</div>
+    </section>
+    <section class="panel">
       <h2>Queue</h2>
-      <div class="metric">
-        <span class="metric-label">Queue Size</span>
-        <span class="metric-value" id="queueSize">0</span>
-      </div>
-      <div class="metric">
-        <span class="metric-label">History</span>
-        <span class="metric-value" id="historyCount">0</span>
-      </div>
-      <div class="queue-indicator" id="queueIndicator">No queue activity</div>
-    </div>
-  </div>
+      <div class="metric"><span class="metric-label">Queue Size</span><span class="metric-value" id="queueSize">0</span></div>
+      <div class="metric"><span class="metric-label">History</span><span class="metric-value" id="historyCount">0</span></div>
+      <div class="status-block" id="queueIndicator">No queue activity</div>
+    </section>
 
-  <div class="overlay-links">
+    <section class="panel full">
+      <h2>Controls</h2>
+      <div class="control-group">
+        <div class="control-card">
+          <strong>Shana</strong>
+          <div class="button-row">
+            <button class="btn primary" onclick="monitorAction('/api/shana/start')">Start</button>
+            <button class="btn warning" onclick="monitorAction('/api/shana/restart')">Restart</button>
+            <button class="btn danger" onclick="monitorAction('/api/shana/stop')">Stop</button>
+          </div>
+        </div>
+        <div class="control-card">
+          <strong>Qwen3-TTS</strong>
+          <div class="button-row">
+            <button class="btn primary" onclick="monitorAction('/api/providers/tts/start')">Start TTS</button>
+            <button class="btn danger" onclick="monitorAction('/api/providers/tts/stop')">Stop TTS</button>
+          </div>
+        </div>
+        <div class="control-card">
+          <strong>Stream Workers</strong>
+          <div class="button-row">
+            <button class="btn primary" onclick="monitorAction('/api/twitch/worker/start')">Start IRC</button>
+            <button class="btn danger" onclick="monitorAction('/api/twitch/worker/stop')">Stop IRC</button>
+            <button class="btn primary" onclick="monitorAction('/api/twitch/eventsub/start')">Start EventSub</button>
+            <button class="btn danger" onclick="monitorAction('/api/twitch/eventsub/stop')">Stop EventSub</button>
+          </div>
+        </div>
+        <div class="control-card">
+          <strong>Output</strong>
+          <div class="button-row">
+            <button class="btn danger" onclick="clearOutput()">Clear Monitor</button>
+            <button class="btn danger" onclick="monitorStopAllOutput()">Stop All Output</button>
+          </div>
+        </div>
+      </div>
+      <div class="status-block" id="monitorActionStatus" style="margin-top:14px;">No control action requested.</div>
+    </section>
+
+    <section class="panel full">
+      <details id="monitorStatusPanel" open>
+        <summary>Server And Provider Status</summary>
+        <div class="status-grid">
+          <div class="status-card"><h3>Backend Health</h3><div class="status-block" id="monitorBackendHealth">Loading...</div></div>
+          <div class="status-card"><h3>Providers</h3><div class="status-block" id="monitorProviders">Loading...</div></div>
+          <div class="status-card"><h3>Workers And Output</h3><div class="status-block" id="monitorWorkers">Loading...</div></div>
+          <div class="status-card"><h3>Machine</h3><div class="status-block" id="monitorMachine">Loading...</div></div>
+        </div>
+      </details>
+    </section>
+  </main>
+
+  <footer class="overlay-links">
     <a data-output-link="performer" href="/performer">Open Performer Page</a>
     <a data-output-link="subtitles" href="/overlay/subtitles">Open Subtitle Overlay</a>
     <a data-dashboard-link href="/dashboard">Open Dashboard</a>
-  </div>
-
-  <audio id="audioEngine" preload="auto" style="display:none;"></audio>
-
-  <script>
-    let subscriberId = null;
-    let ws = null;
-    let muted = false;
-    let audioEnabled = false;
-    let playing = false;
-    let audioQueue = [];
-    let lastSequence = 0;
-
-    const params = new URLSearchParams(location.search);
-    const token = params.get('token') || '';
-    const replayRecent = params.get('replay_recent') || '20';
-    const targetPolicy = params.get('target_policy') || 'dashboard_monitor';
-    const clientName = params.get('client_name') || 'gaming_pc_monitor';
-    const apiBase = browserReachableApiBase(params.get('api_base') || window.GAMMA_SHANA_BASE_URL || location.origin);
-    const dashboardBase = browserReachableApiBase(params.get('dashboard_base') || window.GAMMA_DASHBOARD_BASE_URL || '');
-    const audio = document.getElementById('audioEngine');
-
-    function initTheme() {
-      const theme = localStorage.getItem('gammaMonitorTheme') || 'dashboard';
-      setMonitorTheme(theme);
-    }
-
-    function setMonitorTheme(theme) {
-      const selected = ['dashboard', 'compact', 'focus'].includes(theme) ? theme : 'dashboard';
-      document.body.classList.remove('theme-dashboard', 'theme-compact', 'theme-focus');
-      document.body.classList.add(`theme-${selected}`);
-      document.getElementById('themeSelect').value = selected;
-      localStorage.setItem('gammaMonitorTheme', selected);
-    }
-
-    function enableAudio() {
-      audioEnabled = true;
-      const button = document.getElementById('audioEnableButton');
-      const gate = document.getElementById('audioGate');
-      const text = document.getElementById('audioGateText');
-      button.textContent = 'Audio Enabled';
-      button.disabled = true;
-      gate.classList.add('enabled');
-      text.textContent = 'Monitor audio is enabled for future Shana speech.';
-      playNextAudio();
-    }
-
-    function browserReachableApiBase(rawBase) {
-      const value = String(rawBase || '').replace(/\/$/, '');
-      if (!value) {
-        return '';
-      }
-      try {
-        const apiUrl = new URL(value, location.origin);
-        const browserHost = location.hostname;
-        const apiIsLocal = ['127.0.0.1', 'localhost', '0.0.0.0', '::1'].includes(apiUrl.hostname);
-        const browserIsLocal = ['127.0.0.1', 'localhost', '::1'].includes(browserHost);
-        if (apiIsLocal && browserHost && !browserIsLocal) {
-          apiUrl.hostname = browserHost;
-        }
-        return apiUrl.toString().replace(/\/$/, '');
-      } catch (error) {
-        return value;
-      }
-    }
-
-    function updateOutputLinks() {
-      const performerQuery = outputViewQuery('', {
-        target_policy: 'stream_public',
-        client_name: 'stream_pc_performer'
-      });
-      const subtitlesQuery = outputViewQuery(apiBase, {
-        target_policy: 'stream_public',
-        client_name: 'stream_pc_subtitle_overlay'
-      });
-      document.querySelectorAll('[data-output-link="performer"]').forEach(link => {
-        link.href = `${apiBase ? `${apiBase}/performer` : '/performer'}${performerQuery}`;
-      });
-      document.querySelectorAll('[data-output-link="subtitles"]').forEach(link => {
-        link.href = `/overlay/subtitles${subtitlesQuery}`;
-      });
-      document.querySelectorAll('[data-dashboard-link]').forEach(link => {
-        link.href = dashboardBase ? `${dashboardBase}/dashboard` : '/dashboard';
-      });
-    }
-
-    function outputViewQuery(apiBase, values) {
-      const query = new URLSearchParams();
-      if (apiBase) {
-        query.set('api_base', apiBase);
-      }
-      Object.keys(values || {}).forEach(key => {
-        if (values[key]) {
-          query.set(key, values[key]);
-        }
-      });
-      const text = query.toString();
-      return text ? `?${text}` : '';
-    }
-
-    function connect() {
-      const apiUrl = new URL(apiBase);
-      const protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-      const query = new URLSearchParams({ replay_recent: replayRecent, target_policy: targetPolicy, client_name: clientName });
-      document.getElementById('resumeSequence').textContent = String(lastSequence);
-      if (lastSequence > 0) {
-        query.set('after_sequence', String(lastSequence));
-      }
-      if (token) {
-        query.set('token', token);
-      }
-      const url = `${protocol}//${apiUrl.host}/v1/performer/events?${query.toString()}`;
-      
-      ws = new WebSocket(url);
-      
-      ws.onopen = () => {
-        document.getElementById('connectionDot').classList.add('connected');
-        document.getElementById('connectionDot').classList.remove('disconnected');
-        document.getElementById('connectionText').textContent = 'Connected';
-        console.log('Monitor connected to performer events');
-      };
-      
-      ws.onmessage = (event) => {
-        const payload = JSON.parse(event.data);
-        updateMonitor(payload);
-      };
-      
-      ws.onclose = () => {
-        document.getElementById('connectionDot').classList.remove('connected');
-        document.getElementById('connectionDot').classList.add('disconnected');
-        document.getElementById('connectionText').textContent = 'Disconnected';
-        setTimeout(connect, 2000);
-      };
-      
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-      };
-    }
-
-    function updateMonitor(payload) {
-      if (payload.type === 'ready') {
-        subscriberId = payload.subscriber_id || subscriberId;
-        document.getElementById('subscriberId').textContent = subscriberId || '...';
-        document.getElementById('replayWindow').textContent = replayLabel(payload);
-        if (payload.stats) {
-          document.getElementById('historyCount').textContent = payload.stats.history_count || 0;
-        }
-        if (targetMutedFromStats(payload.stats)) {
-          document.getElementById('turnState').textContent = 'muted';
-          document.getElementById('turnState').classList.remove('active');
-          clearAudio();
-        }
-        return;
-      }
-      if (isStaleEvent(payload)) {
-        return;
-      }
-      if (payload.sequence && payload.sequence > lastSequence) {
-        lastSequence = payload.sequence;
-      }
-
-      // Update turn info
-      document.getElementById('turnId').textContent = payload.turn_id || '...';
-      document.getElementById('turnSequence').textContent = payload.sequence || '...';
-      document.getElementById('turnSource').textContent = payload.source || 'stream_output';
-      document.getElementById('turnPolicy').textContent = payload.target_policy || 'stream_public';
-      document.getElementById('turnInput').textContent = inputLabel(payload.payload?.input);
-      document.getElementById('turnActor').textContent = actorLabel(payload.payload?.actor);
-      
-      // Update turn state
-      if (payload.type === 'turn_started') {
-        document.getElementById('turnState').textContent = 'started';
-        document.getElementById('turnState').classList.add('active');
-      } else if (payload.type === 'turn_state_changed') {
-        document.getElementById('turnState').textContent = payload.payload?.state || 'unknown';
-        document.getElementById('turnState').classList.remove('active');
-      } else if (payload.type === 'speech_started') {
-        document.getElementById('turnState').textContent = 'speaking';
-        document.getElementById('turnState').classList.add('active');
-      } else if (payload.type === 'speech_chunk_ready') {
-        document.getElementById('turnState').textContent = 'speaking';
-        document.getElementById('turnState').classList.add('active');
-      } else if (payload.type === 'speech_ended') {
-        document.getElementById('turnState').textContent = 'completed';
-        document.getElementById('turnState').classList.remove('active');
-      } else if (payload.type === 'output_cleared') {
-        document.getElementById('turnState').textContent = 'cleared';
-        document.getElementById('turnState').classList.remove('active');
-        clearAudio();
-      } else if (payload.type === 'target_mute_changed') {
-        document.getElementById('turnState').textContent = payload.payload?.muted ? 'muted' : 'unmuted';
-        document.getElementById('turnState').classList.remove('active');
-        if (payload.payload?.muted) {
-          clearAudio();
-        }
-      } else {
-        document.getElementById('turnState').textContent = 'idle';
-        document.getElementById('turnState').classList.remove('active');
-      }
-      
-      // Update subtitle
-      if (payload.type === 'subtitle_update') {
-        const text = payload.payload?.text || '';
-        const clear = payload.payload?.clear || false;
-        if (clear) {
-          document.getElementById('subtitleDisplay').textContent = '';
-        } else {
-          document.getElementById('subtitleDisplay').textContent = text;
-        }
-      } else if (payload.type === 'subtitle_clear') {
-        document.getElementById('subtitleDisplay').textContent = '';
-      }
-      
-      // Update expression
-      if (payload.type === 'expression_set') {
-        const expression = payload.payload?.expression || 'neutral';
-        const el = document.getElementById('expressionDisplay');
-        el.textContent = expression;
-        el.className = 'expression-display expression-' + expression;
-      }
-      
-      // Update queue
-      if (payload.type === 'turn_state_changed') {
-        const queueSize = payload.payload?.queue_size || 0;
-        document.getElementById('queueSize').textContent = queueSize;
-        const indicator = document.getElementById('queueIndicator');
-        if (queueSize > 0) {
-          indicator.textContent = `${queueSize} item(s) in queue`;
-          indicator.style.color = queueSize > 5 ? 'var(--warning)' : 'var(--text)';
-        } else {
-          indicator.textContent = 'No queue activity';
-          indicator.style.color = 'var(--muted)';
-        }
-      }
-      
-      // Update history
-      if (payload.type === 'turn_state_changed') {
-        const history = payload.payload?.history_count || 0;
-        document.getElementById('historyCount').textContent = history;
-      }
-
-      if (payload.type === 'speech_started' || payload.type === 'speech_chunk_ready') {
-        enqueueAudio(payload);
-      }
-      
-      if (payload.type === 'speech_ended') {
-        document.getElementById('queueIndicator').textContent = audioQueue.length ? `${audioQueue.length} audio item(s) queued` : 'No queue activity';
-      }
-    }
-
-    function targetMutedFromStats(stats) {
-      const mutedTargets = stats && Array.isArray(stats.muted_targets) ? stats.muted_targets : [];
-      return mutedTargets.includes(targetPolicy);
-    }
-
-    function isStaleEvent(payload) {
-      return !!(payload && payload.sequence && lastSequence > 0 && payload.sequence <= lastSequence);
-    }
-
-    function replayLabel(payload) {
-      const gap = payload.replay_gap ? ' / gap' : '';
-      return `${payload.replay_recent ?? replayRecent} / after ${payload.after_sequence ?? 0}${gap}`;
-    }
-
-    function actorLabel(actor) {
-      actor = actor || {};
-      const source = actor.source || 'unknown';
-      const name = actor.display_name || actor.platform_id || 'unknown';
-      const roles = Array.isArray(actor.roles) && actor.roles.length ? ` [${actor.roles.join(', ')}]` : '';
-      return `${source}:${name}${roles}`;
-    }
-
-    function inputLabel(input) {
-      input = input || {};
-      const kind = input.kind || 'unknown';
-      return input.session_id ? `${kind} / ${input.session_id}` : kind;
-    }
-
-    function enqueueAudio(payload) {
-      const url = audioSourceFromEvent(payload);
-      if (!url) {
-        return;
-      }
-      audioQueue.push(url);
-      document.getElementById('queueSize').textContent = audioQueue.length + (playing ? 1 : 0);
-      document.getElementById('queueIndicator').textContent = `${audioQueue.length} audio item(s) queued`;
-      playNextAudio();
-    }
-
-    function audioSourceFromEvent(payload) {
-      const eventPayload = payload.payload || {};
-      if (eventPayload.audio_url) {
-        return eventPayload.audio_url;
-      }
-      if (eventPayload.audio_base64 && eventPayload.audio_content_type) {
-        return `data:${eventPayload.audio_content_type};base64,${eventPayload.audio_base64}`;
-      }
-      return '';
-    }
-
-    function playNextAudio() {
-      if (!audioEnabled || muted || playing || audioQueue.length === 0) {
-        return;
-      }
-      const url = audioQueue.shift();
-      playing = true;
-      audio.src = url;
-      audio.play().catch(() => {
-        playing = false;
-        playNextAudio();
-      });
-      document.getElementById('queueSize').textContent = audioQueue.length + 1;
-    }
-
-    function clearAudio() {
-      audioQueue = [];
-      playing = false;
-      audio.pause();
-      audio.removeAttribute('src');
-      audio.load();
-      document.getElementById('queueSize').textContent = '0';
-      document.getElementById('queueIndicator').textContent = 'No queue activity';
-    }
-
-    function toggleMute() {
-      muted = !muted;
-      document.getElementById('muteButton').textContent = muted ? 'Unmute Monitor' : 'Mute Monitor';
-      if (muted) {
-        audio.pause();
-      } else {
-        playing = false;
-        playNextAudio();
-      }
-    }
-
-    function clearOutput() {
-      fetch(`${apiBase}/v1/performer/targets/${encodeURIComponent(targetPolicy)}/clear?reason=monitor_clear`, { method: 'POST' })
-        .then(() => {
-          clearAudio();
-          document.getElementById('subtitleDisplay').textContent = '';
-          document.getElementById('turnState').textContent = 'cleared';
-          document.getElementById('queueIndicator').textContent = 'Output cleared';
-        })
-        .catch(err => {
-          console.error('Failed to clear output:', err);
-          alert('Failed to clear output');
-        });
-    }
-
-    audio.addEventListener('ended', () => {
-      playing = false;
-      document.getElementById('queueSize').textContent = audioQueue.length;
-      playNextAudio();
-    });
-
-    audio.addEventListener('error', () => {
-      playing = false;
-      document.getElementById('queueSize').textContent = audioQueue.length;
-      playNextAudio();
-    });
-
-    initTheme();
-    updateOutputLinks();
-    connect();
-  </script>
+  </footer>
+  <audio id="audioEngine" preload="auto" hidden></audio>
+  <script src="/static/monitor.js?v=20260611b"></script>
 </body>
 </html>

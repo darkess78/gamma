@@ -4,10 +4,11 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV="${SCRIPT_DIR}/.venv"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VENV="${REPO_ROOT}/.venv"
 PORT="${SHANA_DASHBOARD_PORT:-${DASHBOARD_PORT:-8001}}"
 HOST="${SHANA_DASHBOARD_BIND_HOST:-${DASHBOARD_HOST:-0.0.0.0}}"
+export PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
 
 echo "Starting Gamma Dashboard..."
 echo "  Host: ${HOST}"

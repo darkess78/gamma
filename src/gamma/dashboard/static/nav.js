@@ -228,9 +228,6 @@
     }
     document.body.setAttribute('data-dashboard-page', dashboardPage);
     document.body.setAttribute('data-active-tab', activeTabs.join(' '));
-    if (activeTabs.indexOf('stream') !== -1) {
-      setSectionOpen('browserVoicePanel', true);
-    }
     panels.forEach(function (panel) {
       var tabs = String(panel.getAttribute('data-dashboard-tab') || '').split(/\s+/);
       var visible = tabs.some(function (tab) { return activeTabs.indexOf(tab) !== -1; });
@@ -564,6 +561,48 @@
     } catch (error) {
       return String(value);
     }
+  }
+
+  window.toggleNavMenu = toggleNavMenu;
+  window.toggleSection = toggleSection;
+  window.toggleSubtitleWindow = toggleSubtitleWindow;
+
+  [
+    ['ttsProfileEditorPanel', false],
+    ['ttsAudioPanel', false],
+    ['browserVoicePanel', dashboardPage === 'live' || dashboardPage === 'stream'],
+    ['visionPanel', false],
+    ['stdoutPanel', false],
+    ['stderrPanel', false]
+  ].forEach(function (entry) {
+    initSectionState(entry[0], entry[1]);
+  });
+  loadLiveControlDefaults();
+  [
+    'liveResponseMode',
+    'liveBargeInMode',
+    'liveSpeechThreshold',
+    'liveInterruptSpeechMs',
+    'liveSilenceMs',
+    'liveBargeInEnabled'
+  ].forEach(function (id) {
+    var control = document.getElementById(id);
+    if (control) control.addEventListener('change', persistLiveControlDefaults);
+  });
+  var statusMenu = document.querySelector('.status-menu');
+  if (statusMenu) {
+    var savedStatusMenu = localStorage.getItem('gammaSection.statusMenu');
+    if (savedStatusMenu !== null) statusMenu.open = savedStatusMenu === 'open';
+    statusMenu.addEventListener('toggle', function () {
+      localStorage.setItem('gammaSection.statusMenu', statusMenu.open ? 'open' : 'closed');
+    });
+  }
+  applyDashboardTabVisibility();
+  updateStickyTabOffset();
+  window.addEventListener('resize', updateStickyTabOffset);
+  var topbar = document.querySelector('.topbar');
+  if (window.ResizeObserver && topbar) {
+    new ResizeObserver(updateStickyTabOffset).observe(topbar);
   }
 
 })();

@@ -52,6 +52,9 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - Configurable memory enablement, write mode, top-k retrieval, and memory personality.
 - Memory stats endpoint at `GET /v1/memory/stats`.
 - Dashboard memory stats, known people, recent memory items, and memory clearing.
+- Dashboard editing and deletion for individual profile facts and episodic memories.
+- First-class known-person records with trust, notes, relationship, and multiple linked platform account IDs.
+- Speaker resolution from linked Twitch, Discord, game, or other platform identities before config fallback.
 - Clear all memory, clear recent memory, and clear selected memory support.
 - Core memory append tool backed by `data/core_memories.md`.
 
@@ -102,10 +105,8 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 ## TTS
 
 - TTS service with pluggable backends.
-- Stub WAV output backend for end-to-end tests.
 - Piper local offline TTS backend.
 - OpenAI hosted TTS backend.
-- GPT-SoVITS HTTP-backed local TTS backend.
 - Qwen TTS HTTP-backed local TTS backend.
 - Optional RVC post-processing layer on generated WAV files.
 - Voice profile loading from layered voice config files.
@@ -113,7 +114,7 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - TTS provider/profile selection persisted to `config/app.local.toml`.
 - TTS smoke test entry point: `python -m gamma.run_tts_test`.
 - Dashboard text-to-speech synthesis endpoint and generated audio serving/deletion.
-- Qwen and GPT-SoVITS sidecar start/stop scripts and dashboard controls.
+- Qwen sidecar start/stop scripts and dashboard controls.
 - Qwen emotion/instruction handling through expressive text helpers.
 
 ## Voice Roundtrip And CLI Voice

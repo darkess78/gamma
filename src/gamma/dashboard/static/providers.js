@@ -37,10 +37,8 @@
   var providerLabel = function (value, kind) {
     var normalized = String(value || '').toLowerCase();
     if (normalized === 'local' && kind === 'stt') return 'Local Whisper';
-    if (normalized === 'local' && kind === 'tts') return 'GPT-SoVITS';
     if (normalized === 'local') return 'Local';
     if (normalized === 'faster-whisper' || normalized === 'faster_whisper') return 'Faster Whisper';
-    if (normalized === 'gpt-sovits' || normalized === 'gpt_sovits') return 'GPT-SoVITS';
     if (normalized === 'qwen-tts' || normalized === 'qwen_tts' || normalized === 'qwen' || normalized === 'qwentts') return 'Qwen3-TTS';
     if (normalized === 'openai') return 'OpenAI';
     if (normalized === 'stt') return 'STT';
@@ -146,9 +144,6 @@
     var lines = ['Values JSON stores provider-specific settings for this profile.'];
     if (normalized === 'piper') {
       lines.push('Common keys: piper_model_path, piper_config_path, rvc_enabled, rvc_model_name, rvc_pitch, rvc_formant.');
-    } else if (normalized === 'local' || normalized === 'gpt-sovits' || normalized === 'gpt_sovits') {
-      lines.push('Common keys: gpt_sovits_reference_audio, gpt_sovits_prompt_text, gpt_sovits_prompt_lang, gpt_sovits_text_lang, gpt_sovits_extra_json.');
-      lines.push('gpt_sovits_extra_json supports: top_k, top_p, temperature, text_split_method, batch_size, speed_factor, fragment_interval, seed.');
     } else if (isQwenProvider(normalized)) {
       lines.push('Required: qwen_tts_endpoint, qwen_tts_reference_audio, qwen_tts_reference_text, qwen_tts_language.');
       lines.push('Optional: qwen_tts_speaker (CustomVoice models only), qwen_tts_instruct (style hint).');
@@ -180,27 +175,10 @@
         rvc_enabled: false
       };
     }
-    if (normalized === 'local' || normalized === 'gpt-sovits' || normalized === 'gpt_sovits') {
-      return {
-        gpt_sovits_reference_audio: './data/GPT-SoVITS/reference/my_ref.wav',
-        gpt_sovits_prompt_text: 'Exact words spoken in the reference clip.',
-        gpt_sovits_prompt_lang: 'en',
-        gpt_sovits_text_lang: 'en',
-        gpt_sovits_extra_json: {
-          top_k: 4,
-          top_p: 0.82,
-          temperature: 0.62,
-          text_split_method: 'cut4',
-          batch_size: 1,
-          speed_factor: 0.97,
-          seed: 11
-        }
-      };
-    }
     if (isQwenProvider(normalized)) {
       return {
         qwen_tts_endpoint: 'http://127.0.0.1:9882/tts',
-        qwen_tts_reference_audio: './data/GPT-SoVITS/reference/my_ref_mono32k.wav',
+        qwen_tts_reference_audio: './data/voices/reference_mono32k.wav',
         qwen_tts_reference_text: 'Exact words spoken in the reference transcript.',
         qwen_tts_language: 'English',
         qwen_tts_extra_json: {
@@ -271,9 +249,6 @@
       } else {
         delete next.rvc_model_name;
       }
-    } else if (normalized === 'local' || normalized === 'gpt-sovits' || normalized === 'gpt_sovits') {
-      setString('gpt_sovits_reference_audio', 'ttsEditorSovitsReferenceAudio');
-      setString('gpt_sovits_prompt_text', 'ttsEditorSovitsPromptText');
     } else if (isQwenProvider(normalized)) {
       setString('qwen_tts_endpoint', 'ttsEditorQwenEndpoint');
       setString('qwen_tts_reference_audio', 'ttsEditorQwenReferenceAudio');
@@ -304,15 +279,12 @@
   function syncStructuredTtsFields(provider, values) {
     var normalized = String(provider || '').toLowerCase();
     var piperFields = document.getElementById('ttsEditorPiperFields');
-    var sovitsFields = document.getElementById('ttsEditorSovitsFields');
     var qwenFields = document.getElementById('ttsEditorQwenFields');
     var openaiFields = document.getElementById('ttsEditorOpenAiFields');
     var piperModel = document.getElementById('ttsEditorPiperModelPath');
     var piperConfig = document.getElementById('ttsEditorPiperConfigPath');
     var rvcEnabled = document.getElementById('ttsEditorRvcEnabled');
     var rvcModel = document.getElementById('ttsEditorRvcModelName');
-    var sovitsRef = document.getElementById('ttsEditorSovitsReferenceAudio');
-    var sovitsPrompt = document.getElementById('ttsEditorSovitsPromptText');
     var qwenEndpoint = document.getElementById('ttsEditorQwenEndpoint');
     var qwenRefAudio = document.getElementById('ttsEditorQwenReferenceAudio');
     var qwenRefText = document.getElementById('ttsEditorQwenReferenceText');
@@ -327,11 +299,6 @@
     if (piperFields) {
       piperFields.hidden = normalized !== 'piper';
       piperFields.style.display = normalized === 'piper' ? '' : 'none';
-    }
-    if (sovitsFields) {
-      var showSovits = normalized === 'local' || normalized === 'gpt-sovits' || normalized === 'gpt_sovits';
-      sovitsFields.hidden = !showSovits;
-      sovitsFields.style.display = showSovits ? '' : 'none';
     }
     if (qwenFields) {
       var showQwen = isQwenProvider(normalized);
@@ -351,8 +318,6 @@
       rvcModel.hidden = !(normalized === 'piper' && !!values.rvc_enabled);
       rvcModel.style.display = normalized === 'piper' && !!values.rvc_enabled ? '' : 'none';
     }
-    if (sovitsRef) sovitsRef.value = values.gpt_sovits_reference_audio || '';
-    if (sovitsPrompt) sovitsPrompt.value = values.gpt_sovits_prompt_text || '';
     if (qwenEndpoint) qwenEndpoint.value = values.qwen_tts_endpoint || '';
     if (qwenRefAudio) qwenRefAudio.value = values.qwen_tts_reference_audio || '';
     if (qwenRefText) qwenRefText.value = values.qwen_tts_reference_text || '';

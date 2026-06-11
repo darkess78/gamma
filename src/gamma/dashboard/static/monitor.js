@@ -21,12 +21,13 @@
     const selected = ['dashboard', 'compact', 'focus'].includes(theme) ? theme : 'dashboard';
     document.body.classList.remove('theme-dashboard', 'theme-compact', 'theme-focus');
     document.body.classList.add(`theme-${selected}`);
-    document.getElementById('themeSelect').value = selected;
+    const select = document.getElementById('themeSelect');
+    if (select) select.value = selected;
     localStorage.setItem('gammaMonitorTheme', selected);
   }
 
   function enableAudio() {
-    if (!audio || !audioEnabled) return;
+    if (!audio) return;
     audioEnabled = true;
     if (!audio) return;
     const button = document.getElementById('audioEnableButton');
@@ -88,7 +89,7 @@
       link.href = `/overlay/subtitles${subtitlesQuery}`;
     });
     document.querySelectorAll('[data-dashboard-link]').forEach(link => {
-      link.href = (dashboardBase || '/dashboard');
+      link.href = dashboardBase ? dashboardBase.replace(/\/+$/, '') + '/dashboard' : '/dashboard';
     });
   }
 
@@ -425,6 +426,107 @@
       });
   }
 
+  async function monitorAction(path) {
+    const status = document.getElementById('monitorActionStatus');
+    if (status) status.textContent = `Requesting ${path}...`;
+    try {
+      const response = await fetch(path, { method: 'POST' });
+      const payload = await response.json();
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.detail || `HTTP ${response.status}`);
+      }
+      if (status) status.textContent = payload.detail || 'Action completed.';
+      window.setTimeout(loadMonitorStatus, 350);
+    } catch (error) {
+      if (status) status.textContent = `Action failed: ${String(error)}`;
+    }
+  }
+
+  async function monitorStopAllOutput() {
+    const targets = ['dashboard_monitor', 'stream_public', 'discord_call'];
+    const results = await Promise.allSettled(targets.map(target => (
+      fetch(`${apiBase}/v1/performer/targets/${encodeURIComponent(target)}/clear?reason=monitor_stop_all`, { method: 'POST' })
+    )));
+    clearAudio();
+    const failed = results.filter(result => result.status === 'rejected').length;
+    const status = document.getElementById('monitorActionStatus');
+    if (status) status.textContent = failed ? `${failed} output target(s) failed to clear.` : 'All output targets cleared.';
+  }
+
+  function providerStatusLine(name, provider) {
+    provider = provider || {};
+    const health = provider.health || {};
+    const parts = [provider.provider || 'not configured'];
+    if (provider.model) parts.push(provider.model);
+    if (provider.profile_label) parts.push(provider.profile_label);
+    if (provider.device) parts.push(`${provider.device}:${provider.device_index ?? 0}`);
+    if (health.device && !parts.includes(health.device)) parts.push(health.device);
+    parts.push(health.ok ? 'healthy' : (health.detail || 'unavailable'));
+    return `${name}: ${parts.join(' / ')}`;
+  }
+
+  async function loadMonitorStatus() {
+    try {
+      const response = await fetch('/api/status?_=' + Date.now(), { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      const shana = data.shana || {};
+      const process = shana.process || {};
+      const apiHealth = shana.api_health || {};
+      const providers = data.providers || {};
+      const twitch = data.twitch || {};
+      const worker = twitch.worker || {};
+      const eventsub = twitch.eventsub || {};
+      const performer = data.performer || {};
+      const machine = data.machine || {};
+      const gpu = machine.gpu || {};
+      const backend = document.getElementById('monitorBackendHealth');
+      const providerBlock = document.getElementById('monitorProviders');
+      const workers = document.getElementById('monitorWorkers');
+      const machineBlock = document.getElementById('monitorMachine');
+      if (backend) backend.textContent = [
+        `Dashboard: healthy`,
+        `Shana process: ${process.running ? `running (PID ${process.pid || 'n/a'})` : 'stopped'}`,
+        `Shana API: ${apiHealth.ok ? 'healthy' : (apiHealth.detail || 'unavailable')}`,
+        `Output bus: ${performer.ok ? 'healthy' : (performer.detail || 'unavailable')}`
+      ].join('\n');
+      if (providerBlock) providerBlock.textContent = [
+        providerStatusLine('LLM', providers.llm),
+        providerStatusLine('STT', providers.stt),
+        providerStatusLine('TTS', providers.tts)
+      ].join('\n');
+      if (workers) workers.textContent = [
+        `Twitch IRC: ${worker.process && worker.process.running ? 'running' : 'stopped'}`,
+        `Twitch EventSub: ${eventsub.process && eventsub.process.running ? 'running' : 'stopped'}`,
+        `Output subscribers: ${performer.stats ? performer.stats.subscriber_count || 0 : 0}`,
+        `Output history: ${performer.stats ? performer.stats.history_count || 0 : 0}`
+      ].join('\n');
+      const gpuLines = gpu.ok && Array.isArray(gpu.gpus) ? gpu.gpus.map(entry => (
+        `${entry.label}: ${entry.name} / ${entry.utilization_percent || 0}% / ${entry.memory_used_mb || 0} of ${entry.memory_total_mb || 0} MB`
+      )) : [gpu.detail || 'GPU status unavailable'];
+      if (machineBlock) machineBlock.textContent = [
+        `CPU: ${Number(machine.cpu_percent || 0).toFixed(1)}%`,
+        `RAM: ${machine.memory ? Number(machine.memory.percent || 0).toFixed(1) : 'n/a'}%`,
+        `Disk: ${machine.disk ? Number(machine.disk.percent || 0).toFixed(1) : 'n/a'}%`
+      ].concat(gpuLines).join('\n');
+    } catch (error) {
+      ['monitorBackendHealth', 'monitorProviders', 'monitorWorkers', 'monitorMachine'].forEach(id => {
+        const target = document.getElementById(id);
+        if (target) target.textContent = `Status unavailable: ${String(error)}`;
+      });
+    }
+  }
+
+  function initMonitorPanelState() {
+    const panel = document.getElementById('monitorStatusPanel');
+    if (!panel) return;
+    const saved = localStorage.getItem('gammaMonitor.statusPanel');
+    if (saved !== null) panel.open = saved === 'open';
+    panel.addEventListener('toggle', () => {
+      localStorage.setItem('gammaMonitor.statusPanel', panel.open ? 'open' : 'closed');
+    });
+  }
+
   if (audio) {
     audio.addEventListener('ended', () => {
       playing = false;
@@ -447,6 +549,16 @@
 
   // Initialize
   setMonitorTheme(localStorage.getItem('gammaMonitorTheme') || 'dashboard');
+  initMonitorPanelState();
   updateOutputLinks();
   connect();
+  loadMonitorStatus();
+  window.setInterval(loadMonitorStatus, 10000);
+
+  window.setMonitorTheme = setMonitorTheme;
+  window.enableAudio = enableAudio;
+  window.toggleMute = toggleMute;
+  window.clearOutput = clearOutput;
+  window.monitorAction = monitorAction;
+  window.monitorStopAllOutput = monitorStopAllOutput;
 })();

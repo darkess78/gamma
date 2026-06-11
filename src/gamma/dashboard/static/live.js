@@ -32,6 +32,9 @@
   var LIVE_MIN_TURN_MS = 550;
   var liveSpeakerMuted = false;
   var liveMicMuted = false;
+  var liveLastInterruptAt = 0;
+  var liveLastLevel = 0;
+  var liveLastEvent = 'Session has not started.';
   var recordMediaStream = null;
   var recordAudioContext = null;
   var recordSourceNode = null;
@@ -53,13 +56,13 @@
       speakerButton.textContent = liveSpeakerMuted ? 'Unmute Shana' : 'Mute Shana';
       speakerButton.setAttribute('data-muted', liveSpeakerMuted ? 'true' : 'false');
       speakerButton.classList.remove('secondary', 'danger', 'info', 'warn');
-      speakerButton.classList.add(liveSpeakerMuted ? 'info' : 'warn');
+      speakerButton.classList.add(liveSpeakerMuted ? 'danger' : 'secondary');
     }
     if (micButton) {
       micButton.textContent = liveMicMuted ? 'Unmute Mic' : 'Mute Mic';
       micButton.setAttribute('data-muted', liveMicMuted ? 'true' : 'false');
       micButton.classList.remove('secondary', 'danger', 'info', 'warn');
-      micButton.classList.add(liveMicMuted ? 'info' : 'warn');
+      micButton.classList.add(liveMicMuted ? 'danger' : 'secondary');
     }
   }
 
@@ -98,6 +101,16 @@
     return Number(input.value || 260);
   }
 
+  function currentMinimumTurnMs() {
+    var input = document.getElementById('liveMinimumTurnMs');
+    return input ? Number(input.value || LIVE_MIN_TURN_MS) : LIVE_MIN_TURN_MS;
+  }
+
+  function currentBargeCooldownMs() {
+    var input = document.getElementById('liveBargeCooldownMs');
+    return input ? Number(input.value || 750) : 750;
+  }
+
   function bargeInEnabled() {
     var input = document.getElementById('liveBargeInEnabled');
     return !!(input && input.checked);
@@ -123,7 +136,7 @@
     if (!liveTurnOpen || liveAwaitingReply) {
       return;
     }
-    if ((nowMs - liveTurnStartedAt) < LIVE_MIN_TURN_MS) {
+    if ((nowMs - liveTurnStartedAt) < currentMinimumTurnMs()) {
       return;
     }
     if ((nowMs - liveLastSpeechAt) < currentSilenceMs()) {
@@ -148,6 +161,7 @@
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
       liveSocket.send(JSON.stringify({ type: 'interrupt' }));
     }
+    liveLastInterruptAt = Date.now();
     renderLiveMeta(liveJobMeta);
     updateLiveStatus('Interrupted. Listening for new speech.');
   }
@@ -314,6 +328,9 @@
       clearInterruptProbe();
       return false;
     }
+    if ((nowMs - liveLastInterruptAt) < currentBargeCooldownMs()) {
+      return false;
+    }
     if (!liveInterruptSpeechStartedAt) {
       liveInterruptSpeechStartedAt = nowMs;
       return false;
@@ -368,7 +385,7 @@
     if (!liveTurnOpen || liveAwaitingReply) {
       return;
     }
-    if ((nowMs - liveTurnStartedAt) < LIVE_MIN_TURN_MS) {
+    if ((nowMs - liveTurnStartedAt) < currentMinimumTurnMs()) {
       return;
     }
     if ((nowMs - liveLastSpeechAt) < currentSilenceMs()) {
@@ -384,9 +401,11 @@
     var input = event.inputBuffer.getChannelData(0);
     var level = rmsLevel(input);
     var nowMs = Date.now();
+    liveLastLevel = level;
     var downsampled = downsampleBuffer(input, liveAudioContext.sampleRate, LIVE_TARGET_SAMPLE_RATE);
     var pcm = floatTo16BitPCM(downsampled);
     drawLiveMeter(liveMicMuted ? 0 : level);
+    renderLiveDebug();
     if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) {
       return;
     }
@@ -513,6 +532,154 @@
     var button = document.getElementById('liveVoiceButton');
     if (!button) return;
     button.textContent = liveSocket ? 'Live Running' : 'Start Live';
+    button.classList.toggle('secondary', !liveSocket);
+  }
+
+  function browserMicUnavailableReason() {
+    var host = String(window.location.hostname || '').toLowerCase();
+    var local = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    if (!window.isSecureContext && !local) return 'Microphone access requires HTTPS or localhost.';
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return 'Microphone capture is unavailable in this browser.';
+    return '';
+  }
+
+  function setLiveSubtitle(partial, transcript, reply) {
+    var target = document.getElementById('liveSubtitleStatus');
+    if (!target) return;
+    var lines = [];
+    if (partial) lines.push('Listening: ' + partial);
+    if (transcript) lines.push('You: ' + transcript);
+    if (reply) lines.push('Shana: ' + reply);
+    target.textContent = lines.join('\n\n') || 'Subtitles idle.';
+  }
+
+  function handleLiveMessage(payload) {
+    liveLastEvent = payload.type + (payload.state ? ': ' + payload.state : '');
+    if (payload.type === 'state') {
+      if (payload.detail) updateLiveStatus(payload.detail);
+      renderLiveMeta(payload.job || null);
+      if (['cancelled', 'interrupted', 'failed'].indexOf(payload.state) >= 0) {
+        resetLivePlayback(true);
+        liveAwaitingReply = false;
+      }
+    } else if (payload.type === 'partial_transcript') {
+      setLiveSubtitle(payload.text || '', '', '');
+      updateLiveStatus(payload.text ? 'Hearing: ' + payload.text : 'Speech detected; waiting for transcript text.');
+    } else if (payload.type === 'transcript') {
+      setLiveSubtitle('', payload.text || '', '');
+      updateLiveStatus('Transcript ready.');
+    } else if (payload.type === 'reply_chunk_ready') {
+      setLiveSubtitle('', '', (payload.chunk || {}).text || '');
+      queueLiveReplyChunk(payload.chunk || null, payload.turn_id || '');
+    } else if (payload.type === 'interrupt_probe_result') {
+      liveInterruptProbePending = false;
+      if (payload.text) interruptLiveReply();
+      else clearInterruptProbe();
+    } else if (payload.type === 'turn_result') {
+      setLiveSubtitle('', payload.transcript || '', payload.reply_text || '');
+      renderLiveMeta(payload.job || null);
+      liveHistory.push(payload);
+      renderLiveHistory();
+      liveReplyCompleted = true;
+      (payload.reply_chunks || []).forEach(function (chunk) { queueLiveReplyChunk(chunk, payload.turn_id || ''); });
+      finishLiveReplyIfIdle();
+    } else if (payload.type === 'error') {
+      liveAwaitingReply = false;
+      liveTurnOpen = false;
+      updateLiveStatus(payload.detail || 'Live voice returned an error.');
+      renderLiveMeta(payload.job || null);
+    }
+    renderLiveDebug(payload);
+  }
+
+  async function startLiveVoice() {
+    var reason = browserMicUnavailableReason();
+    if (reason) {
+      updateLiveStatus(reason);
+      return;
+    }
+    updateLiveStatus('Connecting live voice socket...');
+    liveSocket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/voice/live');
+    liveSocket.onopen = async function () {
+      try {
+        liveMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        liveAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+        liveSourceNode = liveAudioContext.createMediaStreamSource(liveMediaStream);
+        liveProcessorNode = liveAudioContext.createScriptProcessor(4096, 1, 1);
+        liveProcessorNode.onaudioprocess = handleLiveAudio;
+        liveSourceNode.connect(liveProcessorNode);
+        liveProcessorNode.connect(liveAudioContext.destination);
+        updateLiveButton();
+        updateMuteButtons();
+        updateLiveStatus('Live voice is armed. Start speaking.');
+        renderLiveDebug();
+      } catch (error) {
+        updateLiveStatus('Live microphone error: ' + String(error));
+        stopLiveVoice();
+      }
+    };
+    liveSocket.onmessage = function (event) {
+      try {
+        handleLiveMessage(JSON.parse(event.data));
+      } catch (error) {
+        updateLiveStatus('Live message could not be parsed: ' + String(error));
+      }
+    };
+    liveSocket.onerror = function () { updateLiveStatus('Live voice socket error. Check dashboard and Shana logs.'); };
+    liveSocket.onclose = function () {
+      cleanupLiveAudio();
+      resetLivePlayback(true);
+      liveSocket = null;
+      liveTurnOpen = false;
+      liveAwaitingReply = false;
+      updateLiveButton();
+      updateLiveStatus('Live voice session stopped.');
+      renderLiveDebug();
+    };
+  }
+
+  function cleanupLiveAudio() {
+    if (liveProcessorNode) { liveProcessorNode.disconnect(); liveProcessorNode.onaudioprocess = null; liveProcessorNode = null; }
+    if (liveSourceNode) { liveSourceNode.disconnect(); liveSourceNode = null; }
+    if (liveMediaStream) { liveMediaStream.getTracks().forEach(function (track) { track.stop(); }); liveMediaStream = null; }
+    if (liveAudioContext) { liveAudioContext.close().catch(function () {}); liveAudioContext = null; }
+  }
+
+  function stopLiveVoice() {
+    if (liveSocket && liveSocket.readyState === WebSocket.OPEN && liveTurnOpen) {
+      liveSocket.send(JSON.stringify({ type: 'cancel_turn' }));
+    }
+    if (liveSocket) liveSocket.close();
+    else {
+      cleanupLiveAudio();
+      resetLivePlayback(true);
+      updateLiveButton();
+      updateLiveStatus('Live voice session stopped.');
+      renderLiveDebug();
+    }
+  }
+
+  function toggleLiveVoice() {
+    if (liveSocket) stopLiveVoice();
+    else startLiveVoice();
+  }
+
+  function renderLiveDebug(lastPayload) {
+    var target = document.getElementById('liveDebugPanel');
+    if (!target) return;
+    target.hidden = !liveSocket;
+    if (!liveSocket) return;
+    var socketStates = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+    target.textContent = [
+      'Socket: ' + (socketStates[liveSocket.readyState] || liveSocket.readyState),
+      'Audio context: ' + (liveAudioContext ? liveAudioContext.state : 'not started'),
+      'Mic level: ' + liveLastLevel.toFixed(4) + ' | threshold: ' + currentSpeechThreshold().toFixed(3),
+      'Turn open: ' + liveTurnOpen + ' | awaiting reply: ' + liveAwaitingReply,
+      'Playback queue: ' + livePlaybackQueue.length + ' | active: ' + livePlaybackActive,
+      'Barge-in: ' + (bargeInEnabled() ? currentBargeInMode() : 'disabled') + ' | cooldown: ' + currentBargeCooldownMs() + ' ms',
+      'Last event: ' + liveLastEvent,
+      lastPayload ? 'Last payload: ' + JSON.stringify(lastPayload, null, 2) : ''
+    ].filter(Boolean).join('\n');
   }
 
   function renderLiveMeta(job) {
@@ -621,4 +788,8 @@
   var liveMeterLevels = [];
   var viewMode = localStorage.getItem('gammaDashboardViewMode') || 'human';
   var sectionHashes = {};
+  window.toggleLiveMicMuted = toggleLiveMicMuted;
+  window.toggleLiveSpeakerMuted = toggleLiveSpeakerMuted;
+  window.toggleLiveVoice = toggleLiveVoice;
+  window.stopLiveVoice = stopLiveVoice;
 })();

@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shana Control</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/dashboard.css?v=20260528b">
 </head>
 <body>
@@ -28,18 +29,18 @@
       <div class="toolbar">
         <button class="danger stop-output-button" onclick="stopShanaOutput()">Stop Output</button>
         <div class="toolbar-status">
-          <span class="status-chip" id="stickyBackendStatus">API: ...</span>
-          <span class="status-chip" id="stickyShanaStatus">Shana: ...</span>
-          <span class="status-chip" id="stickyTwitchStatus">Twitch: ...</span>
+          <span class="status-chip" id="stickyBackendStatus">API: checking</span>
+          <span class="status-chip" id="stickyShanaStatus">Shana: checking</span>
+          <span class="status-chip" id="stickyTwitchStatus">Twitch: checking</span>
         </div>
         <details class="status-menu">
           <summary>Status</summary>
           <div class="status-menu-panel">
             <div class="status-detail-grid">
-              <div>Dashboard</div><div id="navbarDashboardStatus">...</div>
-              <div>API</div><div id="navbarApiStatus">...</div>
-              <div>Workers</div><div id="navbarWorkerStatus">...</div>
-              <div>Output API</div><div id="outputViewApiStatus">...</div>
+              <div>Dashboard</div><div id="navbarDashboardStatus">Checking dashboard</div>
+              <div>API</div><div id="navbarApiStatus">Checking Shana API</div>
+              <div>Workers</div><div id="navbarWorkerStatus">Checking workers</div>
+              <div>Output API</div><div id="outputViewApiStatus">Checking output bus</div>
               <div>Last refresh</div><div id="stamp">Loading...</div>
             </div>
             <div class="view-toggle">
@@ -58,34 +59,34 @@
     <div class="grid">
       <section class="panel full-width dashboard-overview" data-dashboard-tab="dashboard-overview">
         <div class="overview-card-grid">
-          <a class="overview-link-card" data-dashboard-route="/dashboard/live" href="/dashboard/live"><span>Live</span><strong id="overviewLiveStatus">...</strong></a>
-          <a class="overview-link-card" data-dashboard-route="/dashboard/monitor" href="/dashboard/monitor"><span>Monitor</span><strong id="overviewOutputStatus">...</strong></a>
-          <a class="overview-link-card" data-dashboard-route="/dashboard/status" href="/dashboard/status"><span>Status</span><strong id="overviewShanaStatus">...</strong></a>
-          <a class="overview-link-card" data-dashboard-route="/dashboard/stream" href="/dashboard/stream"><span>Stream Ops</span><strong id="overviewStreamStatus">...</strong></a>
-          <a class="overview-link-card" data-dashboard-route="/dashboard/memory" href="/dashboard/memory"><span>Memory</span><strong id="overviewMemoryStatus">...</strong></a>
-          <a class="overview-link-card" data-dashboard-route="/dashboard/settings" href="/dashboard/settings"><span>Settings</span><strong id="overviewProviderStatus">...</strong></a>
+          <a class="overview-link-card" data-dashboard-route="/dashboard/live" href="/dashboard/live"><span>Live</span><strong id="overviewLiveStatus">Checking voice runtime</strong></a>
+          <a class="overview-link-card" data-dashboard-route="/dashboard/monitor" href="/dashboard/monitor"><span>Monitor</span><strong id="overviewOutputStatus">Checking output bus</strong></a>
+          <a class="overview-link-card" data-dashboard-route="/dashboard/status" href="/dashboard/status"><span>Status</span><strong id="overviewShanaStatus">Checking Shana</strong></a>
+          <a class="overview-link-card" data-dashboard-route="/dashboard/stream" href="/dashboard/stream"><span>Stream Ops</span><strong id="overviewStreamStatus">Checking stream services</strong></a>
+          <a class="overview-link-card" data-dashboard-route="/dashboard/memory" href="/dashboard/memory"><span>Memory</span><strong id="overviewMemoryStatus">Reading memory database</strong></a>
+          <a class="overview-link-card" data-dashboard-route="/dashboard/settings" href="/dashboard/settings"><span>Settings</span><strong id="overviewProviderStatus">Checking providers</strong></a>
           <a class="overview-link-card output-link-card" data-output-view="performer" href="/performer" target="_blank" rel="noopener"><span>Performer</span><strong>OBS view</strong></a>
           <a class="overview-link-card output-link-card" data-output-view="subtitles" href="/overlay/subtitles" target="_blank" rel="noopener"><span>Subtitles</span><strong>Overlay</strong></a>
         </div>
         <div class="overview-mini-grid">
-          <div class="mini-card"><span>Shana</span><strong id="overviewShanaMini">...</strong></div>
-          <div class="mini-card"><span>API</span><strong id="overviewApiMini">...</strong></div>
-          <div class="mini-card"><span>Workers</span><strong id="overviewWorkerMini">...</strong></div>
-          <div class="mini-card"><span>Current Output</span><strong id="overviewTurnMini">...</strong></div>
-          <div class="mini-card"><span>Live Voice</span><strong id="overviewLiveMini">...</strong></div>
-          <div class="mini-card"><span>Stream</span><strong id="overviewStreamMini">...</strong></div>
-          <div class="mini-card"><span>Twitch</span><strong id="overviewTwitchMini">...</strong></div>
-          <div class="mini-card"><span>Memory</span><strong id="overviewMemoryMini">...</strong></div>
-          <div class="mini-card mini-card-wide"><span>Warnings</span><strong id="overviewWarningsMini">...</strong></div>
+          <div class="mini-card"><span>Shana</span><strong id="overviewShanaMini">Checking</strong></div>
+          <div class="mini-card"><span>API</span><strong id="overviewApiMini">Checking</strong></div>
+          <div class="mini-card"><span>Workers</span><strong id="overviewWorkerMini">Checking</strong></div>
+          <div class="mini-card"><span>Current Output</span><strong id="overviewTurnMini">Waiting for output state</strong></div>
+          <div class="mini-card"><span>Live Voice</span><strong id="overviewLiveMini">Checking</strong></div>
+          <div class="mini-card"><span>Stream</span><strong id="overviewStreamMini">Checking</strong></div>
+          <div class="mini-card"><span>Twitch</span><strong id="overviewTwitchMini">Checking</strong></div>
+          <div class="mini-card"><span>Memory</span><strong id="overviewMemoryMini">Checking</strong></div>
+          <div class="mini-card mini-card-wide"><span>Warnings</span><strong id="overviewWarningsMini">Waiting for health report</strong></div>
         </div>
       </section>
       <section class="panel" data-dashboard-tab="status">
         <h2>Shana Process</h2>
         <div class="metrics">
-          <div class="metric"><div class="label">Running</div><div class="value" id="running">...</div></div>
-          <div class="metric"><div class="label">PID</div><div class="value" id="pid">...</div></div>
-          <div class="metric"><div class="label">CPU</div><div class="value" id="procCpu">...</div></div>
-          <div class="metric"><div class="label">RSS</div><div class="value" id="procMem">...</div></div>
+          <div class="metric"><div class="label">Running</div><div class="value" id="running">Checking</div></div>
+          <div class="metric"><div class="label">PID</div><div class="value" id="pid">Not loaded</div></div>
+          <div class="metric"><div class="label">CPU</div><div class="value" id="procCpu">Not sampled</div></div>
+          <div class="metric"><div class="label">RSS</div><div class="value" id="procMem">Not sampled</div></div>
         </div>
       </section>
       <section class="panel" data-dashboard-tab="status">
@@ -103,10 +104,10 @@
       <section class="panel" data-dashboard-tab="status">
         <h2>Machine</h2>
         <div class="metrics">
-          <div class="metric"><div class="label">CPU</div><div class="value" id="hostCpu">...</div></div>
-          <div class="metric"><div class="label">RAM</div><div class="value" id="hostRam">...</div></div>
-          <div class="metric"><div class="label">Disk</div><div class="value" id="hostDisk">...</div></div>
-          <div class="metric"><div class="label">GPU</div><div class="value" id="hostGpu">...</div></div>
+          <div class="metric"><div class="label">CPU</div><div class="value" id="hostCpu">Not sampled</div></div>
+          <div class="metric"><div class="label">RAM</div><div class="value" id="hostRam">Not sampled</div></div>
+          <div class="metric"><div class="label">Disk</div><div class="value" id="hostDisk">Not sampled</div></div>
+          <div class="metric"><div class="label">GPU</div><div class="value" id="hostGpu">Not sampled</div></div>
         </div>
         <div class="render" id="machineMeta"></div>
       </section>
@@ -114,13 +115,13 @@
         <div class="panel-head">
           <h2>Backend Health</h2>
         </div>
-        <div class="render" id="backendHealth">...</div>
+        <div class="render" id="backendHealth">Backend health checks are loading.</div>
       </section>
       <section class="panel panel-fill" data-dashboard-tab="providers">
         <div class="panel-head">
           <h2>Providers</h2>
         </div>
-        <div class="render" id="providers">...</div>
+        <div class="render" id="providers">Provider configuration and health checks are loading.</div>
       </section>
       <section class="panel wide panel-fill" data-dashboard-tab="status">
         <div class="panel-head">
@@ -177,7 +178,7 @@
           </div>
         </div>
         <div class="stream-status-grid">
-          <div class="render" id="twitchWorkerStatus">...</div>
+          <div class="render" id="twitchWorkerStatus">Twitch IRC configuration and process status are loading.</div>
           <div class="render compact-render" id="twitchEventSubStatus">EventSub status has not loaded yet.</div>
           <div class="render compact-render" id="twitchSettingsStatus">Twitch controls load with worker status.</div>
           <div class="render compact-render" id="streamStopStatus">Speech stop has not been requested.</div>
@@ -212,7 +213,7 @@
             </div>
           </div>
         </div>
-        <div class="render" id="twitchViewerTrust">...</div>
+        <div class="render" id="twitchViewerTrust">Viewer trust records have not been loaded yet.</div>
       </section>
       <section class="panel wide" data-dashboard-tab="stream">
         <div class="panel-head">
@@ -309,10 +310,10 @@
               <div class="action-title">TTS</div>
               <div class="action-buttons">
                 <select id="ttsProfileSelect" class="text-input" onchange="selectTtsProfile()" disabled title="Choose the saved voice profile Shana should use for text-to-speech.">
-                  <option value="">...</option>
+                  <option value="">Loading providers</option>
                 </select>
                 <select id="ttsProviderSelect" class="text-input" onchange="selectTtsProvider()" disabled title="Choose which TTS backend is active for the selected voice profile.">
-                  <option value="">...</option>
+                  <option value="">Loading voice profiles</option>
                 </select>
                 <button id="ttsStartButton" class="secondary" onclick="action('/api/providers/tts/start')" hidden disabled>Start TTS</button>
                 <button id="ttsStopButton" class="ghost danger-outline" onclick="action('/api/providers/tts/stop')" hidden disabled>Stop TTS</button>
@@ -352,10 +353,6 @@
                   <label class="checkbox-row"><input id="ttsEditorRvcEnabled" type="checkbox"> Enable RVC post-process</label>
                   <input id="ttsEditorRvcModelName" class="text-input" placeholder="RVC model name" hidden>
                 </div>
-                <div id="ttsEditorSovitsFields" class="action-buttons action-stack" hidden style="display: none;">
-                  <input id="ttsEditorSovitsReferenceAudio" class="text-input" placeholder="GPT-SoVITS reference audio path">
-                  <textarea id="ttsEditorSovitsPromptText" class="text-area" placeholder="GPT-SoVITS prompt transcript"></textarea>
-                </div>
                 <div id="ttsEditorQwenFields" class="action-buttons action-stack" hidden style="display: none;">
                   <input id="ttsEditorQwenEndpoint" class="text-input" placeholder="Qwen3-TTS endpoint (e.g. http://127.0.0.1:9882/tts)">
                   <input id="ttsEditorQwenReferenceAudio" class="text-input" placeholder="Reference audio path (for voice clone)">
@@ -374,7 +371,7 @@
                 <div class="action-title">Values JSON</div>
                 <textarea id="ttsEditorValues" class="text-area" placeholder="{}"></textarea>
                 <div class="action-title">Values Help</div>
-                <div class="render compact-render" id="ttsEditorHelp">...</div>
+                <div class="render compact-render" id="ttsEditorHelp">Voice profile details are loading.</div>
                 <div class="action-buttons">
                   <button class="secondary" onclick="saveTtsProfile()">Save Profile</button>
                   <button class="ghost" onclick="duplicateTtsProfile()">Duplicate Profile</button>
@@ -470,6 +467,8 @@
               <label class="range-row" title="Minimum detected mic energy before live voice treats your input as speech. Higher values ignore more background noise.">Speech threshold <input id="liveSpeechThreshold" type="range" min="8" max="40" step="1" value="18"><span id="liveSpeechThresholdValue">0.018</span></label>
               <label class="range-row" title="How long your speech must continue before it counts as an interrupt request while Shana is already talking.">Interrupt speech ms <input id="liveInterruptSpeechMs" type="range" min="80" max="800" step="20" value="260"><span id="liveInterruptSpeechMsValue">260</span></label>
               <label class="range-row" title="How much silence must pass before live voice closes your turn and sends it for STT/LLM processing.">Silence ms <input id="liveSilenceMs" type="range" min="400" max="1800" step="50" value="900"><span id="liveSilenceMsValue">900</span></label>
+              <label class="range-row" title="Minimum duration of a captured turn before silence is allowed to submit it.">Minimum turn ms <input id="liveMinimumTurnMs" type="number" min="150" max="3000" step="50" value="550" class="text-input"><span>ms</span></label>
+              <label class="range-row" title="Minimum delay after an interruption before another barge-in can fire, reducing repeated triggers from echo or background noise.">Barge cooldown <input id="liveBargeCooldownMs" type="number" min="0" max="5000" step="50" value="750" class="text-input"><span>ms</span></label>
             </div>
           </div>
         </div>
@@ -484,6 +483,7 @@
           </div>
         </details>
         <div class="render" id="liveVoiceMeta">No active live turn.</div>
+        <div class="render live-debug-panel" id="liveDebugPanel" hidden>Live debug information appears after a session starts.</div>
         <div class="render" id="liveVoiceStatus">Live voice session is idle.</div>
         <div class="render" id="liveSubtitleStatus">Subtitles idle.</div>
         <div class="action-buttons" style="margin-top: 10px;">
@@ -550,13 +550,14 @@
           <h2>Memory Stats</h2>
           <button class="ghost danger-outline" onclick="clearRecentMemory()">Clear Recent Memory</button>
         </div>
-        <div class="render" id="memoryStats">...</div>
+        <div class="render" id="memoryStats">Memory database statistics are loading.</div>
       </section>
       <section class="panel panel-fill" data-dashboard-tab="memory">
         <div class="panel-head">
           <h2>Known People</h2>
+          <button class="secondary" onclick="addKnownPerson()" title="Create a person record and link platform account IDs used for speaker recognition.">Add Person</button>
         </div>
-        <div class="render" id="knownPeople">...</div>
+        <div class="render" id="knownPeople">Known people are loading from the memory database.</div>
       </section>
       <section class="panel full-width panel-fill" data-dashboard-tab="settings">
         <div class="panel-head">
@@ -638,7 +639,7 @@
         <div class="panel-head">
           <h2>Recent Timings</h2>
         </div>
-        <div class="render" id="recentTimings">...</div>
+        <div class="render" id="recentTimings">Conversation timing samples are loading.</div>
       </section>
       <section class="panel wide" data-dashboard-tab="logs">
         <div class="panel-head">
@@ -648,7 +649,7 @@
           </button>
         </div>
         <div id="stdoutPanel" class="collapse-body" style="display: none;">
-          <pre id="stdoutLog">...</pre>
+          <pre id="stdoutLog">Shana stdout has not loaded yet.</pre>
         </div>
       </section>
       <section class="panel wide" data-dashboard-tab="logs">
@@ -659,7 +660,7 @@
           </button>
         </div>
         <div id="stderrPanel" class="collapse-body" style="display: none;">
-          <pre id="stderrLog">...</pre>
+          <pre id="stderrLog">Shana stderr has not loaded yet.</pre>
         </div>
       </section>
     </div>
@@ -680,16 +681,45 @@
       <div id="memoryDeleteList" class="memory-delete-list">No recent memory entries available.</div>
     </div>
   </div>
+  <div id="memoryRecordModal" class="modal-shell" hidden>
+    <div class="modal-backdrop" onclick="closeMemoryRecordModal()"></div>
+    <div class="modal-card">
+      <div class="panel-head">
+        <h2 id="memoryRecordTitle">Edit Memory</h2>
+        <button class="ghost" type="button" onclick="closeMemoryRecordModal()">Close</button>
+      </div>
+      <input id="memoryRecordMode" type="hidden">
+      <input id="memoryRecordId" type="hidden">
+      <input id="memoryRecordKind" type="hidden">
+      <div class="action-stack">
+        <input class="text-input" id="memoryRecordName" placeholder="Person or subject name" title="The human-readable person or subject this record belongs to.">
+        <input class="text-input" id="memoryRecordRelationship" placeholder="Relationship to owner" title="How this person relates to the owner, such as friend, moderator, or viewer.">
+        <div id="memoryPersonFields">
+          <select class="text-input" id="memoryPersonTrust" title="Controls whether this person may use tools and read or write trusted memory.">
+            <option value="owner">Owner</option><option value="trusted">Trusted</option><option value="guest">Guest</option><option value="public">Public</option>
+          </select>
+          <textarea class="text-area" id="memoryPersonAccounts" placeholder="platform | account id | display name" title="One linked account per line. Example: twitch | 12345 | ViewerName"></textarea>
+        </div>
+        <div id="memoryItemFields" hidden>
+          <input class="text-input" id="memoryRecordCategory" placeholder="Category or tags" title="Profile category or comma-separated episodic tags.">
+          <input class="text-input" id="memoryRecordConfidence" type="number" min="0" max="1" step="0.05" title="Confidence for facts or importance for episodic memories.">
+        </div>
+        <textarea class="text-area" id="memoryRecordText" placeholder="Memory text or person notes"></textarea>
+        <button class="secondary" type="button" onclick="saveMemoryRecord()">Save</button>
+      </div>
+    </div>
+  </div>
   <!-- Modular scripts -->
-  <script src="/static/monitor.js?v=20260529"></script>
   <script src="/static/init.js?v=20260529"></script>
   <script src="/static/providers.js?v=20260529"></script>
   <script src="/static/stream.js?v=20260529"></script>
-  <script src="/static/nav.js?v=20260529"></script>
+  <script src="/static/nav.js?v=20260611a"></script>
   <script src="/static/memory.js?v=20260529"></script>
   <script src="/static/api.js?v=20260529"></script>
   <script src="/static/live.js?v=20260529"></script>
   <script src="/static/render.js?v=20260529"></script>
+  <script src="/static/controls.js?v=20260611a"></script>
+  <script src="/static/status.js?v=20260611c"></script>
   <!-- Legacy script (commented out) -->
   <!-- <script src="/static/dashboard.js?v=20260528b"></script> -->
 </body>

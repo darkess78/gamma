@@ -743,6 +743,28 @@ pre {
   order: 10;
 }
 
+.stream-live-voice-panel .provider-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.stream-live-voice-panel .action-group,
+.stream-live-voice-panel .action-buttons,
+.stream-live-voice-panel .range-row {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.stream-live-voice-panel .range-row {
+  grid-template-columns: minmax(105px, 0.8fr) minmax(0, 1fr) minmax(44px, auto);
+}
+
+.stream-live-voice-panel .range-row .text-input,
+.stream-live-voice-panel .range-row input,
+.stream-live-voice-panel .range-row select {
+  min-width: 0;
+  max-width: 100%;
+}
+
 body[data-active-tab="stream"] .stream-worker-panel {
   order: 0;
   padding-bottom: 20px;
@@ -757,7 +779,7 @@ body[data-active-tab="stream"] .stream-activity-panel {
 }
 
 body[data-active-tab="stream"] .stream-live-voice-panel .provider-actions {
-  grid-template-columns: minmax(220px, 0.65fr) minmax(260px, 1fr) minmax(360px, 1.35fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 body[data-active-tab="stream"] .stream-live-voice-panel .provider-actions .action-group:nth-child(2) {
@@ -772,10 +794,6 @@ body[data-active-tab="stream"] .stream-live-voice-panel .provider-actions .actio
 
 body[data-active-tab="stream"] .stream-live-voice-panel .provider-actions .action-group:nth-child(3) .checkbox-row {
   min-height: 38px;
-}
-
-body[data-active-tab="stream"] .stream-live-voice-panel .provider-actions .action-group:nth-child(4) {
-  grid-column: span 1;
 }
 
 body[data-active-tab="stream"] .stream-live-voice-panel .legend-details,
@@ -1652,6 +1670,11 @@ audio {
   .memory-record-form,
   .memory-item-fields,
   .memory-account-row {
+    grid-template-columns: 1fr;
+  }
+
+  .stream-live-voice-panel .provider-actions,
+  body[data-active-tab="stream"] .stream-live-voice-panel .provider-actions {
     grid-template-columns: 1fr;
   }
   .nav-menu-toggle {

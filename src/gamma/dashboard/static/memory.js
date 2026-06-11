@@ -362,12 +362,22 @@
     var lines = [
       'Backend: ' + (stats.backend || 'n/a'),
       'Database: ' + (stats.database || 'n/a'),
+      'Database size: ' + memoryByteSize(stats.database_size_bytes),
+      'SQLite journal: ' + (stats.journal_mode || 'n/a'),
       'Profile facts: ' + (typeof stats.profile_count === 'undefined' ? 'n/a' : stats.profile_count),
       'Episodic memories: ' + (typeof stats.episodic_count === 'undefined' ? 'n/a' : stats.episodic_count),
       'Session-scoped episodic memories: ' + (typeof stats.session_scoped_episodic_count === 'undefined' ? 'n/a' : stats.session_scoped_episodic_count),
       'Known people: ' + (typeof stats.known_people_count === 'undefined' ? 'n/a' : stats.known_people_count)
     ];
     return lines.join('\n');
+  }
+
+  function memoryByteSize(value) {
+    var bytes = Number(value || 0);
+    if (!isFinite(bytes) || bytes <= 0) return '0 B';
+    if (bytes < 1024) return Math.round(bytes) + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KiB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MiB';
   }
 
   function humanKnownPeople(people) {

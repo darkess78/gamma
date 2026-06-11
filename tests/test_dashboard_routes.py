@@ -141,7 +141,7 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertNotIn('src="/static/monitor.js', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/nav.js?v=20260611d"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/live.js?v=20260611d"', dashboard.body.decode("utf-8"))
-        self.assertIn('src="/static/memory.js?v=20260611d"', dashboard.body.decode("utf-8"))
+        self.assertIn('src="/static/memory.js?v=20260611e"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/status.js?v=20260611c"', dashboard.body.decode("utf-8"))
         self.assertEqual(monitor_redirect.status_code, 307)
         self.assertEqual(monitor_redirect.headers["location"], "/dashboard/monitor")

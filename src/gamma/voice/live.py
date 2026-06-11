@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import re
 import time
 from collections.abc import Callable
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 
 from fastapi import WebSocket
 
@@ -50,6 +52,8 @@ class LiveVoiceSession:
         session_id: str | None = None
         synthesize_speech = True
         response_mode = "simple_chunked"
+        partial_min_bytes = self.partial_min_bytes
+        partial_interval_seconds = self.partial_interval_seconds
         current_turn_id = 0
         active_remote_turn_id: str | None = None
         active_remote_state: dict | None = None
@@ -156,11 +160,11 @@ class LiveVoiceSession:
         async def partial_loop(turn_id: int) -> None:
             nonlocal last_partial_text
             while turn_open and current_turn_id == turn_id:
-                await asyncio.sleep(self.partial_interval_seconds)
+                await asyncio.sleep(partial_interval_seconds)
                 if not turn_open or current_turn_id != turn_id:
                     return
                 snapshot = bytes(audio_buffer)
-                if len(snapshot) < self.partial_min_bytes or self._partial_transcriber is None:
+                if len(snapshot) < partial_min_bytes or self._partial_transcriber is None:
                     continue
                 try:
                     result = await asyncio.to_thread(self._partial_transcriber, pcm_bytes=snapshot)
@@ -358,6 +362,8 @@ class LiveVoiceSession:
                     if event_type == "interrupt_probe":
                         transcript = ""
                         timing_ms: dict = {}
+                        confirmed = False
+                        reason = "no_transcript"
                         audio_base64 = str(payload.get("audio_base64", "") or "")
                         if audio_base64 and self._partial_transcriber is not None:
                             try:
@@ -365,14 +371,23 @@ class LiveVoiceSession:
                                 result = await asyncio.to_thread(self._partial_transcriber, pcm_bytes=pcm_bytes)
                                 transcript = str(result.get("transcript", "")).strip()
                                 timing_ms = result.get("timing_ms", {}) if isinstance(result.get("timing_ms", {}), dict) else {}
-                            except Exception:
+                                confirmed, reason = self.evaluate_interrupt_transcript(
+                                    transcript,
+                                    minimum_words=self._bounded_int(payload.get("minimum_words"), default=1, minimum=1, maximum=8),
+                                    assistant_text=str(payload.get("assistant_text", "") or ""),
+                                    reject_echo=bool(payload.get("reject_echo", True)),
+                                )
+                            except Exception as exc:
                                 transcript = ""
                                 timing_ms = {}
+                                reason = f"transcription_error:{type(exc).__name__}"
                         await self._send_json(
                             websocket,
                             {
                                 "type": "interrupt_probe_result",
                                 "text": transcript,
+                                "confirmed": confirmed,
+                                "reason": reason,
                                 "timing_ms": timing_ms,
                             },
                         )
@@ -389,6 +404,22 @@ class LiveVoiceSession:
                         session_id = self._normalize_string(payload.get("session_id"))
                         synthesize_speech = bool(payload.get("synthesize_speech", True))
                         response_mode = self._normalize_response_mode(payload.get("response_mode"))
+                        live_settings = payload.get("live_settings", {})
+                        if not isinstance(live_settings, dict):
+                            live_settings = {}
+                        partial_interval_seconds = self._bounded_float(
+                            live_settings.get("partial_interval_ms"),
+                            default=self.partial_interval_seconds * 1000,
+                            minimum=250,
+                            maximum=3000,
+                        ) / 1000
+                        partial_min_ms = self._bounded_int(
+                            live_settings.get("partial_min_audio_ms"),
+                            default=int(self.partial_min_bytes / 32),
+                            minimum=200,
+                            maximum=3000,
+                        )
+                        partial_min_bytes = partial_min_ms * 32
                         turn_open = True
                         partial_task = asyncio.create_task(partial_loop(current_turn_id))
                         await self._send_json(
@@ -509,6 +540,46 @@ class LiveVoiceSession:
         if normalized == "incremental_experimental":
             return normalized
         return "simple_chunked"
+
+    @staticmethod
+    def _bounded_float(value: object, *, default: float, minimum: float, maximum: float) -> float:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            parsed = default
+        return max(minimum, min(maximum, parsed))
+
+    @classmethod
+    def _bounded_int(cls, value: object, *, default: int, minimum: int, maximum: int) -> int:
+        return int(round(cls._bounded_float(value, default=default, minimum=minimum, maximum=maximum)))
+
+    @staticmethod
+    def evaluate_interrupt_transcript(
+        transcript: str,
+        *,
+        minimum_words: int = 1,
+        assistant_text: str = "",
+        reject_echo: bool = True,
+    ) -> tuple[bool, str]:
+        words = re.findall(r"[a-z0-9']+", transcript.casefold())
+        if not words:
+            return False, "no_transcript"
+
+        command_words = {"stop", "wait", "no", "hey", "shana"}
+        if len(words) < max(1, minimum_words) and not command_words.intersection(words):
+            return False, "too_short"
+
+        if reject_echo and assistant_text.strip():
+            assistant_words = re.findall(r"[a-z0-9']+", assistant_text.casefold())
+            if assistant_words:
+                probe_text = " ".join(words)
+                assistant_normalized = " ".join(assistant_words)
+                similarity = SequenceMatcher(None, probe_text, assistant_normalized).ratio()
+                overlap = len(set(words).intersection(assistant_words)) / len(set(words))
+                if probe_text in assistant_normalized or (len(words) > 1 and similarity >= 0.72) or overlap >= 0.9:
+                    return False, "assistant_echo"
+
+        return True, "speech_confirmed"
 
     async def _send_json(self, websocket: WebSocket, payload: dict) -> None:
         await websocket.send_text(json.dumps(payload, ensure_ascii=False))

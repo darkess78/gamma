@@ -355,11 +355,12 @@ class BaseFileTTSBackend(TTSBackend):
         }
         pronunciation_overrides = {
             r"\bShana\b": "Shawna",
+            r"\bNeety\b": "Nee-tee",
         }
         for pattern, replacement in abbrevs.items():
             text = re.sub(pattern, replacement, text)
         for pattern, replacement in pronunciation_overrides.items():
-            text = re.sub(pattern, replacement, text)
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
         return text
 
 

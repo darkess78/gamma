@@ -14,6 +14,7 @@ from gamma.schemas.response import AssistantResponse
 from gamma.schemas.voice import LiveVoiceJobResponse
 from gamma.stream.models import StreamTurnResult, TurnDecision
 from gamma.voice.live_jobs import LiveVoiceJob, LiveVoiceJobManager
+from gamma.voice.live import LiveVoiceSession
 from gamma.voice.live_runtime import SubprocessLiveTurnRuntime
 from gamma.voice.reply_state import AssistantTurnState
 
@@ -207,6 +208,34 @@ class LiveVoiceRuntimeTest(unittest.TestCase):
         self.assertEqual(active_cancelled[0].cancel_reason, "active-test")
         self.assertEqual(history, [{"turn_id": "turn-1"}])
         self.assertEqual([name for name, _payload in manager.calls], ["start_job", "get_job", "cancel_job", "cancel_active_jobs", "get_recent_history"])
+
+    def test_interrupt_probe_requires_speech_evidence_and_rejects_echo(self) -> None:
+        self.assertEqual(
+            LiveVoiceSession.evaluate_interrupt_transcript("maybe", minimum_words=2),
+            (False, "too_short"),
+        )
+        self.assertEqual(
+            LiveVoiceSession.evaluate_interrupt_transcript("stop", minimum_words=2),
+            (True, "speech_confirmed"),
+        )
+        self.assertEqual(
+            LiveVoiceSession.evaluate_interrupt_transcript(
+                "I can explain the routing",
+                minimum_words=2,
+                assistant_text="I can explain the routing now.",
+                reject_echo=True,
+            ),
+            (False, "assistant_echo"),
+        )
+        self.assertEqual(
+            LiveVoiceSession.evaluate_interrupt_transcript(
+                "Shana wait a second",
+                minimum_words=2,
+                assistant_text="The dashboard is connected.",
+                reject_echo=True,
+            ),
+            (True, "speech_confirmed"),
+        )
 
     def test_live_job_manager_bridges_reply_chunks_to_performer_bus(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

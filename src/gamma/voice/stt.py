@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import logging
+import re
 
 from ..config import settings
 from ..errors import ConfigurationError, ExternalServiceError
@@ -11,6 +12,21 @@ from ..system.torch_devices import resolve_torch_device
 
 
 log = logging.getLogger(__name__)
+_STT_NAME_PROMPT = "The assistant is named Shana. The owner is named Neety."
+
+
+def normalize_transcript(text: str) -> str:
+    normalized = " ".join(text.strip().split())
+    if not normalized:
+        return ""
+    normalized = re.sub(r"\b(?:shawna|shauna|shanna|shayna)\b", "Shana", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(
+        r"\b(hey|hi|okay|ok)([,\s]+)(?:china|shannon)\b",
+        lambda match: f"{match.group(1)}{match.group(2)}Shana",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    return normalized
 
 
 @dataclass(slots=True)
@@ -64,7 +80,14 @@ class FasterWhisperSTTBackend(STTBackend):
 
     def transcribe_audio(self, source: str) -> str:
         try:
-            segments, _info = self._model.transcribe(source)
+            try:
+                segments, _info = self._model.transcribe(
+                    source,
+                    initial_prompt=_STT_NAME_PROMPT,
+                    hotwords="Shana Neety",
+                )
+            except TypeError:
+                segments, _info = self._model.transcribe(source, initial_prompt=_STT_NAME_PROMPT)
         except Exception as exc:
             raise ExternalServiceError(f"STT transcription failed: {exc}") from exc
         return " ".join(segment.text.strip() for segment in segments).strip()
@@ -93,6 +116,7 @@ class OpenAISTTBackend(STTBackend):
                     file=audio_file,
                     model=settings.stt_model,
                     response_format="text",
+                    prompt=_STT_NAME_PROMPT,
                 )
         except Exception as exc:
             raise ExternalServiceError(f"OpenAI STT transcription failed: {exc}") from exc
@@ -137,4 +161,4 @@ class STTService:
             raise ConfigurationError(f"Unsupported SHANA_STT_PROVIDER: {settings.stt_provider}")
 
     def transcribe_audio(self, source: str) -> str:
-        return self._backend.transcribe_audio(source)
+        return normalize_transcript(self._backend.transcribe_audio(source))

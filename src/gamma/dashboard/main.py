@@ -68,6 +68,11 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> FileResponse:
+    return FileResponse(STATIC_DIR / "favicon.svg", media_type="image/svg+xml")
+
+
 @app.get("/")
 @app.get("/dashboard")
 def dashboard() -> HTMLResponse:
@@ -393,6 +398,36 @@ async def clear_selected_memory(request: Request) -> dict:
     payload = await request.json()
     selections = payload.get("items", []) if isinstance(payload, dict) else []
     return get_dashboard_service().clear_selected_memory(selections if isinstance(selections, list) else [])
+
+
+@app.post("/api/memory/item")
+async def update_memory_item(request: Request) -> dict:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="object payload is required")
+    try:
+        return get_dashboard_service().update_memory_item(payload)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/memory/people")
+async def save_known_person(request: Request) -> dict:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="object payload is required")
+    try:
+        return get_dashboard_service().save_known_person(payload)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/memory/people/{person_id}")
+def delete_known_person(person_id: int) -> dict:
+    try:
+        return get_dashboard_service().delete_known_person(person_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/api/providers/tts/start")

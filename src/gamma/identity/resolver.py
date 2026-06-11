@@ -4,6 +4,7 @@ import tomllib
 from typing import TYPE_CHECKING
 
 from ..config import settings
+from ..memory.service import MemoryService
 from .profile import SpeakerProfile, TrustLevel, UNKNOWN_PUBLIC
 
 if TYPE_CHECKING:
@@ -31,6 +32,7 @@ class IdentityResolver:
         self._owner = self._build_owner(cfg.get("owner", {}))
         self._owner_platform_ids_cache: dict[str, str] = cfg.get("owner", {}).get("platform_ids", {})
         self._guests = self._build_guests(cfg.get("guests", {}))
+        self._memory = MemoryService()
 
     # ------------------------------------------------------------------
     # Public API
@@ -63,6 +65,19 @@ class IdentityResolver:
 
         if not platform_id:
             return None
+
+        stored = self._memory.resolve_person_identity(source, platform_id)
+        if stored is not None:
+            trust = str(stored.get("trust") or "guest")
+            if trust not in {"owner", "trusted", "guest", "public"}:
+                trust = "guest"
+            return SpeakerProfile(
+                name=str(stored.get("name") or "Unknown"),
+                trust=trust,  # type: ignore[arg-type]
+                notes=str(stored.get("notes") or ""),
+                is_owner=trust == "owner",
+                resolved_via=source,
+            )
 
         if source == "discord":
             return self._match_discord(platform_id)

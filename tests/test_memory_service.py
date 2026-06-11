@@ -56,6 +56,41 @@ class MemoryServiceTest(unittest.TestCase):
         results = self.service.search_memories("Gamma routing", session_id="sess-1", limit=10)
         self.assertEqual(len(results), 1)
 
+    def test_known_person_accounts_resolve_across_platforms(self) -> None:
+        self.service = MemoryService()
+        saved = self.service.save_known_person(
+            {
+                "name": "Example Viewer",
+                "relationship_to_user": "friend",
+                "trust": "trusted",
+                "notes": "Test identity",
+                "accounts": [
+                    {"platform": "twitch", "platform_user_id": "tw-123", "display_name": "Example"},
+                    {"platform": "discord", "platform_user_id": "dc-456", "display_name": "Example"},
+                ],
+            }
+        )
+        self.assertEqual(saved["name"], "Example Viewer")
+        self.assertEqual(len(saved["accounts"]), 2)
+        resolved = self.service.resolve_person_identity("twitch", "tw-123")
+        self.assertIsNotNone(resolved)
+        self.assertEqual(resolved["trust"], "trusted")
+
+    def test_memory_items_can_be_updated_and_deleted(self) -> None:
+        self.service = MemoryService()
+        self.service.persist_candidates(
+            [MemoryCandidate(type="profile", text="I like tea.", importance=0.8, tags=["preference"])]
+        )
+        item = self.service.recent_items(limit=1)[0]
+        updated = self.service.update_item(
+            str(item["kind"]),
+            int(item["id"]),
+            {"summary": "I like jasmine tea.", "category": "preference", "confidence": 0.9},
+        )
+        self.assertEqual(updated["summary"], "I like jasmine tea")
+        removed = self.service.clear_selected([{"kind": item["kind"], "id": item["id"]}])
+        self.assertEqual(removed["cleared_total"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

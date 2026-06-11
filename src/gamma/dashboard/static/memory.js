@@ -120,6 +120,147 @@
     openMemoryDeleteModal(10);
   }
 
+  function memoryData() {
+    return (window.gammaDashboardStatus && window.gammaDashboardStatus.memory_db) || {};
+  }
+
+  function renderMemoryRecords(memory) {
+    memory = memory || {};
+    var peopleTarget = document.getElementById('knownPeople');
+    var memoryTarget = document.getElementById('recentMemories');
+    var people = Array.isArray(memory.known_people) ? memory.known_people : [];
+    var items = Array.isArray(memory.recent_items) ? memory.recent_items : [];
+    if (peopleTarget) {
+      peopleTarget.classList.add('record-list');
+      peopleTarget.innerHTML = people.length ? people.map(function (person) {
+        var accounts = Array.isArray(person.accounts) ? person.accounts : [];
+        var accountText = accounts.length ? accounts.map(function (account) {
+          return escapeHtml(account.platform + ': ' + account.platform_user_id);
+        }).join('<br>') : 'No linked accounts';
+        return '<article class="record-card"><div><strong>' + escapeHtml(person.name || 'Unnamed') + '</strong>'
+          + '<div class="record-meta">' + escapeHtml(person.relationship_to_user || 'Relationship not set')
+          + ' | trust: ' + escapeHtml(person.trust || 'guest') + '</div>'
+          + '<div class="record-meta">' + accountText + '</div>'
+          + (person.notes ? '<div class="record-notes">' + escapeHtml(person.notes) + '</div>' : '')
+          + '</div><div class="record-actions"><button class="ghost" onclick="editKnownPerson(' + Number(person.id || 0)
+          + ')">Edit</button><button class="ghost danger-outline" onclick="deleteKnownPerson(' + Number(person.id || 0)
+          + ')">Delete</button></div></article>';
+      }).join('') : '<div class="empty-state">No known people stored yet. Add one to link Twitch, Discord, game, or other account IDs.</div>';
+    }
+    if (memoryTarget) {
+      memoryTarget.classList.add('record-list');
+      memoryTarget.innerHTML = items.length ? items.map(function (item) {
+        return '<article class="record-card"><div><strong>' + escapeHtml(item.kind === 'episodic' ? 'Episodic memory' : 'Profile fact')
+          + '</strong><div class="record-meta">' + escapeHtml(item.subject_name || item.subject_type || 'unscoped')
+          + (item.created_at ? ' | ' + escapeHtml(fmtLocalDateTime(item.created_at)) : '') + '</div>'
+          + '<div class="record-notes">' + escapeHtml(item.summary || 'No text stored') + '</div></div>'
+          + '<div class="record-actions"><button class="ghost" onclick="editMemoryItem(' + Number(item.id || 0)
+          + ', \'' + escapeHtml(item.kind || '') + '\')">Edit</button><button class="ghost danger-outline" onclick="deleteMemoryItem('
+          + Number(item.id || 0) + ', \'' + escapeHtml(item.kind || '') + '\')">Delete</button></div></article>';
+      }).join('') : '<div class="empty-state">No stored memories yet.</div>';
+    }
+  }
+
+  function openRecordModal(title) {
+    var modal = document.getElementById('memoryRecordModal');
+    var heading = document.getElementById('memoryRecordTitle');
+    if (heading) heading.textContent = title;
+    if (modal) modal.hidden = false;
+  }
+
+  function closeMemoryRecordModal() {
+    var modal = document.getElementById('memoryRecordModal');
+    if (modal) modal.hidden = true;
+  }
+
+  function editMemoryItem(id, kind) {
+    var item = (memoryData().recent_items || []).find(function (entry) {
+      return Number(entry.id) === Number(id) && entry.kind === kind;
+    });
+    if (!item) return;
+    document.getElementById('memoryRecordMode').value = 'memory';
+    document.getElementById('memoryRecordId').value = item.id;
+    document.getElementById('memoryRecordKind').value = item.kind;
+    document.getElementById('memoryRecordName').value = item.subject_name || '';
+    document.getElementById('memoryRecordRelationship').value = item.relationship_to_user || '';
+    document.getElementById('memoryRecordCategory').value = item.category || '';
+    document.getElementById('memoryRecordConfidence').value = item.confidence == null ? 0.5 : item.confidence;
+    document.getElementById('memoryRecordText').value = item.summary || '';
+    document.getElementById('memoryPersonFields').hidden = true;
+    document.getElementById('memoryItemFields').hidden = false;
+    openRecordModal('Edit Memory');
+  }
+
+  function editKnownPerson(id) {
+    var person = (memoryData().known_people || []).find(function (entry) { return Number(entry.id) === Number(id); });
+    if (!person) return;
+    document.getElementById('memoryRecordMode').value = 'person';
+    document.getElementById('memoryRecordId').value = person.id;
+    document.getElementById('memoryRecordName').value = person.name || '';
+    document.getElementById('memoryRecordRelationship').value = person.relationship_to_user || '';
+    document.getElementById('memoryPersonTrust').value = person.trust || 'guest';
+    document.getElementById('memoryRecordText').value = person.notes || '';
+    document.getElementById('memoryPersonAccounts').value = (person.accounts || []).map(function (account) {
+      return [account.platform, account.platform_user_id, account.display_name || ''].join(' | ');
+    }).join('\n');
+    document.getElementById('memoryPersonFields').hidden = false;
+    document.getElementById('memoryItemFields').hidden = true;
+    openRecordModal('Edit Known Person');
+  }
+
+  function addKnownPerson() {
+    document.getElementById('memoryRecordMode').value = 'person';
+    document.getElementById('memoryRecordId').value = '';
+    document.getElementById('memoryRecordName').value = 'Example Viewer';
+    document.getElementById('memoryRecordRelationship').value = 'stream viewer';
+    document.getElementById('memoryPersonTrust').value = 'guest';
+    document.getElementById('memoryRecordText').value = 'Example record. Replace these values with the real person details.';
+    document.getElementById('memoryPersonAccounts').value = 'twitch | example_twitch_id | ExampleViewer\ndiscord | example_discord_id | Example Viewer';
+    document.getElementById('memoryPersonFields').hidden = false;
+    document.getElementById('memoryItemFields').hidden = true;
+    openRecordModal('Add Known Person');
+  }
+
+  async function saveMemoryRecord() {
+    var mode = document.getElementById('memoryRecordMode').value;
+    var payload = {
+      id: Number(document.getElementById('memoryRecordId').value || 0),
+      name: document.getElementById('memoryRecordName').value.trim(),
+      relationship_to_user: document.getElementById('memoryRecordRelationship').value.trim(),
+      notes: document.getElementById('memoryRecordText').value.trim()
+    };
+    var path = '/api/memory/people';
+    if (mode === 'person') {
+      payload.trust = document.getElementById('memoryPersonTrust').value;
+      payload.accounts = document.getElementById('memoryPersonAccounts').value.split('\n').map(function (line) {
+        var parts = line.split('|').map(function (value) { return value.trim(); });
+        return { platform: parts[0] || '', platform_user_id: parts[1] || '', display_name: parts[2] || '' };
+      }).filter(function (account) { return account.platform && account.platform_user_id; });
+    } else {
+      path = '/api/memory/item';
+      payload.kind = document.getElementById('memoryRecordKind').value;
+      payload.summary = payload.notes;
+      payload.subject_name = payload.name;
+      payload.category = document.getElementById('memoryRecordCategory').value.trim();
+      payload.confidence = Number(document.getElementById('memoryRecordConfidence').value || 0.5);
+    }
+    await action(path, { body: payload });
+    closeMemoryRecordModal();
+  }
+
+  async function deleteMemoryItem(id, kind) {
+    if (!confirm('Delete this memory permanently?')) return;
+    await action('/api/memory/clear-selected', { body: { items: [{ id: id, kind: kind }] } });
+  }
+
+  async function deleteKnownPerson(id) {
+    if (!confirm('Delete this known person and their linked account IDs? Stored memories about them will remain.')) return;
+    var response = await fetch('/api/memory/people/' + encodeURIComponent(id), { method: 'DELETE' });
+    var payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail || ('HTTP ' + response.status));
+    await window.loadStatus();
+  }
+
   function fmtLocalDateTime(value, fallback) {
     if (!value) return fallback || 'n/a';
     var date = value instanceof Date ? value : new Date(value);
@@ -405,4 +546,16 @@
       .replace(/>/g, '&gt;');
   }
 
+  window.clearRecentMemory = clearRecentMemory;
+  window.closeMemoryDeleteModal = closeMemoryDeleteModal;
+  window.setAllMemorySelections = setAllMemorySelections;
+  window.submitMemoryDeletion = submitMemoryDeletion;
+  window.renderMemoryRecords = renderMemoryRecords;
+  window.editMemoryItem = editMemoryItem;
+  window.deleteMemoryItem = deleteMemoryItem;
+  window.editKnownPerson = editKnownPerson;
+  window.addKnownPerson = addKnownPerson;
+  window.deleteKnownPerson = deleteKnownPerson;
+  window.saveMemoryRecord = saveMemoryRecord;
+  window.closeMemoryRecordModal = closeMemoryRecordModal;
 })();

@@ -30,3 +30,22 @@ class EpisodicMemory(SQLModel, table=True):
     subject_name: str | None = Field(default=None, index=True)
     relationship_to_user: str | None = None
     created_at: datetime = Field(default_factory=_utc_now, index=True)
+
+
+class KnownPerson(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(index=True)
+    relationship_to_user: str | None = None
+    trust: str = Field(default="guest", index=True)
+    notes: str = ""
+    created_at: datetime = Field(default_factory=_utc_now, index=True)
+    updated_at: datetime = Field(default_factory=_utc_now, index=True)
+
+
+class PersonIdentity(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    person_id: int = Field(foreign_key="knownperson.id", index=True)
+    platform: str = Field(index=True)
+    platform_user_id: str = Field(index=True)
+    display_name: str | None = None
+    created_at: datetime = Field(default_factory=_utc_now, index=True)

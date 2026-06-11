@@ -86,8 +86,12 @@ class DashboardService:
         local_status["providers"]["tts"]["restart_required"] = (
             selected_tts_provider != running_tts_provider or (selected_tts_profile or "") != running_tts_profile
         )
-        local_status["providers"]["tts"]["available_providers"] = ["piper", "local", "qwen-tts", "openai", "stub"]
-        local_status["providers"]["tts"]["available_profiles"] = [profile.as_payload() for profile in list_voice_profiles()]
+        local_status["providers"]["tts"]["available_providers"] = ["qwen-tts", "piper", "openai"]
+        local_status["providers"]["tts"]["available_profiles"] = [
+            profile.as_payload()
+            for profile in list_voice_profiles()
+            if profile.provider.strip().lower() in {"qwen-tts", "piper", "openai"}
+        ]
         local_status["providers"]["tts"]["editor_profile"] = self.tts_profile_editor_state(
             selected_tts_profile,
             selected_tts_provider,
@@ -114,7 +118,7 @@ class DashboardService:
             local_status["providers"]["llm"]
         )
         runtime_status = self.build_runtime_status()
-        system_status = self._probe_json(settings.shana_base_url + "/v1/system/status")
+        system_status = self._probe_json(settings.shana_internal_base_url + "/v1/system/status")
         return {
             "dashboard": {
                 "name": f"{settings.app_name} dashboard",
@@ -158,20 +162,7 @@ class DashboardService:
         normalized = (provider or "").strip().lower()
         profile = get_voice_profile(profile_id)
         values = profile.values if profile and isinstance(profile.values, dict) else {}
-        if normalized in {"stub", "openai", "piper"}:
-            return {"enabled": True, "reason": ""}
-        if normalized in {"local", "gpt-sovits", "gpt_sovits"}:
-            ref_audio = str(values.get("gpt_sovits_reference_audio", "")).strip()
-            if not ref_audio:
-                return {
-                    "enabled": False,
-                    "reason": "Test TTS needs a GPT-SoVITS profile with a reference audio file.",
-                }
-            if not self._path_exists(ref_audio):
-                return {
-                    "enabled": False,
-                    "reason": f"Missing GPT-SoVITS reference audio: {ref_audio}",
-                }
+        if normalized in {"openai", "piper"}:
             return {"enabled": True, "reason": ""}
         if self._is_qwen_provider(normalized):
             speaker = str(values.get("qwen_tts_speaker", "")).strip()
@@ -199,7 +190,7 @@ class DashboardService:
 
     def build_runtime_status(self) -> dict[str, Any]:
         shana_process = self._process_manager.find_process("shana")
-        api_probe = self._probe_json(settings.shana_base_url + "/v1/system/status")
+        api_probe = self._probe_json(settings.shana_internal_base_url + "/v1/system/status")
         api_health = {
             "ok": api_probe.get("ok", False),
             "detail": "ok" if api_probe.get("ok", False) else api_probe.get("detail", "unreachable"),
@@ -345,7 +336,7 @@ class DashboardService:
         eventsub_state = read_twitch_eventsub_state()
         irc_runtime = self._worker_runtime_evidence(irc_process, irc_state, message_key="message_count")
         eventsub_runtime = self._worker_runtime_evidence(eventsub_process, eventsub_state, message_key="notification_count")
-        api_probe = self._probe_json(settings.shana_base_url + "/v1/system/status")
+        api_probe = self._probe_json(settings.shana_internal_base_url + "/v1/system/status")
         checks = [
             self._stream_ready_check(
                 "api",
@@ -732,7 +723,7 @@ class DashboardService:
             raise ValueError("jsonl is required")
         results = replay_jsonl_text(
             text,
-            client=GammaStreamClient(base_url=settings.shana_base_url),
+            client=GammaStreamClient(base_url=settings.shana_internal_base_url),
             owner_user_id=settings.twitch_owner_user_id or None,
             synthesize_speech=bool(payload.get("synthesize_speech", False)),
             fast_mode=bool(payload.get("fast_mode", True)),
@@ -745,7 +736,7 @@ class DashboardService:
     def run_twitch_dry_run_replay(self) -> dict[str, Any]:
         results = replay_jsonl_text(
             self.TWITCH_DRY_RUN_SCENARIO,
-            client=GammaStreamClient(base_url=settings.shana_base_url),
+            client=GammaStreamClient(base_url=settings.shana_internal_base_url),
             owner_user_id=settings.twitch_owner_user_id or None,
             synthesize_speech=False,
             fast_mode=True,
@@ -835,22 +826,41 @@ class DashboardService:
         }
         return {"ok": True, "detail": "Selected memory cleared.", **result}
 
+    def update_memory_item(self, payload: dict[str, object]) -> dict[str, Any]:
+        kind = str(payload.get("kind") or "").strip()
+        item_id = int(payload.get("id") or 0)
+        if item_id <= 0:
+            raise ValueError("valid memory id is required")
+        item = self._memory.update_item(kind, item_id, payload)
+        return {"ok": True, "detail": "Memory updated.", "item": item}
+
+    def save_known_person(self, payload: dict[str, object]) -> dict[str, Any]:
+        person = self._memory.save_known_person(payload)
+        return {"ok": True, "detail": "Known person saved.", "person": person}
+
+    def delete_known_person(self, person_id: int) -> dict[str, Any]:
+        if not self._memory.delete_known_person(person_id):
+            raise ValueError("known person not found")
+        return {"ok": True, "detail": "Known person deleted.", "id": person_id}
+
     def start_tts(self) -> dict[str, Any]:
         provider = self.selected_tts_provider()
-        label = "Qwen3-TTS" if self._is_qwen_provider(provider) else "GPT-SoVITS"
+        if not self._is_qwen_provider(provider):
+            return {"ok": False, "detail": f"TTS start control is only available for Qwen3-TTS, not {provider}."}
         return self._run_provider_action(
             "tts_start",
             self._tts_script_command("start", provider),
-            success_detail=f"{label} start requested.",
+            success_detail="Qwen3-TTS start requested.",
         )
 
     def stop_tts(self) -> dict[str, Any]:
         provider = self.selected_tts_provider()
-        label = "Qwen3-TTS" if self._is_qwen_provider(provider) else "GPT-SoVITS"
+        if not self._is_qwen_provider(provider):
+            return {"ok": False, "detail": f"TTS stop control is only available for Qwen3-TTS, not {provider}."}
         return self._run_provider_action(
             "tts_stop",
             self._tts_script_command("stop", provider),
-            success_detail=f"{label} stop requested.",
+            success_detail="Qwen3-TTS stop requested.",
         )
 
     @staticmethod
@@ -869,7 +879,7 @@ class DashboardService:
 
     def set_tts_provider(self, provider: str) -> dict[str, Any]:
         normalized = provider.strip().lower()
-        allowed = {"piper", "local", "qwen-tts", "openai", "stub"}
+        allowed = {"piper", "qwen-tts", "openai"}
         if normalized not in allowed:
             raise ValueError(f"unsupported tts provider: {provider}")
         app_toml = app_local_config_path()
@@ -1336,7 +1346,7 @@ class DashboardService:
         )
 
     def get_remote_live_job(self, turn_id: str) -> dict[str, Any]:
-        return self._probe_json(settings.shana_base_url + f"/v1/voice/live/{turn_id}", raw_payload=True)
+        return self._probe_json(settings.shana_internal_base_url + f"/v1/voice/live/{turn_id}", raw_payload=True)
 
     def cancel_remote_live_job(self, turn_id: str, *, reason: str = "interrupted") -> dict[str, Any]:
         boundary = f"gamma-cancel-{uuid.uuid4().hex}"
@@ -1346,7 +1356,7 @@ class DashboardService:
             **self._api_headers(),
         }
         request = urllib.request.Request(
-            settings.shana_base_url + f"/v1/voice/live/{turn_id}/cancel",
+            settings.shana_internal_base_url + f"/v1/voice/live/{turn_id}/cancel",
             data=body,
             headers=headers,
             method="POST",
@@ -1364,23 +1374,23 @@ class DashboardService:
         return payload
 
     def remote_live_history(self, *, limit: int = 20) -> dict[str, Any]:
-        url = settings.shana_base_url + f"/v1/voice/live/history?limit={max(1, min(limit, 100))}"
+        url = settings.shana_internal_base_url + f"/v1/voice/live/history?limit={max(1, min(limit, 100))}"
         return self._probe_json(url, raw_payload=True)
 
     def stream_recent_traces(self, *, limit: int = 50) -> dict[str, Any]:
-        url = settings.shana_base_url + f"/v1/stream/traces/recent?limit={max(1, min(limit, 200))}"
+        url = settings.shana_internal_base_url + f"/v1/stream/traces/recent?limit={max(1, min(limit, 200))}"
         return self._probe_json(url, raw_payload=True)
 
     def stream_recent_eval(self, *, limit: int = 50) -> dict[str, Any]:
-        url = settings.shana_base_url + f"/v1/stream/eval/recent?limit={max(1, min(limit, 200))}"
+        url = settings.shana_internal_base_url + f"/v1/stream/eval/recent?limit={max(1, min(limit, 200))}"
         return self._probe_json(url, raw_payload=True)
 
     def stream_recent_outputs(self, *, limit: int = 50) -> dict[str, Any]:
-        url = settings.shana_base_url + f"/v1/stream/outputs/recent?limit={max(1, min(limit, 200))}"
+        url = settings.shana_internal_base_url + f"/v1/stream/outputs/recent?limit={max(1, min(limit, 200))}"
         return self._probe_json(url, raw_payload=True)
 
     def performer_output_status(self) -> dict[str, Any]:
-        url = settings.shana_base_url + "/v1/performer/status"
+        url = settings.shana_internal_base_url + "/v1/performer/status"
         payload = self._probe_json(url, raw_payload=True)
         if not payload.get("ok", True) and "stats" not in payload:
             return {
@@ -1411,20 +1421,20 @@ class DashboardService:
         return self._post_remote_json(f"/v1/performer/targets/{safe_target}/clear?reason={urllib.parse.quote(reason)}", {})
 
     def stream_pending_queue(self) -> dict[str, Any]:
-        url = settings.shana_base_url + "/v1/stream/queue"
+        url = settings.shana_internal_base_url + "/v1/stream/queue"
         return self._probe_json(url, raw_payload=True)
 
     def stream_temp_memory(self, *, bucket: str | None = None, limit: int = 100) -> dict[str, Any]:
         query = f"?limit={max(1, min(limit, 1000))}"
         if bucket:
             query += f"&bucket={urllib.parse.quote(bucket)}"
-        return self._probe_json(settings.shana_base_url + "/v1/stream/temp-memory" + query, raw_payload=True)
+        return self._probe_json(settings.shana_internal_base_url + "/v1/stream/temp-memory" + query, raw_payload=True)
 
     def clear_stream_temp_memory(self, *, bucket: str | None = None) -> dict[str, Any]:
         path = "/v1/stream/temp-memory"
         if bucket:
             path += f"?bucket={urllib.parse.quote(bucket)}"
-        url = settings.shana_base_url + path
+        url = settings.shana_internal_base_url + path
         request = urllib.request.Request(url, headers=self._api_headers(), method="DELETE")
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
@@ -1442,7 +1452,7 @@ class DashboardService:
         query = f"?limit={max(1, min(limit, 1000))}"
         if status:
             query += f"&status={urllib.parse.quote(status)}"
-        return self._probe_json(settings.shana_base_url + "/v1/stream/self-goals" + query, raw_payload=True)
+        return self._probe_json(settings.shana_internal_base_url + "/v1/stream/self-goals" + query, raw_payload=True)
 
     def set_stream_self_goal_status(self, goal_id: int, *, status: str) -> dict[str, Any]:
         if status not in {"approve", "reject"}:
@@ -1486,7 +1496,7 @@ class DashboardService:
             **self._api_headers(),
         }
         request = urllib.request.Request(
-            settings.shana_base_url + path,
+            settings.shana_internal_base_url + path,
             data=body,
             headers=headers,
             method="POST",
@@ -1654,7 +1664,7 @@ class DashboardService:
             **self._api_headers(),
         }
         request = urllib.request.Request(
-            settings.shana_base_url + path,
+            settings.shana_internal_base_url + path,
             data=body,
             headers=headers,
             method="POST",
@@ -1827,7 +1837,6 @@ class DashboardService:
 
     def _stop_all_tts_servers(self) -> dict[str, Any]:
         return {
-            "gpt_sovits": self._run_stop_tts_command("local", "GPT-SoVITS"),
             "qwen_tts": self._run_stop_tts_command("qwen-tts", "Qwen3-TTS"),
         }
 
@@ -1886,11 +1895,7 @@ class DashboardService:
         if self._is_qwen_provider(provider or ""):
             script = scripts_dir / f"{verb}_qwen_tts_server.py"
             return [self._process_manager.resolve_foreground_python(), str(script)]
-        if os.name == "nt":
-            script = scripts_dir / f"{verb}_gpt_sovits_windows.ps1"
-            return [self._process_manager.resolve_foreground_python(), str(script.with_suffix(".py"))]
-        script = scripts_dir / f"{verb}_gpt_sovits_linux.sh"
-        return ["bash", str(script)]
+        raise ValueError(f"no managed TTS sidecar for provider: {provider}")
 
     def _probe_json(self, url: str, *, raw_payload: bool = False) -> dict[str, Any]:
         try:
@@ -1909,7 +1914,7 @@ class DashboardService:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers = {"Content-Type": "application/json", **self._api_headers()}
         request = urllib.request.Request(
-            settings.shana_base_url + path,
+            settings.shana_internal_base_url + path,
             data=body,
             headers=headers,
             method="POST",

@@ -11,7 +11,7 @@ from sqlalchemy.pool import NullPool
 
 from ..config import settings
 from ..schemas.response import MemoryCandidate
-from .models import EpisodicMemory, ProfileFact
+from .models import EpisodicMemory, KnownPerson, PersonIdentity, ProfileFact
 
 
 def _sqlite_path_from_url(database_url: str) -> Path | None:
@@ -105,6 +105,10 @@ def _normalize_subject_name(value: str | None) -> str | None:
         return None
     normalized = " ".join(value.strip().split())
     return normalized[:120] if normalized else None
+
+
+def _normalize_identity(value: object, *, limit: int = 200) -> str:
+    return " ".join(str(value or "").strip().split())[:limit]
 
 
 class MemoryService:
@@ -365,29 +369,173 @@ class MemoryService:
         )
         return 1
 
-    def get_known_people(self, limit: int = 20) -> list[dict[str, str]]:
+    def get_known_people(self, limit: int = 20) -> list[dict[str, object]]:
+        with Session(self._engine) as session:
+            self._materialize_people_from_facts(session)
+            stored_people = list(session.exec(select(KnownPerson).order_by(KnownPerson.name.asc(), KnownPerson.id.asc())))[:limit]
+            identities = list(session.exec(select(PersonIdentity).order_by(PersonIdentity.platform.asc())))
+            identities_by_person: dict[int, list[dict[str, object]]] = {}
+            for identity in identities:
+                identities_by_person.setdefault(identity.person_id, []).append(
+                    {
+                        "id": identity.id,
+                        "platform": identity.platform,
+                        "platform_user_id": identity.platform_user_id,
+                        "display_name": identity.display_name or "",
+                    }
+                )
+            session.commit()
+            return [
+                {
+                    "id": person.id,
+                    "name": person.name,
+                    "relationship_to_user": person.relationship_to_user or "",
+                    "trust": person.trust,
+                    "notes": person.notes,
+                    "accounts": identities_by_person.get(int(person.id or 0), []),
+                }
+                for person in stored_people
+            ]
+
+    def _materialize_people_from_facts(self, session: Session) -> None:
+        existing = {person.name.casefold() for person in session.exec(select(KnownPerson))}
+        statement = (
+            select(ProfileFact)
+            .where(ProfileFact.subject_type == "other_person", ProfileFact.subject_name.is_not(None))
+            .order_by(ProfileFact.subject_name.asc(), ProfileFact.id.desc())
+        )
+        for fact in session.exec(statement):
+            name = _normalize_subject_name(fact.subject_name)
+            if not name or name.casefold() in existing:
+                continue
+            session.add(
+                KnownPerson(
+                    name=name,
+                    relationship_to_user=fact.relationship_to_user,
+                    trust="guest",
+                    notes="Created from an existing memory record.",
+                )
+            )
+            existing.add(name.casefold())
+        session.flush()
+
+    def save_known_person(self, payload: dict[str, object]) -> dict[str, object]:
+        name = _normalize_identity(payload.get("name"), limit=120)
+        if not name:
+            raise ValueError("name is required")
+        trust = _normalize_identity(payload.get("trust"), limit=20).lower() or "guest"
+        if trust not in {"owner", "trusted", "guest", "public"}:
+            raise ValueError("trust must be owner, trusted, guest, or public")
+        accounts = payload.get("accounts", [])
+        if not isinstance(accounts, list):
+            raise ValueError("accounts must be a list")
+        with Session(self._engine) as session:
+            person_id = int(payload.get("id") or 0)
+            person = session.get(KnownPerson, person_id) if person_id else None
+            if person is None:
+                person = KnownPerson(name=name)
+            person.name = name
+            person.relationship_to_user = _normalize_subject_name(str(payload.get("relationship_to_user") or ""))
+            person.trust = trust
+            person.notes = _normalize_identity(payload.get("notes"), limit=2000)
+            person.updated_at = datetime.now(timezone.utc)
+            session.add(person)
+            session.flush()
+            assert person.id is not None
+            for existing in session.exec(select(PersonIdentity).where(PersonIdentity.person_id == person.id)):
+                session.delete(existing)
+            seen: set[tuple[str, str]] = set()
+            for account in accounts:
+                if not isinstance(account, dict):
+                    continue
+                platform = _normalize_identity(account.get("platform"), limit=40).lower()
+                platform_user_id = _normalize_identity(account.get("platform_user_id"), limit=200)
+                if not platform or not platform_user_id or (platform, platform_user_id.casefold()) in seen:
+                    continue
+                seen.add((platform, platform_user_id.casefold()))
+                session.add(
+                    PersonIdentity(
+                        person_id=person.id,
+                        platform=platform,
+                        platform_user_id=platform_user_id,
+                        display_name=_normalize_subject_name(str(account.get("display_name") or "")),
+                    )
+                )
+            session.commit()
+            saved_id = person.id
+        return next(person for person in self.get_known_people(limit=1000) if person["id"] == saved_id)
+
+    def delete_known_person(self, person_id: int) -> bool:
+        with Session(self._engine) as session:
+            person = session.get(KnownPerson, person_id)
+            if person is None:
+                return False
+            for identity in session.exec(select(PersonIdentity).where(PersonIdentity.person_id == person_id)):
+                session.delete(identity)
+            session.delete(person)
+            session.commit()
+        return True
+
+    def resolve_person_identity(self, platform: str, platform_user_id: str) -> dict[str, object] | None:
+        normalized_platform = _normalize_identity(platform, limit=40).lower()
+        normalized_id = _normalize_identity(platform_user_id)
+        if not normalized_platform or not normalized_id:
+            return None
         with Session(self._engine) as session:
             statement = (
-                select(ProfileFact)
-                .where(ProfileFact.subject_type == "other_person", ProfileFact.subject_name.is_not(None))
-                .order_by(ProfileFact.subject_name.asc(), ProfileFact.id.desc())
+                select(PersonIdentity)
+                .where(
+                    PersonIdentity.platform == normalized_platform,
+                    PersonIdentity.platform_user_id == normalized_id,
+                )
             )
-            facts = list(session.exec(statement))
-        seen: set[str] = set()
-        people: list[dict[str, str]] = []
-        for fact in facts:
-            if not fact.subject_name or fact.subject_name in seen:
-                continue
-            seen.add(fact.subject_name)
-            people.append(
-                {
-                    "name": fact.subject_name,
-                    "relationship_to_user": fact.relationship_to_user or "",
-                }
-            )
-            if len(people) >= limit:
-                break
-        return people
+            identity = session.exec(statement).first()
+            if identity is None:
+                return None
+            person = session.get(KnownPerson, identity.person_id)
+            if person is None:
+                return None
+            return {
+                "id": person.id,
+                "name": person.name,
+                "trust": person.trust,
+                "notes": person.notes,
+                "relationship_to_user": person.relationship_to_user or "",
+                "platform": identity.platform,
+                "platform_user_id": identity.platform_user_id,
+            }
+
+    def update_item(self, kind: str, item_id: int, payload: dict[str, object]) -> dict[str, object]:
+        with Session(self._engine) as session:
+            if kind == "profile_fact":
+                item = session.get(ProfileFact, item_id)
+                if item is None:
+                    raise ValueError("profile fact not found")
+                summary = _canonicalize_profile_text(str(payload.get("summary") or ""))
+                if not summary:
+                    raise ValueError("summary is required")
+                item.fact_text = summary
+                item.category = _normalize_identity(payload.get("category"), limit=80) or item.category
+                item.confidence = max(0.0, min(1.0, float(payload.get("confidence", item.confidence))))
+                item.subject_name = _normalize_subject_name(str(payload.get("subject_name") or ""))
+                item.relationship_to_user = _normalize_subject_name(str(payload.get("relationship_to_user") or ""))
+            elif kind == "episodic":
+                item = session.get(EpisodicMemory, item_id)
+                if item is None:
+                    raise ValueError("episodic memory not found")
+                summary = _normalize_whitespace(str(payload.get("summary") or ""))
+                if not summary:
+                    raise ValueError("summary is required")
+                item.summary = summary
+                item.tags = _normalize_identity(payload.get("category"), limit=500)
+                item.importance = max(0.0, min(1.0, float(payload.get("confidence", item.importance))))
+                item.subject_name = _normalize_subject_name(str(payload.get("subject_name") or ""))
+                item.relationship_to_user = _normalize_subject_name(str(payload.get("relationship_to_user") or ""))
+            else:
+                raise ValueError("unsupported memory kind")
+            session.add(item)
+            session.commit()
+        return next(row for row in self.recent_items(limit=1000) if row["kind"] == kind and row["id"] == item_id)
 
     def recent_items(self, limit: int = 12) -> list[dict[str, str | int | float | None]]:
         with Session(self._engine) as session:
@@ -496,20 +644,16 @@ class MemoryService:
     def stats(self) -> dict[str, str | int]:
         db_path = _sqlite_path_from_url(settings.database_url)
         with Session(self._engine) as session:
+            self._materialize_people_from_facts(session)
             profile_count = len(list(session.exec(select(ProfileFact))))
             episodic_count = len(list(session.exec(select(EpisodicMemory))))
             scoped_episodic_count = len(
                 list(session.exec(select(EpisodicMemory).where(EpisodicMemory.session_id.is_not(None))))
             )
             known_people_count = len(
-                {
-                    fact.subject_name
-                    for fact in session.exec(
-                        select(ProfileFact).where(ProfileFact.subject_type == "other_person", ProfileFact.subject_name.is_not(None))
-                    )
-                    if fact.subject_name
-                }
+                list(session.exec(select(KnownPerson)))
             )
+            session.commit()
         return {
             "backend": "sqlite",
             "database": str(db_path or settings.database_url),

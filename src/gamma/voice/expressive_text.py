@@ -87,7 +87,9 @@ def strip_hidden_style_tags(text: str, *, default_emotion: str | None = None) ->
     clean_text = re.sub(r"\s{2,}", " ", clean_text).strip()
     detected_emotion = default_emotion
     if tags:
-        detected_emotion = _TAG_TO_EMOTION.get(tags[-1], detected_emotion)
+        # A reply gets one stable emotional delivery. Later tags are still
+        # removed from speech, but cannot make TTS switch tone mid-response.
+        detected_emotion = _TAG_TO_EMOTION.get(tags[0], detected_emotion)
     return ExpressiveText(clean_text=clean_text, emotion=detected_emotion, tags=tags, styles=styles)
 
 

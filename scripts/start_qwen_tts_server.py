@@ -18,6 +18,7 @@ import importlib.util
 import os
 import socket
 import subprocess
+import sys
 import time
 import urllib.request
 from pathlib import Path
@@ -58,6 +59,19 @@ def _tail_text(path: Path, *, limit_bytes: int = 4096) -> str:
         return handle.read().decode("utf-8", errors="replace").strip()
 
 
+def _qwen_python(repo_root: Path) -> str:
+    configured = os.getenv("QWEN_TTS_PYTHON", "").strip()
+    candidates = [
+        Path(configured).expanduser() if configured else None,
+        repo_root / ".venv-qwen" / "bin" / "python",
+        repo_root / ".venv-qwen" / "Scripts" / "python.exe",
+    ]
+    for candidate in candidates:
+        if candidate and candidate.exists():
+            return str(candidate)
+    return resolve_python_executable(repo_root, prefer_windowless=True)
+
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     load_dotenv(repo_root / ".env")
@@ -76,16 +90,24 @@ def main() -> int:
         print(f"Qwen3-TTS server is already listening on port {port}.")
         return 0
 
-    missing_modules = _missing_runtime_modules()
+    python_exe = _qwen_python(repo_root)
+    dependency_check = subprocess.run(
+        [python_exe, "-c", "import torch, qwen_tts"],
+        cwd=str(repo_root),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    missing_modules = _missing_runtime_modules() if Path(python_exe).resolve() == Path(sys.executable).resolve() else []
+    if dependency_check.returncode != 0 and not missing_modules:
+        missing_modules = ["torch", "qwen_tts"]
     if missing_modules:
         missing_text = ", ".join(missing_modules)
         raise SystemExit(
             "Qwen3-TTS runtime dependencies are missing in the active environment: "
-            f"{missing_text}\n"
-            "Install them in the repo virtualenv before starting Qwen3-TTS."
+            f"{missing_text}\nPython: {python_exe}\n"
+            "Install them in .venv-qwen or set QWEN_TTS_PYTHON."
         )
-
-    python_exe = resolve_python_executable(repo_root, prefer_windowless=True)
 
     stdout_log.write_text("", encoding="utf-8")
     stderr_log.write_text("", encoding="utf-8")

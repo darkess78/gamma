@@ -610,7 +610,7 @@ class ConversationService:
         inferred: list[ToolCall] = []
         is_owner = speaker is None or speaker.is_owner
 
-        if any(term in lowered for term in ["provider", "providers", "ollama", "gpt-sovits", "gpt sovits", "stt", "tts", "llm"]):
+        if any(term in lowered for term in ["provider", "providers", "ollama", "qwen", "stt", "tts", "llm"]):
             if any(term in lowered for term in ["status", "using", "use", "configured", "running", "right now", "current"]):
                 inferred.append(ToolCall(tool="provider_status", args={}))
 

@@ -627,6 +627,11 @@ def voice_live_history(limit: int = 20) -> dict[str, list[dict]]:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@router.get("/favicon.ico", include_in_schema=False)
+def favicon() -> FileResponse:
+    return FileResponse(DASHBOARD_STATIC_DIR / "favicon.svg", media_type="image/svg+xml")
+
+
 @router.get("/monitor")
 def monitor_page() -> HTMLResponse:
     return _dashboard_output_page(DASHBOARD_STATIC_DIR / "monitor.html")

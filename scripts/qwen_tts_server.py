@@ -82,10 +82,11 @@ def _resolved_model_id() -> Path | str:
 # ---------------------------------------------------------------------------
 _model = None
 _model_sr: int = 24000
+_resolved_device: str = ""
 
 
 def _load_model():
-    global _model, _model_sr
+    global _model, _model_sr, _resolved_device
     if _model is not None:
         return _model
 
@@ -120,6 +121,7 @@ def _load_model():
         # FlashAttention2 not used — incompatible with Windows native CUDA builds
     )
     _model = model
+    _resolved_device = str(device_map)
     log.info("Model loaded on %s", device_map)
     return _model
 
@@ -303,7 +305,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if self.path in {"/health", "/health/"}:
-            self._send(200, b'{"status":"ok"}')
+            self._send(200, json.dumps({
+                "status": "ok",
+                "model": MODEL_ID,
+                "device": _resolved_device or DEVICE_STR,
+                "dtype": DTYPE_STR,
+            }).encode())
         else:
             self._send(404, b'{"error":"not found"}')
 

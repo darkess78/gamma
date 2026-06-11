@@ -102,6 +102,7 @@ class ApiRoutesTest(unittest.TestCase):
         image = routes.performer_default_image()
         monitor = routes.monitor_page()
         overlay = routes.subtitle_overlay_page()
+        favicon = routes.favicon()
 
         self.assertEqual(page.media_type, "text/html")
         self.assertIn("window.GAMMA_SHANA_BASE_URL", page.body.decode("utf-8"))
@@ -115,6 +116,8 @@ class ApiRoutesTest(unittest.TestCase):
         self.assertEqual(overlay.media_type, "text/html")
         self.assertIn("window.GAMMA_SHANA_BASE_URL", overlay.body.decode("utf-8"))
         self.assertIn("window.GAMMA_DASHBOARD_BASE_URL", overlay.body.decode("utf-8"))
+        self.assertEqual(favicon.media_type, "image/svg+xml")
+        self.assertEqual(str(favicon.path), str(routes.DASHBOARD_STATIC_DIR / "favicon.svg"))
 
     def test_dashboard_subpage_routes_redirect_to_dashboard_app(self) -> None:
         with patch.object(routes.settings, "dashboard_public_host", "10.78.78.29"):

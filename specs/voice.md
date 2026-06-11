@@ -17,17 +17,14 @@ Phase 1 order:
 ## TTS
 Must be replaceable by adapter.
 Current supported directions:
-- `stub`
 - `openai`
-- `local` / `gpt-sovits`
-
-Planned next custom voice direction:
-- `gpt-sovits`
+- `piper`
+- `qwen-tts`
 
 Current runtime behavior:
-- local TTS is a managed GPT-SoVITS sidecar
-- starting Shana should bring up GPT-SoVITS when local TTS is configured
-- stopping Shana should tear GPT-SoVITS down
+- Qwen TTS is the managed local neural TTS sidecar
+- starting Shana should bring up Qwen TTS when configured
+- stopping Shana should tear Qwen TTS down
 - hosted TTS providers should remain adapter-compatible and not require sidecar lifecycle management
 
 Design rule:
@@ -63,6 +60,8 @@ mode selection belongs at the controller layer, not inside isolated mic-loop scr
 Current live browser path:
 - browser mic capture enters through the standalone dashboard WebSocket
 - the dashboard owns silence detection, playback, and barge-in policy
+- live tuning includes speech threshold, trailing silence, minimum turn duration, interrupt hold time, and barge-in cooldown
+- the live page exposes connection, audio, turn, playback queue, barge-in, and last-event diagnostics while a session is active
 - Shana owns live inference work through `/v1/voice/*`
 
 Current runtime behavior:
@@ -87,6 +86,8 @@ Operator semantics:
 
 Design rule:
 the dashboard may supervise live voice sessions, but long-running turn inference should remain owned by Shana rather than by the dashboard process.
+
+Expressive speech uses one stable emotion per synthesized reply. If generated text contains multiple hidden emotion tags, the first recognized emotion sets the reply delivery and later emotion tags are removed without changing tone mid-response.
 
 Cross-platform expectation:
 - Windows and Linux must both terminate active live-turn workers without leaving orphan child processes behind

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import errno
+import importlib.util
 import shutil
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +66,8 @@ class SystemStatusService:
                     "model": settings.stt_model,
                     "device": settings.stt_device,
                     "device_index": settings.stt_device_index,
+                    "compute_type": settings.stt_compute_type,
+                    "health": self._check_stt_health(),
                 },
                 "tts": {
                     "provider": tts_cfg.provider,
@@ -79,7 +84,7 @@ class SystemStatusService:
                     "endpoint": (
                         tts_cfg.qwen_tts_endpoint
                         if tts_cfg.provider in {"qwen-tts", "qwen_tts", "qwen", "qwentts"}
-                        else tts_cfg.gpt_sovits_endpoint
+                        else None
                     ),
                     "health": self._check_tts_health(tts_cfg),
                 },
@@ -131,17 +136,35 @@ class SystemStatusService:
             return configured
         return settings.local_llm_model
 
-    def _check_gpt_sovits_health(self, tts_cfg: Any) -> dict[str, Any]:
-        if not tts_cfg.gpt_sovits_endpoint:
-            return {"ok": False, "detail": "no-endpoint-configured"}
-        base_url = tts_cfg.gpt_sovits_endpoint.rsplit("/tts", 1)[0]
-        return self._check_http_docs_health(base_url)
-
     def _check_qwen_tts_health(self, tts_cfg: Any) -> dict[str, Any]:
         if not tts_cfg.qwen_tts_endpoint:
             return {"ok": False, "detail": "no-endpoint-configured"}
         base_url = tts_cfg.qwen_tts_endpoint.rsplit("/tts", 1)[0]
         return self._check_http_health(base_url + "/health")
+
+    def _check_stt_health(self) -> dict[str, Any]:
+        provider = settings.stt_provider.strip().lower()
+        if provider in {"faster-whisper", "faster_whisper", "local", "whisper"}:
+            if importlib.util.find_spec("faster_whisper") is None:
+                return {"ok": False, "detail": "faster-whisper-not-installed"}
+            device = settings.stt_device.strip().lower()
+            if device == "cuda":
+                try:
+                    import ctranslate2
+
+                    compute_types = sorted(ctranslate2.get_supported_compute_types("cuda", settings.stt_device_index))
+                    return {
+                        "ok": True,
+                        "detail": "ready",
+                        "device": f"cuda:{settings.stt_device_index}",
+                        "compute_types": compute_types,
+                    }
+                except Exception as exc:
+                    return {"ok": False, "detail": f"cuda-check-failed: {exc}"}
+            return {"ok": True, "detail": "ready", "device": device or "cpu"}
+        if provider == "openai":
+            return {"ok": bool(settings.openai_api_key), "detail": "configured" if settings.openai_api_key else "missing-openai-api-key"}
+        return {"ok": False, "detail": f"unsupported-provider: {provider}"}
 
     def _check_http_docs_health(self, base_url: str) -> dict[str, Any]:
         try:
@@ -157,9 +180,21 @@ class SystemStatusService:
         try:
             with urllib.request.urlopen(url, timeout=5) as response:
                 ok = 200 <= response.status < 400
-            return {"ok": ok, "detail": "ready" if ok else f"http-{response.status}"}
+                raw = response.read().decode("utf-8")
+            payload = json.loads(raw) if raw else {}
+            result = {"ok": ok, "detail": "ready" if ok else f"http-{response.status}"}
+            if isinstance(payload, dict):
+                for key in ("status", "model", "device", "dtype"):
+                    if key in payload:
+                        result[key] = payload[key]
+            return result
         except urllib.error.HTTPError as exc:
             return {"ok": False, "detail": f"http-{exc.code}"}
+        except urllib.error.URLError as exc:
+            reason = exc.reason
+            if isinstance(reason, ConnectionRefusedError) or getattr(reason, "errno", None) == errno.ECONNREFUSED:
+                return {"ok": False, "detail": "sidecar-not-running"}
+            return {"ok": False, "detail": str(exc)}
         except Exception as exc:
             return {"ok": False, "detail": str(exc)}
 
@@ -173,8 +208,6 @@ class SystemStatusService:
                 return piper
             rvc = self._check_rvc_health(tts_cfg)
             return rvc if not rvc.get("ok") else {"ok": True, "detail": "ready"}
-        if provider in {"local", "gpt-sovits", "gpt_sovits"}:
-            return self._check_gpt_sovits_health(tts_cfg)
         if provider in {"qwen-tts", "qwen_tts", "qwen", "qwentts"}:
             return self._check_qwen_tts_health(tts_cfg)
         return {"ok": True, "detail": "not-local"}
@@ -239,6 +272,7 @@ class SystemStatusService:
                     "name": path.name,
                     "path": str(path),
                     "size_bytes": path.stat().st_size,
+                    "modified_at": datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat(),
                 }
             )
         return artifacts

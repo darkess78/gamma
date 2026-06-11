@@ -85,6 +85,8 @@ class StreamOutputTest(unittest.TestCase):
             with (
                 patch.object(settings, "audio_output_dir", Path(temp_dir)),
                 patch.object(settings, "shana_public_host", "192.168.1.50"),
+                patch.object(settings, "shana_public_scheme", "http"),
+                patch.object(settings, "shana_public_port", 8000),
                 patch.object(settings, "shana_port", 8000),
             ):
                 stream_event = StreamOutputEvent(

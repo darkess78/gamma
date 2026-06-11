@@ -99,10 +99,10 @@ def _start_ollama_if_needed() -> dict[str, object]:
 def _start_tts_sidecar_if_needed(manager: ProcessManager) -> dict[str, object]:
     tts_cfg = resolve_tts_config()
     provider = tts_cfg.provider.strip().lower()
-    if provider not in {"local", "gpt-sovits", "gpt_sovits", "gptsovits", "qwen-tts", "qwen_tts", "qwen", "qwentts"}:
+    if provider not in {"qwen-tts", "qwen_tts", "qwen", "qwentts"}:
         return {"ok": True, "detail": f"TTS provider {provider} runs without a managed sidecar."}
 
-    endpoint = tts_cfg.qwen_tts_endpoint if provider in {"qwen-tts", "qwen_tts", "qwen", "qwentts"} else tts_cfg.gpt_sovits_endpoint
+    endpoint = tts_cfg.qwen_tts_endpoint
     if not endpoint:
         return {"ok": False, "detail": f"TTS provider {provider} has no endpoint configured."}
 

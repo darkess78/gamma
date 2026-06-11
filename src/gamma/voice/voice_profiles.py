@@ -53,13 +53,6 @@ class ResolvedTTSConfig:
     rvc_protect: float
     rvc_resample_sr: int
     rvc_device: str | None
-    gpt_sovits_endpoint: str | None
-    gpt_sovits_reference_audio: str | None
-    gpt_sovits_prompt_text: str | None
-    gpt_sovits_prompt_lang: str
-    gpt_sovits_text_lang: str
-    gpt_sovits_timeout_seconds: int
-    gpt_sovits_extra_json: dict[str, Any]
     qwen_tts_endpoint: str | None
     qwen_tts_reference_audio: str | None
     qwen_tts_reference_text: str | None
@@ -169,14 +162,6 @@ def profile_template(provider: str) -> dict[str, Any]:
             "rvc_protect": settings.rvc_protect,
             "rvc_resample_sr": settings.rvc_resample_sr,
         }
-    elif normalized in {"local", "gpt-sovits", "gpt_sovits"}:
-        base["values"] = {
-            "gpt_sovits_reference_audio": settings.gpt_sovits_reference_audio or "",
-            "gpt_sovits_prompt_text": settings.gpt_sovits_prompt_text or "",
-            "gpt_sovits_prompt_lang": settings.gpt_sovits_prompt_lang,
-            "gpt_sovits_text_lang": settings.gpt_sovits_text_lang,
-            "gpt_sovits_extra_json": dict(settings.gpt_sovits_extra_json or {}),
-        }
     elif normalized in {"qwen-tts", "qwen_tts", "qwen", "qwentts"}:
         base["values"] = {
             "qwen_tts_endpoint": settings.qwen_tts_endpoint or "",
@@ -229,15 +214,6 @@ def resolve_tts_config() -> ResolvedTTSConfig:
         rvc_protect=float(_coalesce(values.get("rvc_protect"), settings.rvc_protect)),
         rvc_resample_sr=int(_coalesce(values.get("rvc_resample_sr"), settings.rvc_resample_sr)),
         rvc_device=_coalesce(values.get("rvc_device"), settings.rvc_device),
-        gpt_sovits_endpoint=_coalesce(values.get("gpt_sovits_endpoint"), settings.gpt_sovits_endpoint),
-        gpt_sovits_reference_audio=_coalesce(values.get("gpt_sovits_reference_audio"), settings.gpt_sovits_reference_audio),
-        gpt_sovits_prompt_text=_coalesce(values.get("gpt_sovits_prompt_text"), settings.gpt_sovits_prompt_text),
-        gpt_sovits_prompt_lang=str(_coalesce(values.get("gpt_sovits_prompt_lang"), settings.gpt_sovits_prompt_lang)),
-        gpt_sovits_text_lang=str(_coalesce(values.get("gpt_sovits_text_lang"), settings.gpt_sovits_text_lang)),
-        gpt_sovits_timeout_seconds=int(
-            _coalesce(values.get("gpt_sovits_timeout_seconds"), settings.gpt_sovits_timeout_seconds)
-        ),
-        gpt_sovits_extra_json=dict(_coalesce(values.get("gpt_sovits_extra_json"), settings.gpt_sovits_extra_json) or {}),
         qwen_tts_endpoint=_coalesce(values.get("qwen_tts_endpoint"), settings.qwen_tts_endpoint),
         qwen_tts_reference_audio=_coalesce(values.get("qwen_tts_reference_audio"), settings.qwen_tts_reference_audio),
         qwen_tts_reference_text=_coalesce(values.get("qwen_tts_reference_text"), settings.qwen_tts_reference_text),

@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 import psutil
 
 from ..config import settings
+from ..system.cuda_env import prepend_cuda_library_path
 from ..system.python_runtime import python_candidates, resolve_python_executable
 from ..voice.voice_profiles import resolve_tts_config
 
@@ -81,6 +82,7 @@ class ProcessManager:
             str(service.port),
             "--no-access-log",
         ]
+        runtime_env = prepend_cuda_library_path(os.environ.copy())
 
         with stdout_log.open("ab") as stdout_handle, stderr_log.open("ab") as stderr_handle:
             if os.name == "nt":
@@ -94,6 +96,7 @@ class ProcessManager:
                     cwd=settings.project_root,
                     stdout=stdout_handle,
                     stderr=stderr_handle,
+                    env=runtime_env,
                     creationflags=creationflags,
                 )
             else:
@@ -102,6 +105,7 @@ class ProcessManager:
                     cwd=settings.project_root,
                     stdout=stdout_handle,
                     stderr=stderr_handle,
+                    env=runtime_env,
                     start_new_session=True,
                 )
 
@@ -169,12 +173,14 @@ class ProcessManager:
         stdout_log.write_text("", encoding="utf-8")
         stderr_log.write_text("", encoding="utf-8")
         command = [python_executable, "-m", module, *(args or [])]
+        runtime_env = prepend_cuda_library_path(os.environ.copy())
         with stdout_log.open("ab") as stdout_handle, stderr_log.open("ab") as stderr_handle:
             process = subprocess.Popen(
                 command,
                 cwd=settings.project_root,
                 stdout=stdout_handle,
                 stderr=stderr_handle,
+                env=runtime_env,
                 start_new_session=os.name != "nt",
                 creationflags=(
                     subprocess.CREATE_NEW_PROCESS_GROUP
@@ -389,10 +395,10 @@ class ProcessManager:
     def _tts_dependency_action(self, action: str) -> dict[str, Any]:
         tts_cfg = resolve_tts_config()
         provider = tts_cfg.provider.strip().lower()
-        if provider not in {"local", "gpt-sovits", "gpt_sovits", "gptsovits", "qwen-tts", "qwen_tts", "qwen", "qwentts"}:
+        if provider not in {"qwen-tts", "qwen_tts", "qwen", "qwentts"}:
             return {"name": "tts", "status": "skipped", "detail": f"TTS provider {provider} does not need local sidecar management."}
-        endpoint = tts_cfg.qwen_tts_endpoint if provider in {"qwen-tts", "qwen_tts", "qwen", "qwentts"} else tts_cfg.gpt_sovits_endpoint
-        label = "Qwen3-TTS" if provider in {"qwen-tts", "qwen_tts", "qwen", "qwentts"} else "GPT-SoVITS"
+        endpoint = tts_cfg.qwen_tts_endpoint
+        label = "Qwen3-TTS"
         if not endpoint:
             return {"name": "tts", "status": "skipped", "detail": f"No {label} endpoint configured."}
         if not self._is_local_url(endpoint):
@@ -421,19 +427,9 @@ class ProcessManager:
 
     def _tts_script(self, action: str, *, provider: str) -> list[str]:
         scripts_dir = settings.project_root / "scripts"
-        if provider in {"qwen-tts", "qwen_tts", "qwen", "qwentts"}:
-            return [
-                self.resolve_foreground_python(),
-                str(scripts_dir / f"{'start' if action == 'start' else 'stop'}_qwen_tts_server.py"),
-            ]
-        if os.name == "nt":
-            return [
-                self.resolve_foreground_python(),
-                str(scripts_dir / f"{'start' if action == 'start' else 'stop'}_gpt_sovits_windows.py"),
-            ]
         return [
-            "bash",
-            str(scripts_dir / f"{'start' if action == 'start' else 'stop'}_gpt_sovits_linux.sh"),
+            self.resolve_foreground_python(),
+            str(scripts_dir / f"{'start' if action == 'start' else 'stop'}_qwen_tts_server.py"),
         ]
 
     def _run_sidecar_command(self, command: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]:

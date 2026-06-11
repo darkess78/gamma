@@ -42,6 +42,11 @@ class ExpressiveTextTest(unittest.TestCase):
 
         self.assertEqual(instruct, "Keep the voice soft.")
 
+    def test_first_emotion_tag_stabilizes_entire_reply(self) -> None:
+        parsed = strip_hidden_style_tags("[happy] Hello there. [annoyed] Still one delivery.")
+        self.assertEqual(parsed.emotion, "happy")
+        self.assertEqual(parsed.clean_text, "Hello there. Still one delivery.")
+
     def test_qwen_speed_is_selected_from_internal_emotion(self) -> None:
         backend = QwenTTSBackend(
             SimpleNamespace(

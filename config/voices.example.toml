@@ -6,19 +6,12 @@ piper_model_path = "./data/piper/en_US-lessac-medium.onnx"
 piper_config_path = "./data/piper/en_US-lessac-medium.onnx.json"
 rvc_enabled = false
 
-[profiles.gpt_sovits_custom]
-label = "GPT-SoVITS Custom"
-provider = "local"
-description = "Custom cloned voice through a local GPT-SoVITS server."
-gpt_sovits_prompt_lang = "en"
-gpt_sovits_text_lang = "en"
-
 [profiles.qwen_custom]
 label = "Qwen3-TTS Custom"
 provider = "qwen-tts"
 description = "Custom cloned voice through a local Qwen3-TTS server."
 qwen_tts_endpoint = "http://127.0.0.1:9882/tts"
-qwen_tts_reference_audio = "./data/GPT-SoVITS/reference/my_ref_mono32k.wav"
+qwen_tts_reference_audio = "./assets/voice_references/my_ref_mono32k.wav"
 qwen_tts_reference_text = "Exact words spoken in the reference clip."
 qwen_tts_language = "English"
 qwen_tts_timeout_seconds = 120

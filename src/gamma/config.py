@@ -202,6 +202,16 @@ class Settings:
         )
     )
     shana_port: int = _as_int(_setting("SHANA_PORT", _config_value(APP_CONFIG, "shana_port", default=8000)), default=8000)
+    shana_public_port: int = _as_int(
+        _setting("SHANA_PUBLIC_PORT", _config_value(APP_CONFIG, "shana_public_port", default="")),
+        default=_as_int(_setting("SHANA_PORT", _config_value(APP_CONFIG, "shana_port", default=8000)), default=8000),
+    )
+    shana_public_scheme: str = str(
+        _setting(
+            "SHANA_PUBLIC_SCHEME",
+            _config_value(APP_CONFIG, "shana_public_scheme", default="http"),
+        )
+    ).strip().lower() or "http"
     dashboard_bind_host: str = str(
         _setting(
             "SHANA_DASHBOARD_BIND_HOST",
@@ -662,15 +672,6 @@ class Settings:
         "SHANA_RVC_DEVICE",
         _config_value(APP_CONFIG, "rvc_device", default=""),
     )
-    gpt_sovits_endpoint: str | None = _setting("SHANA_GPT_SOVITS_ENDPOINT")
-    gpt_sovits_reference_audio: str | None = _setting("SHANA_GPT_SOVITS_REFERENCE_AUDIO")
-    gpt_sovits_prompt_text: str | None = _setting("SHANA_GPT_SOVITS_PROMPT_TEXT")
-    gpt_sovits_prompt_lang: str = str(_setting("SHANA_GPT_SOVITS_PROMPT_LANG", "en"))
-    gpt_sovits_text_lang: str = str(_setting("SHANA_GPT_SOVITS_TEXT_LANG", default_language))
-    gpt_sovits_timeout_seconds: int = _as_int(_setting("SHANA_GPT_SOVITS_TIMEOUT_SECONDS", 120), default=120)
-    gpt_sovits_extra_json: dict = field(
-        default_factory=lambda: json.loads(str(_setting("SHANA_GPT_SOVITS_EXTRA_JSON", "{}")) or "{}")
-    )
     qwen_tts_endpoint: str | None = _setting(
         "SHANA_QWEN_TTS_ENDPOINT",
         _config_value(APP_CONFIG, "qwen_tts_endpoint", default=""),
@@ -781,7 +782,19 @@ class Settings:
 
     @property
     def shana_base_url(self) -> str:
-        return f"http://{self.shana_public_host}:{self.shana_port}"
+        default_port = 443 if self.shana_public_scheme == "https" else 80
+        if self.shana_public_port == default_port:
+            return f"{self.shana_public_scheme}://{self.shana_public_host}"
+        return f"{self.shana_public_scheme}://{self.shana_public_host}:{self.shana_public_port}"
+
+    @property
+    def shana_internal_base_url(self) -> str:
+        host = self.shana_bind_host.strip()
+        if host in {"", "0.0.0.0", "::", "[::]"}:
+            host = "127.0.0.1"
+        elif ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        return f"http://{host}:{self.shana_port}"
 
     @property
     def dashboard_base_url(self) -> str:

@@ -60,24 +60,14 @@ class TTSService:
             self._backend: TTSBackend = OpenAITTSBackend(self._cfg)
         elif provider == "piper":
             self._backend = PiperTTSBackend(self._cfg)
-        elif provider in {"gpt-sovits", "gpt_sovits", "gptsovits"}:
-            self._backend = GPTSoVITSTTSBackend(self._cfg)
         elif provider in {"qwen", "qwen-tts", "qwen_tts", "qwentts"}:
             self._backend = QwenTTSBackend(self._cfg)
-        elif provider == "local":
-            if self._cfg.gpt_sovits_endpoint:
-                self._backend = GPTSoVITSTTSBackend(self._cfg)
-            else:
-                raise ConfigurationError(
-                    "SHANA_TTS_PROVIDER=local requires SHANA_GPT_SOVITS_ENDPOINT to point at a local GPT-SoVITS server. "
-                    "Use SHANA_TTS_PROVIDER=stub for local placeholder audio or SHANA_TTS_PROVIDER=openai for hosted TTS."
-                )
         elif provider == "stub":
             self._backend = StubTTSBackend()
         elif provider == "ollama":
             raise ConfigurationError(
                 "SHANA_TTS_PROVIDER=ollama is not supported. "
-                "Use SHANA_TTS_PROVIDER=piper, SHANA_TTS_PROVIDER=local with GPT-SoVITS, SHANA_TTS_PROVIDER=stub, or SHANA_TTS_PROVIDER=openai."
+                "Use SHANA_TTS_PROVIDER=qwen-tts, piper, openai, or stub for tests."
             )
         else:
             raise ConfigurationError(f"Unsupported SHANA_TTS_PROVIDER: {self._cfg.provider}")
@@ -635,95 +625,6 @@ class OpenAITTSBackend(BaseFileTTSBackend):
                 "timings_ms": {"backend_ms": round((time.perf_counter() - started_at) * 1000, 1)},
             },
         )
-
-
-class GPTSoVITSTTSBackend(BaseFileTTSBackend):
-    provider_name = "gpt-sovits"
-
-    def __init__(self, cfg: ResolvedTTSConfig) -> None:
-        self._cfg = cfg
-        if not self._cfg.gpt_sovits_endpoint:
-            raise ConfigurationError("SHANA_GPT_SOVITS_ENDPOINT is required for SHANA_TTS_PROVIDER=gpt-sovits.")
-
-    def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
-        started_at = time.perf_counter()
-        fmt = self._cfg.tts_format.lower()
-        if fmt != "wav":
-            raise ConfigurationError("GPT-SoVITS backend currently expects SHANA_TTS_FORMAT=wav.")
-
-        payload: dict[str, Any] = {
-            "text": self._normalize_text(text),
-            "text_lang": self._cfg.gpt_sovits_text_lang,
-        }
-        if self._cfg.gpt_sovits_reference_audio:
-            ref_path = Path(self._cfg.gpt_sovits_reference_audio)
-            if not ref_path.is_absolute():
-                ref_path = (settings.project_root / ref_path).resolve()
-            payload["ref_audio_path"] = str(ref_path)
-        if self._cfg.gpt_sovits_prompt_text:
-            payload["prompt_text"] = self._cfg.gpt_sovits_prompt_text
-        if self._cfg.gpt_sovits_prompt_lang:
-            payload["prompt_lang"] = self._cfg.gpt_sovits_prompt_lang
-        if emotion:
-            payload["emotion"] = emotion
-        if self._cfg.gpt_sovits_extra_json:
-            payload.update(self._cfg.gpt_sovits_extra_json)
-
-        body = json.dumps(payload).encode("utf-8")
-        request = urllib.request.Request(
-            self._cfg.gpt_sovits_endpoint,
-            data=body,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        path = self._target_path(".wav")
-        try:
-            with urllib.request.urlopen(request, timeout=self._cfg.gpt_sovits_timeout_seconds) as response:
-                audio_bytes = response.read()
-        except urllib.error.HTTPError as exc:
-            details = exc.read().decode("utf-8", errors="replace")
-            raise ExternalServiceError(f"GPT-SoVITS request failed: HTTP {exc.code}: {details}") from exc
-        except urllib.error.URLError as exc:
-            raise ExternalServiceError(f"GPT-SoVITS request failed: {exc}") from exc
-
-        self._validate_wav_payload(audio_bytes)
-        path.write_bytes(audio_bytes)
-        return TTSResult(
-            provider=self.provider_name,
-            text=text,
-            audio_path=str(path),
-            content_type="audio/wav",
-            metadata={
-                "endpoint": self._cfg.gpt_sovits_endpoint,
-                "reference_audio": self._cfg.gpt_sovits_reference_audio,
-                "prompt_text": self._cfg.gpt_sovits_prompt_text,
-                "prompt_lang": self._cfg.gpt_sovits_prompt_lang,
-                "text_lang": self._cfg.gpt_sovits_text_lang,
-                "timings_ms": {"backend_ms": round((time.perf_counter() - started_at) * 1000, 1)},
-            },
-        )
-
-    def _validate_wav_payload(self, audio_bytes: bytes) -> None:
-        try:
-            with wave.open(_BytesReader(audio_bytes), "rb") as wav_file:
-                frame_count = wav_file.getnframes()
-                sample_width = wav_file.getsampwidth()
-                frame_bytes = wav_file.readframes(frame_count)
-        except Exception as exc:
-            raise ExternalServiceError(f"GPT-SoVITS returned invalid WAV data: {exc}") from exc
-
-        if frame_count <= 0 or not frame_bytes:
-            raise ExternalServiceError("GPT-SoVITS returned an empty WAV payload.")
-
-        if sample_width == 1:
-            payload_has_signal = any(byte != 128 for byte in frame_bytes)
-        else:
-            payload_has_signal = any(byte != 0 for byte in frame_bytes)
-
-        if not payload_has_signal:
-            raise ExternalServiceError(
-                "GPT-SoVITS returned silent audio. Check the GPT-SoVITS server logs for inference errors."
-            )
 
 
 class _BytesReader:

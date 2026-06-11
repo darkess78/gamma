@@ -25,9 +25,7 @@ Current persona target: **Shana**.
 - `openai` - hosted transcription via the OpenAI SDK
 
 ### TTS
-- `stub` - local placeholder WAV output for end-to-end testing
 - `piper` - local offline TTS for stable low-latency speech
-- `local` / `gpt-sovits` - local HTTP-backed GPT-SoVITS path
 - `qwen-tts` - local HTTP-backed Qwen TTS path
 - `openai` - hosted TTS via the OpenAI SDK
 - optional RVC post-process can be layered on top of Piper for slower converted-voice tests
@@ -41,12 +39,11 @@ You can choose providers independently for each subsystem:
 | --- | --- | --- |
 | LLM | `openai` | `local` or `ollama` |
 | STT | `openai` | `local` or `faster-whisper` |
-| TTS | `openai` | `piper`, `local`, `gpt-sovits`, or `qwen-tts` |
+| TTS | `openai` | `piper` or `qwen-tts` |
 
 `local` does not mean the same backend everywhere:
 - LLM `local` = Ollama-compatible chat model
 - STT `local` = `faster-whisper`
-- TTS `local` = GPT-SoVITS
 - TTS `piper` = local offline ONNX voice synthesis
 
 Examples:
@@ -72,7 +69,7 @@ SHANA_PIPER_CONFIG_PATH=./data/piper/en_US-lessac-medium.onnx.json
 # Fully local development
 SHANA_LLM_PROVIDER=ollama
 SHANA_STT_PROVIDER=local
-SHANA_TTS_PROVIDER=stub
+SHANA_TTS_PROVIDER=qwen-tts
 ```
 
 For low-latency local speech, prefer Piper as the default TTS path and keep RVC disabled during normal conversation. If you want a slower converted voice test, select a preset RVC-backed profile in the dashboard or set `SHANA_TTS_PROFILE=henya_rvc` before running a TTS smoke test.
@@ -100,7 +97,7 @@ Dashboard behavior:
 - the TTS dropdown persists machine-local selections to `config/app.local.toml`
 - `Test TTS` uses the selected provider immediately
 - conversation and live voice flows use the provider loaded by the running Shana process, so restart Shana after changing provider or profile if you want the active service to switch too
-- dashboard TTS start/stop controls only apply to managed local sidecars such as GPT-SoVITS or Qwen TTS
+- dashboard TTS start/stop controls apply to the managed Qwen TTS sidecar
 
 For local vision with Ollama, use a multimodal model and enable it explicitly:
 
@@ -249,7 +246,7 @@ Use the files like this:
 ```env
 SHANA_LLM_PROVIDER=mock
 SHANA_STT_PROVIDER=stub
-SHANA_TTS_PROVIDER=stub
+SHANA_TTS_PROVIDER=qwen-tts
 SHANA_MEMORY_ENABLED=true
 SHANA_MEMORY_WRITE_MODE=selective
 ```
@@ -261,7 +258,7 @@ SHANA_LLM_PROVIDER=ollama
 SHANA_LOCAL_LLM_ENDPOINT=http://127.0.0.1:11434
 SHANA_LOCAL_LLM_MODEL=llama3.2:3b
 SHANA_STT_PROVIDER=faster-whisper
-SHANA_TTS_PROVIDER=stub
+SHANA_TTS_PROVIDER=qwen-tts
 ```
 
 For a dual-GPU Linux machine, a sensible split is:
@@ -331,7 +328,7 @@ Notes:
 - shared background process launch now resolves the active interpreter from `SHANA_PYTHON`, the current process, repo virtualenvs, and platform-native fallbacks on both Windows and Linux
 - local STT runs in-process with Shana
 - Piper runs in-process and has no managed sidecar
-- GPT-SoVITS and Qwen TTS can be managed as local sidecars when configured with local endpoints
+- Qwen TTS can be managed as a local sidecar when configured with a local endpoint
 - Ollama remains external; Gamma health-checks it but does not manage its lifecycle
 - tray support on Linux depends on the desktop environment exposing a usable system tray and a graphical session with `DISPLAY` or `WAYLAND_DISPLAY`
 
@@ -444,7 +441,7 @@ Dashboard/service-control notes:
 - `Start Shana` and `Stop Shana` control the assistant API and any managed local TTS sidecar
 - `Test STT` validates the in-process STT path
 - `Start TTS` and `Stop TTS` only apply to managed sidecars
-- when the active provider is Piper, OpenAI, or stub, the dashboard disables TTS start/stop and leaves `Test TTS` available
+- when the active provider is Piper or OpenAI, the dashboard disables TTS start/stop and leaves `Test TTS` available
 
 ## Live Browser Voice
 

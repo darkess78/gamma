@@ -115,6 +115,7 @@ def main() -> int:
     env = os.environ.copy()
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("PYTHONUTF8", "1")
+    env.setdefault("QWEN_TTS_PYTHON", "/usr/bin/python")
     requested_device = env.get("QWEN_TTS_DEVICE", "").strip().lower()
     if requested_device.startswith("cuda:") and "CUDA_VISIBLE_DEVICES" not in env:
         physical_index = requested_device.split(":", 1)[1].strip()

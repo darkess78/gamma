@@ -128,4 +128,4 @@ class EmotionalPattern:
         Returns:
             dict: Dict representation.
         """
-        return asdict(self),
+        return asdict(self)

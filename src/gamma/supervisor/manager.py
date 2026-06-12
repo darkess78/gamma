@@ -43,7 +43,7 @@ class ManagedService:
         Returns:
             str: Service URL.
         """
-        return f"http://{self.public_host}:{self.port}""
+        return f"http://{self.public_host}:{self.port}"
 
 
 class ProcessManager:

@@ -93,4 +93,4 @@ def extract_emotion_turn(*, emotion: str, user_text: str, reply_text: str) -> Ex
         trigger_type=trigger_type,
         relationship_effect=relationship_effect,
         pattern_text=pattern_text,
-    ),
+    )

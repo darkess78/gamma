@@ -48,4 +48,4 @@ def review(*, text: str, level: str) -> HeuristicDecision:
         return HeuristicDecision(action="allow", matched_rules=[])
     if level == "strict":
         return HeuristicDecision(action="block", matched_rules=softened)
-    return HeuristicDecision(action="allow", matched_rules=softened),
+    return HeuristicDecision(action="allow", matched_rules=softened)

@@ -443,9 +443,34 @@ class LiveVoiceJobManager:
             env["SHANA_TTS_PROFILE"] = ""
         return env
 
+    def _selected_stt_env(self) -> dict[str, str]:
+        # Read STT config directly from environment (which includes .env)
+        env = {
+            "SHANA_STT_PROVIDER": os.environ.get("SHANA_STT_PROVIDER", settings.stt_provider or "faster-whisper"),
+            "SHANA_STT_MODEL": os.environ.get("SHANA_STT_MODEL", settings.stt_model or "base.en"),
+            "SHANA_STT_DEVICE": os.environ.get("SHANA_STT_DEVICE", settings.stt_device or "cpu"),
+            "SHANA_STT_DEVICE_INDEX": str(int(os.environ.get("SHANA_STT_DEVICE_INDEX", settings.stt_device_index or 0))),
+            "SHANA_STT_COMPUTE_TYPE": os.environ.get("SHANA_STT_COMPUTE_TYPE", settings.stt_compute_type or "int8"),
+        }
+        return env
+
     def _worker_env(self) -> dict[str, str]:
         env = dict(os.environ)
         env.update(self._selected_tts_env())
+        env.update(self._selected_stt_env())
+        
+        # Ensure LD_LIBRARY_PATH includes CUDA runtime libraries
+        cuda_lib_paths: list[str] = []
+        cuda_lib_paths.extend(["/usr/local/lib/ollama/cuda_v12/lib",
+                               "/usr/local/lib/ollama/cuda_v13/lib",
+                               "/home/neety/Documents/gamma-main/.venv/lib/python3.14/site-packages/nvidia/cu12/lib",
+                               "/home/neety/Documents/gamma-main/.venv/lib/python3.14/site-packages/nvidia/cu13/lib"])
+        existing = os.environ.get("LD_LIBRARY_PATH", "").strip().split(":")
+        new_paths = [p for p in cuda_lib_paths if p not in existing]
+        if new_paths:
+            existing.extend(new_paths)
+        if existing:
+            env["LD_LIBRARY_PATH"] = ":".join(existing)
         return env
 
     async def _save_upload(self, turn_id: str, audio_file: UploadFile) -> Path:

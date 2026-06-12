@@ -594,6 +594,15 @@
     target.textContent = lines.join('\n\n') || 'Subtitles idle.';
   }
 
+  function setSubtitleState(nextState) {
+    subtitleState = {
+      transcript: String(nextState && nextState.transcript || subtitleState.transcript || ''),
+      reply: String(nextState && nextState.reply || subtitleState.reply || ''),
+      partial: String(nextState && nextState.partial || subtitleState.partial || '')
+    };
+    setLiveSubtitle(subtitleState.partial, subtitleState.transcript, subtitleState.reply);
+  }
+
   function handleLiveMessage(payload) {
     liveLastEvent = payload.type + (payload.state ? ': ' + payload.state : '');
     if (payload.type === 'state') {

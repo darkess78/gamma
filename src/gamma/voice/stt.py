@@ -111,13 +111,21 @@ class FasterWhisperSTTBackend(STTBackend):
                 if warning:
                     log.warning(warning)
                 if resolved_spec == "cpu":
-                    resolved_device = "cuda:1"
+                    resolved_device = "cpu"
                     resolved_index = None
                 elif resolved_spec.startswith("cuda:"):
                     resolved_device = "cuda"
                     resolved_index = int(resolved_spec.split(":", 1)[1])
+                else:
+                    # Keep original config (cpu, auto, or non-cuda device)
+                    resolved_device = resolved_spec or "cpu"
+                    resolved_index = None
             except Exception:
-                pass
+                log.warning(
+                    f"Failed to resolve device '{settings.stt_device}'. Falling back to CPU."
+                )
+                resolved_device = "cpu"
+                resolved_index = None
             from faster_whisper import WhisperModel
 
             self._model = WhisperModel(

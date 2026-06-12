@@ -2,15 +2,29 @@ from __future__ import annotations
 
 from typing import Any
 
+import ctranslate2
+
 
 def best_available_cuda_index(torch_module: Any) -> int | None:
+    # First try torch's CUDA detection (works for GPU-enabled torch)
+    device_count = None
     try:
-        if not torch_module.cuda.is_available():
-            return None
-        device_count = int(torch_module.cuda.device_count())
+        if torch_module.cuda.is_available():
+            device_count = int(torch_module.cuda.device_count())
     except Exception:
-        return None
-    if device_count <= 0:
+        pass
+    
+    # Torch failed or returns None - try ctranslate2 for CUDA detection
+    # ctranslate2 can use CUDA even with CPU-only torch
+    if device_count is None or device_count <= 0:
+        try:
+            ctc_cuda_count = ctranslate2.get_cuda_device_count()
+            if ctc_cuda_count > 0:
+                device_count = ctc_cuda_count
+        except Exception:
+            pass
+    
+    if device_count is None or device_count <= 0:
         return None
 
     best_index = 0
@@ -19,6 +33,8 @@ def best_available_cuda_index(torch_module: Any) -> int | None:
         try:
             free_bytes, _total_bytes = torch_module.cuda.mem_get_info(index)
         except Exception:
+            # If torch mem_get_info fails but we detected CUDA via ctranslate2,
+            # assume GPU 0 is best and return it
             return 0
         if int(free_bytes) > best_free_bytes:
             best_free_bytes = int(free_bytes)

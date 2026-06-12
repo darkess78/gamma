@@ -63,8 +63,8 @@ def _qwen_python(repo_root: Path) -> str:
     configured = os.getenv("QWEN_TTS_PYTHON", "").strip()
     candidates = [
         Path(configured).expanduser() if configured else None,
-        repo_root / ".venv-qwen" / "bin" / "python",
-        repo_root / ".venv-qwen" / "Scripts" / "python.exe",
+        repo_root / ".venv" / "bin" / "python",
+        repo_root / ".venv" / "Scripts" / "python.exe",
     ]
     for candidate in candidates:
         if candidate and candidate.exists():

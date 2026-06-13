@@ -7,6 +7,8 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from gamma.config import settings
+from gamma.integrations.twitch.models import TwitchChatMessage
+from gamma.integrations.twitch.normalize import normalize_chat_message
 from gamma.safety.llm_reviewer import LLMReviewDecision
 from gamma.schemas.response import AssistantResponse, ToolCall, ToolExecutionResult
 from gamma.stream.actions import ActionPlanner
@@ -14,7 +16,7 @@ from gamma.stream.brain import StreamBrain
 from gamma.stream.models import StreamActor, StreamInputEvent, StreamTurnResult, TurnDecision
 from gamma.stream.output import OutputDispatchResult
 from gamma.stream.self_goals import StreamSelfGoalStore
-from gamma.stream.temp_memory import StreamTempMemoryStore
+from gamma.stream.temp_memory import RecentStreamContextAssembler, StreamTempMemoryStore
 from gamma.stream.trace import StreamTraceStore
 from gamma.voice.tts import TTSResult
 
@@ -169,6 +171,7 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual(conversation.calls[0]["user_text"], "Gamma, are you there?")
         self.assertEqual(conversation.calls[0]["session_id"], "live-1")
         self.assertEqual(conversation.calls[0]["fast_mode"], True)
+        self.assertNotIn("background_context", conversation.calls[0])
         self.assertEqual([item.type for item in result.output_events], ["emotion_changed", "subtitle_line", "avatar_motion"])
         self.assertEqual(result.output_events[0].payload["emotion"], "happy")
         self.assertEqual(result.output_events[1].payload["text"], "I heard you.")
@@ -224,6 +227,8 @@ class StreamBrainTest(unittest.TestCase):
         self.assertTrue(result.decision.metadata["dry_run"])
         self.assertTrue(result.decision.metadata["would_reply"])
         self.assertEqual(conversation.calls, [])
+        self.assertIsNone(result.assistant_response)
+        self.assertEqual(result.output_events, [])
 
     def test_conversation_lull_proposes_self_goal_for_dashboard_approval(self) -> None:
         conversation = _FakeConversation()
@@ -604,6 +609,97 @@ class StreamBrainTest(unittest.TestCase):
         self.assertIn("event_history", buckets)
         self.assertIn("chat_mood", buckets)
         self.assertTrue(any("stream topic" in item["value"] for item in payload["items"]))
+
+    def test_recent_stream_context_is_bounded_sanitized_and_excludes_raw_events(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = StreamTempMemoryStore(database_url=f"sqlite:///{Path(temp_dir) / 'stream.db'}")
+            for index in range(5):
+                event = normalize_chat_message(
+                    TwitchChatMessage(
+                        text=f"Shana topic {index} oauth:supersecret client_id=client-{index}",
+                        platform_user_id=f"u{index}",
+                        display_name=f"Viewer{index}",
+                    )
+                )
+                store.record_turn(
+                    StreamTurnResult(
+                        input_event=event,
+                        decision=TurnDecision(decision="reply", reason="test", should_call_conversation=True),
+                    )
+                )
+            store.record_turn(
+                StreamTurnResult(
+                    input_event=StreamInputEvent(
+                        kind="chat_message",
+                        text="raw unsanitized text must not appear",
+                        actor=StreamActor(source="twitch", display_name="UnsafeViewer"),
+                    ),
+                    decision=TurnDecision(decision="ignore", reason="test"),
+                )
+            )
+
+            context = RecentStreamContextAssembler(store, max_items=3, max_chars=500).assemble()
+
+        self.assertIsNotNone(context)
+        assert context is not None
+        self.assertLessEqual(len(context), 500)
+        self.assertEqual(sum(1 for line in context.splitlines() if line.startswith("- ")), 3)
+        self.assertNotIn("supersecret", context)
+        self.assertNotIn("client-4", context)
+        self.assertNotIn("raw unsanitized", context)
+        self.assertIn("[redacted]", context)
+        self.assertIn("Use this only as background", context)
+
+    def test_twitch_reply_includes_recent_sanitized_stream_context(self) -> None:
+        conversation = _FakeConversation()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = StreamTempMemoryStore(database_url=f"sqlite:///{Path(temp_dir) / 'stream.db'}")
+            prior_event = normalize_chat_message(
+                TwitchChatMessage(
+                    text="The current run is focused on a no-hit boss attempt.",
+                    platform_user_id="u1",
+                    display_name="HelpfulViewer",
+                )
+            )
+            store.record_turn(
+                StreamTurnResult(
+                    input_event=prior_event,
+                    decision=TurnDecision(decision="ignore", reason="ambient"),
+                )
+            )
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+                temp_memory_store=store,
+            )
+            brain.handle_event(
+                normalize_chat_message(
+                    TwitchChatMessage(
+                        text="Shana, what is happening in the run?",
+                        platform_user_id="u2",
+                        display_name="QuestionViewer",
+                    )
+                )
+            )
+
+        context = str(conversation.calls[0]["background_context"])
+        self.assertIn("Recent sanitized stream context:", context)
+        self.assertIn("no-hit boss attempt", context)
+        self.assertNotIn("raw_text", context)
+
+    def test_system_event_does_not_call_conversation_or_produce_output(self) -> None:
+        conversation = _FakeConversation()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            result = brain.handle_event(StreamInputEvent(kind="system", text="runtime heartbeat"))
+
+        self.assertEqual(result.decision.decision, "ignore")
+        self.assertEqual(conversation.calls, [])
+        self.assertIsNone(result.assistant_response)
+        self.assertEqual(result.output_events, [])
 
     def test_twitch_output_safety_gate_replaces_blocked_reply_with_filtered(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

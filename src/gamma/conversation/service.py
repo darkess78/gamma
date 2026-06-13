@@ -57,6 +57,7 @@ class ConversationService:
         brief_mode: bool = False,
         micro_mode: bool = False,
         defer_llm_safety_review: bool = False,
+        background_context: str | None = None,
     ) -> AssistantResponse:
         """Respond to a user text message.
         
@@ -69,6 +70,7 @@ class ConversationService:
             brief_mode: Brief response mode.
             micro_mode: Micro-reply mode.
             defer_llm_safety_review: Defer LLM safety review.
+            background_context: Optional trusted background note for the system prompt.
             
         Returns:
             AssistantResponse with spoken text and timing.
@@ -82,6 +84,7 @@ class ConversationService:
             brief_mode=brief_mode,
             micro_mode=micro_mode,
             defer_llm_safety_review=defer_llm_safety_review,
+            background_context=background_context,
         )
 
     def respond_with_image(
@@ -185,6 +188,7 @@ class ConversationService:
         image: VisionImage | None = None,
         vision_analysis: VisionAnalysis | None = None,
         defer_llm_safety_review: bool = False,
+        background_context: str | None = None,
     ) -> AssistantResponse:
         stripped = user_text.strip()
         if not stripped:
@@ -248,6 +252,8 @@ class ConversationService:
                 session_id=session_id,
                 speaker=speaker,
             )
+            if background_context and background_context.strip():
+                system_prompt += f"\n\n# Stream Background Context\n{background_context.strip()}"
             if brief_mode:
                 system_prompt += (
                     "\n\n# Live Voice Brevity\n"

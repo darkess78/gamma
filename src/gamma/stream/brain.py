@@ -32,7 +32,7 @@ from .models import (
 )
 from .output import StreamOutputDispatcher
 from .self_goals import StreamSelfGoalStore
-from .temp_memory import StreamTempMemoryStore
+from .temp_memory import RecentStreamContextAssembler, StreamTempMemoryStore
 from .trace import StreamTraceStore
 
 
@@ -127,6 +127,7 @@ class StreamBrain:
         self._safety_reviewer = safety_reviewer or SpeechLLMReviewer()
         self._speech_synthesizer = speech_synthesizer
         self._temp_memory_store = temp_memory_store or StreamTempMemoryStore()
+        self._recent_context = RecentStreamContextAssembler(self._temp_memory_store)
         self._self_goal_store = self_goal_store or StreamSelfGoalStore()
 
     def handle_event(
@@ -178,16 +179,21 @@ class StreamBrain:
             text = (event.text or "").strip()
             if not text:
                 raise ConversationError("stream event text must not be empty for reply decisions.")
-            response = self._conversation.respond(
-                user_text=text,
-                session_id=event.session_id,
-                synthesize_speech=synthesize_speech and not parallel_safety,
-                speaker_ctx=event.actor.to_speaker_context(),
-                fast_mode=fast_mode,
-                brief_mode=brief_mode,
-                micro_mode=micro_mode,
-                defer_llm_safety_review=_is_public_stream_event(event),
-            )
+            conversation_args = {
+                "user_text": text,
+                "session_id": event.session_id,
+                "synthesize_speech": synthesize_speech and not parallel_safety,
+                "speaker_ctx": event.actor.to_speaker_context(),
+                "fast_mode": fast_mode,
+                "brief_mode": brief_mode,
+                "micro_mode": micro_mode,
+                "defer_llm_safety_review": _is_public_stream_event(event),
+            }
+            if _is_public_stream_event(event):
+                recent_context = self._assemble_recent_context()
+                if recent_context:
+                    conversation_args["background_context"] = recent_context
+            response = self._conversation.respond(**conversation_args)
             action_plan = self._action_planner.plan_from_response(response)
         safety_decision = self._review_stream_output(event, response, include_llm=not parallel_safety) if response else {}
         if response is not None and parallel_safety and not safety_decision.get("blocked"):
@@ -254,6 +260,12 @@ class StreamBrain:
             self._temp_memory_store.record_turn(result)
         except Exception:
             pass
+
+    def _assemble_recent_context(self) -> str | None:
+        try:
+            return self._recent_context.assemble()
+        except Exception:
+            return None
 
     def _maybe_propose_self_goal(self, event: StreamInputEvent, result: StreamTurnResult) -> None:
         if event.kind != "conversation_lull":

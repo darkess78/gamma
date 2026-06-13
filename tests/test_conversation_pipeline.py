@@ -172,6 +172,27 @@ class ConversationPipelineTest(unittest.TestCase):
         self.assertEqual(response.tts_metadata["speech_filter"]["blocked"], True)
         self.assertTrue(response.tts_metadata["speech_filter"]["matched_rules"])
 
+    def test_background_context_is_system_only_and_opt_in(self) -> None:
+        service = ConversationService()
+        fake_llm = _FakeLLMAdapter(["Stream-aware reply.", "Normal reply."])
+        service._llm = fake_llm
+        service._remember_assistant_state = Mock()
+
+        with patch("gamma.conversation.service.build_system_prompt", return_value="base prompt"), patch.object(
+            service, "_append_timing_log", return_value=None
+        ):
+            service.respond(
+                user_text="Shana, what is chat discussing?",
+                fast_mode=True,
+                background_context="Recent sanitized stream context:\n- viewer: boss attempt",
+            )
+            service.respond(user_text="ordinary local conversation", fast_mode=True)
+
+        self.assertIn("# Stream Background Context", fake_llm.calls[0]["system_prompt"])
+        self.assertIn("boss attempt", fake_llm.calls[0]["system_prompt"])
+        self.assertEqual(fake_llm.calls[0]["user_text"], "Shana, what is chat discussing?")
+        self.assertNotIn("Stream Background Context", fake_llm.calls[1]["system_prompt"])
+
     def test_assistant_feeling_state_is_persisted(self) -> None:
         service = ConversationService()
         service._llm = _FakeLLMAdapter(["[teasing] Fine, I guess."])

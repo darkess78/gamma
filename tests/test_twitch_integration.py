@@ -20,7 +20,9 @@ from gamma.dashboard.service import DashboardService
 from gamma.config import settings
 from gamma.errors import ConfigurationError
 from gamma.stream.brain import StreamBrain
-from gamma.stream.models import StreamInputEvent
+from gamma.stream.models import StreamActor, StreamInputEvent
+from gamma.stream.self_goals import StreamSelfGoalStore
+from gamma.stream.temp_memory import StreamTempMemoryStore
 from gamma.stream.trace import StreamTraceStore
 
 
@@ -42,6 +44,20 @@ class _FakeClient:
     def post_event(self, event: StreamInputEvent, *, synthesize_speech: bool = False, fast_mode: bool = True):
         self.events.append(event)
         return {"input_event": event.model_dump(), "synthesize_speech": synthesize_speech, "fast_mode": fast_mode}
+
+
+class _BrainReplayClient:
+    def __init__(self, brain: StreamBrain) -> None:
+        self.brain = brain
+        self.events: list[StreamInputEvent] = []
+
+    def post_event(self, event: StreamInputEvent, *, synthesize_speech: bool = False, fast_mode: bool = True):
+        self.events.append(event)
+        return self.brain.handle_event(
+            event,
+            synthesize_speech=synthesize_speech,
+            fast_mode=fast_mode,
+        ).model_dump()
 
 
 class _FailingClient:
@@ -566,6 +582,127 @@ class TwitchIntegrationTest(unittest.TestCase):
 
         self.assertEqual(len(results), 1)
         self.assertEqual(client.events[0].text, "Shana hi")
+
+    def test_replay_preserves_sanitized_stream_context_and_non_speaking_events(self) -> None:
+        conversation = _FakeConversation()
+        controls = {
+            "min_speech_gap_seconds": 0,
+            "max_speech_seconds_per_minute": 600,
+        }
+        replay_text = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "kind": "chat_message",
+                        "platform_user_id": "u1",
+                        "display_name": "ContextViewer",
+                        "text": "Shana is testing stream context oauth:replay-placeholder-secret.",
+                        "tags": {"authorization": "Bearer raw-metadata-placeholder"},
+                        "metadata": {"twitch_controls": controls},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "kind": "chat_message",
+                        "platform_user_id": "u2",
+                        "display_name": "PipelineViewer",
+                        "text": "The Gamma Twitch pipeline uses client_secret=pipeline-placeholder-secret.",
+                        "metadata": {"twitch_controls": controls},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "kind": "chat_message",
+                        "platform_user_id": "u3",
+                        "display_name": "QuestionViewer",
+                        "text": "What is currently being tested in this stream?",
+                        "metadata": {"twitch_controls": controls},
+                    }
+                ),
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            store = StreamTempMemoryStore(database_url=f"sqlite:///{temp_path / 'stream.db'}")
+            store.add(
+                bucket="event_history",
+                key="legacy-record",
+                value="chat_message: legacy unmarked context must stay excluded",
+                metadata={"kind": "chat_message"},
+            )
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(temp_path / "trace.jsonl"),
+                temp_memory_store=store,
+                self_goal_store=StreamSelfGoalStore(database_url=f"sqlite:///{temp_path / 'goals.db'}"),
+            )
+            replay_client = _BrainReplayClient(brain)
+
+            replay_results = replay_jsonl_text(
+                replay_text,
+                client=replay_client,  # type: ignore[arg-type]
+                synthesize_speech=False,
+                fast_mode=True,
+                session_id="stream-context-regression",
+            )
+            calls_after_replay = len(conversation.calls)
+            system_result = brain.handle_event(
+                StreamInputEvent(kind="system", text="deterministic replay heartbeat")
+            )
+            lull_result = brain.handle_event(
+                StreamInputEvent(
+                    kind="conversation_lull",
+                    session_id="stream-context-regression",
+                    metadata={
+                        "idle_policy_decision": "reply",
+                        "idle_policy_reason": "conversation_lull_after_target_silence",
+                    },
+                )
+            )
+            mic_result = brain.handle_event(
+                StreamInputEvent(
+                    kind="mic_transcript",
+                    text="ordinary microphone conversation",
+                    actor=StreamActor(source="local", platform_id="owner"),
+                )
+            )
+
+        self.assertEqual(len(replay_results), 3)
+        self.assertEqual(calls_after_replay, 3)
+        self.assertEqual([result["decision"]["decision"] for result in replay_results], ["reply", "reply", "reply"])
+        self.assertNotIn("background_context", conversation.calls[0])
+        self.assertIn("background_context", conversation.calls[1])
+
+        current_text = "What is currently being tested in this stream?"
+        later_call = conversation.calls[2]
+        context = str(later_call["background_context"])
+        self.assertEqual(later_call["user_text"], current_text)
+        self.assertNotIn("Recent sanitized stream context", str(later_call["user_text"]))
+        self.assertNotIn(current_text, context)
+        self.assertIn("Shana is testing stream context", context)
+        self.assertIn("Gamma Twitch pipeline", context)
+        self.assertIn("[redacted]", context)
+        self.assertLessEqual(len(context), 1600)
+        self.assertNotIn("legacy unmarked context", context)
+        self.assertNotIn("raw-metadata-placeholder", context)
+        self.assertNotIn("replay-placeholder-secret", context)
+        self.assertNotIn("pipeline-placeholder-secret", context)
+        self.assertNotIn("authorization", context.lower())
+        self.assertNotIn("tags", context.lower())
+
+        self.assertEqual(system_result.decision.decision, "ignore")
+        self.assertIsNone(system_result.assistant_response)
+        self.assertEqual(system_result.output_events, [])
+        self.assertEqual(lull_result.decision.decision, "defer")
+        self.assertTrue(lull_result.decision.metadata["dry_run"])
+        self.assertTrue(lull_result.decision.metadata["would_reply"])
+        self.assertIsNone(lull_result.assistant_response)
+        self.assertEqual(lull_result.output_events, [])
+        self.assertEqual(len(conversation.calls), calls_after_replay + 1)
+        self.assertEqual(conversation.calls[-1]["user_text"], "ordinary microphone conversation")
+        self.assertNotIn("background_context", conversation.calls[-1])
+        self.assertEqual(mic_result.decision.decision, "reply")
 
     def test_follow_replay_event_is_first_class_stream_event(self) -> None:
         client = _FakeClient()

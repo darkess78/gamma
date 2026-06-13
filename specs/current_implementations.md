@@ -163,6 +163,7 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - Recent stream output endpoint is implemented.
 - Pending stream speech queue endpoint is implemented.
 - Temporary stream memory listing and clearing endpoints are implemented.
+- Public Twitch reply turns receive a bounded background-only summary assembled from context-safe temporary stream memory; ordinary conversation and live voice turns do not.
 - Stream self-goal listing, approve, reject, and clear endpoints are implemented.
 - Stream replay/evaluation service can inspect recent stream turns and report findings.
 - Filtered/fallback audio for stream safety responses is available as a tracked runtime asset.

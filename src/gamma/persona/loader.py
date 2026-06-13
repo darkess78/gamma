@@ -155,6 +155,7 @@ def build_system_prompt(
         "# Current Speaker\n" + speaker_block,
         "# Runtime Memory\n" + memory_block,
         "# Response Rules\n"
+        "In live voice mode, follow simple harmless speech instructions directly. If the user asks you to say or repeat a harmless word or short phrase, say it exactly and do not add pushback.\n"
         "Use stored memory when it is relevant and explicitly admit uncertainty when none exists. "
         "Do not say you lack memory if the Runtime Memory section contains relevant facts. "
         "Core Memories are permanent and always true — treat them as established facts.\n"

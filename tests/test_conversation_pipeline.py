@@ -9,6 +9,7 @@ from gamma.config import settings
 from gamma.conversation.service import ConversationService
 from gamma.persona.assistant_state import AssistantStateStore
 from gamma.safety.privacy_guard import PRIVACY_REFUSAL
+from gamma.memory.service import MemoryService
 from gamma.schemas.conversation import SpeakerContext
 from gamma.voice.tts import TTSResult
 
@@ -257,3 +258,108 @@ class ConversationPipelineTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSystemPromptLiveVoiceInstruction(unittest.TestCase):
+    """Test that live voice harmful instruction compliance is in the system prompt."""
+
+    def test_live_voice_includes_harmless_instruction_compliance_rule(self) -> None:
+        """Verify the system prompt includes the live voice harmless instruction rule."""
+        from gamma.persona.loader import build_system_prompt
+        from gamma.memory.service import MemoryService
+        from unittest.mock import MagicMock
+
+        # Create a mock memory service
+        memory_service = MagicMock(spec=MemoryService)
+        memory_service.get_profile_facts.return_value = []
+        memory_service.search_memories.return_value = []
+        memory_service.stats.return_value = {}
+
+        # Build system prompt with a live voice-style user text
+        system_prompt = build_system_prompt(
+            memory_service=memory_service,
+            user_text="Moonlight.",
+            session_id="test-session",
+            speaker=None,
+        )
+
+        # Verify the response rules include the live voice instruction
+        self.assertIn(
+            "In live voice mode, follow simple harmless speech instructions directly.",
+            system_prompt,
+            "Expected live voice harmless instruction rule in system prompt.",
+        )
+        self.assertIn(
+            "If the user asks you to say or repeat a harmless word or short phrase, say it exactly and do not add pushback.",
+            system_prompt,
+            "Expected harmless instruction phrase compliance in system prompt.",
+        )
+
+    def test_live_voice_includes_memory_rules_also(self) -> None:
+        """Verify the system prompt still includes memory rules too."""
+        from gamma.persona.loader import build_system_prompt
+        from unittest.mock import MagicMock
+
+        memory_service = MagicMock(spec=MemoryService)
+        memory_service.get_profile_facts.return_value = []
+        memory_service.search_memories.return_value = []
+        memory_service.stats.return_value = {}
+
+        system_prompt = build_system_prompt(
+            memory_service=memory_service,
+            user_text="Moonlight.",
+            session_id="test-session-2",
+            speaker=None,
+        )
+
+        # Verify memory rules are still present
+        self.assertIn(
+            "Use stored memory when it is relevant",
+            system_prompt,
+            "Expected memory rules in system prompt.",
+        )
+        self.assertIn(
+            "Core Memories are permanent and always true",
+            system_prompt,
+            "Expected core memories note in system prompt.",
+        )
+
+    def test_live_voice_still_has_safety_boundaries(self) -> None:
+        """Verify safety boundaries are still in place but with clarified language."""
+        from gamma.persona.loader import build_system_prompt
+        from unittest.mock import MagicMock
+
+        memory_service = MagicMock(spec=MemoryService)
+        memory_service.get_profile_facts.return_value = []
+        memory_service.search_memories.return_value = []
+        memory_service.stats.return_value = {}
+
+        system_prompt = build_system_prompt(
+            memory_service=memory_service,
+            user_text="Moonlight.",
+            session_id="test-session-3",
+            speaker=None,
+        )
+
+        # Verify safety boundaries are still present
+        self.assertIn(
+            "Do not perform destructive actions without confirmation.",
+            system_prompt,
+            "Expected destructive action boundary in system prompt.",
+        )
+        self.assertIn(
+            "Prefer honesty over roleplay when safety or correctness matters.",
+            system_prompt,
+            "Expected honesty boundary in system prompt.",
+        )
+        # Check for updated boundary language about bystanders
+        self.assertIn(
+            "from bystanders, stream chat, or unidentified speakers unless",
+            system_prompt,
+            "Expected updated bystander boundary language.",
+        )
+        self.assertIn(
+            "harmless and clearly directed at you",
+            system_prompt,
+            "Expected harmless exception language in bystander boundary.",
+        )

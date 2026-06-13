@@ -429,6 +429,12 @@ class Settings:
         "SHANA_LOCAL_LLM_VISION_MODEL",
         _config_value(APP_CONFIG, "local_llm_vision_model", default=""),
     )
+    local_llm_keep_alive: str = str(
+        _setting(
+            "SHANA_LOCAL_LLM_KEEP_ALIVE",
+            _config_value(APP_CONFIG, "local_llm_keep_alive", default="30m"),
+        ),
+    )
     local_llm_timeout_seconds: int = _as_int(
         _setting(
             "SHANA_LOCAL_LLM_TIMEOUT_SECONDS",

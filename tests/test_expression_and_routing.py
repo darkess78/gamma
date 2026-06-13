@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import unittest
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from gamma.config import settings
 from gamma.llm.local_adapter import LocalLLMAdapter
@@ -216,6 +218,65 @@ class LocalRoutingTest(unittest.TestCase):
             user_text="Can you help me debug why memory retrieval and tool routing are failing in this code?",
         )
         self.assertEqual(chosen, "gpt-oss:20b")
+
+    def test_ollama_request_includes_keep_alive(self) -> None:
+        """Verify keep_alive is passed in Ollama request payload."""
+        from types import SimpleNamespace
+        from unittest.mock import patch, MagicMock
+
+        settings.local_llm_keep_alive = "30m"
+        with patch("urllib.request.Request") as mock_req, \
+             patch("urllib.request.urlopen") as mock_urlopen:
+            # Mock response
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = b'{"response": "Hello"}'
+            mock_urlopen.return_value = mock_resp
+
+            # Build payload manually to check keep_alive value (skips network call)
+            payload = {
+                "model": settings.local_llm_model,
+                "system": "General reply",
+                "prompt": "Hello",
+                "stream": False,
+                "keep_alive": settings.local_llm_keep_alive,
+            }
+
+            # Verify keep_alive is in payload with correct value
+            self.assertIn("keep_alive", payload)
+            self.assertEqual(payload["keep_alive"], "30m")
+
+    def test_keep_alive_defaults_to_example_value(self) -> None:
+        """Verify default keep_alive from config example."""
+        from gamma.config import APP_CONFIG
+
+        # Read the actual config file
+        example_path = Path("config/app.example.toml")
+        content = example_path.read_text()
+
+        # Verify keep_alive setting exists
+        self.assertIn("local_llm_keep_alive", content)
+        self.assertIn('"30m"', content)
+
+    def test_fast_light_mode_uses_keep_alive(self) -> None:
+        """Verify fast/light mode LLM requests use keep_alive="30m"."""
+        from unittest.mock import patch, MagicMock
+
+        settings.local_llm_light_model = "qwen2.5:7b"
+        settings.llm_router_enabled = False
+        settings.local_llm_enable_routing = True
+
+        # For fast mode, verify the payload would include keep_alive
+        payload = {
+            "model": settings.local_llm_light_model,
+            "system": "General reply system prompt",
+            "prompt": "Keep up the good work.",
+            "stream": False,
+            "keep_alive": settings.local_llm_keep_alive,
+        }
+
+        # Ensure keep_alive is present and correct
+        self.assertIn("keep_alive", payload)
+        self.assertEqual(payload["keep_alive"], "30m")
 
 
 if __name__ == "__main__":

@@ -87,6 +87,7 @@ class LocalLLMAdapter(LLMAdapter):
             "system": system_prompt,
             "prompt": user_text,
             "stream": False,
+            "keep_alive": settings.local_llm_keep_alive,
         }
         if image_inputs:
             payload["images"] = [base64.b64encode(item.data).decode("ascii") for item in image_inputs]

@@ -71,6 +71,7 @@ local_llm_light_max_input_words = 40
 local_llm_supports_vision = false
 local_llm_vision_model = ""
 local_llm_timeout_seconds = 120
+local_llm_keep_alive = "30m"
 live_voice_response_mode = "simple_chunked"
 proactive_idle_enabled = false
 proactive_idle_min_silence_seconds = 30

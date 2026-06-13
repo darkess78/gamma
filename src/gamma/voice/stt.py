@@ -128,12 +128,20 @@ class FasterWhisperSTTBackend(STTBackend):
                 resolved_index = None
             from faster_whisper import WhisperModel
 
-            self._model = WhisperModel(
-                settings.stt_model,
-                device=resolved_device,
-                device_index=resolved_index,
-                compute_type=settings.stt_compute_type,
-            )
+            # For CPU STT, omit device_index (default is 0). For GPU, pass explicit index.
+            if resolved_device == "cpu":
+                self._model = WhisperModel(
+                    settings.stt_model,
+                    device=resolved_device,
+                    compute_type=settings.stt_compute_type,
+                )
+            else:
+                self._model = WhisperModel(
+                    settings.stt_model,
+                    device=resolved_device,
+                    device_index=resolved_index if resolved_index is not None else 0,
+                    compute_type=settings.stt_compute_type,
+                )
         except Exception as exc:
             raise ConfigurationError(f"Failed to initialize faster-whisper STT: {exc}") from exc
 

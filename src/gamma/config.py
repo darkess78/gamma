@@ -588,9 +588,9 @@ class Settings:
         )
     )
     stt_device: str = str(_setting("SHANA_STT_DEVICE", _config_value(APP_CONFIG, "stt_device", default="cpu")))
-    stt_device_index: int = _as_int(
-        _setting("SHANA_STT_DEVICE_INDEX", _config_value(APP_CONFIG, "stt_device_index", default=0)),
-        default=0,
+    stt_device_index: int | None = _as_int(
+        _setting("SHANA_STT_DEVICE_INDEX", _config_value(APP_CONFIG, "stt_device_index", default="")),
+        default=None,
     )
     stt_compute_type: str = str(
         _setting("SHANA_STT_COMPUTE_TYPE", _config_value(APP_CONFIG, "stt_compute_type", default="int8"))

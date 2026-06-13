@@ -76,7 +76,10 @@ class DashboardService:
         route_info = self._recent_llm_routes()
         selected_tts_provider = self.selected_tts_provider()
         selected_tts_profile = self.selected_tts_profile()
-        running_tts_provider = str(local_status["providers"]["tts"].get("provider") or "").strip().lower()
+        running_tts_provider = self._canonical_tts_provider(
+            str(local_status["providers"]["tts"].get("provider") or "")
+        )
+        local_status["providers"]["tts"]["provider"] = running_tts_provider
         running_tts_profile = str(local_status["providers"]["tts"].get("profile_id") or "").strip()
         local_status["providers"]["tts"]["selected_provider"] = selected_tts_provider
         local_status["providers"]["tts"]["selected_profile"] = selected_tts_profile
@@ -87,11 +90,15 @@ class DashboardService:
             selected_tts_provider != running_tts_provider or (selected_tts_profile or "") != running_tts_profile
         )
         local_status["providers"]["tts"]["available_providers"] = ["qwen-tts", "piper", "openai"]
-        local_status["providers"]["tts"]["available_profiles"] = [
-            profile.as_payload()
-            for profile in list_voice_profiles()
-            if profile.provider.strip().lower() in {"qwen-tts", "piper", "openai"}
-        ]
+        available_profiles: list[dict[str, Any]] = []
+        for profile in list_voice_profiles():
+            provider = self._canonical_tts_provider(profile.provider)
+            if provider not in {"qwen-tts", "piper", "openai"}:
+                continue
+            payload = profile.as_payload()
+            payload["provider"] = provider
+            available_profiles.append(payload)
+        local_status["providers"]["tts"]["available_profiles"] = available_profiles
         local_status["providers"]["tts"]["editor_profile"] = self.tts_profile_editor_state(
             selected_tts_profile,
             selected_tts_provider,
@@ -871,9 +878,17 @@ class DashboardService:
     def _is_qwen_provider(provider: str) -> bool:
         return provider.strip().lower() in {"qwen-tts", "qwen_tts", "qwen", "qwentts"}
 
+    @classmethod
+    def _canonical_tts_provider(cls, provider: str) -> str:
+        normalized = provider.strip().lower()
+        return "qwen-tts" if cls._is_qwen_provider(normalized) else normalized
+
     def selected_tts_provider(self) -> str:
-        provider = load_desired_tts_selection().get("tts_provider", "")
-        return provider or settings.tts_provider
+        provider = self._canonical_tts_provider(load_desired_tts_selection().get("tts_provider", ""))
+        if provider in {"qwen-tts", "piper", "openai"}:
+            return provider
+        runtime_provider = self._canonical_tts_provider(settings.tts_provider)
+        return runtime_provider if runtime_provider in {"qwen-tts", "piper", "openai"} else provider
 
     def selected_tts_profile(self) -> str | None:
         value = load_desired_tts_selection().get("tts_profile", "")

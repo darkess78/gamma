@@ -923,18 +923,28 @@ def _twitch_control_enabled(event: StreamInputEvent, key: str, default: bool) ->
 
 
 def _filter_stream_output_events(event: StreamInputEvent, output_events: list[StreamOutputEvent]) -> list[StreamOutputEvent]:
-    controls = event.metadata.get("twitch_controls")
-    if event.actor.source != "twitch" or not isinstance(controls, dict):
+    if event.actor.source != "twitch":
         return output_events
+    controls = event.metadata.get("twitch_controls")
+    if not isinstance(controls, dict):
+        controls = {}
     subtitles_enabled = bool(controls.get("subtitles_enabled", True))
-    voice_enabled = bool(controls.get("voice_enabled", True))
+    voice_enabled = bool(controls.get("voice_enabled", False))
     filtered: list[StreamOutputEvent] = []
     for output_event in output_events:
         if output_event.type == "subtitle_line" and not subtitles_enabled:
             continue
         if output_event.type in {"speech_started", "speech_chunk", "speech_ended"} and not voice_enabled:
             continue
-        filtered.append(output_event)
+        if voice_enabled:
+            filtered.append(output_event)
+            continue
+        payload = {
+            key: value
+            for key, value in output_event.payload.items()
+            if key not in {"audio", "audio_base64", "audio_content_type", "audio_path", "audio_url"}
+        }
+        filtered.append(output_event.model_copy(update={"payload": payload}))
     return filtered
 
 

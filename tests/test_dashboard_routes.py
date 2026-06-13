@@ -10,12 +10,14 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import anyio
 
+import gamma.config as config_module
 from gamma.config import settings
 from gamma.dashboard import main
 from gamma.dashboard.service import DashboardService
 from gamma.schemas.response import AssistantResponse, VisionAnalysis
 from gamma.schemas.voice import VoiceRoundtripResponse
 from gamma.system.status import SystemStatusService
+from gamma.voice.voice_profiles import list_voice_profiles
 
 
 class _JsonRequest:
@@ -691,6 +693,58 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(payload["providers"]["tts"]["available_providers"], ["qwen-tts", "piper", "openai"])
         self.assertNotIn("local", payload["providers"]["tts"]["available_providers"])
         self.assertNotIn("stub", payload["providers"]["tts"]["available_providers"])
+
+    def test_qwen_presets_are_discovered_and_returned_by_dashboard_status(self) -> None:
+        service = DashboardService()
+        qwen_profiles = [profile for profile in list_voice_profiles() if profile.provider == "qwen-tts"]
+        self.assertGreater(len(qwen_profiles), 1)
+        with (
+            patch.object(service._system_status, "build_status", return_value={
+                "app": {},
+                "providers": {
+                    "llm": {"provider": "local"},
+                    "stt": {"provider": "faster-whisper"},
+                    "tts": {"provider": "qwen", "profile_id": "", "health": {"ok": True}},
+                },
+                "recent_artifacts": [],
+            }),
+            patch.object(service, "build_runtime_status", return_value={"shana": {}, "machine": {}}),
+            patch.object(service, "_probe_json", return_value={"ok": True}),
+            patch(
+                "gamma.dashboard.service.load_desired_tts_selection",
+                return_value={"tts_provider": "stub", "tts_profile": ""},
+            ),
+            patch.object(settings, "tts_provider", "qwen"),
+            patch.object(service, "performer_output_status", return_value={}),
+            patch.object(service, "twitch_worker_status", return_value={}),
+            patch.object(service, "twitch_eventsub_status", return_value={}),
+            patch.object(service, "stream_ready_status", return_value={}),
+        ):
+            payload = service.build_status()
+
+        tts = payload["providers"]["tts"]
+        self.assertEqual(tts["selected_provider"], "qwen-tts")
+        returned_ids = {
+            profile["id"]
+            for profile in tts["available_profiles"]
+            if profile["provider"] == "qwen-tts"
+        }
+        self.assertEqual(returned_ids, {profile.profile_id for profile in qwen_profiles})
+        self.assertGreater(len(returned_ids), 1)
+
+    def test_invalid_optional_voice_preset_file_keeps_default_profiles(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_dir = Path(temp_dir)
+            (config_dir / "voices.example.toml").write_text(
+                '[profiles.default_qwen]\nlabel = "Default Qwen"\nprovider = "qwen-tts"\n',
+                encoding="utf-8",
+            )
+            (config_dir / "voices.presets.toml").write_text("[profiles.invalid\n", encoding="utf-8")
+            with patch.object(config_module, "CONFIG_DIR", config_dir):
+                payload = config_module.load_voices_file_config()
+
+        self.assertEqual(payload["profiles"]["default_qwen"]["provider"], "qwen-tts")
+        self.assertEqual(len(payload["profiles"]), 1)
 
     def test_assistant_settings_routes(self) -> None:
         settings_payload = {

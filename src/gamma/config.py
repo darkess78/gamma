@@ -98,12 +98,14 @@ def load_desired_tts_selection() -> dict[str, str]:
 
 
 def load_voices_file_config() -> dict[str, Any]:
-    return _merged_toml(
-        CONFIG_DIR / "voices.example.toml",
-        voices_presets_config_path(),
-        voices_config_path(),
-        voices_local_config_path(),
-    )
+    merged = _read_toml(CONFIG_DIR / "voices.example.toml")
+    try:
+        presets = _read_toml(voices_presets_config_path())
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError):
+        presets = {}
+    merged = _merge_dicts(merged, presets)
+    merged = _merge_dicts(merged, _read_toml(voices_config_path()))
+    return _merge_dicts(merged, _read_toml(voices_local_config_path()))
 
 
 APP_CONFIG = load_app_file_config()

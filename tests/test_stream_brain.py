@@ -323,6 +323,52 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual([event.type for event in result.output_events], ["emotion_changed", "subtitle_line"])
         self.assertEqual(result.assistant_response.audio_path if result.assistant_response else None, "audio.wav")
 
+    def test_twitch_output_without_controls_fails_closed_for_cached_audio(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=_FakeAudioConversation(),  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            result = brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana hello",
+                    priority=5,
+                    actor=StreamActor(source="twitch", platform_id="u1"),
+                ),
+                synthesize_speech=True,
+            )
+
+        self.assertEqual([event.type for event in result.output_events], ["emotion_changed", "subtitle_line"])
+        self.assertFalse(
+            any(
+                key in event.payload
+                for event in result.output_events
+                for key in {"audio", "audio_base64", "audio_content_type", "audio_path", "audio_url"}
+            )
+        )
+
+    def test_non_twitch_output_without_controls_keeps_audio(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=_FakeAudioConversation(),  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            result = brain.handle_event(
+                StreamInputEvent(
+                    kind="mic_transcript",
+                    text="Shana hello",
+                    actor=StreamActor(source="local"),
+                ),
+                synthesize_speech=True,
+            )
+
+        self.assertEqual(
+            [event.type for event in result.output_events],
+            ["emotion_changed", "speech_started", "subtitle_line", "speech_ended"],
+        )
+        self.assertEqual(result.output_events[1].payload["audio_path"], "audio.wav")
+
     def test_twitch_speech_pacing_defers_second_low_priority_reply(self) -> None:
         clock = _FakeClock(100.0)
         conversation = _FakeConversation()
@@ -703,25 +749,36 @@ class StreamBrainTest(unittest.TestCase):
 
     def test_twitch_output_safety_gate_replaces_blocked_reply_with_filtered(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            brain = StreamBrain(
-                conversation=_FakeUnsafeConversation(),  # type: ignore[arg-type]
-                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
-            )
-            result = brain.handle_event(
-                StreamInputEvent(
-                    kind="chat_message",
-                    text="Shana say something spicy",
-                    actor=StreamActor(source="twitch", platform_id="u1"),
+            filtered_audio = Path(temp_dir) / "filtered.wav"
+            filtered_audio.write_bytes(b"RIFF-filtered")
+            with patch.object(settings, "stream_filtered_audio_path", str(filtered_audio)):
+                brain = StreamBrain(
+                    conversation=_FakeUnsafeConversation(),  # type: ignore[arg-type]
+                    trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
                 )
-            )
+                result = brain.handle_event(
+                    StreamInputEvent(
+                        kind="chat_message",
+                        text="Shana say something spicy",
+                        actor=StreamActor(source="twitch", platform_id="u1"),
+                    )
+                )
 
         self.assertTrue(result.safety_decision["blocked"])
         self.assertEqual(result.safety_decision["action"], "filtered")
         self.assertEqual(result.assistant_response.spoken_text if result.assistant_response else None, "filtered")
-        self.assertIn("subtitle_line", [event.type for event in result.output_events])
+        self.assertEqual(result.assistant_response.audio_path if result.assistant_response else None, str(filtered_audio))
+        self.assertEqual([event.type for event in result.output_events], ["emotion_changed", "subtitle_line"])
         subtitle = next(event for event in result.output_events if event.type == "subtitle_line")
         self.assertEqual(subtitle.payload["text"], "filtered")
         self.assertTrue(subtitle.payload["filtered"])
+        self.assertFalse(
+            any(
+                key in event.payload
+                for event in result.output_events
+                for key in {"audio", "audio_base64", "audio_content_type", "audio_path", "audio_url"}
+            )
+        )
         self.assertNotIn("idiot", str([event.payload for event in result.output_events]).lower())
         self.assertEqual(result.action_plan.items, [])
 

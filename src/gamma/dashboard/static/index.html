@@ -13,13 +13,13 @@
       <button class="nav-menu-toggle" type="button" onclick="toggleNavMenu()" aria-controls="topbarNav" aria-expanded="false">Menu</button>
       <div class="topbar-main" id="topbarNav">
         <nav class="app-nav" aria-label="Gamma dashboard">
-          <a class="nav-link" data-dashboard-route="/dashboard" data-dashboard-page-link="dashboard" href="/dashboard">Dashboard</a>
-          <a class="nav-link" data-dashboard-route="/dashboard/live" data-dashboard-page-link="live" href="/dashboard/live">Live</a>
-          <a class="nav-link" data-output-view="monitor" data-dashboard-route="/dashboard/monitor" data-dashboard-page-link="monitor" href="/dashboard/monitor">Monitor</a>
-          <a class="nav-link" data-dashboard-route="/dashboard/status" data-dashboard-page-link="status" href="/dashboard/status">Status</a>
-          <a class="nav-link" data-dashboard-route="/dashboard/stream" data-dashboard-page-link="stream" href="/dashboard/stream">Stream</a>
-          <a class="nav-link" data-dashboard-route="/dashboard/memory" data-dashboard-page-link="memory" href="/dashboard/memory">Memory</a>
-          <a class="nav-link" data-dashboard-route="/dashboard/settings" data-dashboard-page-link="settings" href="/dashboard/settings">Settings</a>
+          <a class="nav-link" data-dashboard-route="/" data-dashboard-page-link="dashboard" href="/dashboard">Dashboard</a>
+          <a class="nav-link" data-dashboard-route="/live" data-dashboard-page-link="live" href="/dashboard/live">Live</a>
+          <a class="nav-link" data-output-view="monitor" data-dashboard-route="/monitor" data-dashboard-page-link="monitor" href="/dashboard/monitor">Monitor</a>
+          <a class="nav-link" data-dashboard-route="/status" data-dashboard-page-link="status" href="/dashboard/status">Status</a>
+          <a class="nav-link" data-dashboard-route="/stream" data-dashboard-page-link="stream" href="/dashboard/stream">Stream</a>
+          <a class="nav-link" data-dashboard-route="/memory" data-dashboard-page-link="memory" href="/dashboard/memory">Memory</a>
+          <a class="nav-link" data-dashboard-route="/settings" data-dashboard-page-link="settings" href="/dashboard/settings">Settings</a>
         </nav>
         <nav class="output-nav" aria-label="Output views">
           <a class="nav-link output-link" data-output-view="performer" href="/performer" target="_blank" rel="noopener">Performer</a>
@@ -59,12 +59,12 @@
     <div class="grid">
       <section class="panel full-width dashboard-overview" data-dashboard-tab="dashboard-overview">
         <div class="overview-card-grid">
-          <a class="overview-link-card" data-dashboard-route="/dashboard/live" href="/dashboard/live"><span>Live</span><strong id="overviewLiveStatus">Checking voice runtime</strong></a>
-          <a class="overview-link-card" data-dashboard-route="/dashboard/monitor" href="/dashboard/monitor"><span>Monitor</span><strong id="overviewOutputStatus">Checking output bus</strong></a>
-          <a class="overview-link-card" data-dashboard-route="/dashboard/status" href="/dashboard/status"><span>Status</span><strong id="overviewShanaStatus">Checking Shana</strong></a>
-          <a class="overview-link-card" data-dashboard-route="/dashboard/stream" href="/dashboard/stream"><span>Stream Ops</span><strong id="overviewStreamStatus">Checking stream services</strong></a>
-          <a class="overview-link-card" data-dashboard-route="/dashboard/memory" href="/dashboard/memory"><span>Memory</span><strong id="overviewMemoryStatus">Reading memory database</strong></a>
-          <a class="overview-link-card" data-dashboard-route="/dashboard/settings" href="/dashboard/settings"><span>Settings</span><strong id="overviewProviderStatus">Checking providers</strong></a>
+          <a class="overview-link-card" data-dashboard-route="/live" href="/dashboard/live"><span>Live</span><strong id="overviewLiveStatus">Checking voice runtime</strong></a>
+          <a class="overview-link-card" data-dashboard-route="/monitor" href="/dashboard/monitor"><span>Monitor</span><strong id="overviewOutputStatus">Checking output bus</strong></a>
+          <a class="overview-link-card" data-dashboard-route="/status" href="/dashboard/status"><span>Status</span><strong id="overviewShanaStatus">Checking Shana</strong></a>
+          <a class="overview-link-card" data-dashboard-route="/stream" href="/dashboard/stream"><span>Stream Ops</span><strong id="overviewStreamStatus">Checking stream services</strong></a>
+          <a class="overview-link-card" data-dashboard-route="/memory" href="/dashboard/memory"><span>Memory</span><strong id="overviewMemoryStatus">Reading memory database</strong></a>
+          <a class="overview-link-card" data-dashboard-route="/settings" href="/dashboard/settings"><span>Settings</span><strong id="overviewProviderStatus">Checking providers</strong></a>
           <a class="overview-link-card output-link-card" data-output-view="performer" href="/performer" target="_blank" rel="noopener"><span>Performer</span><strong>OBS view</strong></a>
           <a class="overview-link-card output-link-card" data-output-view="subtitles" href="/overlay/subtitles" target="_blank" rel="noopener"><span>Subtitles</span><strong>Overlay</strong></a>
         </div>

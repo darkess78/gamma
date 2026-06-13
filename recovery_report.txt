@@ -1,0 +1,13 @@
+Recovery Report
+
+- Current commit: 0be634f fix: stabilize daily live voice loop with CPU STT and Qwen TTS
+- Dirty files before recovery: config/app.toml, src/gamma/config.py, src/gamma/conversation/service.py, src/gamma/persona/boundaries.md
+- Files reverted: config/app.toml, src/gamma/config.py, src/gamma/conversation/service.py, src/gamma/persona/boundaries.md
+- Dirty files after recovery: none
+- Effective STT config: faster-whisper, base.en, cpu, None, int8
+- Effective TTS config: qwen, qwen_shana_dataset_xvec_soft, http://127.0.0.1:9882/tts
+- Qwen health: not running (no process on port 9882)
+- Focused test result: 59 passed, 1 skipped
+- Full test result: 249 passed, 3 skipped
+- Is repo back to stable baseline?: Yes
+- Next safe task: Start and verify Qwen TTS service if needed for live voice demo

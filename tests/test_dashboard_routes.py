@@ -136,7 +136,13 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('window.GAMMA_SHANA_BASE_URL = "http://192.168.1.50:8000"', dashboard.body.decode("utf-8"))
         self.assertIn('window.GAMMA_DASHBOARD_BASE_URL = "http://192.168.1.50:8001"', dashboard.body.decode("utf-8"))
         self.assertIn('window.GAMMA_DASHBOARD_PAGE = "dashboard"', dashboard.body.decode("utf-8"))
-        self.assertIn('href="http://192.168.1.50:8001/dashboard/monitor"', dashboard.body.decode("utf-8"))
+        self.assertIn("href=\"/dashboard\"", dashboard.body.decode("utf-8"))
+        self.assertIn("href=\"/dashboard/live\"", dashboard.body.decode("utf-8"))
+        self.assertIn("href=\"/dashboard/monitor\"", dashboard.body.decode("utf-8"))
+        self.assertIn("href=\"/dashboard/status\"", dashboard.body.decode("utf-8"))
+        self.assertIn("href=\"/dashboard/stream\"", dashboard.body.decode("utf-8"))
+        self.assertIn("href=\"/dashboard/memory\"", dashboard.body.decode("utf-8"))
+        self.assertIn("href=\"/dashboard/settings\"", dashboard.body.decode("utf-8"))
         self.assertIn('rel="icon" href="/static/favicon.svg"', dashboard.body.decode("utf-8"))
         self.assertNotIn('src="/static/monitor.js', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/nav.js?v=20260611e"', dashboard.body.decode("utf-8"))
@@ -192,6 +198,34 @@ class DashboardRoutesTest(unittest.TestCase):
                     self.assertEqual(response.media_type, "text/html")
                     self.assertIn(f'window.GAMMA_DASHBOARD_PAGE = "{page_name}"', response.body.decode("utf-8"))
 
+    def test_rendered_dashboard_navbar_links_are_relative(self) -> None:
+        """Navbar navbar links should use same-origin relative paths.
+
+        This ensures browser navigation never uses absolute localhost URLs
+        that would fail on production or misconfigured deployments.
+        """
+        response = main.dashboard()
+        body = response.body.decode("utf-8")
+        
+        # All navbar links should use relative same-origin paths
+        self.assertIn('href="/dashboard"', body, "Dashboard link missing")
+        self.assertIn('href="/dashboard/live"', body, "Live link missing")
+        self.assertIn('href="/dashboard/status"', body, "Status link missing")
+        self.assertIn('href="/dashboard/stream"', body, "Stream link missing")
+        self.assertIn('href="/dashboard/memory"', body, "Memory link missing")
+        self.assertIn('href="/dashboard/settings"', body, "Settings link missing")
+        self.assertIn('href="/dashboard/monitor"', body, "Monitor link missing")
+        
+        # Should NOT contain absolute URLs for navbar routes
+        # Note: overlay/subtitles is external and gets replaced with absolute URL
+        import re
+        navbar_routes = ['dashboard', 'live', 'status', 'stream', 'memory', 'settings', 'monitor']
+        for route in navbar_routes:
+            self.assertNotIn(f'href="http://127.0.0.1:8001/dashboard/{route}"', body)
+        
+        # Should NOT contain https URLs in navbar
+        self.assertNotIn('href="https://', body)
+
     def test_rendered_dashboard_uses_public_https_api_base(self) -> None:
         with (
             patch.object(settings, "shana_public_scheme", "https"),
@@ -206,6 +240,7 @@ class DashboardRoutesTest(unittest.TestCase):
         )
 
     def test_rendered_dashboard_links_use_public_dashboard_base(self) -> None:
+        """Navbar links should be same-origin relative, external output views can use public base."""
         with (
             patch.object(settings, "dashboard_public_scheme", "https"),
             patch.object(settings, "dashboard_public_host", "gamma.neety.me"),
@@ -213,6 +248,8 @@ class DashboardRoutesTest(unittest.TestCase):
         ):
             response = main.dashboard()
         body = response.body.decode("utf-8")
+        
+        # Navbar links should be relative same-origin paths
         for path in [
             "/dashboard",
             "/dashboard/live",
@@ -223,8 +260,11 @@ class DashboardRoutesTest(unittest.TestCase):
             "/dashboard/settings",
         ]:
             with self.subTest(path=path):
-                self.assertIn(f'href="https://gamma.neety.me{path}"', body)
-        self.assertNotIn('href="/dashboard/live"', body)
+                self.assertIn(f'href="{path}"', body)
+        
+        # Overlay subtitles is external output view, can use public base
+        self.assertIn('href="https://gamma.neety.me/overlay/subtitles"', body)
+        self.assertNotIn('href="/overlay/subtitles"', body)
 
     def test_dashboard_section_pages_are_served_with_page_config(self) -> None:
         page_routes = {

@@ -59,7 +59,10 @@
       client_name: 'stream_pc_subtitle_overlay'
     });
     document.querySelectorAll('[data-dashboard-route]').forEach(function (link) {
-      link.href = dashboardHref(link.getAttribute('data-dashboard-route'));
+      var route = link.getAttribute('data-dashboard-route');
+      if (link.href) {
+        link.href = dashboardHref(route);
+      }
     });
     monitors.forEach(function (monitor) {
       monitor.href = (dashboardBase ? dashboardBase : '') + '/dashboard/monitor' + monitorQuery;

@@ -245,21 +245,20 @@ def _dashboard_page(path: Path, *, dashboard_page: str = "") -> HTMLResponse:
 
 
 def _with_dashboard_public_links(html: str) -> str:
-    """Replace relative dashboard URLs with public base URLs.
+    """Replace overlay/subtitles URLs with public base URLs.
+
+    The navbar and dashboard navigation links use same-origin relative paths
+    to ensure they work correctly in all deployment configurations.
 
     Args:
         html: HTML string to modify.
 
     Returns:
-        str: HTML with public URLs injected.
+        str: HTML with public URLs injected for overlay/subtitles only.
     """
     dashboard_base = _app_settings.dashboard_base_url.rstrip("/")
-    replacements = {
-        'href="/dashboard': f'href="{dashboard_base}/dashboard',
-        'href="/overlay/subtitles': f'href="{dashboard_base}/overlay/subtitles',
-    }
-    for old, new in replacements.items():
-        html = html.replace(old, new)
+    # Only replace overlay/subtitles (external output view), not navbar links
+    html = html.replace('href="/overlay/subtitles', f'href="{dashboard_base}/overlay/subtitles')
     return html
 
 

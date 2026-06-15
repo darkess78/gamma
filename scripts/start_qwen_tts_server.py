@@ -14,11 +14,9 @@ Environment variables forwarded to the server:
 """
 from __future__ import annotations
 
-import importlib.util
 import os
 import socket
 import subprocess
-import sys
 import time
 import urllib.request
 from pathlib import Path
@@ -42,11 +40,6 @@ def _health_ok(port: int, host: str = "127.0.0.1") -> bool:
             return 200 <= response.status < 300
     except Exception:
         return False
-
-
-def _missing_runtime_modules() -> list[str]:
-    required = ["torch", "qwen_tts"]
-    return [name for name in required if importlib.util.find_spec(name) is None]
 
 
 def _tail_text(path: Path, *, limit_bytes: int = 4096) -> str:
@@ -98,15 +91,13 @@ def main() -> int:
         text=True,
         check=False,
     )
-    missing_modules = _missing_runtime_modules() if Path(python_exe).resolve() == Path(sys.executable).resolve() else []
-    if dependency_check.returncode != 0 and not missing_modules:
-        missing_modules = ["torch", "qwen_tts"]
-    if missing_modules:
-        missing_text = ", ".join(missing_modules)
+    if dependency_check.returncode != 0:
+        detail = (dependency_check.stderr or dependency_check.stdout or "").strip()
         raise SystemExit(
             "Qwen3-TTS runtime dependencies are missing in the active environment: "
-            f"{missing_text}\nPython: {python_exe}\n"
-            "Install them in .venv-qwen or set QWEN_TTS_PYTHON."
+            f"torch and/or qwen_tts\nPython: {python_exe}\n"
+            "Install them in the selected runtime or set QWEN_TTS_PYTHON."
+            + (f"\nImport error: {detail}" if detail else "")
         )
 
     stdout_log.write_text("", encoding="utf-8")

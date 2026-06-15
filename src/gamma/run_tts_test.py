@@ -16,7 +16,7 @@ def _parse_args() -> argparse.Namespace:
         argparse.Namespace: Parsed arguments.
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument("text", nargs="*".split(), help="Text to synthesize")
+    parser.add_argument("text", nargs="*", help="Text to synthesize")
     parser.add_argument("--file", dest="input_file", metavar="PATH", 
                         help="Path to .txt file to synthesize (auto-splits by paragraph)")
     parser.add_argument("--emotion", default="neutral", 

@@ -95,10 +95,14 @@ The first observability slice is implemented:
   event posts, post failures, disconnects, reconnects, backoff, and exit.
   Operational records retain message/event/request/session identifiers but do
   not retain chat text.
+- VTube Studio is the third adopter and records WebSocket connection lifecycle,
+  token request outcome, authentication, API errors, runner start/subscription/
+  exit, and event handling exceptions. Authentication tokens and request
+  payloads are excluded from operational logs.
 - Focused tests cover JSON shape, correlation fields, redaction, traceback
   output, bounded rotation, request-ID handling, supervisor preservation, fast
   worker exit, EventSub lifecycle events, and Twitch IRC lifecycle/failure
-  events.
+  events, plus VTube Studio connection and API failure evidence.
 
 Runtime verification on June 15, 2026 confirmed TCP and TLS connection to
 Twitch IRC, followed by an authentication rejection using the current
@@ -429,11 +433,15 @@ memory only.
 - translation from generic performer events to hotkey requests
 - a runner subscribed to `stream_public` performer events
 - connection, authentication, request, action, and error status
+- structured connection, token, authentication, API-error, runner, and
+  event-failure logs with request/event correlation and traceback support
 
 API start/stop/status routes are in `src/gamma/api/routes.py`.
 Tests are in `tests/test_vtube_studio_adapter.py`.
 
 Current runtime is disabled, disconnected, unauthenticated, and unmapped.
+The logging path is unit-tested but has not been live-validated against the
+Stream PC.
 
 ### Simple Next Step
 
@@ -452,10 +460,10 @@ Do not begin mouth tracking or broad motion mapping in this milestone.
 
 ### Risks To Address
 
-- The runner currently records only the latest in-memory error.
 - Failed actions still increment the handled count.
-- There is no durable adapter event history.
 - Reconnect behavior needs live testing.
+- API error responses are durable, but successful action history remains in
+  current status rather than a separate domain event store.
 - The endpoint must be reachable from the machine running Gamma; do not alter
   protected proxy architecture for this internal adapter.
 

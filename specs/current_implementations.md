@@ -223,6 +223,19 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - Dashboard controls can view/save Twitch runtime settings and viewer trust records.
 - Stream readiness/status payloads combine Twitch configuration, worker state, EventSub state, and stream safety state.
 
+## VTube Studio Integration
+
+- The performer adapter translates configured expression and motion events into
+  VTube Studio hotkey requests and consumes `stream_public` performer events.
+- Structured operational logs cover WebSocket connection lifecycle, token
+  request outcome, authentication, API errors, runner lifecycle, and event
+  handling failures.
+- Request and event identifiers are retained for correlation without logging
+  authentication tokens or hotkey request payloads.
+- Runtime remains disabled by default and still requires live validation
+  against VTube Studio using ignored machine-local endpoint, token, and hotkey
+  configuration.
+
 ## Dashboard
 
 - Separate dashboard FastAPI app in `src/gamma/dashboard/main.py`.

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
 from ..config import load_app_file_config
+from ..observability import bind_context, configure_logging, log_event, reset_context
 from .bus import PerformerEventBus
 from .models import STREAM_PUBLIC_TARGET, PerformerOutputEvent
 
@@ -60,8 +62,14 @@ class VTubeStudioClient:
     sends API requests, and records enough state for dashboard/operator status.
     """
 
-    def __init__(self, config: VTubeStudioAdapterConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: VTubeStudioAdapterConfig | None = None,
+        *,
+        logger: logging.Logger | None = None,
+    ) -> None:
         self.config = config or VTubeStudioAdapterConfig.from_app_config()
+        self.logger = logger or configure_logging("vtube_studio")
         self._socket: Any | None = None
         self._connected = False
         self._authenticated = False
@@ -93,6 +101,9 @@ class VTubeStudioClient:
     async def send_request(self, request: dict[str, Any]) -> dict[str, Any]:
         if not self.config.enabled:
             return {"ok": False, "error": "VTube Studio adapter disabled"}
+        request_id = str(request.get("requestID") or "")
+        message_type = str(request.get("messageType") or "")
+        context_token = bind_context(request_id=request_id or None)
         async with self._lock:
             try:
                 await self._ensure_connected_locked()
@@ -102,23 +113,55 @@ class VTubeStudioClient:
                 self._last_error = str(exc)
                 self._connected = False
                 self._authenticated = False
+                log_event(
+                    self.logger,
+                    logging.ERROR,
+                    "vtube_studio.request.failed",
+                    "VTube Studio request failed.",
+                    exc_info=True,
+                    error_class=type(exc).__name__,
+                    detail=str(exc),
+                    message_type=message_type,
+                )
                 await self._close_locked()
                 return {"ok": False, "error": str(exc)}
+            finally:
+                reset_context(context_token)
 
     async def _ensure_connected_locked(self) -> None:
         if self._socket is not None and self._connected:
             return
         if websockets is None:
             raise RuntimeError("websockets dependency is not available")
+        log_event(
+            self.logger,
+            logging.INFO,
+            "vtube_studio.connection.opening",
+            "Opening VTube Studio websocket connection.",
+            endpoint=self.config.endpoint,
+        )
         self._socket = await websockets.connect(self.config.endpoint)  # type: ignore[union-attr]
         self._connected = True
         self._last_connected_at = _utc_now()
         self._last_error = None
+        log_event(
+            self.logger,
+            logging.INFO,
+            "vtube_studio.connection.connected",
+            "VTube Studio websocket connected.",
+            endpoint=self.config.endpoint,
+        )
 
     async def _ensure_authenticated_locked(self) -> None:
         if self._authenticated:
             return
         if self.config.auth_token:
+            log_event(
+                self.logger,
+                logging.INFO,
+                "vtube_studio.authentication.sent",
+                "Sent VTube Studio authentication request.",
+            )
             response = await self._send_locked(
                 {
                     "apiName": "VTubeStudioPublicAPI",
@@ -137,7 +180,19 @@ class VTubeStudioClient:
             if not self._authenticated:
                 reason = (data or {}).get("reason") if isinstance(data, dict) else None
                 raise RuntimeError(str(response.get("error") or reason or "VTube Studio authentication failed"))
+            log_event(
+                self.logger,
+                logging.INFO,
+                "vtube_studio.authentication.succeeded",
+                "VTube Studio authentication succeeded.",
+            )
             return
+        log_event(
+            self.logger,
+            logging.INFO,
+            "vtube_studio.token.requested",
+            "Requested a VTube Studio authentication token.",
+        )
         response = await self._send_locked(
             {
                 "apiName": "VTubeStudioPublicAPI",
@@ -150,6 +205,12 @@ class VTubeStudioClient:
         self._token_requested = True
         token = (((response.get("response") or {}).get("data") or {}).get("authenticationToken") if response.get("ok") else None)
         if token:
+            log_event(
+                self.logger,
+                logging.WARNING,
+                "vtube_studio.token.received",
+                "VTube Studio authentication token received; local configuration is required.",
+            )
             self._last_error = "VTube Studio token received; save it as vtube_studio.auth_token and restart"
             raise RuntimeError(self._last_error)
         raise RuntimeError(str(response.get("error") or "VTube Studio auth token approval required"))
@@ -167,6 +228,15 @@ class VTubeStudioClient:
             error = response.get("data") if isinstance(response.get("data"), dict) else {}
             detail = error.get("message") or response.get("message") or "VTube Studio API error"
             self._last_error = str(detail)
+            log_event(
+                self.logger,
+                logging.ERROR,
+                "vtube_studio.api.error",
+                "VTube Studio returned an API error.",
+                request_id=str(request.get("requestID") or "") or None,
+                message_type=self._last_request_type,
+                detail=str(detail),
+            )
             return {"ok": False, "error": str(detail), "response": response}
         self._last_error = None
         return {"ok": True, "response": response}
@@ -178,8 +248,23 @@ class VTubeStudioClient:
         if socket is not None:
             try:
                 await socket.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                log_event(
+                    self.logger,
+                    logging.WARNING,
+                    "vtube_studio.connection.close_failed",
+                    "Failed to close the VTube Studio websocket.",
+                    exc_info=True,
+                    error_class=type(exc).__name__,
+                    detail=str(exc),
+                )
+            else:
+                log_event(
+                    self.logger,
+                    logging.INFO,
+                    "vtube_studio.connection.closed",
+                    "VTube Studio websocket closed.",
+                )
 
 
 class VTubeStudioAdapter:
@@ -190,9 +275,16 @@ class VTubeStudioAdapter:
     returned request payloads later without touching stream/voice code.
     """
 
-    def __init__(self, config: VTubeStudioAdapterConfig | None = None, client: VTubeStudioClient | None = None) -> None:
+    def __init__(
+        self,
+        config: VTubeStudioAdapterConfig | None = None,
+        client: VTubeStudioClient | None = None,
+        *,
+        logger: logging.Logger | None = None,
+    ) -> None:
         self.config = config or VTubeStudioAdapterConfig.from_app_config()
-        self.client = client or VTubeStudioClient(self.config)
+        self.logger = logger or configure_logging("vtube_studio")
+        self.client = client or VTubeStudioClient(self.config, logger=self.logger)
         self._speaking = False
         self._last_event_type: str | None = None
         self._last_action: dict[str, Any] | None = None
@@ -221,6 +313,17 @@ class VTubeStudioAdapter:
             action = self._action_for_event(event)
         except Exception as exc:
             self._last_error = str(exc)
+            log_event(
+                self.logger,
+                logging.ERROR,
+                "vtube_studio.event.translation_failed",
+                "Failed to translate a performer event for VTube Studio.",
+                exc_info=True,
+                error_class=type(exc).__name__,
+                detail=str(exc),
+                event_type=event.type,
+                event_id=event.event_id,
+            )
             action = VTubeStudioAction(ok=False, action_type="error", detail=str(exc), event_type=event.type, event_id=event.event_id)
         self._last_action = {
             "ok": action.ok,
@@ -312,9 +415,11 @@ class VTubeStudioRunner:
         adapter: VTubeStudioAdapter | None = None,
         *,
         target_policy: str = STREAM_PUBLIC_TARGET,
+        logger: logging.Logger | None = None,
     ) -> None:
         self.bus = bus
         self.adapter = adapter or VTubeStudioAdapter()
+        self.logger = logger or getattr(self.adapter, "logger", None) or configure_logging("vtube_studio")
         self.target_policy = target_policy
         self._running = False
         self._subscriber_id: str | None = None
@@ -339,6 +444,13 @@ class VTubeStudioRunner:
         self._running = True
         self._stop_event = asyncio.Event()
         subscriber_id: str | None = None
+        log_event(
+            self.logger,
+            logging.INFO,
+            "vtube_studio.runner.start",
+            "VTube Studio runner starting.",
+            target_policy=self.target_policy,
+        )
         try:
             subscriber_id, queue = await self.bus.subscribe(
                 replay_recent=replay_recent,
@@ -347,25 +459,58 @@ class VTubeStudioRunner:
                 client_name="vtube_studio_runner",
             )
             self._subscriber_id = subscriber_id
+            log_event(
+                self.logger,
+                logging.INFO,
+                "vtube_studio.runner.subscribed",
+                "VTube Studio runner subscribed to performer events.",
+                subscriber_id=subscriber_id,
+                target_policy=self.target_policy,
+            )
             while not self._stop_event.is_set():
                 try:
                     payload = await asyncio.wait_for(queue.get(), timeout=0.25)
                 except asyncio.TimeoutError:
                     continue
+                context_token = None
                 try:
                     event = PerformerOutputEvent(**payload)
+                    context_token = bind_context(
+                        event_id=event.event_id,
+                        turn_id=event.turn_id,
+                    )
                     await self.adapter.handle_event_async(event)
                     self._handled_count += 1
                     self._last_sequence = event.sequence
                     self._last_error = None
                 except Exception as exc:
                     self._last_error = str(exc)
+                    log_event(
+                        self.logger,
+                        logging.ERROR,
+                        "vtube_studio.runner.event_failed",
+                        "VTube Studio runner failed to handle a performer event.",
+                        exc_info=True,
+                        error_class=type(exc).__name__,
+                        detail=str(exc),
+                    )
+                finally:
+                    if context_token is not None:
+                        reset_context(context_token)
         finally:
             self._running = False
             if subscriber_id is not None:
                 self.bus.unsubscribe(subscriber_id)
             self._subscriber_id = None
             await self.adapter.client.close()
+            log_event(
+                self.logger,
+                logging.INFO,
+                "vtube_studio.runner.exit",
+                "VTube Studio runner stopped.",
+                handled_count=self._handled_count,
+                last_sequence=self._last_sequence,
+            )
 
     def stop(self) -> None:
         if self._stop_event is not None:

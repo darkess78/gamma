@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import anyio
 
+from gamma.observability import configure_logging
 from gamma.performer.bus import PerformerEventBus
 from gamma.performer.models import PerformerOutputEvent
 from gamma.performer.vtube_studio import VTubeStudioAdapter, VTubeStudioAdapterConfig, VTubeStudioClient, VTubeStudioRunner
@@ -96,6 +100,88 @@ class VTubeStudioAdapterTest(unittest.TestCase):
             self.assertTrue(client.status()["authenticated"])
             self.assertIn("AuthenticationRequest", socket.sent[0])
             self.assertIn("HotkeyTriggerRequest", socket.sent[1])
+
+        anyio.run(_run)
+
+    def test_client_logs_request_failure_with_traceback_and_redacts_token(self) -> None:
+        async def _run() -> None:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                log_path = Path(temp_dir) / "vtube.jsonl"
+                logger = configure_logging(
+                    f"vtube-client-failure-{id(log_path)}",
+                    log_path=log_path,
+                    stderr=False,
+                )
+                client = VTubeStudioClient(
+                    VTubeStudioAdapterConfig(
+                        enabled=True,
+                        endpoint="ws://stream-pc:8001",
+                        auth_token="private-auth-token",
+                    ),
+                    logger=logger,
+                )
+                with patch("gamma.performer.vtube_studio.websockets") as websockets:
+                    websockets.connect.side_effect = OSError("connection refused")
+                    result = await client.send_request(
+                        {
+                            "requestID": "req-failure",
+                            "messageType": "HotkeyTriggerRequest",
+                            "data": {"authenticationToken": "private-auth-token"},
+                        }
+                    )
+                for handler in logger.handlers:
+                    handler.flush()
+                records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+
+            self.assertFalse(result["ok"])
+            failure = next(record for record in records if record["event"] == "vtube_studio.request.failed")
+            self.assertEqual(failure["request_id"], "req-failure")
+            self.assertEqual(failure["error_class"], "OSError")
+            self.assertIn("Traceback", failure["traceback"])
+            self.assertNotIn("private-auth-token", json.dumps(records))
+
+        anyio.run(_run)
+
+    def test_client_logs_api_error_without_request_payload(self) -> None:
+        class _Socket:
+            async def send(self, payload: str) -> None:
+                return None
+
+            async def recv(self) -> str:
+                return '{"messageType":"APIError","data":{"message":"hotkey unavailable"}}'
+
+            async def close(self) -> None:
+                return None
+
+        async def _run() -> None:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                log_path = Path(temp_dir) / "vtube.jsonl"
+                logger = configure_logging(
+                    f"vtube-api-error-{id(log_path)}",
+                    log_path=log_path,
+                    stderr=False,
+                )
+                client = VTubeStudioClient(
+                    VTubeStudioAdapterConfig(enabled=True),
+                    logger=logger,
+                )
+                client._socket = _Socket()
+                result = await client._send_locked(
+                    {
+                        "requestID": "request-1",
+                        "messageType": "HotkeyTriggerRequest",
+                        "data": {"hotkeyID": "sensitive-mapping"},
+                    }
+                )
+                for handler in logger.handlers:
+                    handler.flush()
+                records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+
+            self.assertFalse(result["ok"])
+            failure = next(record for record in records if record["event"] == "vtube_studio.api.error")
+            self.assertEqual(failure["request_id"], "request-1")
+            self.assertEqual(failure["message_type"], "HotkeyTriggerRequest")
+            self.assertNotIn("sensitive-mapping", json.dumps(records))
 
         anyio.run(_run)
 

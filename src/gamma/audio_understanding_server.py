@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -8,33 +9,71 @@ from uuid import uuid4
 from fastapi import FastAPI, File, Form, UploadFile
 
 from .config import settings
+from .observability import bind_context, configure_logging, current_request_id, install_request_logging, log_event, reset_context
 from .schemas.voice import VoiceInputContext
 from .voice.audio_understanding import AudioUnderstandingService
 
 
 _service: AudioUnderstandingService | None = None
+_logger = configure_logging("audio_understanding")
 
 
 def _get_service() -> AudioUnderstandingService:
     global _service
     if _service is None:
-        _service = AudioUnderstandingService(allow_remote=False)
+        _service = AudioUnderstandingService(allow_remote=False, logger=_logger)
     return _service
 
 
 def preload_models() -> None:
     global _service
-    _service = AudioUnderstandingService(allow_remote=False)
-    _service.preload()
+    started_at = time.perf_counter()
+    log_event(
+        _logger,
+        logging.INFO,
+        "audio_understanding.preload.started",
+        "Audio-understanding model preload started.",
+        speaker_emotion_provider=settings.speaker_emotion_provider,
+        speaker_emotion_device=settings.speaker_emotion_device,
+        audio_event_provider=settings.audio_event_provider,
+        audio_event_device=settings.audio_event_device,
+    )
+    try:
+        _service = AudioUnderstandingService(allow_remote=False, logger=_logger)
+        _service.preload()
+    except Exception as exc:
+        log_event(
+            _logger,
+            logging.ERROR,
+            "audio_understanding.preload.failed",
+            "Audio-understanding model preload failed.",
+            exc_info=True,
+            error_class=type(exc).__name__,
+            detail=str(exc),
+            duration_ms=round((time.perf_counter() - started_at) * 1000, 1),
+        )
+        raise
+    log_event(
+        _logger,
+        logging.INFO,
+        "audio_understanding.preload.completed",
+        "Audio-understanding model preload completed.",
+        duration_ms=round((time.perf_counter() - started_at) * 1000, 1),
+    )
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    preload_models()
-    yield
+    log_event(_logger, logging.INFO, "audio_understanding.service.start", "Audio-understanding sidecar starting.")
+    try:
+        preload_models()
+        yield
+    finally:
+        log_event(_logger, logging.INFO, "audio_understanding.service.stop", "Audio-understanding sidecar stopped.")
 
 
 app = FastAPI(title="Gamma Audio Understanding", lifespan=lifespan)
+install_request_logging(app, service="audio_understanding", logger=_logger)
 
 
 @app.get("/health")
@@ -69,16 +108,52 @@ async def analyze(
     audio_file: UploadFile = File(...),
     transcript: str = Form(default=""),
 ) -> VoiceInputContext:
+    request_id = current_request_id() or uuid4().hex
+    context_token = bind_context(request_id=request_id)
     runtime_dir = settings.data_dir / "runtime" / "audio_understanding"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     suffix = Path(audio_file.filename or "").suffix or ".bin"
     path = runtime_dir / f"request-{uuid4().hex}{suffix}"
     started_at = time.perf_counter()
     try:
-        path.write_bytes(await audio_file.read())
+        audio_bytes = await audio_file.read()
+        path.write_bytes(audio_bytes)
+        log_event(
+            _logger,
+            logging.INFO,
+            "audio_understanding.request.started",
+            "Audio-understanding request started.",
+            upload_size=len(audio_bytes),
+            transcript_length=len(transcript),
+            file_suffix=suffix,
+        )
         result = _get_service().analyze_path(path, transcript=transcript)
         timing = dict(result.timing_ms)
         timing["sidecar_total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
+        log_event(
+            _logger,
+            logging.INFO if result.ok else logging.WARNING,
+            "audio_understanding.request.completed",
+            "Audio-understanding request completed.",
+            ok=result.ok,
+            event_count=len(result.events),
+            has_speaker_affect=result.speaker_affect is not None,
+            duration_ms=timing["sidecar_total_ms"],
+            detail=result.detail,
+        )
         return result.model_copy(update={"timing_ms": timing})
+    except Exception as exc:
+        log_event(
+            _logger,
+            logging.ERROR,
+            "audio_understanding.request.failed",
+            "Audio-understanding request failed.",
+            exc_info=True,
+            error_class=type(exc).__name__,
+            detail=str(exc),
+            duration_ms=round((time.perf_counter() - started_at) * 1000, 1),
+        )
+        raise
     finally:
         path.unlink(missing_ok=True)
+        reset_context(context_token)

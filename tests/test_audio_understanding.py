@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +9,7 @@ from unittest.mock import Mock, patch
 
 import torch
 from gamma.config import settings
+from gamma.observability import configure_logging
 from gamma.schemas.voice import AudioEvent, SpeakerAffect, VoiceInputContext
 from gamma.voice.affect import VoiceAffectResult
 from gamma.voice.audio_input import NormalizedAudio
@@ -180,18 +182,33 @@ class AudioUnderstandingServiceTest(unittest.TestCase):
         self.assertEqual([event.label for event in result.events], ["laughter"])
 
     def test_audio_event_failure_does_not_fail_affect_analysis(self) -> None:
-        service = AudioUnderstandingService(
-            decoder=_Decoder(),  # type: ignore[arg-type]
-            affect_analyzer=_AffectAnalyzer(),  # type: ignore[arg-type]
-            speaker_emotion_backend=_EmotionBackend(),
-            audio_event_backend=_FailingEventBackend(),
-        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_path = Path(temp_dir) / "audio-understanding.jsonl"
+            logger = configure_logging(
+                f"audio-event-failure-{id(log_path)}",
+                log_path=log_path,
+                stderr=False,
+            )
+            service = AudioUnderstandingService(
+                decoder=_Decoder(),  # type: ignore[arg-type]
+                affect_analyzer=_AffectAnalyzer(),  # type: ignore[arg-type]
+                speaker_emotion_backend=_EmotionBackend(),
+                audio_event_backend=_FailingEventBackend(),
+                logger=logger,
+            )
 
-        result = service.analyze_path("/tmp/unused.wav", transcript="hello")
+            result = service.analyze_path("/tmp/unused.wav", transcript="hello")
+            for handler in logger.handlers:
+                handler.flush()
+            records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
 
         self.assertTrue(result.ok)
         self.assertEqual(result.events, [])
         self.assertIn("audio events unavailable", result.detail or "")
+        failure = next(record for record in records if record["event"] == "audio_understanding.audio_events.failed")
+        self.assertEqual(failure["provider"], "failing")
+        self.assertEqual(failure["error_class"], "RuntimeError")
+        self.assertIn("Traceback", failure["traceback"])
 
     def test_prompt_context_is_opt_in_and_confidence_gated(self) -> None:
         context = VoiceInputContext(

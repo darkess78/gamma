@@ -99,10 +99,16 @@ The first observability slice is implemented:
   token request outcome, authentication, API errors, runner start/subscription/
   exit, and event handling exceptions. Authentication tokens and request
   payloads are excluded from operational logs.
+- The audio-understanding sidecar is the fourth adopter and records service
+  startup/shutdown, model preload duration/failure, request completion,
+  decode/provider/remote failures, and fail-open fallback evidence. Logs retain
+  sizes, text lengths, timings, provider names, and result counts without audio
+  bytes, transcript text, or temporary file paths.
 - Focused tests cover JSON shape, correlation fields, redaction, traceback
   output, bounded rotation, request-ID handling, supervisor preservation, fast
   worker exit, EventSub lifecycle events, and Twitch IRC lifecycle/failure
-  events, plus VTube Studio connection and API failure evidence.
+  events, VTube Studio connection and API failure evidence, and audio-sidecar
+  lifecycle/provider failure evidence.
 
 Runtime verification on June 15, 2026 confirmed TCP and TLS connection to
 Twitch IRC, followed by an authentication rejection using the current

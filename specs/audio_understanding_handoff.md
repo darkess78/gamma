@@ -21,6 +21,9 @@ remains disabled pending evaluation on representative microphone recordings.
 - A loopback-only FastAPI sidecar keeps both Hugging Face models resident.
 - The supervisor recognizes the `audio-understanding` service and prefers
   `.venv-audio/bin/python` for it.
+- Structured sidecar logs retain startup/shutdown, preload, request timing, and
+  provider/decode/remote failure evidence with tracebacks. They exclude raw
+  audio, transcript text, and temporary request paths.
 
 The design source is `audio_understanding_plan.md`. Sidecar topology and
 placement decisions are in `audio_understanding_deployment_proposal.md`.

@@ -126,6 +126,12 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
   latency require the persistent sidecar for practical repeated use.
 - A loopback-only persistent audio-understanding FastAPI sidecar is implemented
   on configurable port `9883`; it is not exposed through Nginx.
+- The sidecar emits structured startup, preload, request, provider-failure,
+  remote-fallback, decode-failure, and shutdown logs with request correlation
+  and exception tracebacks.
+- Audio-understanding operational logs retain timings, provider names, upload
+  size, transcript length, and result counts without retaining audio bytes,
+  transcript text, or temporary file paths.
 - Emotion and audio-event models have independent CPU/CUDA device settings.
 - An ignored `.venv-audio` Python 3.12 runtime provides CUDA PyTorch without
   modifying Gamma's main virtual environment.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 from typing import Any
@@ -8,6 +9,7 @@ import httpx
 
 from ..config import settings
 from ..errors import ConfigurationError
+from ..observability import configure_logging, log_event
 from ..schemas.voice import AudioEvent, SpeakerAffect, VoiceInputContext
 from .affect import VoiceAffectAnalyzer, VoiceAffectResult
 from .audio_events import AudioEventPolicy, normalize_audio_event_label, postprocess_audio_events
@@ -213,8 +215,10 @@ class AudioUnderstandingService:
         speaker_emotion_backend: SpeakerEmotionBackend | None = None,
         audio_event_backend: AudioEventBackend | None = None,
         allow_remote: bool = True,
+        logger: logging.Logger | None = None,
     ) -> None:
         self._allow_remote = allow_remote
+        self._logger = logger or configure_logging("audio_understanding")
         self._decoder = decoder or AudioInputDecoder()
         self._affect_analyzer = affect_analyzer or VoiceAffectAnalyzer(decoder=self._decoder)
         use_remote_backends = allow_remote and bool(settings.audio_understanding_endpoint)
@@ -251,6 +255,15 @@ class AudioUnderstandingService:
         try:
             audio = self._decoder.decode_path(audio_path)
         except Exception as exc:
+            log_event(
+                self._logger,
+                logging.ERROR,
+                "audio_understanding.decode.failed",
+                "Failed to decode audio for analysis.",
+                exc_info=True,
+                error_class=type(exc).__name__,
+                detail=str(exc),
+            )
             return VoiceInputContext(
                 ok=False,
                 analyzer_version=self.analyzer_version,
@@ -281,6 +294,16 @@ class AudioUnderstandingService:
             except Exception as exc:
                 speaker_affect = None
                 details.append(f"speaker emotion unavailable: {exc}")
+                log_event(
+                    self._logger,
+                    logging.ERROR,
+                    "audio_understanding.speaker_emotion.failed",
+                    "Speaker-emotion provider failed.",
+                    exc_info=True,
+                    error_class=type(exc).__name__,
+                    detail=str(exc),
+                    provider=self._speaker_emotion.provider_name,
+                )
         emotion_ms = round((time.perf_counter() - emotion_started) * 1000, 1)
 
         if speaker_affect is None and prosody.ok:
@@ -301,6 +324,16 @@ class AudioUnderstandingService:
         except Exception as exc:
             raw_events = []
             details.append(f"audio events unavailable: {exc}")
+            log_event(
+                self._logger,
+                logging.ERROR,
+                "audio_understanding.audio_events.failed",
+                "Audio-event provider failed.",
+                exc_info=True,
+                error_class=type(exc).__name__,
+                detail=str(exc),
+                provider=self._audio_events.provider_name,
+            )
         events_ms = round((time.perf_counter() - events_started) * 1000, 1)
 
         events = postprocess_audio_events(
@@ -353,8 +386,8 @@ class AudioUnderstandingService:
             return HuggingFaceAudioEventBackend()
         raise ConfigurationError(f"Unsupported SHANA_AUDIO_EVENT_PROVIDER: {settings.audio_event_provider}")
 
-    @staticmethod
-    def _analyze_remote(path: Path, *, transcript: str) -> VoiceInputContext | None:
+    def _analyze_remote(self, path: Path, *, transcript: str) -> VoiceInputContext | None:
+        started_at = time.perf_counter()
         try:
             with path.open("rb") as audio_file:
                 response = httpx.post(
@@ -365,7 +398,17 @@ class AudioUnderstandingService:
                 )
             response.raise_for_status()
             return VoiceInputContext.model_validate(response.json())
-        except Exception:
+        except Exception as exc:
+            log_event(
+                self._logger,
+                logging.ERROR,
+                "audio_understanding.remote.failed",
+                "Remote audio-understanding provider failed; falling back locally.",
+                exc_info=True,
+                error_class=type(exc).__name__,
+                detail=str(exc),
+                duration_ms=round((time.perf_counter() - started_at) * 1000, 1),
+            )
             return None
 
 

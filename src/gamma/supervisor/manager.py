@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import time
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -101,6 +102,13 @@ class ProcessManager:
                 settings.dashboard_public_host,
                 settings.dashboard_port,
             ),
+            "audio-understanding": ManagedService(
+                "audio-understanding",
+                "gamma.audio_understanding_server:app",
+                settings.audio_understanding_bind_host,
+                settings.audio_understanding_bind_host,
+                settings.audio_understanding_port,
+            ),
         }
 
     def service(self, name: str) -> ManagedService:
@@ -135,11 +143,10 @@ class ProcessManager:
         if name == "shana":
             dependencies = self._start_shana_dependencies()
 
-        python_executable = self._resolve_background_python()
+        python_executable = self._service_python(name)
         stdout_log = self.stdout_log(name)
         stderr_log = self.stderr_log(name)
-        stdout_log.write_text("", encoding="utf-8")
-        stderr_log.write_text("", encoding="utf-8")
+        self._preserve_service_logs(name)
         command = [
             python_executable,
             "-m",
@@ -273,8 +280,7 @@ class ProcessManager:
         python_executable = self._resolve_background_python()
         stdout_log = self.stdout_log(name)
         stderr_log = self.stderr_log(name)
-        stdout_log.write_text("", encoding="utf-8")
-        stderr_log.write_text("", encoding="utf-8")
+        self._preserve_service_logs(name)
         command = [python_executable, "-m", module, *(args or [])]
         runtime_env = prepend_cuda_library_path(os.environ.copy())
         with stdout_log.open("ab") as stdout_handle, stderr_log.open("ab") as stderr_handle:
@@ -480,19 +486,25 @@ class ProcessManager:
     def process_payload(self, process: psutil.Process | None) -> dict[str, Any]:
         if not process:
             return {"running": False}
-        with process.oneshot():
-            memory = process.memory_info()
-            return {
-                "running": True,
-                "pid": process.pid,
-                "name": process.name(),
-                "status": process.status(),
-                "create_time": process.create_time(),
-                "cpu_percent": process.cpu_percent(interval=0.1),
-                "rss_bytes": memory.rss,
-                "vms_bytes": memory.vms,
-                "cmdline": process.cmdline(),
-            }
+        try:
+            with process.oneshot():
+                status = process.status()
+                if status == psutil.STATUS_ZOMBIE:
+                    return {"running": False, "pid": process.pid, "status": status}
+                memory = process.memory_info()
+                return {
+                    "running": True,
+                    "pid": process.pid,
+                    "name": process.name(),
+                    "status": status,
+                    "create_time": process.create_time(),
+                    "cpu_percent": process.cpu_percent(interval=0.1),
+                    "rss_bytes": memory.rss,
+                    "vms_bytes": memory.vms,
+                    "cmdline": process.cmdline(),
+                }
+        except psutil.Error:
+            return {"running": False, "pid": process.pid}
 
     def pid_file(self, name: str) -> Path:
         return self._runtime_dir / f"{name}.pid"
@@ -502,6 +514,21 @@ class ProcessManager:
 
     def stderr_log(self, name: str) -> Path:
         return self._runtime_dir / f"{name}.stderr.log"
+
+    def _preserve_service_logs(self, name: str, *, keep: int = 5) -> None:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        for path in (self.stdout_log(name), self.stderr_log(name)):
+            if path.exists() and path.stat().st_size:
+                archived = path.with_name(f"{path.name}.{stamp}")
+                path.replace(archived)
+            path.touch(exist_ok=True)
+            archives = sorted(
+                path.parent.glob(f"{path.name}.*"),
+                key=lambda item: item.stat().st_mtime,
+                reverse=True,
+            )
+            for expired in archives[max(1, keep):]:
+                expired.unlink(missing_ok=True)
 
     def read_pid_file(self, name: str) -> int | None:
         path = self.pid_file(name)
@@ -524,6 +551,20 @@ class ProcessManager:
     def _resolve_background_python(self) -> str:
         return self.resolve_foreground_python()
 
+    def _service_python(self, name: str) -> str:
+        if name != "audio-understanding":
+            return self._resolve_background_python()
+        configured = str(settings.audio_understanding_python or "").strip()
+        candidates = [
+            Path(configured).expanduser() if configured else None,
+            settings.project_root / ".venv-audio" / "bin" / "python",
+            settings.project_root / ".venv-audio" / "Scripts" / "python.exe",
+        ]
+        for candidate in candidates:
+            if candidate and candidate.exists():
+                return str(candidate)
+        return self._resolve_background_python()
+
     def _python_candidates(self) -> list[Path]:
         return python_candidates(settings.project_root)
 
@@ -531,6 +572,7 @@ class ProcessManager:
         return [
             self._llm_dependency_status("start"),
             self._stt_dependency_status("start"),
+            self._audio_understanding_dependency_action("start"),
             self._tts_dependency_action("start"),
         ]
 
@@ -538,6 +580,7 @@ class ProcessManager:
         return [
             self._llm_dependency_status("stop"),
             self._stt_dependency_status("stop"),
+            self._audio_understanding_dependency_action("stop"),
             self._tts_dependency_action("stop"),
         ]
 
@@ -597,6 +640,31 @@ class ProcessManager:
             }
         except Exception as exc:
             return {"name": "tts", "status": "error", "detail": str(exc)}
+
+    def _audio_understanding_dependency_action(self, action: str) -> dict[str, Any]:
+        endpoint = settings.audio_understanding_endpoint
+        if not endpoint:
+            return {
+                "name": "audio-understanding",
+                "status": "in-process",
+                "detail": "No sidecar endpoint configured; Gamma uses local prosody and configured in-process adapters.",
+            }
+        if not self._is_local_url(endpoint):
+            return {
+                "name": "audio-understanding",
+                "status": "external",
+                "detail": f"Audio-understanding endpoint is remote: {endpoint}",
+            }
+        try:
+            result = self.start("audio-understanding") if action == "start" else self.stop("audio-understanding")
+            return {
+                "name": "audio-understanding",
+                "status": "ok" if result.get("ok") else "error",
+                "detail": str(result.get("detail") or action),
+                "endpoint": endpoint,
+            }
+        except Exception as exc:
+            return {"name": "audio-understanding", "status": "error", "detail": str(exc), "endpoint": endpoint}
 
     def _tts_script(self, action: str, *, provider: str) -> list[str]:
         scripts_dir = settings.project_root / "scripts"

@@ -4,10 +4,17 @@
 Must be replaceable by adapter.
 Default Phase 1 implementation: **Faster-Whisper**.
 
+Speaker-affect and non-speech sound detection are separate from STT. Their
+architecture and rollout are defined in `audio_understanding_plan.md`.
+
 Current runtime behavior:
 - local STT is in-process with Shana
 - it is not managed as a separate background service
 - the main operator actions today are smoke tests and controller validation, not start/stop lifecycle control
+- audio-understanding analysis normalizes supported uploads to bounded mono
+  16 kHz PCM, using FFmpeg for compressed formats and native WAV fallback
+- live sound-only turns with approved detections are represented as
+  `audio_event` stream inputs without forcing a spoken reply
 
 Phase 1 order:
 1. file-based transcription

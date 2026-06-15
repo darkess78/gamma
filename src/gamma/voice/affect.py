@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import math
-import wave
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from .audio_input import AudioInputDecoder, NormalizedAudio
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,14 +36,12 @@ class VoiceAffectAnalyzer:
 
     window_ms = 40
 
+    def __init__(self, decoder: AudioInputDecoder | None = None) -> None:
+        self._decoder = decoder or AudioInputDecoder()
+
     def analyze_path(self, path: Path | str, *, transcript: str = "") -> VoiceAffectResult:
         try:
-            with wave.open(str(path), "rb") as wav_file:
-                channels = wav_file.getnchannels()
-                sample_width = wav_file.getsampwidth()
-                sample_rate = wav_file.getframerate()
-                frame_count = wav_file.getnframes()
-                raw = wav_file.readframes(frame_count)
+            audio = self._decoder.decode_path(path)
         except Exception as exc:
             return VoiceAffectResult(
                 ok=False,
@@ -50,8 +49,11 @@ class VoiceAffectAnalyzer:
                 labels={"energy": "unknown", "pace": "unknown", "delivery": "unknown"},
                 detail=f"voice affect unavailable: {exc}",
             )
+        return self.analyze_audio(audio, transcript=transcript)
 
-        samples = self._pcm_samples(raw, sample_width=sample_width, channels=channels)
+    def analyze_audio(self, audio: NormalizedAudio, *, transcript: str = "") -> VoiceAffectResult:
+        samples = audio.samples
+        sample_rate = audio.sample_rate
         if not samples or sample_rate <= 0:
             return VoiceAffectResult(
                 ok=False,
@@ -61,13 +63,12 @@ class VoiceAffectAnalyzer:
             )
 
         duration_seconds = len(samples) / float(sample_rate)
-        max_abs = float((2 ** (8 * sample_width - 1)) - 1) if sample_width > 1 else 128.0
         rms = math.sqrt(sum(sample * sample for sample in samples) / len(samples))
         peak = max(abs(sample) for sample in samples)
-        rms_dbfs = self._dbfs(rms, max_abs)
-        peak_dbfs = self._dbfs(float(peak), max_abs)
+        rms_dbfs = self._dbfs(rms)
+        peak_dbfs = self._dbfs(float(peak))
         zero_crossing_rate = self._zero_crossing_rate(samples)
-        silence_ratio = self._silence_ratio(samples, sample_rate=sample_rate, max_abs=max_abs)
+        silence_ratio = self._silence_ratio(samples, sample_rate=sample_rate)
         word_count = len([word for word in transcript.split() if word.strip()])
         speaking_rate_wpm = (word_count / duration_seconds * 60.0) if duration_seconds > 0 and word_count else None
         energy = self._energy_label(rms_dbfs)
@@ -84,6 +85,8 @@ class VoiceAffectAnalyzer:
                 "silence_ratio": round(silence_ratio, 3),
                 "word_count": word_count,
                 "speaking_rate_wpm": round(speaking_rate_wpm, 1) if speaking_rate_wpm is not None else None,
+                "sample_rate": sample_rate,
+                "decoder": audio.decoder,
             },
             labels={
                 "energy": energy,
@@ -94,30 +97,12 @@ class VoiceAffectAnalyzer:
             },
         )
 
-    def _pcm_samples(self, raw: bytes, *, sample_width: int, channels: int) -> list[int]:
-        if sample_width not in {1, 2, 4} or channels <= 0:
-            return []
-        frame_width = sample_width * channels
-        samples: list[int] = []
-        for offset in range(0, len(raw) - frame_width + 1, frame_width):
-            channel_values = []
-            for channel in range(channels):
-                start = offset + channel * sample_width
-                chunk = raw[start:start + sample_width]
-                if sample_width == 1:
-                    value = int(chunk[0]) - 128
-                else:
-                    value = int.from_bytes(chunk, byteorder="little", signed=True)
-                channel_values.append(value)
-            samples.append(round(sum(channel_values) / len(channel_values)))
-        return samples
-
-    def _dbfs(self, value: float, max_abs: float) -> float:
-        if value <= 0 or max_abs <= 0:
+    def _dbfs(self, value: float) -> float:
+        if value <= 0:
             return -96.0
-        return max(-96.0, 20.0 * math.log10(value / max_abs))
+        return max(-96.0, 20.0 * math.log10(value))
 
-    def _zero_crossing_rate(self, samples: list[int]) -> float:
+    def _zero_crossing_rate(self, samples: tuple[float, ...]) -> float:
         if len(samples) < 2:
             return 0.0
         crossings = 0
@@ -128,9 +113,9 @@ class VoiceAffectAnalyzer:
             last = sample
         return crossings / float(len(samples) - 1)
 
-    def _silence_ratio(self, samples: list[int], *, sample_rate: int, max_abs: float) -> float:
+    def _silence_ratio(self, samples: tuple[float, ...], *, sample_rate: int) -> float:
         window_size = max(1, int(sample_rate * self.window_ms / 1000.0))
-        threshold = max_abs * 0.015
+        threshold = 0.015
         if not samples:
             return 1.0
         silent = 0

@@ -9,6 +9,7 @@ from fastapi import UploadFile
 
 from ..config import settings
 from ..schemas.voice import VoiceReplyChunk, VoiceRoundtripResponse, VoiceTranscriptionResponse
+from .audio_understanding import AudioUnderstandingService, build_audio_prompt_context
 from .stt import STTService
 from ..conversation.service import ConversationService
 from .reply_chunking import split_reply_text
@@ -18,6 +19,7 @@ from .reply_interruptibility import build_interruptibility
 class VoiceRoundtripService:
     def __init__(self) -> None:
         self._stt = STTService()
+        self._audio_understanding = AudioUnderstandingService()
         self._conversation = ConversationService()
 
     async def run(
@@ -33,6 +35,7 @@ class VoiceRoundtripService:
         try:
             transcript_response = self.transcribe_path(temp_path)
             transcript = transcript_response.transcript
+            audio_context = transcript_response.audio_context
             timing.update(transcript_response.timing_ms)
             if not transcript:
                 raise ValueError("transcription came back empty")
@@ -43,6 +46,7 @@ class VoiceRoundtripService:
                 session_id=session_id,
                 synthesize_speech=synthesize_speech,
                 fast_mode=True,
+                background_context=build_audio_prompt_context(audio_context) if audio_context else None,
             )
             timing["conversation_ms"] = round((time.perf_counter() - conversation_started) * 1000, 1)
             if response.timing_ms:
@@ -71,6 +75,7 @@ class VoiceRoundtripService:
 
             return VoiceRoundtripResponse(
                 transcript=transcript,
+                audio_context=audio_context,
                 reply_text=response.spoken_text,
                 reply_chunks=reply_chunks,
                 audio_content_type=response.audio_content_type,
@@ -96,9 +101,15 @@ class VoiceRoundtripService:
     def transcribe_path(self, path: Path) -> VoiceTranscriptionResponse:
         stt_started = time.perf_counter()
         transcript = self._stt.transcribe_audio(str(path)).strip()
+        stt_ms = round((time.perf_counter() - stt_started) * 1000, 1)
+        audio_context = self._audio_understanding.analyze_path(path, transcript=transcript)
         return VoiceTranscriptionResponse(
             transcript=transcript,
-            timing_ms={"stt_ms": round((time.perf_counter() - stt_started) * 1000, 1)},
+            audio_context=audio_context,
+            timing_ms={
+                "stt_ms": stt_ms,
+                "audio_understanding_ms": audio_context.timing_ms.get("total_ms", 0.0),
+            },
         )
 
     async def save_upload(self, audio_file: UploadFile) -> Path:

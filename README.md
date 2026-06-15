@@ -82,6 +82,31 @@ python -m gamma.run_tts_test --compact "test phrase"
 python -m gamma.run_tts_test --json "test phrase"
 ```
 
+Audio-understanding smoke test:
+
+```bash
+python -m gamma.run_audio_understanding_test ./sample.wav --transcript "sample transcript"
+```
+
+Model-backed speaker-emotion and audio-event providers require the optional
+extra:
+
+```bash
+.venv/bin/python -m pip install -e '.[audio-understanding]'
+```
+
+Persistent audio-understanding sidecar:
+
+```bash
+.venv/bin/python scripts/setup_audio_understanding_env.py
+.venv/bin/python -m gamma.supervisor.cli start audio-understanding
+.venv/bin/python -m gamma.supervisor.cli status audio-understanding
+.venv/bin/python -m gamma.supervisor.cli stop audio-understanding
+```
+
+The emotion and audio-event models have independent device settings so they
+can be placed on CPU or different CUDA devices.
+
 RVC layering:
 - RVC is an optional post-process on top of generated WAV output; it is not a standalone TTS provider
 - the intended local low-latency stack is `Piper -> optional RVC`

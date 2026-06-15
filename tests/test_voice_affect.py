@@ -21,6 +21,7 @@ class VoiceAffectAnalyzerTest(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertGreater(payload["features"]["duration_ms"], 900)
         self.assertEqual(payload["features"]["word_count"], 2)
+        self.assertEqual(payload["features"]["sample_rate"], 16_000)
         self.assertIn(payload["labels"]["energy"], {"medium", "high"})
         self.assertEqual(payload["labels"]["source"], "signal_features")
 

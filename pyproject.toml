@@ -26,6 +26,11 @@ dev = [
   "pytest>=9.0.0",
   "requests>=2.32.0",
 ]
+audio-understanding = [
+  "transformers>=4.48.0",
+  "safetensors>=0.4.5",
+  "sympy>=1.13.0",
+]
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

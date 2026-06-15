@@ -21,6 +21,7 @@ def utc_now() -> str:
 
 StreamEventKind = Literal[
     "mic_transcript",
+    "audio_event",
     "owner_command",
     "chat_message",
     "follow",

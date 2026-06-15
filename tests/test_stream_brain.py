@@ -176,6 +176,26 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual(result.output_events[0].payload["emotion"], "happy")
         self.assertEqual(result.output_events[1].payload["text"], "I heard you.")
 
+    def test_audio_event_is_recorded_without_forced_generation(self) -> None:
+        conversation = _FakeConversation()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            result = brain.handle_event(
+                StreamInputEvent(
+                    kind="audio_event",
+                    text="Detected audio event: laughter",
+                    metadata={"audio_context": {"events": [{"label": "laughter", "confidence": 0.9}]}},
+                )
+            )
+
+        self.assertEqual(result.decision.decision, "defer")
+        self.assertEqual(result.decision.response_mode, "audio_observation")
+        self.assertIsNone(result.assistant_response)
+        self.assertEqual(conversation.calls, [])
+
     def test_ambient_chat_is_ignored_without_generation(self) -> None:
         conversation = _FakeConversation()
         with tempfile.TemporaryDirectory() as temp_dir:

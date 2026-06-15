@@ -1,6 +1,6 @@
 # Current Implementations
 
-Last updated: 2026-05-24
+Last updated: 2026-06-15
 
 This is a baseline inventory of features that are already implemented in Gamma. It is intended to support future TODO planning, so it focuses on concrete working surfaces in the codebase rather than aspirational roadmap items.
 
@@ -103,6 +103,44 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - CLI smoke test entry point: `python -m gamma.run_stt_test`.
 - API transcription endpoint at `POST /v1/voice/transcribe`.
 - Dashboard STT smoke test action.
+
+## Audio Understanding
+
+- Typed voice-input context exists for speaker affect, timestamped audio events,
+  analyzer metadata, and timings.
+- Shared audio normalization produces bounded mono 16 kHz PCM from WAV and
+  FFmpeg-readable compressed inputs, including browser WebM/Opus.
+- Existing lightweight prosody analysis supplies energy, pace, delivery, and
+  signal features from the shared normalized audio buffer.
+- Audio-event postprocessing normalizes approved labels and applies confidence,
+  minimum-duration, timestamp-merging, cooldown, and result-count policy.
+- Audio-understanding context is exposed by transcription, roundtrip, and live
+  voice job responses.
+- Live voice attaches audio context to `mic_transcript` stream metadata.
+- Confidence-gated prompt context exists but is disabled by default.
+- Speaker-emotion and non-speech event adapters currently default to
+  `disabled`.
+- Optional Hugging Face adapters support SUPERB wav2vec2 speaker emotion and
+  MIT AST AudioSet events.
+- Cached CPU smoke tests work, but per-turn subprocess model reload and AST
+  latency require the persistent sidecar for practical repeated use.
+- A loopback-only persistent audio-understanding FastAPI sidecar is implemented
+  on configurable port `9883`; it is not exposed through Nginx.
+- Emotion and audio-event models have independent CPU/CUDA device settings.
+- An ignored `.venv-audio` Python 3.12 runtime provides CUDA PyTorch without
+  modifying Gamma's main virtual environment.
+- Both models were validated together on the RTX 3060 Ti at approximately
+  894 MiB resident VRAM; warm end-to-end client requests reached approximately
+  96 ms on a synthetic one-second sample.
+- The supervisor supports start, stop, restart, and status for
+  `audio-understanding`; Shana manages it only when a local endpoint is
+  explicitly configured.
+- Sidecar requests fail open to local prosody rather than failing voice turns.
+- Speaker-emotion inference is gated on a non-empty transcript by default.
+- Sound-only live turns can produce `audio_event` stream inputs; they are
+  recorded without forcing Shana to speak.
+- Audio-understanding smoke test entry point:
+  `python -m gamma.run_audio_understanding_test`.
 
 ## TTS
 

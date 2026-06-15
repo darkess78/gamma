@@ -601,6 +601,14 @@ class StreamBrain:
             )
         if event.kind == "system":
             return TurnDecision(decision="ignore", reason="system_events_are_not_conversation_turns", metadata={"event_kind": event.kind})
+        if event.kind == "audio_event":
+            return TurnDecision(
+                decision="defer",
+                reason="audio_events_are_recorded_without_forced_response",
+                should_call_conversation=False,
+                response_mode="audio_observation",
+                metadata={"event_kind": event.kind},
+            )
         if not text:
             return TurnDecision(decision="ignore", reason="empty_event_text", metadata={"event_kind": event.kind})
         if event.kind == "owner_command":

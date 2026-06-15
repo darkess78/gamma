@@ -120,6 +120,21 @@ class LiveVoiceRuntimeTest(unittest.TestCase):
             temp_path = Path(temp_dir)
             stream_brain = _FakeStreamBrain()
             conversation = _FakeConversation()
+            audio_context = {
+                "ok": True,
+                "speaker_affect": {
+                    "emotion": "unknown",
+                    "confidence": 0.0,
+                    "energy": "high",
+                    "pace": "fast",
+                    "delivery": "energetic_fast",
+                    "source": "signal_features",
+                },
+                "events": [],
+                "features": {},
+                "analyzer_version": "audio-understanding-v1",
+                "timing_ms": {},
+            }
             payload = _run_simple_chunked(
                 started_at=0.0,
                 args=argparse.Namespace(turn_id="turn-1", session_id="session-1"),
@@ -138,6 +153,7 @@ class LiveVoiceRuntimeTest(unittest.TestCase):
                     user_text="Gamma, can you explain what you are doing right now in one sentence?",
                     response_mode="simple_chunked",
                 ),
+                audio_context=audio_context,
             )
 
         self.assertEqual(payload["transcript"], "Gamma, can you explain what you are doing right now in one sentence?")
@@ -147,9 +163,12 @@ class LiveVoiceRuntimeTest(unittest.TestCase):
         self.assertEqual(payload["stream"]["decision"]["decision"], "reply")
         self.assertEqual(payload["stream"]["output_events"][1]["type"], "subtitle_line")
         self.assertEqual(stream_brain.decisions[0].text, "Gamma, can you explain what you are doing right now in one sentence?")
+        self.assertEqual(stream_brain.decisions[0].metadata["audio_context"], audio_context)
         self.assertEqual(stream_brain.recorded[0].assistant_response.spoken_text, "I heard you.")
+        self.assertEqual(payload["audio_context"], audio_context)
         self.assertEqual(conversation.calls[0]["kwargs"]["brief_mode"], False)
         self.assertEqual(conversation.calls[0]["kwargs"]["micro_mode"], False)
+        self.assertIsNone(conversation.calls[0]["kwargs"]["background_context"])
 
     def test_incremental_live_voice_turn_records_stream_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -183,6 +202,65 @@ class LiveVoiceRuntimeTest(unittest.TestCase):
         self.assertEqual(payload["stream"]["output_events"][1]["type"], "subtitle_line")
         self.assertEqual(len(stream_brain.recorded), 1)
         self.assertEqual(stream_brain.recorded[0].assistant_response.spoken_text, payload["reply_text"])
+
+    def test_event_only_live_turn_is_recorded_without_conversation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            stream_brain = _FakeStreamBrain()
+            conversation = _FakeConversation()
+            audio_context = {
+                "ok": True,
+                "speaker_affect": None,
+                "events": [
+                    {
+                        "label": "clapping",
+                        "confidence": 0.91,
+                        "start_ms": 0.0,
+                        "end_ms": 500.0,
+                        "source": "test",
+                    }
+                ],
+                "features": {},
+                "analyzer_version": "audio-understanding-v1",
+                "timing_ms": {},
+            }
+
+            class _EventBrain(_FakeStreamBrain):
+                def decide(self, event):
+                    self.decisions.append(event)
+                    return TurnDecision(
+                        decision="defer",
+                        reason="audio_events_are_recorded_without_forced_response",
+                        should_call_conversation=False,
+                        response_mode="audio_observation",
+                    )
+
+            stream_brain = _EventBrain()
+            payload = _run_simple_chunked(
+                started_at=0.0,
+                args=argparse.Namespace(turn_id="turn-event", session_id="session-1"),
+                transcript="",
+                synthesize_speech=False,
+                conversation=conversation,  # type: ignore[arg-type]
+                stream_brain=stream_brain,  # type: ignore[arg-type]
+                output_path=temp_path / "out.json",
+                status_path=temp_path / "status.json",
+                status_payload={"status": "running"},
+                response_mode="simple_chunked",
+                planner_state={"planner_ms": 0.0},
+                turn_state=AssistantTurnState(
+                    turn_id="turn-event",
+                    session_id="session-1",
+                    user_text="",
+                    response_mode="simple_chunked",
+                ),
+                audio_context=audio_context,
+            )
+
+        self.assertEqual(stream_brain.decisions[0].kind, "audio_event")
+        self.assertIn("clapping", stream_brain.decisions[0].text)
+        self.assertEqual(payload["reply_text"], "")
+        self.assertEqual(conversation.calls, [])
 
     def test_subprocess_live_turn_runtime_delegates_to_manager(self) -> None:
         manager = _FakeJobManager()
@@ -253,6 +331,21 @@ class LiveVoiceRuntimeTest(unittest.TestCase):
                     {
                         "turn_id": "turn-live",
                         "status": "completed",
+                        "audio_context": {
+                            "ok": True,
+                            "speaker_affect": {
+                                "emotion": "unknown",
+                                "confidence": 0.0,
+                                "energy": "medium",
+                                "pace": "medium",
+                                "delivery": "neutral",
+                                "source": "signal_features",
+                            },
+                            "events": [],
+                            "features": {},
+                            "analyzer_version": "audio-understanding-v1",
+                            "timing_ms": {},
+                        },
                         "reply_text": "Live voice now reaches the monitor.",
                         "reply_chunks": [
                             {
@@ -299,6 +392,7 @@ class LiveVoiceRuntimeTest(unittest.TestCase):
             manager.get_job("turn-live")
 
         self.assertEqual(response.turn_id, "turn-live")
+        self.assertEqual(response.audio_context.speaker_affect.energy, "medium")  # type: ignore[union-attr]
         events = bus.recent(limit=10, target_policy="dashboard_monitor")
         self.assertEqual(
             [event.type for event in events],

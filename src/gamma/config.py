@@ -148,6 +148,12 @@ def _as_int(value: Any, *, default: int) -> int:
     return int(value)
 
 
+def _as_float(value: Any, *, default: float) -> float:
+    if value is None or value == "":
+        return default
+    return float(value)
+
+
 def _as_csv(value: Any, *, default: tuple[str, ...] = ()) -> tuple[str, ...]:
     if value is None or value == "":
         return default
@@ -602,6 +608,157 @@ class Settings:
     )
     stt_compute_type: str = str(
         _setting("SHANA_STT_COMPUTE_TYPE", _config_value(APP_CONFIG, "stt_compute_type", default="int8"))
+    )
+    audio_understanding_enabled: bool = _as_bool(
+        _setting(
+            "SHANA_AUDIO_UNDERSTANDING_ENABLED",
+            _config_value(APP_CONFIG, "audio_understanding_enabled", default=True),
+        ),
+        default=True,
+    )
+    audio_understanding_prompt_enabled: bool = _as_bool(
+        _setting(
+            "SHANA_AUDIO_UNDERSTANDING_PROMPT_ENABLED",
+            _config_value(APP_CONFIG, "audio_understanding_prompt_enabled", default=False),
+        ),
+        default=False,
+    )
+    speaker_emotion_provider: str = str(
+        _setting(
+            "SHANA_SPEAKER_EMOTION_PROVIDER",
+            _config_value(APP_CONFIG, "speaker_emotion_provider", default="disabled"),
+        )
+    )
+    speaker_emotion_model: str = str(
+        _setting(
+            "SHANA_SPEAKER_EMOTION_MODEL",
+            _config_value(APP_CONFIG, "speaker_emotion_model", default="superb/wav2vec2-base-superb-er"),
+        )
+    )
+    audio_event_provider: str = str(
+        _setting(
+            "SHANA_AUDIO_EVENT_PROVIDER",
+            _config_value(APP_CONFIG, "audio_event_provider", default="disabled"),
+        )
+    )
+    audio_event_model: str = str(
+        _setting(
+            "SHANA_AUDIO_EVENT_MODEL",
+            _config_value(APP_CONFIG, "audio_event_model", default="MIT/ast-finetuned-audioset-10-10-0.4593"),
+        )
+    )
+    audio_analysis_device: str = str(
+        _setting("SHANA_AUDIO_ANALYSIS_DEVICE", _config_value(APP_CONFIG, "audio_analysis_device", default="cpu"))
+    )
+    speaker_emotion_device: str = str(
+        _setting(
+            "SHANA_SPEAKER_EMOTION_DEVICE",
+            _config_value(APP_CONFIG, "speaker_emotion_device", default=_config_value(APP_CONFIG, "audio_analysis_device", default="cpu")),
+        )
+    )
+    audio_event_device: str = str(
+        _setting(
+            "SHANA_AUDIO_EVENT_DEVICE",
+            _config_value(APP_CONFIG, "audio_event_device", default=_config_value(APP_CONFIG, "audio_analysis_device", default="cpu")),
+        )
+    )
+    audio_understanding_endpoint: str | None = _setting(
+        "SHANA_AUDIO_UNDERSTANDING_ENDPOINT",
+        _config_value(APP_CONFIG, "audio_understanding_endpoint", default=""),
+    )
+    audio_understanding_bind_host: str = str(
+        _setting(
+            "SHANA_AUDIO_UNDERSTANDING_BIND_HOST",
+            _config_value(APP_CONFIG, "audio_understanding_bind_host", default="127.0.0.1"),
+        )
+    )
+    audio_understanding_port: int = _as_int(
+        _setting(
+            "SHANA_AUDIO_UNDERSTANDING_PORT",
+            _config_value(APP_CONFIG, "audio_understanding_port", default=9883),
+        ),
+        default=9883,
+    )
+    audio_understanding_request_timeout_seconds: int = _as_int(
+        _setting(
+            "SHANA_AUDIO_UNDERSTANDING_REQUEST_TIMEOUT_SECONDS",
+            _config_value(APP_CONFIG, "audio_understanding_request_timeout_seconds", default=15),
+        ),
+        default=15,
+    )
+    audio_understanding_python: str | None = _setting(
+        "SHANA_AUDIO_UNDERSTANDING_PYTHON",
+        _config_value(APP_CONFIG, "audio_understanding_python", default=""),
+    )
+    audio_model_local_files_only: bool = _as_bool(
+        _setting(
+            "SHANA_AUDIO_MODEL_LOCAL_FILES_ONLY",
+            _config_value(APP_CONFIG, "audio_model_local_files_only", default=False),
+        ),
+        default=False,
+    )
+    speaker_emotion_min_confidence: float = _as_float(
+        _setting(
+            "SHANA_SPEAKER_EMOTION_MIN_CONFIDENCE",
+            _config_value(APP_CONFIG, "speaker_emotion_min_confidence", default=0.65),
+        ),
+        default=0.65,
+    )
+    speaker_emotion_requires_transcript: bool = _as_bool(
+        _setting(
+            "SHANA_SPEAKER_EMOTION_REQUIRES_TRANSCRIPT",
+            _config_value(APP_CONFIG, "speaker_emotion_requires_transcript", default=True),
+        ),
+        default=True,
+    )
+    audio_event_min_confidence: float = _as_float(
+        _setting(
+            "SHANA_AUDIO_EVENT_MIN_CONFIDENCE",
+            _config_value(APP_CONFIG, "audio_event_min_confidence", default=0.70),
+        ),
+        default=0.70,
+    )
+    audio_event_labels: tuple[str, ...] = _as_csv(
+        _setting(
+            "SHANA_AUDIO_EVENT_LABELS",
+            _config_value(APP_CONFIG, "audio_event_labels", default=["laughter", "cough", "clapping"]),
+        ),
+        default=("laughter", "cough", "clapping"),
+    )
+    audio_event_min_duration_ms: int = _as_int(
+        _setting(
+            "SHANA_AUDIO_EVENT_MIN_DURATION_MS",
+            _config_value(APP_CONFIG, "audio_event_min_duration_ms", default=100),
+        ),
+        default=100,
+    )
+    audio_event_merge_gap_ms: int = _as_int(
+        _setting(
+            "SHANA_AUDIO_EVENT_MERGE_GAP_MS",
+            _config_value(APP_CONFIG, "audio_event_merge_gap_ms", default=250),
+        ),
+        default=250,
+    )
+    audio_event_cooldown_ms: int = _as_int(
+        _setting(
+            "SHANA_AUDIO_EVENT_COOLDOWN_MS",
+            _config_value(APP_CONFIG, "audio_event_cooldown_ms", default=500),
+        ),
+        default=500,
+    )
+    audio_analysis_max_seconds: int = _as_int(
+        _setting(
+            "SHANA_AUDIO_ANALYSIS_MAX_SECONDS",
+            _config_value(APP_CONFIG, "audio_analysis_max_seconds", default=30),
+        ),
+        default=30,
+    )
+    audio_analysis_timeout_ms: int = _as_int(
+        _setting(
+            "SHANA_AUDIO_ANALYSIS_TIMEOUT_MS",
+            _config_value(APP_CONFIG, "audio_analysis_timeout_ms", default=500),
+        ),
+        default=500,
     )
 
     tts_provider: str = str(

@@ -30,6 +30,34 @@ stt_model = "base.en"
 stt_device = "cpu"
 stt_device_index = 0
 stt_compute_type = "int8"
+audio_understanding_enabled = true
+# Keep model observations diagnostic-only until they have been evaluated on
+# representative Gamma microphone recordings.
+audio_understanding_prompt_enabled = false
+speaker_emotion_provider = "disabled"
+speaker_emotion_model = "superb/wav2vec2-base-superb-er"
+audio_event_provider = "disabled"
+audio_event_model = "MIT/ast-finetuned-audioset-10-10-0.4593"
+audio_analysis_device = "cpu"
+speaker_emotion_device = "cpu"
+audio_event_device = "cpu"
+# Set this to http://127.0.0.1:9883/analyze to use the persistent sidecar.
+audio_understanding_endpoint = ""
+audio_understanding_bind_host = "127.0.0.1"
+audio_understanding_port = 9883
+audio_understanding_request_timeout_seconds = 15
+# Optional isolated runtime. Defaults to .venv-audio when it exists.
+audio_understanding_python = ""
+audio_model_local_files_only = false
+speaker_emotion_min_confidence = 0.65
+speaker_emotion_requires_transcript = true
+audio_event_min_confidence = 0.70
+audio_event_labels = ["laughter", "cough", "clapping"]
+audio_event_min_duration_ms = 100
+audio_event_merge_gap_ms = 250
+audio_event_cooldown_ms = 500
+audio_analysis_max_seconds = 30
+audio_analysis_timeout_ms = 500
 tts_provider = "stub"
 tts_profile = ""
 piper_executable = "piper"

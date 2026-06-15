@@ -14,7 +14,8 @@ from .schemas.response import AssistantResponse
 from .stream.actions import ActionPlanner
 from .stream.brain import StreamBrain
 from .stream.models import ActionPlan, StreamActor, StreamInputEvent, StreamOutputEvent, StreamTurnResult, output_context_from_input, output_events_from_response
-from .voice.affect import VoiceAffectAnalyzer
+from .schemas.voice import VoiceInputContext
+from .voice.audio_understanding import AudioUnderstandingService, build_audio_prompt_context
 from .voice.reply_chunking import split_reply_text
 from .voice.reply_interruptibility import build_interruptibility
 from .voice.reply_planner import ReplyPlanner
@@ -241,19 +242,40 @@ def _live_voice_stream_event(
     transcript: str,
     session_id: str | None,
     response_mode: str,
-    voice_affect: dict[str, Any] | None = None,
+    audio_context: dict[str, Any] | None = None,
 ) -> StreamInputEvent:
     metadata: dict[str, Any] = {"runtime": "live_voice_worker", "response_mode": response_mode}
-    if voice_affect:
-        metadata["voice_affect"] = voice_affect
+    if audio_context:
+        metadata["audio_context"] = audio_context
+        metadata["voice_affect"] = audio_context
+    event_kind = "mic_transcript"
+    event_text = transcript
+    if not transcript.strip() and audio_context:
+        event_labels = [
+            str(event.get("label") or "").strip()
+            for event in audio_context.get("events", [])
+            if isinstance(event, dict) and str(event.get("label") or "").strip()
+        ]
+        if event_labels:
+            event_kind = "audio_event"
+            event_text = "Detected audio event: " + ", ".join(event_labels[:5])
     return StreamInputEvent(
         event_id=turn_id,
-        kind="mic_transcript",
-        text=transcript,
+        kind=event_kind,
+        text=event_text,
         session_id=session_id,
         actor=StreamActor(source="local", platform_id="live_voice", display_name="Live Voice", roles=["voice"]),
         metadata=metadata,
     )
+
+
+def _audio_prompt_context(audio_context: dict[str, Any] | None) -> str | None:
+    if not audio_context:
+        return None
+    try:
+        return build_audio_prompt_context(VoiceInputContext.model_validate(audio_context))
+    except Exception:
+        return None
 
 
 def _stream_result_from_live_payload(
@@ -335,7 +357,7 @@ def _run_simple_chunked(
     response_mode: str,
     planner_state: dict[str, Any],
     turn_state: AssistantTurnState,
-    voice_affect: dict[str, Any] | None = None,
+    audio_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run simple chunked mode.
     
@@ -352,7 +374,7 @@ def _run_simple_chunked(
         response_mode: Response mode.
         planner_state: Planner state.
         turn_state: Turn state.
-        voice_affect: Voice affect (optional).
+        audio_context: Audio-understanding context (optional).
     
     Returns:
         dict[str, Any]: Payload.
@@ -363,7 +385,7 @@ def _run_simple_chunked(
         transcript=transcript,
         session_id=args.session_id,
         response_mode=response_mode,
-        voice_affect=voice_affect,
+        audio_context=audio_context,
     )
     stream_decision = stream_brain.decide(stream_event)
     if stream_decision.should_call_conversation:
@@ -374,6 +396,7 @@ def _run_simple_chunked(
             fast_mode=True,
             brief_mode=_should_use_brief_mode(transcript),
             micro_mode=_should_use_micro_mode(transcript),
+            background_context=_audio_prompt_context(audio_context),
         )
     else:
         response = None
@@ -396,7 +419,8 @@ def _run_simple_chunked(
             "reply_text": "",
             "reply_chunks": [],
             "response_mode": response_mode,
-            "voice_affect": voice_affect or {},
+            "audio_context": audio_context or {},
+            "voice_affect": audio_context or {},
             "stream": _serialize_stream_turn_result(stream_result),
             "planner_state": planner_state,
             "incremental_preview": _serialize_turn_state(turn_state),
@@ -432,7 +456,8 @@ def _run_simple_chunked(
         "reply_text": response.spoken_text,
         "reply_chunks": [],
         "response_mode": response_mode,
-        "voice_affect": voice_affect or {},
+        "audio_context": audio_context or {},
+        "voice_affect": audio_context or {},
         "voice_styles": response.voice_styles,
         "stream": _serialize_stream_turn_result(stream_result),
         "planner_state": planner_state,
@@ -514,7 +539,7 @@ def _run_incremental_experimental(
     response_mode: str,
     planner_state: dict[str, Any],
     turn_state: AssistantTurnState,
-    voice_affect: dict[str, Any] | None = None,
+    audio_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     speech_filter = SpeechSafetyFilter(settings.speech_filter_level)
     stream_event = _live_voice_stream_event(
@@ -522,7 +547,7 @@ def _run_incremental_experimental(
         transcript=transcript,
         session_id=args.session_id,
         response_mode=response_mode,
-        voice_affect=voice_affect,
+        audio_context=audio_context,
     )
     stream_decision = stream_brain.decide(stream_event)
     payload: dict[str, Any] = {
@@ -532,7 +557,8 @@ def _run_incremental_experimental(
         "reply_text": "",
         "reply_chunks": [],
         "response_mode": response_mode,
-        "voice_affect": voice_affect or {},
+        "audio_context": audio_context or {},
+        "voice_affect": audio_context or {},
         "stream": {
             "input_event": stream_event.model_dump(),
             "decision": stream_decision.model_dump(),
@@ -679,7 +705,7 @@ def _run_incremental_experimental(
             synthesize_speech=synthesize_speech,
             conversation=conversation,
             stream_brain=stream_brain,
-            voice_affect=voice_affect,
+            audio_context=audio_context,
             output_path=output_path,
             status_path=status_path,
             status_payload=status_payload,
@@ -728,6 +754,7 @@ def main() -> int:
         response_mode = "simple_chunked"
 
     stt = STTService()
+    audio_understanding = AudioUnderstandingService()
     conversation = ConversationService()
     stream_brain = StreamBrain(conversation=conversation)
     planner = ReplyPlanner(conversation) if response_mode == "incremental_experimental" else None
@@ -747,15 +774,15 @@ def main() -> int:
         stt_started = time.perf_counter()
         transcript = stt.transcribe_audio(str(audio_path)).strip()
         stt_ms = round((time.perf_counter() - stt_started) * 1000, 1)
-        if not transcript:
-            raise ValueError("transcription came back empty")
-        affect_started = time.perf_counter()
-        voice_affect = VoiceAffectAnalyzer().analyze_path(audio_path, transcript=transcript).as_payload()
-        affect_ms = round((time.perf_counter() - affect_started) * 1000, 1)
+        audio_context = audio_understanding.analyze_path(audio_path, transcript=transcript)
+        audio_context_payload = audio_context.model_dump()
+        if not transcript and not audio_context.events:
+            raise ValueError("transcription came back empty and no audio events were detected")
 
         status_payload["status"] = "running"
         status_payload["transcript"] = transcript
-        status_payload["voice_affect"] = voice_affect
+        status_payload["audio_context"] = audio_context_payload
+        status_payload["voice_affect"] = audio_context_payload
         _write_status(status_path, status_payload)
         turn_state = AssistantTurnState(
             turn_id=args.turn_id,
@@ -786,7 +813,7 @@ def main() -> int:
                 conversation=conversation,
                 stream_brain=stream_brain,
                 sentence_generator=sentence_generator,
-                voice_affect=voice_affect,
+                audio_context=audio_context_payload,
                 output_path=output_path,
                 status_path=status_path,
                 status_payload=status_payload,
@@ -802,7 +829,7 @@ def main() -> int:
                 synthesize_speech=synthesize_speech,
                 conversation=conversation,
                 stream_brain=stream_brain,
-                voice_affect=voice_affect,
+                audio_context=audio_context_payload,
                 output_path=output_path,
                 status_path=status_path,
                 status_payload=status_payload,
@@ -813,7 +840,8 @@ def main() -> int:
 
         payload.setdefault("timing_ms", {})
         payload["timing_ms"]["stt_ms"] = stt_ms
-        payload["timing_ms"]["voice_affect_ms"] = affect_ms
+        payload["timing_ms"]["audio_understanding_ms"] = audio_context.timing_ms.get("total_ms", 0.0)
+        payload["timing_ms"]["voice_affect_ms"] = audio_context.timing_ms.get("prosody_ms", 0.0)
         payload["timing_ms"]["planner_ms"] = float(planner_state.get("planner_ms", 0.0) or 0.0)
 
         payload["status"] = "completed"

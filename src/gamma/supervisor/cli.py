@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(description="Manage Gamma background services.")
     parser.add_argument("command", choices=["start", "stop", "restart", "status"])
-    parser.add_argument("service", choices=["dashboard", "shana", "all"])
+    parser.add_argument("service", choices=["dashboard", "shana", "audio-understanding", "all"])
     parser.add_argument("--open-browser", action="store_true", dest="open_browser")
     return parser
 

@@ -135,6 +135,7 @@ class LiveVoiceJobManager:
             response_mode=job.response_mode,
             worker_pid=job.process.pid if job.process else None,
             transcript=output_payload.get("transcript"),
+            audio_context=output_payload.get("audio_context"),
             reply_text=output_payload.get("reply_text"),
             reply_chunks=output_payload.get("reply_chunks", []),
             audio_content_type=output_payload.get("audio_content_type"),

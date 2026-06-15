@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import socket
 import ssl
 import time
@@ -11,6 +12,7 @@ from typing import Any, Iterable
 
 from ...config import settings
 from ...errors import ConfigurationError
+from ...observability import bind_context, configure_logging, log_event, redact, reset_context
 from .client import GammaStreamClient
 from .irc import chat_message_from_irc, parse_irc_line
 from .normalize import normalize_chat_message
@@ -100,6 +102,7 @@ class TwitchIrcWorker:
         synthesize_speech: bool | None = None,
         fast_mode: bool = True,
         state_path: Path | None = None,
+        logger: logging.Logger | None = None,
     ) -> None:
         self.config = config
         self.client = client or GammaStreamClient()
@@ -107,6 +110,7 @@ class TwitchIrcWorker:
         self.synthesize_speech = config.voice_enabled if synthesize_speech is None else synthesize_speech
         self.fast_mode = fast_mode
         self.state_path = state_path or twitch_worker_state_path()
+        self.logger = logger or configure_logging("twitch_irc")
         self._message_count = 0
 
     def handle_line(self, line: str) -> dict | None:
@@ -116,6 +120,13 @@ class TwitchIrcWorker:
             return None
         if self._is_ignored_bot(chat_message.display_name):
             self._write_state(status="connected", connected=True, last_message_kind="ignored_bot")
+            log_event(
+                self.logger,
+                logging.INFO,
+                "twitch_irc.message.ignored_bot",
+                "Ignored a configured Twitch bot message.",
+                message_id=chat_message.message_id,
+            )
             return {"ignored": True, "reason": "ignored_bot", "display_name": chat_message.display_name}
         trust_level = self.trust_store.trust_level_for(
             platform="twitch",
@@ -133,6 +144,12 @@ class TwitchIrcWorker:
             display_name=chat_message.display_name,
             message_id=chat_message.message_id,
         )
+        event.metadata.setdefault("message_id", chat_message.message_id or "")
+        context_token = bind_context(
+            event_id=event.event_id,
+            message_id=chat_message.message_id,
+            session_id=event.session_id,
+        )
         try:
             result = self.client.post_event(
                 event,
@@ -140,6 +157,16 @@ class TwitchIrcWorker:
                 fast_mode=self.fast_mode,
             )
         except Exception as exc:
+            log_event(
+                self.logger,
+                logging.ERROR,
+                "twitch_irc.event.post_failed",
+                "Failed to post a Twitch IRC event to Gamma.",
+                exc_info=True,
+                error_class=type(exc).__name__,
+                detail=str(exc),
+                event_kind=event.kind,
+            )
             self._write_state(
                 status="connected",
                 connected=True,
@@ -148,7 +175,21 @@ class TwitchIrcWorker:
                 **evidence,
             )
             return {"ok": False, "error": str(exc), **evidence}
+        finally:
+            reset_context(context_token)
         self._message_count += 1
+        request_id = str(event.metadata.get("request_id") or "")
+        log_event(
+            self.logger,
+            logging.INFO,
+            "twitch_irc.event.posted",
+            "Posted a Twitch IRC event to Gamma.",
+            request_id=request_id or None,
+            event_id=event.event_id,
+            message_id=chat_message.message_id,
+            session_id=event.session_id,
+            event_kind=event.kind,
+        )
         self._write_state(
             status="connected",
             connected=True,
@@ -166,29 +207,118 @@ class TwitchIrcWorker:
 
     def run_forever(self, *, max_reconnects: int | None = None) -> None:
         reconnects = 0
+        log_event(
+            self.logger,
+            logging.INFO,
+            "twitch_irc.worker.start",
+            "Twitch IRC worker starting.",
+            channel=self.config.normalized_channel,
+            dry_run=self.config.dry_run,
+            voice_enabled=self.config.voice_enabled,
+        )
         while True:
             try:
                 self._write_state(status="connecting", connected=False, reconnects=reconnects)
+                log_event(
+                    self.logger,
+                    logging.INFO,
+                    "twitch_irc.connection.opening",
+                    "Opening Twitch IRC connection.",
+                    channel=self.config.normalized_channel,
+                    host=self.config.host,
+                    port=self.config.port,
+                    reconnect_count=reconnects,
+                )
                 self._run_once()
                 reconnects += 1
                 self._write_state(status="disconnected", connected=False, detail="IRC socket closed.", reconnects=reconnects)
+                log_event(
+                    self.logger,
+                    logging.WARNING,
+                    "twitch_irc.connection.closed",
+                    "Twitch IRC socket closed.",
+                    reconnect_count=reconnects,
+                )
             except KeyboardInterrupt:
                 self._write_state(status="stopped", connected=False, detail="Interrupted.", reconnects=reconnects)
+                log_event(self.logger, logging.INFO, "twitch_irc.worker.exit", "Twitch IRC worker interrupted.")
                 raise
+            except ConfigurationError as exc:
+                self._write_state(status="configuration_error", connected=False, detail=str(exc), reconnects=reconnects)
+                log_event(
+                    self.logger,
+                    logging.ERROR,
+                    "twitch_irc.authentication.failed",
+                    "Twitch IRC authentication failed.",
+                    exc_info=True,
+                    error_class=type(exc).__name__,
+                    detail=str(exc),
+                    reconnect_count=reconnects,
+                )
+                log_event(self.logger, logging.INFO, "twitch_irc.worker.exit", "Twitch IRC worker stopped.")
+                return
             except Exception as exc:
                 reconnects += 1
                 self._write_state(status="reconnecting", connected=False, detail=str(exc), reconnects=reconnects)
+                log_event(
+                    self.logger,
+                    logging.ERROR,
+                    "twitch_irc.connection.error",
+                    "Twitch IRC connection failed.",
+                    exc_info=True,
+                    error_class=type(exc).__name__,
+                    detail=str(exc),
+                    reconnect_count=reconnects,
+                )
             if max_reconnects is not None and reconnects >= max_reconnects:
                 self._write_state(status="stopped", connected=False, detail="Reconnect limit reached.", reconnects=reconnects)
+                log_event(
+                    self.logger,
+                    logging.INFO,
+                    "twitch_irc.worker.exit",
+                    "Twitch IRC reconnect limit reached.",
+                    reconnect_count=reconnects,
+                )
                 return
-            time.sleep(min(60.0, 2.0 ** min(reconnects, 5)))
+            backoff_seconds = min(60.0, 2.0 ** min(reconnects, 5))
+            log_event(
+                self.logger,
+                logging.WARNING,
+                "twitch_irc.connection.backoff",
+                "Waiting before reconnecting to Twitch IRC.",
+                reconnect_count=reconnects,
+                backoff_seconds=backoff_seconds,
+            )
+            time.sleep(backoff_seconds)
 
     def _run_once(self) -> None:
         with socket.create_connection((self.config.host, self.config.port), timeout=30) as raw_socket:
+            log_event(
+                self.logger,
+                logging.INFO,
+                "twitch_irc.connection.tcp_connected",
+                "Twitch IRC TCP connection established.",
+                host=self.config.host,
+                port=self.config.port,
+            )
             with ssl.create_default_context().wrap_socket(raw_socket, server_hostname=self.config.host) as irc:
+                log_event(
+                    self.logger,
+                    logging.INFO,
+                    "twitch_irc.connection.tls_connected",
+                    "Twitch IRC TLS connection established.",
+                    host=self.config.host,
+                )
                 self._authenticate(irc)
                 irc.settimeout(30.0)
                 self._write_state(status="connected", connected=True, reconnects=0)
+                log_event(
+                    self.logger,
+                    logging.INFO,
+                    "twitch_irc.connection.connected",
+                    "Twitch IRC authentication and join commands sent.",
+                    channel=self.config.normalized_channel,
+                )
                 for line in _iter_socket_lines(irc):
                     if not line:
                         self._write_state(status="connected", connected=True, reconnects=0, last_message_kind="heartbeat")
@@ -196,7 +326,30 @@ class TwitchIrcWorker:
                     if line.startswith("PING "):
                         irc.sendall(line.replace("PING", "PONG", 1).encode("utf-8") + b"\r\n")
                         self._write_state(status="connected", connected=True, reconnects=0, last_message_kind="ping")
+                        log_event(
+                            self.logger,
+                            logging.INFO,
+                            "twitch_irc.connection.ping",
+                            "Responded to Twitch IRC ping.",
+                        )
                         continue
+                    if _is_authentication_failure(line):
+                        raise ConfigurationError("Twitch IRC authentication failed.")
+                    if _is_authentication_success(line):
+                        log_event(
+                            self.logger,
+                            logging.INFO,
+                            "twitch_irc.authentication.confirmed",
+                            "Twitch IRC authentication confirmed.",
+                        )
+                    if _is_join_confirmation(line, channel=self.config.normalized_channel):
+                        log_event(
+                            self.logger,
+                            logging.INFO,
+                            "twitch_irc.channel.joined",
+                            "Twitch IRC channel join confirmed.",
+                            channel=self.config.normalized_channel,
+                        )
                     self.handle_line(line)
 
     def _authenticate(self, irc: ssl.SSLSocket) -> None:
@@ -210,6 +363,20 @@ class TwitchIrcWorker:
             f"JOIN #{self.config.normalized_channel}",
         ]
         irc.sendall(("\r\n".join(commands) + "\r\n").encode("utf-8"))
+        log_event(
+            self.logger,
+            logging.INFO,
+            "twitch_irc.authentication.sent",
+            "Sent Twitch IRC authentication commands.",
+            bot_username=self.config.bot_username,
+        )
+        log_event(
+            self.logger,
+            logging.INFO,
+            "twitch_irc.channel.join_sent",
+            "Sent Twitch IRC channel join command.",
+            channel=self.config.normalized_channel,
+        )
 
     def _write_state(self, *, status: str, connected: bool, **extra: Any) -> None:
         payload = {
@@ -223,7 +390,7 @@ class TwitchIrcWorker:
             **extra,
         }
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        self.state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        self.state_path.write_text(json.dumps(redact(payload), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def twitch_worker_state_path() -> Path:
@@ -270,6 +437,24 @@ def _safe_event_evidence(*, event_kind: str, display_name: str | None, message_i
     if message_id:
         evidence["last_message_id"] = message_id
     return evidence
+
+
+def _is_authentication_failure(line: str) -> bool:
+    normalized = line.lower()
+    return " notice " in normalized and (
+        "login authentication failed" in normalized
+        or "improperly formatted auth" in normalized
+        or "invalid nick" in normalized
+    )
+
+
+def _is_authentication_success(line: str) -> bool:
+    return " 001 " in line
+
+
+def _is_join_confirmation(line: str, *, channel: str) -> bool:
+    normalized = line.lower()
+    return f" join #{channel.lower()}" in normalized
 
 
 def main() -> None:

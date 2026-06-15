@@ -16,7 +16,15 @@ from gamma.integrations.twitch.normalize import normalize_chat_message
 from gamma.integrations.twitch.replay import replay_jsonl, replay_jsonl_text
 from gamma.integrations.twitch.sanitize import classify_chat_text, safe_username_alias
 from gamma.integrations.twitch.trust import ViewerTrustStore
-from gamma.integrations.twitch.worker import TwitchIrcWorker, TwitchWorkerConfig, _iter_socket_lines, read_twitch_worker_state
+from gamma.integrations.twitch.worker import (
+    TwitchIrcWorker,
+    TwitchWorkerConfig,
+    _is_authentication_failure,
+    _is_authentication_success,
+    _is_join_confirmation,
+    _iter_socket_lines,
+    read_twitch_worker_state,
+)
 from gamma.dashboard.service import DashboardService
 from gamma.config import settings
 from gamma.errors import ConfigurationError
@@ -912,6 +920,111 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertIn("gamma api unavailable", state["last_post_error"])
         self.assertEqual(state["last_posted_event_kind"], "chat_message")
         self.assertEqual(state["message_count"], 0)
+
+    def test_worker_emits_structured_post_lifecycle_without_chat_text(self) -> None:
+        client = _FakeClient()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_path = Path(temp_dir) / "twitch_irc.jsonl"
+            logger = configure_logging(
+                f"twitch-irc-test-{id(log_path)}",
+                log_path=log_path,
+                stderr=False,
+            )
+            worker = TwitchIrcWorker(
+                config=TwitchWorkerConfig(channel="shana", bot_username="bot", oauth_token="oauth:test"),
+                client=client,  # type: ignore[arg-type]
+                trust_store=_FakeTrustStore(),  # type: ignore[arg-type]
+                state_path=Path(temp_dir) / "state.json",
+                logger=logger,
+            )
+            worker.handle_line(
+                "@badges=;display-name=Viewer;id=m1;user-id=u1 "
+                ":viewer!viewer@viewer.tmi.twitch.tv PRIVMSG #shana :private test phrase"
+            )
+            for handler in logger.handlers:
+                handler.flush()
+            records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+
+        posted = next(record for record in records if record["event"] == "twitch_irc.event.posted")
+        self.assertEqual(posted["message_id"], "m1")
+        self.assertEqual(posted["event_kind"], "chat_message")
+        self.assertEqual(posted["session_id"], "twitch:shana")
+        self.assertNotIn("private test phrase", json.dumps(records))
+        self.assertNotIn("oauth:test", json.dumps(records))
+
+    def test_worker_emits_exception_backoff_and_exit_events(self) -> None:
+        class _FailingWorker(TwitchIrcWorker):
+            def _run_once(self) -> None:
+                raise RuntimeError("connection unavailable")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_path = Path(temp_dir) / "twitch_irc.jsonl"
+            logger = configure_logging(
+                f"twitch-irc-failure-{id(log_path)}",
+                log_path=log_path,
+                stderr=False,
+            )
+            worker = _FailingWorker(
+                config=TwitchWorkerConfig(channel="shana", bot_username="bot", oauth_token="oauth:test"),
+                state_path=Path(temp_dir) / "state.json",
+                logger=logger,
+            )
+            with patch("gamma.integrations.twitch.worker.time.sleep") as sleep:
+                worker.run_forever(max_reconnects=2)
+            for handler in logger.handlers:
+                handler.flush()
+            records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+
+        events = [record["event"] for record in records]
+        self.assertIn("twitch_irc.worker.start", events)
+        self.assertIn("twitch_irc.connection.opening", events)
+        self.assertIn("twitch_irc.connection.error", events)
+        self.assertIn("twitch_irc.connection.backoff", events)
+        self.assertIn("twitch_irc.worker.exit", events)
+        failure = next(record for record in records if record["event"] == "twitch_irc.connection.error")
+        self.assertEqual(failure["error_class"], "RuntimeError")
+        self.assertIn("Traceback", failure["traceback"])
+        sleep.assert_called_once_with(2.0)
+
+    def test_worker_stops_on_authentication_configuration_failure(self) -> None:
+        class _AuthFailingWorker(TwitchIrcWorker):
+            def _run_once(self) -> None:
+                raise ConfigurationError("Twitch IRC authentication failed.")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_path = Path(temp_dir) / "twitch_irc.jsonl"
+            logger = configure_logging(
+                f"twitch-irc-auth-{id(log_path)}",
+                log_path=log_path,
+                stderr=False,
+            )
+            state_path = Path(temp_dir) / "state.json"
+            worker = _AuthFailingWorker(
+                config=TwitchWorkerConfig(channel="shana", bot_username="bot", oauth_token="oauth:test"),
+                state_path=state_path,
+                logger=logger,
+            )
+            with patch("gamma.integrations.twitch.worker.time.sleep") as sleep:
+                worker.run_forever()
+            for handler in logger.handlers:
+                handler.flush()
+            records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+            state = read_twitch_worker_state(state_path)
+
+        self.assertEqual(state["status"], "configuration_error")
+        self.assertEqual(state["reconnects"], 0)
+        self.assertIn("twitch_irc.authentication.failed", {record["event"] for record in records})
+        sleep.assert_not_called()
+
+    def test_irc_lifecycle_line_detection(self) -> None:
+        self.assertTrue(_is_authentication_success(":tmi.twitch.tv 001 bot :Welcome"))
+        self.assertTrue(_is_join_confirmation(":bot!bot@bot.tmi.twitch.tv JOIN #shana", channel="shana"))
+        self.assertTrue(
+            _is_authentication_failure(
+                ":tmi.twitch.tv NOTICE * :Login authentication failed"
+            )
+        )
+        self.assertFalse(_is_authentication_failure("PING :tmi.twitch.tv"))
 
     def test_worker_uses_configured_voice_and_controls(self) -> None:
         client = _FakeClient()

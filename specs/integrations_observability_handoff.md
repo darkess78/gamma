@@ -90,9 +90,22 @@ The first observability slice is implemented:
 - Twitch EventSub is the first full adopter and records worker start/exit,
   token validation, connection, welcome, subscription result, keepalive,
   notification post, reconnect request, revocation, exception, and backoff.
+- Twitch IRC is the second adopter and records TCP/TLS connection,
+  authentication and join commands/confirmation, ping responses, normalized
+  event posts, post failures, disconnects, reconnects, backoff, and exit.
+  Operational records retain message/event/request/session identifiers but do
+  not retain chat text.
 - Focused tests cover JSON shape, correlation fields, redaction, traceback
   output, bounded rotation, request-ID handling, supervisor preservation, fast
-  worker exit, and EventSub lifecycle events.
+  worker exit, EventSub lifecycle events, and Twitch IRC lifecycle/failure
+  events.
+
+Runtime verification on June 15, 2026 confirmed TCP and TLS connection to
+Twitch IRC, followed by an authentication rejection using the current
+machine-local credential. The worker now records a durable
+`configuration_error` with traceback and exits at zero reconnects. The
+configured OAuth value was absent from the structured log, state file, and
+stderr. Dry-run remained enabled and voice remained disabled.
 
 Operational logs intentionally do not replace domain stores. Stream traces and
 stream outputs may still contain complete event/response payloads for local

@@ -209,6 +209,11 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 ## Twitch Integration
 
 - Twitch IRC ingestion worker reads chat over IRC, normalizes messages, applies runtime controls, and posts events to the Gamma stream API.
+- Twitch IRC emits structured connection, authentication, join, ping, event
+  post, disconnect, reconnect, backoff, and exit logs without recording chat
+  text or OAuth credentials.
+- Twitch IRC authentication rejections become durable configuration errors and
+  stop without entering a reconnect loop.
 - Twitch EventSub websocket worker handles stream events such as follows, raids, redeems, bits, subscriptions, and moderation-style events.
 - Twitch replay utility can post JSONL replay events through the stream API for repeatable tests.
 - Twitch dry-run replay is exposed through the dashboard.

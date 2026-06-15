@@ -11,6 +11,11 @@ The balanced deterministic router is enabled in shared runtime configuration. `g
 
 This document describes the deeper router direction that may be added later. It is a future-work spec, not a statement that all items below are implemented today.
 
+Shared GPU/resource inspection and model-runtime placement are specified
+separately in `resource_aware_model_routing_proposal.md`. The LLM router may
+consume placement candidates, but it must not become the process or GPU
+lifecycle manager for the rest of Gamma.
+
 ## Goals
 
 - Reduce latency for live voice and lightweight assistant work.

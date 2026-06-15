@@ -560,6 +560,24 @@ def stop_twitch_eventsub_worker() -> dict:
     return get_dashboard_service().stop_twitch_eventsub_worker()
 
 
+@app.get("/api/discord/text-worker/status")
+def discord_text_worker_status() -> dict:
+    """Return Discord text worker status."""
+    return get_dashboard_service().discord_text_worker_status()
+
+
+@app.post("/api/discord/text-worker/start")
+def start_discord_text_worker() -> dict:
+    """Start the Discord text ingestion worker."""
+    return get_dashboard_service().start_discord_text_worker()
+
+
+@app.post("/api/discord/text-worker/stop")
+def stop_discord_text_worker() -> dict:
+    """Stop the Discord text ingestion worker."""
+    return get_dashboard_service().stop_discord_text_worker()
+
+
 @app.get("/api/twitch/viewer-trust")
 def twitch_viewer_trust(limit: int = 100) -> dict:
     """Return list of Twitch viewer trust info.

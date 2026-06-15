@@ -107,6 +107,17 @@ Persistent audio-understanding sidecar:
 The emotion and audio-event models have independent device settings so they
 can be placed on CPU or different CUDA devices.
 
+Discord text ingestion uses the optional `discord.py` runtime:
+
+```bash
+.venv/bin/python -m pip install -e '.[discord]'
+```
+
+Configure `discord.enabled`, `bot_token`, `guild_id`, and `text_channel_id` in
+ignored machine-local configuration. Start, stop, and inspect the worker
+through `/api/discord/text-worker/*`. The first milestone is ingestion-only:
+Discord replies and Discord voice output remain disabled.
+
 RVC layering:
 - RVC is an optional post-process on top of generated WAV output; it is not a standalone TTS provider
 - the intended local low-latency stack is `Piper -> optional RVC`

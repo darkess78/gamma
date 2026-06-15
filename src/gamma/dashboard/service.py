@@ -22,6 +22,7 @@ import psutil
 
 from ..config import app_local_config_path, load_app_file_config, load_desired_tts_selection, settings
 from ..errors import ConfigurationError
+from ..integrations.discord import DiscordRuntimeConfig, read_discord_worker_state
 from ..integrations.twitch.client import GammaStreamClient
 from ..integrations.twitch.eventsub import TwitchEventSubConfig, read_twitch_eventsub_state
 from ..integrations.twitch.replay import replay_jsonl_text
@@ -42,6 +43,8 @@ class DashboardService:
     TWITCH_WORKER_MODULE = "gamma.integrations.twitch.worker"
     TWITCH_EVENTSUB_SERVICE = "twitch_eventsub"
     TWITCH_EVENTSUB_MODULE = "gamma.integrations.twitch.eventsub"
+    DISCORD_TEXT_SERVICE = "discord_text"
+    DISCORD_TEXT_MODULE = "gamma.integrations.discord.worker"
     TWITCH_STATE_STALE_SECONDS = 120
     TWITCH_DRY_RUN_SCENARIO = "\n".join(
         [
@@ -159,6 +162,9 @@ class DashboardService:
                 "eventsub": self.twitch_eventsub_status(),
                 "stream_ready": self.stream_ready_status(),
             },
+            "discord": {
+                "text_worker": self.discord_text_worker_status(),
+            },
             "performer": self.performer_output_status(),
             "provider_actions": self._latest_provider_action,
             "timings": self._recent_timings(),
@@ -228,15 +234,17 @@ class DashboardService:
         shana_result = self._process_manager.stop("shana")
         twitch_result = self.stop_twitch_worker()
         eventsub_result = self.stop_twitch_eventsub_worker()
+        discord_result = self.stop_discord_text_worker()
         tts_results = self._stop_all_tts_servers()
         self._schedule_stop("dashboard")
         tts_ok = all(bool(result.get("ok")) for result in tts_results.values())
         return {
-            "ok": bool(shana_result.get("ok", False)) and bool(twitch_result.get("ok", False)) and bool(eventsub_result.get("ok", False)) and tts_ok,
+            "ok": bool(shana_result.get("ok", False)) and bool(twitch_result.get("ok", False)) and bool(eventsub_result.get("ok", False)) and bool(discord_result.get("ok", False)) and tts_ok,
             "detail": "all-stop-scheduled",
             "shana": shana_result,
             "twitch_worker": twitch_result,
             "twitch_eventsub": eventsub_result,
+            "discord_text": discord_result,
             "tts": tts_results,
             "dashboard_url": settings.dashboard_base_url,
         }
@@ -282,6 +290,44 @@ class DashboardService:
 
     def stop_twitch_eventsub_worker(self) -> dict[str, Any]:
         return self._process_manager.stop_module(self.TWITCH_EVENTSUB_SERVICE, self.TWITCH_EVENTSUB_MODULE)
+
+    def start_discord_text_worker(self) -> dict[str, Any]:
+        config = DiscordRuntimeConfig.from_app_config()
+        missing = self._missing_discord_text_config(config)
+        if not config.enabled or missing:
+            return {
+                "ok": False,
+                "detail": "Discord text worker is disabled or missing required configuration.",
+                "process": {"running": False},
+                "enabled": config.enabled,
+                "missing_config": missing,
+            }
+        result = self._process_manager.start_module(self.DISCORD_TEXT_SERVICE, self.DISCORD_TEXT_MODULE)
+        return {
+            **result,
+            "worker": "discord_text",
+            "guild_id": config.guild_id,
+            "text_channel_id": config.text_channel_id,
+        }
+
+    def stop_discord_text_worker(self) -> dict[str, Any]:
+        return self._process_manager.stop_module(self.DISCORD_TEXT_SERVICE, self.DISCORD_TEXT_MODULE)
+
+    def discord_text_worker_status(self) -> dict[str, Any]:
+        config = DiscordRuntimeConfig.from_app_config()
+        missing = self._missing_discord_text_config(config)
+        return {
+            **self._process_manager.module_status(self.DISCORD_TEXT_SERVICE, self.DISCORD_TEXT_MODULE),
+            "configured": not missing,
+            "missing_config": missing,
+            "enabled": config.enabled,
+            "guild_id": config.guild_id or None,
+            "text_channel_id": config.text_channel_id or None,
+            "worker": "discord_text",
+            "output_enabled": False,
+            "voice_enabled": False,
+            "state": read_discord_worker_state(),
+        }
 
     def twitch_eventsub_status(self) -> dict[str, Any]:
         status = self._process_manager.module_status(self.TWITCH_EVENTSUB_SERVICE, self.TWITCH_EVENTSUB_MODULE)
@@ -330,6 +376,17 @@ class DashboardService:
             missing.append("twitch_oauth_token")
         if not settings.twitch_broadcaster_user_id:
             missing.append("twitch_broadcaster_user_id")
+        return missing
+
+    @staticmethod
+    def _missing_discord_text_config(config: DiscordRuntimeConfig) -> list[str]:
+        missing = []
+        if not config.bot_token:
+            missing.append("discord_bot_token")
+        if not config.guild_id:
+            missing.append("discord_guild_id")
+        if not config.text_channel_id:
+            missing.append("discord_text_channel_id")
         return missing
 
     def stream_ready_status(self) -> dict[str, Any]:

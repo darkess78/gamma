@@ -15,6 +15,7 @@ class DiscordRuntimeConfig:
     enabled: bool = False
     bot_token: str = ""
     guild_id: str = ""
+    text_channel_id: str = ""
     voice_channel_id: str = ""
     output_enabled: bool = False
 
@@ -26,6 +27,7 @@ class DiscordRuntimeConfig:
             enabled=_as_bool(config.get("discord_enabled", nested.get("enabled", False))),
             bot_token=str(config.get("discord_bot_token", nested.get("bot_token", "")) or ""),
             guild_id=str(config.get("discord_guild_id", nested.get("guild_id", "")) or ""),
+            text_channel_id=str(config.get("discord_text_channel_id", nested.get("text_channel_id", "")) or ""),
             voice_channel_id=str(config.get("discord_voice_channel_id", nested.get("voice_channel_id", "")) or ""),
             output_enabled=_as_bool(config.get("discord_output_enabled", nested.get("output_enabled", False))),
         )
@@ -60,6 +62,7 @@ class DiscordRuntime:
             "configured": bool(self.config.bot_token),
             "running": self._running,
             "guild_id": self.config.guild_id or None,
+            "text_channel_id": self.config.text_channel_id or None,
             "voice_channel_id": self.config.voice_channel_id or None,
             "output_enabled": self.config.output_enabled,
             "input_count": self._input_count,
@@ -86,8 +89,12 @@ class DiscordRuntime:
         self._running = False
         return {"ok": True, "status": self.status()}
 
-    def normalize_message(self, message: DiscordMessage) -> StreamInputEvent:
-        event = normalize_discord_message(message, identity_resolver=self.identity_resolver)
+    def normalize_message(self, message: DiscordMessage, *, session_id: str | None = "discord") -> StreamInputEvent:
+        event = normalize_discord_message(
+            message,
+            session_id=session_id,
+            identity_resolver=self.identity_resolver,
+        )
         self._record_input(event)
         return event
 

@@ -242,6 +242,23 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
   against VTube Studio using ignored machine-local endpoint, token, and hotkey
   configuration.
 
+## Discord Integration
+
+- A separate optional `discord.py` text worker connects with the configured bot
+  token and accepts messages from exactly one allowlisted guild/text channel.
+- Bot/self messages, other guilds, other channels, and empty messages are
+  ignored before normalization.
+- Accepted messages retain Discord user/message/channel/guild identity, pass
+  through the existing Discord normalizer, and post to the stream API with
+  speech synthesis disabled.
+- Structured logs and durable worker state cover connection, disconnect,
+  reconnect, ignored messages, API post success/failure, and worker exit
+  without retaining message content or the bot token.
+- Dashboard API routes expose text-worker start, stop, and status through the
+  same module-process pattern as Twitch workers.
+- Discord text replies and all Discord voice input/output remain deferred and
+  disabled.
+
 ## Dashboard
 
 - Separate dashboard FastAPI app in `src/gamma/dashboard/main.py`.

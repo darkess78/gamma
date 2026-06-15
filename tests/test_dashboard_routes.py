@@ -360,6 +360,9 @@ class DashboardRoutesTest(unittest.TestCase):
             "twitch_eventsub_status": {"process": {"running": False}, "configured": False},
             "start_twitch_eventsub_worker": {"ok": False, "auth_required": True},
             "stop_twitch_eventsub_worker": {"ok": True, "detail": "not-running"},
+            "discord_text_worker_status": {"process": {"running": False}, "configured": False},
+            "start_discord_text_worker": {"ok": False, "detail": "missing configuration"},
+            "stop_discord_text_worker": {"ok": True, "detail": "not-running"},
         }
         for method_name, payload in action_map.items():
             with self.subTest(method_name=method_name):

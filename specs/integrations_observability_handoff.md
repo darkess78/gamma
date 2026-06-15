@@ -483,6 +483,35 @@ Do not begin mouth tracking or broad motion mapping in this milestone.
 
 ## Work Package 5: Discord Text-Only Worker
 
+### Implementation Result: June 15, 2026
+
+The text-only worker is implemented:
+
+- `src/gamma/integrations/discord/worker.py` uses the optional `discord.py`
+  client and runs as a separate module process.
+- Configuration requires the worker to be enabled plus a bot token, one guild
+  ID, and one text-channel ID.
+- Bot/self messages and messages outside the allowlist are ignored.
+- Accepted messages use the existing identity-aware Discord normalizer and post
+  through `/v1/stream/events` with speech synthesis disabled.
+- Durable state and structured logs cover connection, disconnect/reconnect,
+  ignored messages, post success/failure, configuration failure, and exit.
+  Operational logs exclude message content and the bot token.
+- Dashboard API routes expose worker start, stop, and status.
+- The optional dependency is declared as `.[discord]`; it is not installed or
+  activated automatically.
+
+Automated tests use fake Discord objects and stream clients. Live acceptance is
+still blocked on installing the optional dependency and configuring an approved
+machine-local token, guild, and text channel. Discord replies and voice remain
+disabled.
+
+Runtime verification on June 15, 2026 restarted only the dashboard, confirmed
+Shana remained healthy through `/api/status/runtime`, and confirmed
+`/api/discord/text-worker/status` reported the worker stopped and disabled with
+the three expected missing local settings. The response exposed no credential.
+No Discord connection was attempted.
+
 ### Current Implementation
 
 `src/gamma/integrations/discord/adapter.py` already:

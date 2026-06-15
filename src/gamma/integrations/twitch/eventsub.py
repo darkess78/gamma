@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import time
 import urllib.error
 import urllib.request
@@ -14,6 +15,7 @@ import websockets
 
 from ...config import settings
 from ...errors import ConfigurationError
+from ...observability import bind_context, configure_logging, log_event, redact, reset_context
 from ...stream.models import StreamActor, StreamInputEvent
 from .client import GammaStreamClient
 from .sanitize import classify_chat_text, safe_username_alias
@@ -21,6 +23,18 @@ from .sanitize import classify_chat_text, safe_username_alias
 
 EVENTSUB_WEBSOCKET_URL = "wss://eventsub.wss.twitch.tv/ws"
 HELIX_EVENTSUB_URL = "https://api.twitch.tv/helix/eventsub/subscriptions"
+TWITCH_TOKEN_VALIDATE_URL = "https://id.twitch.tv/oauth2/validate"
+
+
+class EventSubConfigurationFailure(RuntimeError):
+    """Fatal EventSub authentication, identity, or scope failure."""
+
+
+class EventSubSubscriptionFailure(RuntimeError):
+    def __init__(self, message: str, *, status_code: int | None = None, response: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.response = response or {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +45,8 @@ class TwitchEventSubConfig:
     moderator_user_id: str | None = None
     websocket_url: str = EVENTSUB_WEBSOCKET_URL
     subscriptions_url: str = HELIX_EVENTSUB_URL
+    token_validate_url: str = TWITCH_TOKEN_VALIDATE_URL
+    subscription_types: tuple[str, ...] = ("channel.follow",)
     dry_run: bool = True
     voice_enabled: bool = False
     subtitles_enabled: bool = True
@@ -59,6 +75,7 @@ class TwitchEventSubConfig:
             oauth_token=_bearer_token(settings.twitch_oauth_token),
             broadcaster_user_id=settings.twitch_broadcaster_user_id,
             moderator_user_id=settings.twitch_moderator_user_id or settings.twitch_broadcaster_user_id,
+            subscription_types=tuple(getattr(settings, "twitch_eventsub_subscriptions", ("channel.follow",))),
             dry_run=bool(getattr(settings, "twitch_dry_run", True)),
             voice_enabled=bool(getattr(settings, "twitch_voice_enabled", False)),
             subtitles_enabled=bool(getattr(settings, "twitch_subtitles_enabled", True)),
@@ -97,65 +114,250 @@ class TwitchEventSubWorker:
         state_path: Path | None = None,
         synthesize_speech: bool | None = None,
         fast_mode: bool = True,
+        logger: logging.Logger | None = None,
     ) -> None:
         self.config = config
         self.client = client or GammaStreamClient()
         self.state_path = state_path or twitch_eventsub_state_path()
         self.synthesize_speech = config.voice_enabled if synthesize_speech is None else synthesize_speech
         self.fast_mode = fast_mode
+        self.logger = logger or configure_logging("twitch_eventsub")
         self._message_count = 0
         self._notification_count = 0
         self._subscriptions: list[dict[str, Any]] = []
         self._subscription_ok_count = 0
         self._subscription_error_count = 0
+        self._last_token_validation_monotonic = 0.0
 
     async def run_forever(self) -> None:
         reconnects = 0
+        websocket_url = self.config.websocket_url
+        log_event(
+            self.logger,
+            logging.INFO,
+            "eventsub.worker.start",
+            "Twitch EventSub worker starting.",
+            subscriptions=list(self.config.subscription_types),
+            dry_run=self.config.dry_run,
+            voice_enabled=self.config.voice_enabled,
+        )
+        try:
+            token_evidence = await asyncio.to_thread(self.validate_token)
+        except EventSubConfigurationFailure as exc:
+            self._write_state(status="configuration_error", connected=False, detail=str(exc), reconnects=reconnects)
+            log_event(
+                self.logger,
+                logging.ERROR,
+                "eventsub.token.invalid",
+                "Twitch OAuth token validation failed.",
+                exc_info=True,
+                error_class=type(exc).__name__,
+                detail=str(exc),
+            )
+            return
+        except Exception as exc:
+            self._write_state(status="token_validation_error", connected=False, detail=str(exc), reconnects=reconnects)
+            log_event(
+                self.logger,
+                logging.ERROR,
+                "eventsub.token.validation_error",
+                "Twitch OAuth token validation request failed.",
+                exc_info=True,
+                error_class=type(exc).__name__,
+                detail=str(exc),
+            )
+            return
+        log_event(
+            self.logger,
+            logging.INFO,
+            "eventsub.token.validated",
+            "Twitch OAuth token validated.",
+            **token_evidence,
+        )
+        self._last_token_validation_monotonic = time.monotonic()
         while True:
             try:
                 self._write_state(status="connecting", connected=False, reconnects=reconnects)
-                async with websockets.connect(self.config.websocket_url) as websocket:
-                    await self._run_socket(websocket, reconnects=reconnects)
+                log_event(
+                    self.logger,
+                    logging.INFO,
+                    "eventsub.connection.opening",
+                    "Opening Twitch EventSub WebSocket.",
+                    reconnect_count=reconnects,
+                    reconnect=websocket_url != self.config.websocket_url,
+                )
+                async with websockets.connect(websocket_url) as websocket:
+                    reconnect_url = await self._run_socket(websocket, reconnects=reconnects)
+                if reconnect_url:
+                    websocket_url = reconnect_url
+                    continue
+                raise RuntimeError("EventSub WebSocket closed without a reconnect request.")
             except KeyboardInterrupt:
                 self._write_state(status="stopped", connected=False, detail="Interrupted.", reconnects=reconnects)
+                log_event(self.logger, logging.INFO, "eventsub.worker.exit", "Twitch EventSub worker interrupted.")
                 raise
+            except EventSubConfigurationFailure as exc:
+                self._write_state(status="subscription_error", connected=False, detail=str(exc), reconnects=reconnects)
+                log_event(
+                    self.logger,
+                    logging.ERROR,
+                    "eventsub.subscription.fatal",
+                    "EventSub subscription cannot be created with the current authorization.",
+                    exc_info=True,
+                    error_class=type(exc).__name__,
+                    detail=str(exc),
+                    reconnect_count=reconnects,
+                )
+                log_event(self.logger, logging.INFO, "eventsub.worker.exit", "Twitch EventSub worker stopped.")
+                return
             except Exception as exc:
                 reconnects += 1
-                self._write_state(status="reconnecting", connected=False, detail=str(exc), reconnects=reconnects)
-                await asyncio.sleep(min(60.0, 2.0 ** min(reconnects, 5)))
+                websocket_url = self.config.websocket_url
+                backoff_seconds = min(60.0, 2.0 ** min(reconnects, 5))
+                self._write_state(
+                    status="reconnecting",
+                    connected=False,
+                    detail=str(exc),
+                    reconnects=reconnects,
+                    backoff_seconds=backoff_seconds,
+                )
+                log_event(
+                    self.logger,
+                    logging.ERROR,
+                    "eventsub.connection.error",
+                    "Twitch EventSub connection failed.",
+                    exc_info=True,
+                    error_class=type(exc).__name__,
+                    detail=str(exc),
+                    reconnect_count=reconnects,
+                    backoff_seconds=backoff_seconds,
+                )
+                log_event(
+                    self.logger,
+                    logging.WARNING,
+                    "eventsub.connection.backoff",
+                    "Waiting before reconnecting to Twitch EventSub.",
+                    reconnect_count=reconnects,
+                    backoff_seconds=backoff_seconds,
+                )
+                await asyncio.sleep(backoff_seconds)
 
-    async def _run_socket(self, websocket: Any, *, reconnects: int) -> None:
+    async def _run_socket(self, websocket: Any, *, reconnects: int) -> str | None:
         async for raw_message in websocket:
             self._message_count += 1
             payload = json.loads(raw_message)
             metadata = payload.get("metadata") if isinstance(payload, dict) else {}
             message_type = metadata.get("message_type") if isinstance(metadata, dict) else None
+            message_id = str(metadata.get("message_id") or "") if isinstance(metadata, dict) else ""
             if message_type == "session_welcome":
-                session_id = str(payload.get("payload", {}).get("session", {}).get("id") or "")
+                session = payload.get("payload", {}).get("session", {})
+                session_id = str(session.get("id") or "")
                 if not session_id:
                     raise RuntimeError("EventSub welcome missing session id")
-                subscriptions = self.create_subscriptions(session_id)
+                log_event(
+                    self.logger,
+                    logging.INFO,
+                    "eventsub.session.welcome",
+                    "Twitch EventSub session welcomed.",
+                    session_id=session_id,
+                    keepalive_timeout_seconds=session.get("keepalive_timeout_seconds"),
+                    reconnect_count=reconnects,
+                )
+                started = time.perf_counter()
+                subscriptions = await asyncio.to_thread(self.create_subscriptions, session_id)
                 self._subscriptions = subscriptions
                 self._subscription_ok_count = sum(1 for subscription in subscriptions if subscription.get("ok"))
                 self._subscription_error_count = sum(1 for subscription in subscriptions if not subscription.get("ok"))
+                elapsed_ms = round((time.perf_counter() - started) * 1000, 3)
+                for subscription in subscriptions:
+                    event_name = "eventsub.subscription.created" if subscription.get("ok") else "eventsub.subscription.failed"
+                    level = logging.INFO if subscription.get("ok") else logging.ERROR
+                    log_event(
+                        self.logger,
+                        level,
+                        event_name,
+                        "EventSub subscription request completed.",
+                        session_id=session_id,
+                        subscription_type=subscription.get("type"),
+                        version=subscription.get("version"),
+                        ok=bool(subscription.get("ok")),
+                        status_code=subscription.get("status_code"),
+                        error_class=subscription.get("error_class"),
+                        detail=subscription.get("error"),
+                        duration_ms=subscription.get("duration_ms"),
+                    )
                 self._write_state(
                     status="connected",
                     connected=True,
                     session_id=session_id,
                     reconnects=reconnects,
+                    subscription_setup_ms=elapsed_ms,
+                )
+                if not self._subscription_ok_count:
+                    detail = _subscription_failure_detail(subscriptions)
+                    if any(item.get("fatal") for item in subscriptions):
+                        raise EventSubConfigurationFailure(detail)
+                    raise RuntimeError(detail)
+                log_event(
+                    self.logger,
+                    logging.INFO,
+                    "eventsub.connection.connected",
+                    "Twitch EventSub session is connected and subscribed.",
+                    session_id=session_id,
+                    subscription_ok_count=self._subscription_ok_count,
+                    subscription_error_count=self._subscription_error_count,
+                    subscription_setup_ms=elapsed_ms,
                 )
                 continue
             if message_type == "session_keepalive":
+                if (
+                    self._last_token_validation_monotonic
+                    and time.monotonic() - self._last_token_validation_monotonic >= 3600
+                ):
+                    token_evidence = await asyncio.to_thread(self.validate_token)
+                    self._last_token_validation_monotonic = time.monotonic()
+                    log_event(
+                        self.logger,
+                        logging.INFO,
+                        "eventsub.token.validated",
+                        "Twitch OAuth token revalidated.",
+                        **token_evidence,
+                    )
                 self._write_state(status="connected", connected=True, last_message_kind="keepalive", reconnects=reconnects)
+                log_event(
+                    self.logger,
+                    logging.INFO,
+                    "eventsub.session.keepalive",
+                    "Twitch EventSub keepalive received.",
+                    message_id=message_id or None,
+                    reconnect_count=reconnects,
+                )
                 continue
             if message_type == "notification":
                 event = stream_event_from_eventsub_notification(payload, twitch_controls=self.config.controls())
                 if event is not None:
                     subscription = payload.get("payload", {}).get("subscription", {})
                     evidence = _safe_notification_evidence(event=event, subscription=subscription if isinstance(subscription, dict) else {})
+                    event.metadata.setdefault("message_id", message_id)
+                    event.metadata.setdefault("eventsub_subscription_id", str(subscription.get("id") or ""))
+                    context_token = bind_context(
+                        event_id=event.event_id,
+                        message_id=message_id,
+                        session_id=event.session_id,
+                    )
                     try:
                         self.client.post_event(event, synthesize_speech=self.synthesize_speech, fast_mode=self.fast_mode)
                     except Exception as exc:
+                        log_event(
+                            self.logger,
+                            logging.ERROR,
+                            "eventsub.notification.post_failed",
+                            "Failed to post EventSub notification to Gamma.",
+                            exc_info=True,
+                            error_class=type(exc).__name__,
+                            detail=str(exc),
+                            subscription_type=evidence["last_subscription_type"],
+                        )
                         self._write_state(
                             status="connected",
                             connected=True,
@@ -164,8 +366,17 @@ class TwitchEventSubWorker:
                             reconnects=reconnects,
                             **evidence,
                         )
+                        reset_context(context_token)
                         continue
                     self._notification_count += 1
+                    log_event(
+                        self.logger,
+                        logging.INFO,
+                        "eventsub.notification.posted",
+                        "EventSub notification posted to Gamma.",
+                        subscription_type=evidence["last_subscription_type"],
+                        event_kind=event.kind,
+                    )
                     self._write_state(
                         status="connected",
                         connected=True,
@@ -174,16 +385,97 @@ class TwitchEventSubWorker:
                         reconnects=reconnects,
                         **evidence,
                     )
+                    reset_context(context_token)
                     continue
                 self._write_state(status="connected", connected=True, last_message_kind="notification", reconnects=reconnects)
+                log_event(
+                    self.logger,
+                    logging.WARNING,
+                    "eventsub.notification.ignored",
+                    "Unsupported EventSub notification ignored.",
+                    message_id=message_id or None,
+                )
                 continue
             if message_type == "revocation":
-                self._write_state(status="revoked", connected=True, last_message_kind="revocation", payload=payload, reconnects=reconnects)
+                subscription = payload.get("payload", {}).get("subscription", {})
+                self._write_state(
+                    status="revoked",
+                    connected=True,
+                    last_message_kind="revocation",
+                    revocation=subscription,
+                    reconnects=reconnects,
+                )
+                log_event(
+                    self.logger,
+                    logging.ERROR,
+                    "eventsub.subscription.revoked",
+                    "Twitch revoked an EventSub subscription.",
+                    message_id=message_id or None,
+                    subscription_type=subscription.get("type"),
+                    subscription_status=subscription.get("status"),
+                )
                 continue
             if message_type == "session_reconnect":
                 reconnect_url = str(payload.get("payload", {}).get("session", {}).get("reconnect_url") or "")
                 self._write_state(status="reconnect_requested", connected=True, reconnect_url=reconnect_url, reconnects=reconnects)
-                return
+                log_event(
+                    self.logger,
+                    logging.WARNING,
+                    "eventsub.session.reconnect_requested",
+                    "Twitch requested an EventSub session reconnect.",
+                    message_id=message_id or None,
+                    reconnect_count=reconnects,
+                    reconnect_url_present=bool(reconnect_url),
+                )
+                if not reconnect_url:
+                    raise RuntimeError("EventSub reconnect message missing reconnect URL.")
+                return reconnect_url
+        return None
+
+    def validate_token(self) -> dict[str, Any]:
+        request = urllib.request.Request(
+            self.config.token_validate_url,
+            headers={"Authorization": f"OAuth {self.config.oauth_token}"},
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = _http_error_detail(exc)
+            raise EventSubConfigurationFailure(f"Twitch OAuth token validation failed: http-{exc.code} {detail}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"Twitch OAuth token validation request failed: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise EventSubConfigurationFailure("Twitch OAuth token validation returned a non-object payload.")
+        token_client_id = str(payload.get("client_id") or "")
+        token_user_id = str(payload.get("user_id") or "")
+        scopes = {str(scope) for scope in payload.get("scopes", []) if scope}
+        supported_types = {spec["type"] for spec in _all_subscription_specs(self.config)}
+        unknown_types = sorted(set(self.config.subscription_types) - supported_types)
+        if unknown_types:
+            raise EventSubConfigurationFailure(
+                f"Unsupported EventSub subscription type(s): {', '.join(unknown_types)}."
+            )
+        if token_client_id != self.config.client_id:
+            raise EventSubConfigurationFailure("Twitch OAuth token client ID does not match the configured client ID.")
+        required_scopes = _required_scopes(self.config.subscription_types)
+        missing_scopes = sorted(required_scopes - scopes)
+        if missing_scopes:
+            raise EventSubConfigurationFailure(
+                f"Twitch OAuth token is missing required scope(s): {', '.join(missing_scopes)}."
+            )
+        if "channel.follow" in self.config.subscription_types and token_user_id != str(self.config.moderator_user_id or ""):
+            raise EventSubConfigurationFailure(
+                "channel.follow requires moderator_user_id to match the user ID in the OAuth token."
+            )
+        return {
+            "token_user_id": token_user_id,
+            "token_login": str(payload.get("login") or ""),
+            "scope_count": len(scopes),
+            "expires_in_seconds": payload.get("expires_in"),
+            "required_scopes": sorted(required_scopes),
+        }
 
     def create_subscriptions(self, session_id: str) -> list[dict[str, Any]]:
         specs = _subscription_specs(self.config)
@@ -195,11 +487,45 @@ class TwitchEventSubWorker:
                 "condition": spec["condition"],
                 "transport": {"method": "websocket", "session_id": session_id},
             }
+            started = time.perf_counter()
             try:
                 result = self._create_subscription(body)
-                results.append({"ok": True, "type": spec["type"], "version": spec["version"], "response": result})
+                results.append(
+                    {
+                        "ok": True,
+                        "type": spec["type"],
+                        "version": spec["version"],
+                        "status_code": 202,
+                        "duration_ms": round((time.perf_counter() - started) * 1000, 3),
+                        "response": result,
+                    }
+                )
+            except EventSubSubscriptionFailure as exc:
+                results.append(
+                    {
+                        "ok": False,
+                        "type": spec["type"],
+                        "version": spec["version"],
+                        "status_code": exc.status_code,
+                        "error_class": type(exc).__name__,
+                        "error": str(exc),
+                        "fatal": exc.status_code in {400, 401, 403},
+                        "duration_ms": round((time.perf_counter() - started) * 1000, 3),
+                        "response": exc.response,
+                    }
+                )
             except Exception as exc:
-                results.append({"ok": False, "type": spec["type"], "version": spec["version"], "error": str(exc)})
+                results.append(
+                    {
+                        "ok": False,
+                        "type": spec["type"],
+                        "version": spec["version"],
+                        "error_class": type(exc).__name__,
+                        "error": str(exc),
+                        "fatal": False,
+                        "duration_ms": round((time.perf_counter() - started) * 1000, 3),
+                    }
+                )
         return results
 
     def _create_subscription(self, body: dict[str, Any]) -> dict[str, Any]:
@@ -214,11 +540,15 @@ class TwitchEventSubWorker:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with urllib.request.urlopen(request, timeout=8) as response:
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"EventSub subscription failed: http-{exc.code} {detail}") from exc
+            detail = _http_error_detail(exc)
+            raise EventSubSubscriptionFailure(
+                f"EventSub subscription failed: http-{exc.code} {detail}",
+                status_code=exc.code,
+                response=detail if isinstance(detail, dict) else {"detail": detail},
+            ) from exc
 
     def _write_state(self, *, status: str, connected: bool, **extra: Any) -> None:
         payload = {
@@ -233,7 +563,7 @@ class TwitchEventSubWorker:
             **extra,
         }
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        self.state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        self.state_path.write_text(json.dumps(redact(payload), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def stream_event_from_eventsub_notification(payload: dict[str, Any], *, twitch_controls: dict[str, Any] | None = None) -> StreamInputEvent | None:
@@ -319,6 +649,11 @@ def _safe_viewer_detail(raw_text: Any, *, display_name: Any) -> tuple[str, dict[
 
 
 def _subscription_specs(config: TwitchEventSubConfig) -> list[dict[str, Any]]:
+    enabled = set(config.subscription_types)
+    return [spec for spec in _all_subscription_specs(config) if spec["type"] in enabled]
+
+
+def _all_subscription_specs(config: TwitchEventSubConfig) -> list[dict[str, Any]]:
     broadcaster = config.broadcaster_user_id
     specs = [
         {"type": "channel.raid", "version": "1", "condition": {"to_broadcaster_user_id": broadcaster}},
@@ -358,6 +693,38 @@ def _safe_notification_evidence(*, event: StreamInputEvent, subscription: dict[s
         "last_posted_event_kind": event.kind,
         "last_actor_display_name": event.actor.display_name or "",
     }
+
+
+def _required_scopes(subscription_types: tuple[str, ...]) -> set[str]:
+    scopes_by_type = {
+        "channel.follow": {"moderator:read:followers"},
+        "channel.cheer": {"bits:read"},
+        "channel.subscribe": {"channel:read:subscriptions"},
+        "channel.subscription.message": {"channel:read:subscriptions"},
+        "channel.channel_points_custom_reward_redemption.add": {"channel:read:redemptions"},
+    }
+    required: set[str] = set()
+    for subscription_type in subscription_types:
+        required.update(scopes_by_type.get(subscription_type, set()))
+    return required
+
+
+def _subscription_failure_detail(subscriptions: list[dict[str, Any]]) -> str:
+    failures = [
+        f"{item.get('type')}: {item.get('error') or 'unknown subscription error'}"
+        for item in subscriptions
+        if not item.get("ok")
+    ]
+    return "No EventSub subscriptions were created. " + "; ".join(failures)
+
+
+def _http_error_detail(exc: urllib.error.HTTPError) -> str | dict[str, Any]:
+    raw = exc.read().decode("utf-8", errors="replace")
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return str(redact(raw))
+    return redact(payload) if isinstance(payload, dict) else str(redact(raw))
 
 
 def main() -> None:

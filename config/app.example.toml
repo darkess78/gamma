@@ -116,6 +116,9 @@ twitch_client_id = ""
 twitch_broadcaster_user_id = ""
 twitch_moderator_user_id = ""
 twitch_eventsub_enabled = false
+# Start with one known-required subscription while validating credentials and
+# connection stability. Add more only after channel.follow remains healthy.
+twitch_eventsub_subscriptions = "channel.follow"
 twitch_ignored_bots = "Nightbot,StreamElements,Streamlabs"
 twitch_irc_host = "irc.chat.twitch.tv"
 twitch_irc_port = 6697
@@ -152,6 +155,9 @@ dashboard_session_secret = ""
 dashboard_cookie_secure = false
 api_auth_enabled = false
 api_bearer_token = ""
+log_max_bytes = 5242880
+log_backup_count = 5
+log_stderr_enabled = true
 
 [vtube_studio]
 enabled = false

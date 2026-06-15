@@ -527,6 +527,25 @@ class Settings:
         _setting("SHANA_TWITCH_EVENTSUB_ENABLED", _config_value(APP_CONFIG, "twitch_eventsub_enabled", default=False)),
         default=False,
     )
+    twitch_eventsub_subscriptions: tuple[str, ...] = _as_csv(
+        _setting(
+            "SHANA_TWITCH_EVENTSUB_SUBSCRIPTIONS",
+            _config_value(APP_CONFIG, "twitch_eventsub_subscriptions", default="channel.follow"),
+        ),
+        default=("channel.follow",),
+    )
+    log_max_bytes: int = _as_int(
+        _setting("SHANA_LOG_MAX_BYTES", _config_value(APP_CONFIG, "log_max_bytes", default=5 * 1024 * 1024)),
+        default=5 * 1024 * 1024,
+    )
+    log_backup_count: int = _as_int(
+        _setting("SHANA_LOG_BACKUP_COUNT", _config_value(APP_CONFIG, "log_backup_count", default=5)),
+        default=5,
+    )
+    log_stderr_enabled: bool = _as_bool(
+        _setting("SHANA_LOG_STDERR_ENABLED", _config_value(APP_CONFIG, "log_stderr_enabled", default=True)),
+        default=True,
+    )
     twitch_ignored_bots: tuple[str, ...] = _as_csv(
         _setting(
             "SHANA_TWITCH_IGNORED_BOTS",

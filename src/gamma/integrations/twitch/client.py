@@ -5,6 +5,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
+from uuid import uuid4
 
 from ...config import settings
 from ...errors import ExternalServiceError
@@ -24,6 +25,8 @@ class GammaStreamClient:
         synthesize_speech: bool = False,
         fast_mode: bool = True,
     ) -> dict[str, Any]:
+        request_id = str(event.metadata.get("request_id") or uuid4().hex)
+        event.metadata.setdefault("request_id", request_id)
         query = urllib.parse.urlencode(
             {
                 "synthesize_speech": "true" if synthesize_speech else "false",
@@ -33,7 +36,7 @@ class GammaStreamClient:
         request = urllib.request.Request(
             f"{self.base_url}/v1/stream/events?{query}",
             data=event.model_dump_json().encode("utf-8"),
-            headers=self._headers(),
+            headers=self._headers(request_id=request_id),
             method="POST",
         )
         try:
@@ -48,9 +51,10 @@ class GammaStreamClient:
             raise ExternalServiceError("stream event post returned a non-object payload")
         return payload
 
-    def _headers(self) -> dict[str, str]:
+    def _headers(self, *, request_id: str | None = None) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
+        if request_id:
+            headers["X-Request-ID"] = request_id
         if settings.api_auth_enabled and self.bearer_token:
             headers["Authorization"] = f"Bearer {self.bearer_token}"
         return headers
-

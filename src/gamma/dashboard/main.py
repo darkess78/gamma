@@ -12,6 +12,7 @@ from ..config import settings as _app_settings
 from .auth import auth_config, dashboard_auth_ready, is_authenticated, session_cookie_value, verify_login, websocket_is_authenticated
 from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..schemas.voice import VoiceRoundtripResponse
+from ..observability import configure_logging, install_request_logging
 from ..system.lazy_singleton import LazySingleton
 from ..voice.live import LiveVoiceSession
 from ..voice.roundtrip import VoiceRoundtripService
@@ -86,6 +87,9 @@ async def require_dashboard_auth(request: Request, call_next):
     if path.startswith("/api/"):
         return JSONResponse({"detail": "authentication required"}, status_code=401)
     return RedirectResponse(url="/login", status_code=303)
+
+
+install_request_logging(app, service="dashboard", logger=configure_logging("dashboard"))
 
 
 @app.get("/health")

@@ -280,6 +280,20 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - CUDA library path helper for subprocess launches.
 - Recent generated artifacts are discoverable.
 - Runtime logs include conversation timings, LLM routes, stream traces, stream outputs, and live voice job lifecycle/history.
+- Shared operational logging emits structured JSON lines with UTC timestamp,
+  level, service, event name, message, correlation identifiers, recursive
+  secret redaction, exception tracebacks, and bounded rotation.
+- Shana and dashboard HTTP responses accept or create `X-Request-ID`, return it
+  to the caller, and log normalized route, status, and duration without request
+  bodies, authorization headers, or cookies.
+- Supervisor-managed stdout and stderr logs are archived across restarts with
+  bounded retention instead of being truncated.
+- Twitch EventSub validates its OAuth token before opening a WebSocket, defaults
+  to the single `channel.follow` subscription, performs Helix subscription
+  creation outside the async event loop, and records connection, subscription,
+  notification, reconnect, backoff, revocation, and exit events.
+- Twitch EventSub authorization and scope failures are durable fatal states
+  rather than uncontrolled reconnect loops.
 
 ## Safety
 

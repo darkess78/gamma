@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from .config import settings
 from .api.routes import router
+from .observability import configure_logging, install_request_logging
 
 app = FastAPI(title=settings.app_name)
 app.include_router(router)
@@ -31,6 +32,9 @@ async def require_api_auth(request: Request, call_next) -> Response:
     if settings.api_bearer_token and secrets.compare_digest(auth_header, expected):
         return await call_next(request)
     return JSONResponse({"detail": "api authentication required"}, status_code=401)
+
+
+install_request_logging(app, service="shana", logger=configure_logging("shana"))
 
 
 @app.get("/health")

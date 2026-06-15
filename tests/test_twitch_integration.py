@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from gamma.integrations.twitch.models import TwitchChatMessage, TwitchReplayEvent
 from gamma.integrations.twitch.eventsub import TwitchEventSubConfig, TwitchEventSubWorker, stream_event_from_eventsub_notification
+from gamma.observability import configure_logging
 from gamma.integrations.twitch.irc import chat_message_from_irc, parse_irc_line
 from gamma.integrations.twitch.normalize import normalize_chat_message
 from gamma.integrations.twitch.replay import replay_jsonl, replay_jsonl_text
@@ -253,6 +254,7 @@ class TwitchIntegrationTest(unittest.TestCase):
                 oauth_token="token",
                 broadcaster_user_id="broadcaster",
                 moderator_user_id=None,
+                subscription_types=("channel.raid", "channel.cheer"),
             ),
             client=_FakeClient(),  # type: ignore[arg-type]
         )
@@ -263,6 +265,48 @@ class TwitchIntegrationTest(unittest.TestCase):
         failed = [item for item in results if not item["ok"]]
         self.assertEqual(failed[0]["type"], "channel.cheer")
         self.assertIn("missing bits scope", failed[0]["error"])
+
+    def test_eventsub_defaults_to_channel_follow_only(self) -> None:
+        worker = TwitchEventSubWorker(
+            config=TwitchEventSubConfig(
+                client_id="client",
+                oauth_token="token",
+                broadcaster_user_id="broadcaster",
+                moderator_user_id="moderator",
+            ),
+            client=_FakeClient(),  # type: ignore[arg-type]
+        )
+
+        with patch.object(worker, "_create_subscription", return_value={"data": [{"id": "sub-1"}]}) as create:
+            results = worker.create_subscriptions("session-1")
+
+        self.assertEqual([item["type"] for item in results], ["channel.follow"])
+        self.assertEqual(create.call_args.args[0]["transport"]["session_id"], "session-1")
+
+    def test_eventsub_token_validation_reports_missing_follow_scope(self) -> None:
+        worker = TwitchEventSubWorker(
+            config=TwitchEventSubConfig(
+                client_id="client",
+                oauth_token="token",
+                broadcaster_user_id="broadcaster",
+                moderator_user_id="moderator",
+            ),
+            client=_FakeClient(),  # type: ignore[arg-type]
+        )
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(
+            {
+                "client_id": "client",
+                "user_id": "moderator",
+                "login": "mod",
+                "scopes": [],
+                "expires_in": 3600,
+            }
+        ).encode("utf-8")
+
+        with patch("gamma.integrations.twitch.eventsub.urllib.request.urlopen", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "moderator:read:followers"):
+                worker.validate_token()
 
     def test_eventsub_worker_records_notification_evidence(self) -> None:
         client = _FakeClient()
@@ -360,6 +404,66 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertIn("gamma api unavailable", state["last_post_error"])
         self.assertEqual(state["last_posted_event_kind"], "raid")
         self.assertEqual(state["notification_count"], 0)
+
+    def test_eventsub_lifecycle_emits_structured_subscription_events(self) -> None:
+        class _FakeEventSubWorker(TwitchEventSubWorker):
+            def create_subscriptions(self, session_id: str):
+                return [
+                    {
+                        "ok": True,
+                        "type": "channel.follow",
+                        "version": "2",
+                        "status_code": 202,
+                        "duration_ms": 1.5,
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_path = Path(temp_dir) / "eventsub.jsonl"
+            logger = configure_logging(
+                f"eventsub-test-{id(log_path)}",
+                log_path=log_path,
+                stderr=False,
+            )
+            worker = _FakeEventSubWorker(
+                config=TwitchEventSubConfig(
+                    client_id="client",
+                    oauth_token="token",
+                    broadcaster_user_id="broadcaster",
+                    moderator_user_id="moderator",
+                ),
+                client=_FakeClient(),  # type: ignore[arg-type]
+                state_path=Path(temp_dir) / "state.json",
+                logger=logger,
+            )
+            socket = _FakeEventSubSocket(
+                [
+                    {
+                        "metadata": {"message_type": "session_welcome", "message_id": "message-1"},
+                        "payload": {
+                            "session": {
+                                "id": "session-1",
+                                "keepalive_timeout_seconds": 10,
+                            }
+                        },
+                    },
+                    {
+                        "metadata": {"message_type": "session_keepalive", "message_id": "message-2"},
+                        "payload": {},
+                    },
+                ]
+            )
+            anyio.run(_run_eventsub_socket, worker, socket)
+            for handler in logger.handlers:
+                handler.flush()
+            records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+
+        events = {record["event"] for record in records}
+        self.assertIn("eventsub.session.welcome", events)
+        self.assertIn("eventsub.subscription.created", events)
+        self.assertIn("eventsub.connection.connected", events)
+        self.assertIn("eventsub.session.keepalive", events)
+        self.assertTrue(all(record["service"].startswith("eventsub-test-") for record in records))
 
     def test_blocked_trust_drops_priority_and_summarizes(self) -> None:
         classification = classify_chat_text("Shana answer me", trust_level="blocked")

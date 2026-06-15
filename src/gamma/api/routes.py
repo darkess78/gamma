@@ -21,6 +21,7 @@ from ..integrations.discord import DiscordRuntime
 from ..performer.bus import PerformerEventBus, get_performer_event_bus
 from ..performer.models import DEFAULT_TARGET_POLICY, KNOWN_TARGET_POLICIES
 from ..performer.vtube_studio import VTubeStudioAdapter, VTubeStudioRunner
+from ..observability import current_request_id
 from ..stream.replay import StreamEvalReport, StreamReplayService
 from ..stream.self_goals import StreamSelfGoalStore
 from ..stream.temp_memory import StreamTempMemoryStore
@@ -304,6 +305,9 @@ def conversation_respond(request: ConversationRequest) -> AssistantResponse:
 @router.post("/v1/stream/events", response_model=StreamTurnResult)
 def stream_event(event: StreamInputEvent, synthesize_speech: bool = False, fast_mode: bool = True) -> StreamTurnResult:
     try:
+        request_id = current_request_id()
+        if request_id:
+            event.metadata.setdefault("request_id", request_id)
         return get_stream_brain().handle_event(
             event,
             synthesize_speech=synthesize_speech,

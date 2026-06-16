@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import tomllib
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 
 from gamma.resources.models import RuntimeTarget, WorkloadSpec
 from gamma.resources.policy import rank_placement_candidates
@@ -36,6 +38,7 @@ class ResourcePolicyTest(unittest.TestCase):
     def test_policy_rejects_unhealthy_model_mismatch_and_insufficient_headroom(self) -> None:
         snapshot = _snapshot([{"index": 0, "uuid": "GPU-0", "memory_free_mb": 2500, "utilization_percent": 0}])
         targets = (
+            RuntimeTarget(id="missing-models", kind="ollama", provider="local", device="cuda:0"),
             RuntimeTarget(id="bad-model", kind="ollama", provider="local", device="cuda:0", models=("other",)),
             RuntimeTarget(id="unhealthy", kind="ollama", provider="local", device="cuda:0", models=("model",), healthy=False),
             RuntimeTarget(id="small", kind="ollama", provider="local", device="cuda:0", models=("model",)),
@@ -50,6 +53,7 @@ class ResourcePolicyTest(unittest.TestCase):
         )
 
         self.assertEqual(decision.status, "no_fit")
+        self.assertEqual(decision.rejected["missing-models"], "models_missing")
         self.assertEqual(decision.rejected["bad-model"], "model_unavailable")
         self.assertEqual(decision.rejected["unhealthy"], "target_unhealthy")
         self.assertEqual(decision.rejected["small"], "insufficient_vram_headroom")
@@ -89,6 +93,49 @@ class ResourcePolicyTest(unittest.TestCase):
         self.assertEqual(registry.policy.minimum_headroom_mb, 4096)
         self.assertEqual(registry.targets[0].provider, "local")
         self.assertEqual(registry.targets[0].models, ("gpt-oss:20b",))
+        self.assertEqual(registry.validation_errors, ())
+
+    def test_registry_reports_and_omits_malformed_targets(self) -> None:
+        registry = load_resource_routing_registry(
+            {
+                "resource_routing": {
+                    "targets": [
+                        {"id": "", "kind": "ollama", "device": "cuda:0", "modalities": ["text"]},
+                        {"id": "valid", "kind": "ollama", "device": "cuda:0", "modalities": ["text"], "models": ["model"]},
+                        {"id": "valid", "kind": "ollama", "device": "cuda:1", "modalities": ["text"], "models": ["model"]},
+                        {"id": "bad-device", "kind": "ollama", "device": "gpu:0", "modalities": ["text"], "models": ["model"]},
+                        {"id": "bad-modality", "kind": "ollama", "device": "cpu", "modalities": ["images"], "models": ["model"]},
+                        "not-an-object",
+                    ],
+                }
+            }
+        )
+
+        self.assertEqual([target.id for target in registry.targets], ["valid"])
+        self.assertTrue(any(".id is required" in error for error in registry.validation_errors))
+        self.assertTrue(any(".id duplicates valid" in error for error in registry.validation_errors))
+        self.assertTrue(any(".device is unsupported: gpu:0" in error for error in registry.validation_errors))
+        self.assertTrue(any(".modalities contains unsupported values: images" in error for error in registry.validation_errors))
+        self.assertTrue(any("must be an object" in error for error in registry.validation_errors))
+
+    def test_app_example_includes_disabled_portable_resource_target_examples(self) -> None:
+        config_path = Path(__file__).resolve().parents[1] / "config" / "app.example.toml"
+        payload = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        registry = load_resource_routing_registry(payload)
+
+        targets = {target.id: target for target in registry.targets}
+        self.assertFalse(registry.policy.shadow_mode)
+        self.assertEqual(registry.validation_errors, ())
+        for target_id in ("ollama_gpu_0", "ollama_gpu_1", "cpu_llm_sidecar", "qwen_tts_cpu", "audio_understanding_cpu"):
+            self.assertIn(target_id, targets)
+            self.assertFalse(targets[target_id].enabled)
+            self.assertFalse(targets[target_id].managed)
+
+        self.assertEqual(targets["ollama_gpu_0"].device, "cuda:0")
+        self.assertEqual(targets["ollama_gpu_1"].endpoint_ref, "local_ollama_gpu_1")
+        self.assertEqual(targets["cpu_llm_sidecar"].device, "cpu")
+        self.assertEqual(targets["qwen_tts_cpu"].modalities, ("speech",))
+        self.assertEqual(targets["audio_understanding_cpu"].provider, "audio-understanding")
 
 
 def _snapshot(gpus, *, sampled_at: str | None = None):

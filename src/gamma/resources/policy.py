@@ -70,6 +70,8 @@ def _rejection_reason(target: RuntimeTarget, workload: WorkloadSpec) -> str | No
         return "target_unhealthy"
     if target.provider != workload.provider:
         return "provider_mismatch"
+    if workload.model and not target.models:
+        return "models_missing"
     if target.models and workload.model and workload.model not in target.models:
         return "model_unavailable"
     if target.modalities and workload.modality not in target.modalities:

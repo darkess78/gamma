@@ -165,6 +165,66 @@ snapshot_max_age_seconds = 5
 minimum_headroom_mb = 2048
 default_estimated_vram_mb = 0
 
+# Resource-routing targets are advisory examples only. Keep them disabled in
+# shared config, then copy the shapes into config/app.local.toml with real
+# endpoint refs, GPU UUIDs, model lists, and per-machine limits.
+[[resource_routing.targets]]
+id = "ollama_gpu_0"
+kind = "ollama"
+provider = "local"
+endpoint_ref = "local_ollama_gpu_0"
+device = "cuda:0"
+models = ["gpt-oss:20b", "gemma4:e4b"]
+modalities = ["text"]
+enabled = false
+managed = false
+reserved_vram_mb = 2048
+
+[[resource_routing.targets]]
+id = "ollama_gpu_1"
+kind = "ollama"
+provider = "local"
+endpoint_ref = "local_ollama_gpu_1"
+device = "cuda:1"
+models = ["gpt-oss:20b", "gemma4:e4b"]
+modalities = ["text"]
+enabled = false
+managed = false
+reserved_vram_mb = 2048
+
+[[resource_routing.targets]]
+id = "cpu_llm_sidecar"
+kind = "ollama"
+provider = "local"
+endpoint_ref = "local_ollama_cpu"
+device = "cpu"
+models = ["gemma4:e4b"]
+modalities = ["text"]
+enabled = false
+managed = false
+
+[[resource_routing.targets]]
+id = "qwen_tts_cpu"
+kind = "qwen-tts"
+provider = "qwen-tts"
+endpoint_ref = "qwen_tts_local"
+device = "cpu"
+models = ["qwen-tts"]
+modalities = ["speech"]
+enabled = false
+managed = false
+
+[[resource_routing.targets]]
+id = "audio_understanding_cpu"
+kind = "audio-understanding"
+provider = "audio-understanding"
+endpoint_ref = "audio_understanding_local"
+device = "cpu"
+models = ["superb/wav2vec2-base-superb-er", "MIT/ast-finetuned-audioset-10-10-0.4593"]
+modalities = ["audio"]
+enabled = false
+managed = false
+
 [vtube_studio]
 enabled = false
 endpoint = "ws://127.0.0.1:8001"

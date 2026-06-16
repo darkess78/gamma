@@ -399,6 +399,12 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - Dashboard status surfaces recent `placement_shadow` route-log entries with
   selected advisory target, rejected reasons, VRAM/headroom fields, warm state,
   and snapshot age.
+- Shared example configuration includes disabled portable resource target
+  examples for dual-GPU Ollama, a CPU LLM sidecar, Qwen TTS, and audio
+  understanding.
+- Resource target loading reports validation errors and omits malformed targets
+  with missing or duplicate IDs, unsupported devices, or invalid modalities;
+  model-specific shadow ranking rejects targets with no declared models.
 - The dashboard machine-status view consumes this shared monitor while
   preserving the existing API response shape.
 - Active resource-aware routing, reservations, model loading, and GPU endpoint

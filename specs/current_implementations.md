@@ -391,10 +391,15 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - `src/gamma/resources/probe.py` provides a shared read-only machine resource
   snapshot with CPU, RAM, disk, GPU, and optional GPU compute-process
   attribution.
+- Resource target/workload models and deterministic shadow ranking exist under
+  `src/gamma/resources/`.
+- Optional `resource_routing.policy.shadow_mode` can attach advisory
+  `placement_shadow` metadata to LLM route logs when explicit targets are
+  configured.
 - The dashboard machine-status view consumes this shared monitor while
   preserving the existing API response shape.
-- Resource-aware placement policy, reservations, model loading, and GPU
-  endpoint selection remain unimplemented future work.
+- Active resource-aware routing, reservations, model loading, and GPU endpoint
+  selection remain unimplemented future work.
 
 ## Automated Coverage Currently Present
 

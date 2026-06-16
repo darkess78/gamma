@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from ..config import settings
 from ..errors import ConfigurationError
+from ..resources import llm_shadow_placement_payload
 from .base import LLMAdapter, LLMCallContext, LLMImageInput, LLMReply
 
 _ROUTE_TRACE = threading.local()
@@ -649,6 +650,14 @@ class RouterLLMAdapter(LLMAdapter):
             "cost_sensitive": bool(call_context.cost_sensitive),
             "fallback_index": fallback_index,
         }
+        placement_shadow = llm_shadow_placement_payload(
+            provider=decision.provider,
+            model=decision.model,
+            route_family=decision.route_family,
+            has_images=has_images,
+        )
+        if placement_shadow is not None:
+            event["placement_shadow"] = placement_shadow
         current = list(getattr(_ROUTE_TRACE, "events", []))
         current.append(event)
         _ROUTE_TRACE.events = current

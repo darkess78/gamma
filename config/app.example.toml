@@ -159,6 +159,12 @@ log_max_bytes = 5242880
 log_backup_count = 5
 log_stderr_enabled = true
 
+[resource_routing.policy]
+shadow_mode = false
+snapshot_max_age_seconds = 5
+minimum_headroom_mb = 2048
+default_estimated_vram_mb = 0
+
 [vtube_studio]
 enabled = false
 endpoint = "ws://127.0.0.1:8001"

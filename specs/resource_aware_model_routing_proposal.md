@@ -271,7 +271,7 @@ deployment without requiring duplicate Ollama instances.
 - Preserve the existing dashboard response contract.
 - Add probe caching, timeouts, and structured failure logs.
 
-Implementation started on June 15, 2026:
+Phase 1 implementation started on June 15, 2026:
 
 - `src/gamma/resources/probe.py` provides read-only resource snapshots with
   CPU, RAM, disk, GPU, and optional GPU compute-process attribution.
@@ -286,6 +286,17 @@ Implementation started on June 15, 2026:
 - Run policy decisions without changing any route.
 - Attach snapshot and would-select metadata to LLM route logs.
 - Compare decisions against observed load and operator expectations.
+
+Phase 2 implementation started on June 15, 2026:
+
+- `src/gamma/resources/models.py`, `runtime_registry.py`, `policy.py`, and
+  `coordinator.py` define target/workload/decision data structures, parse
+  optional `resource_routing` config, and rank targets deterministically.
+- `RouterLLMAdapter` can append `placement_shadow` metadata to route logs only
+  when `resource_routing.policy.shadow_mode = true` and at least one target is
+  configured.
+- Shadow placement does not change provider/model selection, fallback order,
+  adapter transport, model loading, or service lifecycle.
 
 ### Phase 3: Endpoint-aware LLM routing
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from gamma.config import settings
 from gamma.llm.base import LLMCallContext
@@ -356,6 +357,25 @@ class RouterLLMAdapterTest(unittest.TestCase):
         self.assertEqual(events[-1]["route_family"], "metadata")
         log_path = settings.data_dir / "runtime" / "llm.routes.jsonl"
         self.assertTrue(log_path.exists())
+
+    def test_shadow_placement_metadata_does_not_change_route(self) -> None:
+        router = _TestRouter()
+        shadow_payload = {
+            "status": "selected",
+            "selected": {"target_id": "ollama-gpu1"},
+            "rejected": {},
+        }
+        with patch("gamma.llm.router_adapter.llm_shadow_placement_payload", return_value=shadow_payload) as shadow:
+            reply = router.generate_reply(
+                system_prompt="conversation prompt",
+                user_text="hello",
+                call_context=LLMCallContext(purpose="conversation"),
+            )
+
+        self.assertEqual(reply.text, "local:hello")
+        self.assertEqual(reply.metadata["route"]["provider"], "local")
+        self.assertEqual(reply.metadata["route"]["placement_shadow"], shadow_payload)
+        shadow.assert_called()
 
     def test_persona_sensitive_chat_chain_avoids_hosted_fallback(self) -> None:
         settings.llm_router_allow_hosted_escalation = True

@@ -405,6 +405,16 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - Resource target loading reports validation errors and omits malformed targets
   with missing or duplicate IDs, unsupported devices, or invalid modalities;
   model-specific shadow ranking rejects targets with no declared models.
+- Shadow-mode advisory reservations temporarily affect later shadow rankings
+  while a routed LLM call is in flight, then release after route logging.
+  Reservations remain metadata-only and do not alter active routing or service
+  lifecycle.
+- Resource routing config can define named runtime endpoints and validate
+  target `endpoint_ref` values. Endpoint refs are exposed as advisory metadata
+  only and are not used for active request transport.
+- Route logs include shadow comparison metadata for actual provider, model, and
+  current endpoint ref versus the advisory target, provider, model, and endpoint
+  ref.
 - The dashboard machine-status view consumes this shared monitor while
   preserving the existing API response shape.
 - Active resource-aware routing, reservations, model loading, and GPU endpoint

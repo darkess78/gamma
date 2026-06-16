@@ -305,6 +305,17 @@ Phase 2 implementation started on June 15, 2026:
   with missing or duplicate IDs, unsupported devices, or invalid modalities.
   Model-specific workload ranking rejects targets that do not declare supported
   models.
+- Shadow-mode advisory reservations can temporarily reduce candidate projected
+  headroom for later shadow rankings while a routed LLM call is in flight. They
+  are released after route logging and do not block, reroute, start, stop,
+  unload, or evict workloads.
+- Resource routing config can define named runtime endpoints and targets can
+  reference them by `endpoint_ref`. The registry validates unknown endpoint refs
+  and malformed endpoint URLs, but endpoint refs remain advisory metadata and
+  are not used for active request transport yet.
+- Route logs include shadow comparison metadata showing the actual
+  provider/model/current endpoint ref used versus the advisory target, model,
+  provider, and endpoint ref.
 - Shadow placement does not change provider/model selection, fallback order,
   adapter transport, model loading, or service lifecycle.
 
@@ -312,20 +323,10 @@ Phase 2 implementation started on June 15, 2026:
 
 Continue in this order so each step remains observable and reversible:
 
-1. Add advisory reservations in shadow mode only. Reservations should influence
-   `would-select` metadata for concurrent requests, but they must not block,
-   reroute, start, stop, unload, or evict any real workload.
-2. Add an endpoint registry that maps configured target IDs to actual runtime
-   endpoints. For Ollama, active routing requires separately configured
-   instances, such as `127.0.0.1:11434` and `127.0.0.1:11435`, because one
-   Ollama endpoint does not provide reliable per-request GPU selection.
-3. Add shadow comparison reporting: actual provider/model/endpoint used versus
-   advisory target, with the policy reason. Use this to tune the policy before
-   enabling active routing.
-4. Enable active routing only for preconfigured, already-running local LLM
+1. Enable active routing only for preconfigured, already-running local LLM
    endpoints after shadow logs show stable decisions. Keep a single config flag
    that immediately restores the current deterministic router.
-5. Add startup admission for model sidecars only after LLM endpoint routing is
+2. Add startup admission for model sidecars only after LLM endpoint routing is
    stable. Explicit configured devices must continue to win; coordinator
    suggestions apply only to future `auto` placement modes.
 

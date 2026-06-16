@@ -362,7 +362,9 @@ class RouterLLMAdapterTest(unittest.TestCase):
         router = _TestRouter()
         shadow_payload = {
             "status": "selected",
-            "selected": {"target_id": "ollama-gpu1"},
+            "provider": "local",
+            "model": "qwen2.5:7b",
+            "selected": {"target_id": "ollama-gpu1", "provider": "local", "endpoint_ref": "local_ollama_gpu_1"},
             "rejected": {},
         }
         with patch("gamma.llm.router_adapter.llm_shadow_placement_payload", return_value=shadow_payload) as shadow:
@@ -375,6 +377,12 @@ class RouterLLMAdapterTest(unittest.TestCase):
         self.assertEqual(reply.text, "local:hello")
         self.assertEqual(reply.metadata["route"]["provider"], "local")
         self.assertEqual(reply.metadata["route"]["placement_shadow"], shadow_payload)
+        comparison = reply.metadata["route"]["placement_shadow_comparison"]
+        self.assertEqual(comparison["actual_provider"], "local")
+        self.assertEqual(comparison["advisory_target_id"], "ollama-gpu1")
+        self.assertTrue(comparison["provider_match"])
+        self.assertTrue(comparison["model_match"])
+        self.assertFalse(comparison["endpoint_ref_match"])
         shadow.assert_called()
 
     def test_persona_sensitive_chat_chain_avoids_hosted_fallback(self) -> None:

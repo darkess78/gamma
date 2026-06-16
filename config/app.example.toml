@@ -162,12 +162,20 @@ log_stderr_enabled = true
 [resource_routing.policy]
 shadow_mode = false
 snapshot_max_age_seconds = 5
+reservation_ttl_seconds = 30
 minimum_headroom_mb = 2048
 default_estimated_vram_mb = 0
 
 # Resource-routing targets are advisory examples only. Keep them disabled in
 # shared config, then copy the shapes into config/app.local.toml with real
 # endpoint refs, GPU UUIDs, model lists, and per-machine limits.
+[resource_routing.endpoints]
+local_ollama_gpu_0 = "http://127.0.0.1:11434"
+local_ollama_gpu_1 = "http://127.0.0.1:11435"
+local_ollama_cpu = "http://127.0.0.1:11436"
+qwen_tts_local = "http://127.0.0.1:9884"
+audio_understanding_local = "http://127.0.0.1:9883"
+
 [[resource_routing.targets]]
 id = "ollama_gpu_0"
 kind = "ollama"

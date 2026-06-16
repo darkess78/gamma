@@ -2129,6 +2129,8 @@ class DashboardService:
         selected_payload = selected if isinstance(selected, dict) else {}
         rejected = shadow.get("rejected")
         rejected_payload = rejected if isinstance(rejected, dict) else {}
+        comparison = entry.get("placement_shadow_comparison")
+        comparison_payload = comparison if isinstance(comparison, dict) else {}
         return {
             "timestamp": entry.get("timestamp"),
             "purpose": entry.get("purpose"),
@@ -2138,14 +2140,20 @@ class DashboardService:
             "status": entry.get("status"),
             "shadow_status": shadow_status,
             "snapshot_age_seconds": shadow.get("snapshot_age_seconds"),
+            "reservation_id": shadow.get("reservation_id"),
+            "reservation_expires_at": shadow.get("reservation_expires_at"),
+            "reservation_ttl_seconds": shadow.get("reservation_ttl_seconds"),
+            "comparison": comparison_payload,
             "target_id": selected_payload.get("target_id"),
             "target_provider": selected_payload.get("provider"),
             "target_kind": selected_payload.get("kind"),
+            "endpoint_ref": selected_payload.get("endpoint_ref"),
             "device": selected_payload.get("device"),
             "gpu_index": selected_payload.get("gpu_index"),
             "gpu_uuid": selected_payload.get("gpu_uuid"),
             "free_vram_mb": selected_payload.get("free_vram_mb"),
             "projected_headroom_mb": selected_payload.get("projected_headroom_mb"),
+            "advisory_reserved_vram_mb": selected_payload.get("advisory_reserved_vram_mb"),
             "warm": selected_payload.get("warm"),
             "reason": selected_payload.get("reason"),
             "score": selected_payload.get("score"),

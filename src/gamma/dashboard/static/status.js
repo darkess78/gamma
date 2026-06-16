@@ -348,12 +348,24 @@
     target.innerHTML = '<div class="shadow-summary">' + escapeHtml(lines.join('\n')) + '</div>'
       + entries.map(function (entry) {
         var selected = entry.target_id
-          ? entry.target_id + ' (' + (entry.device || entry.target_kind || 'target') + ')'
+          ? entry.target_id + ' (' + (entry.endpoint_ref || entry.device || entry.target_kind || 'target') + ')'
           : 'No advisory target';
         var age = entry.snapshot_age_seconds == null ? 'n/a' : Number(entry.snapshot_age_seconds).toFixed(1) + ' sec';
         var vram = entry.free_vram_mb == null
           ? 'n/a'
           : Number(entry.free_vram_mb) + ' MB free / ' + Number(entry.projected_headroom_mb || 0) + ' MB projected';
+        var reservation = entry.reservation_id
+          ? 'Reservation: ' + entry.reservation_id + ' / ttl: ' + Number(entry.reservation_ttl_seconds || 0) + ' sec'
+            + ' / advisory reserved: ' + Number(entry.advisory_reserved_vram_mb || 0) + ' MB'
+          : 'Reservation: none';
+        var comparison = entry.comparison || {};
+        var compareText = comparison.actual_provider
+          ? 'Actual: ' + (comparison.actual_provider || 'provider') + ' / ' + (comparison.actual_model || 'model')
+            + ' / ' + (comparison.actual_endpoint_ref || 'endpoint')
+            + ' | Matches: provider ' + (comparison.provider_match ? 'yes' : 'no')
+            + ', model ' + (comparison.model_match ? 'yes' : 'no')
+            + ', endpoint ref ' + (comparison.endpoint_ref_match ? 'yes' : 'no')
+          : 'Actual comparison: n/a';
         var rejected = entry.rejected_count
           ? 'Rejected: ' + Object.keys(entry.rejected || {}).map(function (id) {
             return id + '=' + entry.rejected[id];
@@ -364,6 +376,8 @@
           + '<span>' + escapeHtml(selected) + '</span>'
           + '<span>' + escapeHtml((entry.route_family || 'route') + ' / ' + (entry.provider || 'provider') + ' / ' + (entry.model || 'model')) + '</span>'
           + '<span>' + escapeHtml('VRAM: ' + vram + ' / warm: ' + (entry.warm ? 'yes' : 'no') + ' / snapshot age: ' + age) + '</span>'
+          + '<span>' + escapeHtml(reservation) + '</span>'
+          + '<span>' + escapeHtml(compareText) + '</span>'
           + '<span>' + escapeHtml('Reason: ' + (entry.reason || entry.shadow_status || 'n/a')) + '</span>'
           + '<span>' + escapeHtml(rejected) + '</span>'
           + '</div>';

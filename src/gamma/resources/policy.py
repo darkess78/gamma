@@ -13,10 +13,12 @@ def rank_placement_candidates(
     workload: WorkloadSpec,
     targets: tuple[RuntimeTarget, ...],
     policy: ResourceRoutingPolicy,
+    advisory_reservations_mb: dict[str, int] | None = None,
 ) -> PlacementDecision:
     rejected: dict[str, str] = {}
     candidates: list[PlacementCandidate] = []
     snapshot_age = _snapshot_age_seconds(snapshot)
+    reservations = advisory_reservations_mb or {}
 
     if snapshot_age is None or snapshot_age > policy.snapshot_max_age_seconds:
         return PlacementDecision(
@@ -33,7 +35,12 @@ def rank_placement_candidates(
         if reason:
             rejected[target.id or "<unknown>"] = reason
             continue
-        candidate = _candidate_for_target(target=target, workload=workload, gpus=gpus)
+        candidate = _candidate_for_target(
+            target=target,
+            workload=workload,
+            gpus=gpus,
+            advisory_reserved_vram_mb=max(0, int(reservations.get(target.id, 0))),
+        )
         if candidate is None:
             rejected[target.id] = "gpu_not_found"
             continue
@@ -84,6 +91,7 @@ def _candidate_for_target(
     target: RuntimeTarget,
     workload: WorkloadSpec,
     gpus: dict[str, dict[str, Any]],
+    advisory_reserved_vram_mb: int = 0,
 ) -> PlacementCandidate | None:
     if target.device == "cpu":
         warm = bool(workload.model and workload.model in target.warm_models)
@@ -91,6 +99,7 @@ def _candidate_for_target(
             target=target,
             score=100.0 + (1000.0 if warm else 0.0),
             reason="cpu-target",
+            advisory_reserved_vram_mb=advisory_reserved_vram_mb,
             warm=warm,
         )
 
@@ -99,7 +108,7 @@ def _candidate_for_target(
         return None
     free_vram = _int_value(gpu.get("memory_free_mb"))
     utilization = _int_value(gpu.get("utilization_percent"))
-    projected_headroom = free_vram - max(0, target.reserved_vram_mb) - max(0, workload.estimated_vram_mb)
+    projected_headroom = free_vram - max(0, target.reserved_vram_mb) - advisory_reserved_vram_mb - max(0, workload.estimated_vram_mb)
     warm = bool(workload.model and workload.model in target.warm_models)
     score = float(projected_headroom) - (utilization * 10.0) + (1000.0 if warm else 0.0)
     return PlacementCandidate(
@@ -110,6 +119,7 @@ def _candidate_for_target(
         gpu_uuid=str(gpu.get("uuid") or "") or None,
         free_vram_mb=free_vram,
         projected_headroom_mb=projected_headroom,
+        advisory_reserved_vram_mb=advisory_reserved_vram_mb,
         warm=warm,
     )
 

@@ -988,20 +988,37 @@ class DashboardRoutesTest(unittest.TestCase):
                     "placement_shadow": {
                         "status": "selected",
                         "snapshot_age_seconds": 0.42,
+                        "reservation_id": "reservation-1",
+                        "reservation_expires_at": "2026-06-15T12:00:30Z",
+                        "reservation_ttl_seconds": 30,
                         "selected": {
                             "target_id": "ollama_gpu_1",
                             "provider": "local",
                             "kind": "ollama",
+                            "endpoint_ref": "local_ollama_gpu_1",
                             "device": "cuda:1",
                             "gpu_index": 1,
                             "gpu_uuid": "GPU-1",
                             "free_vram_mb": 12000,
                             "projected_headroom_mb": 6400,
+                            "advisory_reserved_vram_mb": 2000,
                             "warm": True,
                             "reason": "gpu-headroom",
                             "score": 7400.0,
                         },
                         "rejected": {"ollama_gpu_0": "insufficient_vram_headroom"},
+                    },
+                    "placement_shadow_comparison": {
+                        "actual_provider": "local",
+                        "actual_model": "gpt-oss:20b",
+                        "actual_endpoint_ref": "local_llm_endpoint",
+                        "advisory_target_id": "ollama_gpu_1",
+                        "advisory_provider": "local",
+                        "advisory_model": "gpt-oss:20b",
+                        "advisory_endpoint_ref": "local_ollama_gpu_1",
+                        "provider_match": True,
+                        "model_match": True,
+                        "endpoint_ref_match": False,
                     },
                 },
                 {
@@ -1030,9 +1047,16 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(shadow["summary"]["target_counts"], {"ollama_gpu_1": 1})
         selected = shadow["entries"][0]
         self.assertEqual(selected["target_id"], "ollama_gpu_1")
+        self.assertEqual(selected["endpoint_ref"], "local_ollama_gpu_1")
         self.assertEqual(selected["device"], "cuda:1")
         self.assertEqual(selected["free_vram_mb"], 12000)
         self.assertEqual(selected["projected_headroom_mb"], 6400)
+        self.assertEqual(selected["advisory_reserved_vram_mb"], 2000)
+        self.assertEqual(selected["reservation_id"], "reservation-1")
+        self.assertEqual(selected["reservation_ttl_seconds"], 30)
+        self.assertEqual(selected["comparison"]["actual_endpoint_ref"], "local_llm_endpoint")
+        self.assertTrue(selected["comparison"]["provider_match"])
+        self.assertFalse(selected["comparison"]["endpoint_ref_match"])
         self.assertTrue(selected["warm"])
         self.assertEqual(selected["rejected_count"], 1)
         self.assertEqual(shadow["entries"][1]["shadow_status"], "no_fit")

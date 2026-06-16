@@ -7,7 +7,8 @@ from pathlib import Path
 
 from gamma.resources.models import RuntimeTarget, WorkloadSpec
 from gamma.resources.policy import rank_placement_candidates
-from gamma.resources.runtime_registry import ResourceRoutingPolicy, load_resource_routing_registry
+from gamma.resources.coordinator import ResourcePlacementCoordinator
+from gamma.resources.runtime_registry import ResourceRoutingPolicy, ResourceRoutingRegistry, load_resource_routing_registry
 
 
 class ResourcePolicyTest(unittest.TestCase):
@@ -76,11 +77,13 @@ class ResourcePolicyTest(unittest.TestCase):
         registry = load_resource_routing_registry(
             {
                 "resource_routing": {
-                    "policy": {"shadow_mode": True, "minimum_headroom_mb": 4096},
+                    "policy": {"shadow_mode": True, "minimum_headroom_mb": 4096, "reservation_ttl_seconds": 15},
+                    "endpoints": {"local_ollama_gpu_0": "http://127.0.0.1:11434"},
                     "targets": [
                         {
                             "id": "ollama-gpu0",
                             "kind": "ollama",
+                            "endpoint_ref": "local_ollama_gpu_0",
                             "device": "cuda:0",
                             "models": ["gpt-oss:20b"],
                         }
@@ -91,7 +94,9 @@ class ResourcePolicyTest(unittest.TestCase):
 
         self.assertTrue(registry.policy.shadow_mode)
         self.assertEqual(registry.policy.minimum_headroom_mb, 4096)
+        self.assertEqual(registry.policy.reservation_ttl_seconds, 15)
         self.assertEqual(registry.targets[0].provider, "local")
+        self.assertEqual(registry.endpoint_for_target(registry.targets[0]).url, "http://127.0.0.1:11434")  # type: ignore[union-attr]
         self.assertEqual(registry.targets[0].models, ("gpt-oss:20b",))
         self.assertEqual(registry.validation_errors, ())
 
@@ -99,12 +104,24 @@ class ResourcePolicyTest(unittest.TestCase):
         registry = load_resource_routing_registry(
             {
                 "resource_routing": {
+                    "endpoints": {
+                        "valid_endpoint": "http://127.0.0.1:11434",
+                        "bad_endpoint": "not-a-url",
+                    },
                     "targets": [
                         {"id": "", "kind": "ollama", "device": "cuda:0", "modalities": ["text"]},
-                        {"id": "valid", "kind": "ollama", "device": "cuda:0", "modalities": ["text"], "models": ["model"]},
+                        {
+                            "id": "valid",
+                            "kind": "ollama",
+                            "endpoint_ref": "valid_endpoint",
+                            "device": "cuda:0",
+                            "modalities": ["text"],
+                            "models": ["model"],
+                        },
                         {"id": "valid", "kind": "ollama", "device": "cuda:1", "modalities": ["text"], "models": ["model"]},
                         {"id": "bad-device", "kind": "ollama", "device": "gpu:0", "modalities": ["text"], "models": ["model"]},
                         {"id": "bad-modality", "kind": "ollama", "device": "cpu", "modalities": ["images"], "models": ["model"]},
+                        {"id": "bad-endpoint-ref", "kind": "ollama", "endpoint_ref": "missing_endpoint", "device": "cpu", "modalities": ["text"], "models": ["model"]},
                         "not-an-object",
                     ],
                 }
@@ -112,9 +129,12 @@ class ResourcePolicyTest(unittest.TestCase):
         )
 
         self.assertEqual([target.id for target in registry.targets], ["valid"])
+        self.assertEqual([endpoint.id for endpoint in registry.endpoints], ["valid_endpoint"])
+        self.assertTrue(any(".url is unsupported: not-a-url" in error for error in registry.validation_errors))
         self.assertTrue(any(".id is required" in error for error in registry.validation_errors))
         self.assertTrue(any(".id duplicates valid" in error for error in registry.validation_errors))
         self.assertTrue(any(".device is unsupported: gpu:0" in error for error in registry.validation_errors))
+        self.assertTrue(any(".endpoint_ref is unknown: missing_endpoint" in error for error in registry.validation_errors))
         self.assertTrue(any(".modalities contains unsupported values: images" in error for error in registry.validation_errors))
         self.assertTrue(any("must be an object" in error for error in registry.validation_errors))
 
@@ -124,8 +144,11 @@ class ResourcePolicyTest(unittest.TestCase):
         registry = load_resource_routing_registry(payload)
 
         targets = {target.id: target for target in registry.targets}
+        endpoints = {endpoint.id: endpoint for endpoint in registry.endpoints}
         self.assertFalse(registry.policy.shadow_mode)
         self.assertEqual(registry.validation_errors, ())
+        for endpoint_id in ("local_ollama_gpu_0", "local_ollama_gpu_1", "local_ollama_cpu", "qwen_tts_local", "audio_understanding_local"):
+            self.assertIn(endpoint_id, endpoints)
         for target_id in ("ollama_gpu_0", "ollama_gpu_1", "cpu_llm_sidecar", "qwen_tts_cpu", "audio_understanding_cpu"):
             self.assertIn(target_id, targets)
             self.assertFalse(targets[target_id].enabled)
@@ -133,9 +156,45 @@ class ResourcePolicyTest(unittest.TestCase):
 
         self.assertEqual(targets["ollama_gpu_0"].device, "cuda:0")
         self.assertEqual(targets["ollama_gpu_1"].endpoint_ref, "local_ollama_gpu_1")
+        self.assertEqual(registry.endpoint_for_target(targets["ollama_gpu_1"]).url, "http://127.0.0.1:11435")  # type: ignore[union-attr]
         self.assertEqual(targets["cpu_llm_sidecar"].device, "cpu")
         self.assertEqual(targets["qwen_tts_cpu"].modalities, ("speech",))
         self.assertEqual(targets["audio_understanding_cpu"].provider, "audio-understanding")
+
+    def test_shadow_advisory_reservations_influence_later_rankings_only_until_release(self) -> None:
+        ResourcePlacementCoordinator.clear_advisory_reservations()
+        registry = ResourceRoutingRegistry(
+            policy=ResourceRoutingPolicy(shadow_mode=True, minimum_headroom_mb=1000, reservation_ttl_seconds=30),
+            targets=(
+                RuntimeTarget(id="gpu-a", kind="ollama", provider="local", device="cuda:0", models=("model",)),
+                RuntimeTarget(id="gpu-b", kind="ollama", provider="local", device="cuda:1", models=("model",)),
+            ),
+        )
+        coordinator = ResourcePlacementCoordinator(
+            registry=registry,
+            monitor=_FakeMonitor(
+                _snapshot(
+                    [
+                        {"index": 0, "uuid": "GPU-0", "memory_free_mb": 8000, "utilization_percent": 0},
+                        {"index": 1, "uuid": "GPU-1", "memory_free_mb": 8000, "utilization_percent": 0},
+                    ]
+                )
+            ),
+        )
+        workload = WorkloadSpec(id="llm:chat", kind="llm", provider="local", model="model", estimated_vram_mb=4000)
+
+        first = coordinator.rank_and_reserve(workload)
+        second = coordinator.rank(workload)
+        ResourcePlacementCoordinator.release_advisory_reservation(first.reservation_id)
+        third = coordinator.rank(workload)
+        ResourcePlacementCoordinator.clear_advisory_reservations()
+
+        self.assertEqual(first.status, "selected")
+        self.assertEqual(first.selected.target.id, "gpu-a")  # type: ignore[union-attr]
+        self.assertTrue(first.reservation_id)
+        self.assertEqual(second.selected.target.id, "gpu-b")  # type: ignore[union-attr]
+        self.assertEqual(second.rejected["gpu-a"], "insufficient_vram_headroom")
+        self.assertEqual(third.selected.target.id, "gpu-a")  # type: ignore[union-attr]
 
 
 def _snapshot(gpus, *, sampled_at: str | None = None):
@@ -143,6 +202,14 @@ def _snapshot(gpus, *, sampled_at: str | None = None):
         "sampled_at": sampled_at or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "gpu": {"ok": True, "gpus": gpus},
     }
+
+
+class _FakeMonitor:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def dashboard_payload(self):
+        return self._payload
 
 
 if __name__ == "__main__":

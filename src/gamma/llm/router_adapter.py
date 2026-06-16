@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from ..config import settings
 from ..errors import ConfigurationError
-from ..resources import llm_shadow_placement_payload
+from ..resources import llm_shadow_placement_payload, release_advisory_reservation
 from .base import LLMAdapter, LLMCallContext, LLMImageInput, LLMReply
 
 _ROUTE_TRACE = threading.local()
@@ -157,6 +157,12 @@ class RouterLLMAdapter(LLMAdapter):
                     fallback_index=index,
                 )
                 continue
+            placement_shadow = llm_shadow_placement_payload(
+                provider=decision.provider,
+                model=decision.model,
+                route_family=decision.route_family,
+                has_images=bool(image_inputs),
+            )
             started_at = time.perf_counter()
             try:
                 adapter = self._adapter_for_provider(decision.provider)
@@ -177,6 +183,7 @@ class RouterLLMAdapter(LLMAdapter):
                     duration_ms=duration_ms,
                     detail=str(availability.get("detail", "ready")),
                     fallback_index=index,
+                    placement_shadow=placement_shadow,
                 )
                 metadata = dict(reply.metadata or {})
                 metadata["route"] = event
@@ -204,7 +211,13 @@ class RouterLLMAdapter(LLMAdapter):
                     duration_ms=duration_ms,
                     detail=str(exc),
                     fallback_index=index,
+                    placement_shadow=placement_shadow,
                 )
+            finally:
+                reservation_id = None
+                if isinstance(placement_shadow, dict):
+                    reservation_id = str(placement_shadow.get("reservation_id") or "") or None
+                release_advisory_reservation(reservation_id)
         if last_exc is not None:
             raise last_exc
         raise ConfigurationError("No usable routed LLM provider is available.")
@@ -612,6 +625,7 @@ class RouterLLMAdapter(LLMAdapter):
         duration_ms: float,
         detail: str,
         fallback_index: int,
+        placement_shadow: dict[str, object] | None = None,
     ) -> dict[str, object]:
         """Record route event for logging and metrics.
         
@@ -650,14 +664,12 @@ class RouterLLMAdapter(LLMAdapter):
             "cost_sensitive": bool(call_context.cost_sensitive),
             "fallback_index": fallback_index,
         }
-        placement_shadow = llm_shadow_placement_payload(
-            provider=decision.provider,
-            model=decision.model,
-            route_family=decision.route_family,
-            has_images=has_images,
-        )
         if placement_shadow is not None:
             event["placement_shadow"] = placement_shadow
+            event["placement_shadow_comparison"] = self._placement_shadow_comparison(
+                decision=decision,
+                placement_shadow=placement_shadow,
+            )
         current = list(getattr(_ROUTE_TRACE, "events", []))
         current.append(event)
         _ROUTE_TRACE.events = current
@@ -667,6 +679,41 @@ class RouterLLMAdapter(LLMAdapter):
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(event, ensure_ascii=False) + "\n")
         return event
+
+    def _placement_shadow_comparison(
+        self,
+        *,
+        decision: RouteDecision,
+        placement_shadow: dict[str, object],
+    ) -> dict[str, object]:
+        selected = placement_shadow.get("selected")
+        selected_payload = selected if isinstance(selected, dict) else {}
+        actual_endpoint_ref, actual_endpoint = self._actual_endpoint_for_decision(decision)
+        advisory_provider = str(selected_payload.get("provider") or placement_shadow.get("provider") or "")
+        advisory_model = str(placement_shadow.get("model") or "")
+        advisory_endpoint_ref = str(selected_payload.get("endpoint_ref") or "")
+        return {
+            "actual_provider": decision.provider,
+            "actual_model": decision.model,
+            "actual_endpoint_ref": actual_endpoint_ref,
+            "actual_endpoint": actual_endpoint,
+            "advisory_status": placement_shadow.get("status"),
+            "advisory_target_id": selected_payload.get("target_id"),
+            "advisory_provider": advisory_provider,
+            "advisory_model": advisory_model,
+            "advisory_endpoint_ref": advisory_endpoint_ref,
+            "provider_match": bool(advisory_provider and advisory_provider == decision.provider),
+            "model_match": bool(advisory_model and advisory_model == (decision.model or "")),
+            "endpoint_ref_match": bool(advisory_endpoint_ref and advisory_endpoint_ref == actual_endpoint_ref),
+        }
+
+    def _actual_endpoint_for_decision(self, decision: RouteDecision) -> tuple[str, str]:
+        provider = (decision.provider or "").strip().lower()
+        if provider in {"local", "ollama"}:
+            return "local_llm_endpoint", settings.local_llm_endpoint
+        if provider == "openai":
+            return "openai", ""
+        return provider or "unknown", ""
 
     def _mark_provider_failure(self, provider: str, *, has_images: bool, route_family: str | None = None) -> None:
         """Add failure backoff for provider.

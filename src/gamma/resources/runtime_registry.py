@@ -18,6 +18,8 @@ class ResourceRoutingPolicy:
     reservation_ttl_seconds: int = 30
     minimum_headroom_mb: int = 2048
     default_estimated_vram_mb: int = 0
+    qwen_tts_estimated_vram_mb: int = 0
+    audio_understanding_estimated_vram_mb: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +66,8 @@ def _policy(value: Any) -> ResourceRoutingPolicy:
         reservation_ttl_seconds=_as_int(payload.get("reservation_ttl_seconds", 30), default=30),
         minimum_headroom_mb=_as_int(payload.get("minimum_headroom_mb", 2048), default=2048),
         default_estimated_vram_mb=_as_int(payload.get("default_estimated_vram_mb", 0), default=0),
+        qwen_tts_estimated_vram_mb=_as_int(payload.get("qwen_tts_estimated_vram_mb", 0), default=0),
+        audio_understanding_estimated_vram_mb=_as_int(payload.get("audio_understanding_estimated_vram_mb", 0), default=0),
     )
 
 

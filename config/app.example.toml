@@ -168,6 +168,8 @@ snapshot_max_age_seconds = 5
 reservation_ttl_seconds = 30
 minimum_headroom_mb = 2048
 default_estimated_vram_mb = 0
+qwen_tts_estimated_vram_mb = 0
+audio_understanding_estimated_vram_mb = 0
 
 # Resource-routing targets are advisory examples only. Keep them disabled in
 # shared config, then copy the shapes into config/app.local.toml with real

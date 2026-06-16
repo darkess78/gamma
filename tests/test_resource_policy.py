@@ -148,6 +148,8 @@ class ResourcePolicyTest(unittest.TestCase):
         self.assertFalse(registry.policy.shadow_mode)
         self.assertFalse(registry.policy.active_llm_routing)
         self.assertFalse(registry.policy.startup_admission)
+        self.assertEqual(registry.policy.qwen_tts_estimated_vram_mb, 0)
+        self.assertEqual(registry.policy.audio_understanding_estimated_vram_mb, 0)
         self.assertEqual(registry.validation_errors, ())
         for endpoint_id in ("local_ollama_gpu_0", "local_ollama_gpu_1", "local_ollama_cpu", "qwen_tts_local", "audio_understanding_local"):
             self.assertIn(endpoint_id, endpoints)
@@ -164,6 +166,21 @@ class ResourcePolicyTest(unittest.TestCase):
         self.assertEqual(targets["qwen_tts_cpu"].modalities, ("speech",))
         self.assertEqual(targets["audio_understanding_cpu"].provider, "audio-understanding")
         self.assertEqual(payload["qwen_tts_device"], "")
+
+    def test_registry_parses_sidecar_startup_estimates(self) -> None:
+        registry = load_resource_routing_registry(
+            {
+                "resource_routing": {
+                    "policy": {
+                        "qwen_tts_estimated_vram_mb": 9216,
+                        "audio_understanding_estimated_vram_mb": 1024,
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(registry.policy.qwen_tts_estimated_vram_mb, 9216)
+        self.assertEqual(registry.policy.audio_understanding_estimated_vram_mb, 1024)
 
     def test_registry_accepts_local_startup_admission_sidecar_targets(self) -> None:
         registry = load_resource_routing_registry(

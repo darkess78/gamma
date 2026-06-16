@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import time
@@ -12,6 +13,7 @@ from urllib.parse import urlparse
 import psutil
 
 from ..config import settings
+from ..observability import configure_logging, log_event
 from ..resources import ResourcePlacementCoordinator, WorkloadSpec
 from ..resources.runtime_registry import load_resource_routing_registry
 from ..system.cuda_env import prepend_cuda_library_path
@@ -89,6 +91,7 @@ class ProcessManager:
         """
         self._runtime_dir = settings.data_dir / "runtime"
         self._runtime_dir.mkdir(parents=True, exist_ok=True)
+        self._logger = configure_logging("supervisor")
         self._services = {
             "shana": ManagedService(
                 "shana",
@@ -706,8 +709,21 @@ class ProcessManager:
     def _qwen_tts_admission_env(self) -> dict[str, str]:
         requested = os.environ.get("QWEN_TTS_DEVICE") or settings.qwen_tts_device or "auto"
         if not self._is_auto_device(requested):
+            self._log_startup_admission_bypassed(
+                provider="qwen-tts",
+                kind="qwen-tts",
+                modality="speech",
+                model="qwen-tts",
+                requested_device=requested,
+            )
             return {}
-        device = self._admitted_sidecar_device(provider="qwen-tts", kind="qwen-tts", modality="speech", model="qwen-tts")
+        device = self._admitted_sidecar_device(
+            provider="qwen-tts",
+            kind="qwen-tts",
+            modality="speech",
+            model="qwen-tts",
+            estimated_vram_mb=self._sidecar_estimated_vram_mb("qwen-tts"),
+        )
         return {"QWEN_TTS_DEVICE": device} if device else {}
 
     def _audio_understanding_admission_env(self) -> dict[str, str]:
@@ -715,12 +731,20 @@ class ProcessManager:
             self._is_auto_device(value)
             for value in (settings.audio_analysis_device, settings.speaker_emotion_device, settings.audio_event_device)
         ):
+            self._log_startup_admission_bypassed(
+                provider="audio-understanding",
+                kind="audio-understanding",
+                modality="audio",
+                model=None,
+                requested_device="explicit",
+            )
             return {}
         device = self._admitted_sidecar_device(
             provider="audio-understanding",
             kind="audio-understanding",
             modality="audio",
             model=None,
+            estimated_vram_mb=self._sidecar_estimated_vram_mb("audio-understanding"),
         )
         if not device:
             return {}
@@ -733,9 +757,40 @@ class ProcessManager:
             env["SHANA_AUDIO_EVENT_DEVICE"] = device
         return env
 
-    def _admitted_sidecar_device(self, *, provider: str, kind: str, modality: str, model: str | None) -> str | None:
+    def _admitted_sidecar_device(
+        self,
+        *,
+        provider: str,
+        kind: str,
+        modality: str,
+        model: str | None,
+        estimated_vram_mb: int = 0,
+    ) -> str | None:
         registry = load_resource_routing_registry()
-        if not registry.policy.startup_admission or registry.validation_errors:
+        if not registry.policy.startup_admission:
+            log_event(
+                self._logger,
+                logging.INFO,
+                "resource.startup_admission.skipped",
+                "Startup admission skipped because policy is disabled.",
+                provider=provider,
+                kind=kind,
+                modality=modality,
+                model=model,
+            )
+            return None
+        if registry.validation_errors:
+            log_event(
+                self._logger,
+                logging.WARNING,
+                "resource.startup_admission.skipped",
+                "Startup admission skipped because resource registry validation failed.",
+                provider=provider,
+                kind=kind,
+                modality=modality,
+                model=model,
+                validation_errors=list(registry.validation_errors),
+            )
             return None
         decision = ResourcePlacementCoordinator(registry=registry).rank(
             WorkloadSpec(
@@ -744,11 +799,62 @@ class ProcessManager:
                 provider=provider,
                 model=model,
                 modality=modality,
+                estimated_vram_mb=estimated_vram_mb,
             )
+        )
+        selected = decision.selected.as_payload() if decision.selected else None
+        event_name = "resource.startup_admission.selected" if decision.selected else "resource.startup_admission.rejected"
+        level = logging.INFO if decision.selected else logging.WARNING
+        log_event(
+            self._logger,
+            level,
+            event_name,
+            "Startup admission placement decision completed.",
+            provider=provider,
+            kind=kind,
+            modality=modality,
+            model=model,
+            workload_id=decision.workload.id,
+            estimated_vram_mb=decision.workload.estimated_vram_mb,
+            minimum_headroom_mb=decision.workload.minimum_headroom_mb,
+            status=decision.status,
+            selected=selected,
+            rejected=decision.rejected,
+            snapshot_age_seconds=decision.snapshot_age_seconds,
         )
         if decision.selected is None:
             return None
         return decision.selected.target.device or None
+
+    def _log_startup_admission_bypassed(
+        self,
+        *,
+        provider: str,
+        kind: str,
+        modality: str,
+        model: str | None,
+        requested_device: str,
+    ) -> None:
+        log_event(
+            self._logger,
+            logging.INFO,
+            "resource.startup_admission.bypassed",
+            "Startup admission bypassed for explicit sidecar device.",
+            provider=provider,
+            kind=kind,
+            modality=modality,
+            model=model,
+            requested_device=requested_device,
+        )
+
+    @staticmethod
+    def _sidecar_estimated_vram_mb(kind: str) -> int:
+        normalized = kind.strip().lower()
+        if normalized == "qwen-tts":
+            return max(0, int(getattr(load_resource_routing_registry().policy, "qwen_tts_estimated_vram_mb", 0)))
+        if normalized == "audio-understanding":
+            return max(0, int(getattr(load_resource_routing_registry().policy, "audio_understanding_estimated_vram_mb", 0)))
+        return 0
 
     @staticmethod
     def _is_auto_device(value: str | None) -> bool:

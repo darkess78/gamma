@@ -704,7 +704,7 @@ class ProcessManager:
         return subprocess.run(command, **kwargs)
 
     def _qwen_tts_admission_env(self) -> dict[str, str]:
-        requested = os.environ.get("QWEN_TTS_DEVICE", "auto")
+        requested = os.environ.get("QWEN_TTS_DEVICE") or settings.qwen_tts_device or "auto"
         if not self._is_auto_device(requested):
             return {}
         device = self._admitted_sidecar_device(provider="qwen-tts", kind="qwen-tts", modality="speech", model="qwen-tts")

@@ -160,8 +160,60 @@ class ResourcePolicyTest(unittest.TestCase):
         self.assertEqual(targets["ollama_gpu_1"].endpoint_ref, "local_ollama_gpu_1")
         self.assertEqual(registry.endpoint_for_target(targets["ollama_gpu_1"]).url, "http://127.0.0.1:11435")  # type: ignore[union-attr]
         self.assertEqual(targets["cpu_llm_sidecar"].device, "cpu")
+        self.assertEqual(registry.endpoint_for_target(targets["qwen_tts_cpu"]).url, "http://127.0.0.1:9882")  # type: ignore[union-attr]
         self.assertEqual(targets["qwen_tts_cpu"].modalities, ("speech",))
         self.assertEqual(targets["audio_understanding_cpu"].provider, "audio-understanding")
+        self.assertEqual(payload["qwen_tts_device"], "")
+
+    def test_registry_accepts_local_startup_admission_sidecar_targets(self) -> None:
+        registry = load_resource_routing_registry(
+            {
+                "resource_routing": {
+                    "policy": {
+                        "shadow_mode": True,
+                        "active_llm_routing": False,
+                        "startup_admission": False,
+                        "minimum_headroom_mb": 1024,
+                    },
+                    "endpoints": {
+                        "qwen_tts_local": "http://127.0.0.1:9882",
+                        "audio_understanding_local": "http://127.0.0.1:9883",
+                    },
+                    "targets": [
+                        {
+                            "id": "qwen_tts_gpu_0",
+                            "kind": "qwen-tts",
+                            "provider": "qwen-tts",
+                            "endpoint_ref": "qwen_tts_local",
+                            "device": "cuda:0",
+                            "models": ["qwen-tts"],
+                            "modalities": ["speech"],
+                            "enabled": True,
+                            "managed": False,
+                        },
+                        {
+                            "id": "audio_understanding_gpu_1",
+                            "kind": "audio-understanding",
+                            "provider": "audio-understanding",
+                            "endpoint_ref": "audio_understanding_local",
+                            "device": "cuda:1",
+                            "models": ["superb/wav2vec2-base-superb-er", "MIT/ast-finetuned-audioset-10-10-0.4593"],
+                            "modalities": ["audio"],
+                            "enabled": True,
+                            "managed": False,
+                        },
+                    ],
+                }
+            }
+        )
+
+        self.assertFalse(registry.policy.startup_admission)
+        self.assertEqual(registry.validation_errors, ())
+        targets = {target.id: target for target in registry.targets}
+        self.assertEqual(targets["qwen_tts_gpu_0"].provider, "qwen-tts")
+        self.assertEqual(targets["qwen_tts_gpu_0"].modalities, ("speech",))
+        self.assertEqual(targets["audio_understanding_gpu_1"].provider, "audio-understanding")
+        self.assertEqual(targets["audio_understanding_gpu_1"].modalities, ("audio",))
 
     def test_shadow_advisory_reservations_influence_later_rankings_only_until_release(self) -> None:
         ResourcePlacementCoordinator.clear_advisory_reservations()

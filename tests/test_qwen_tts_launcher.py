@@ -36,8 +36,10 @@ class QwenTtsLauncherTest(unittest.TestCase):
             stderr="",
         )
         with (
+            patch.dict("os.environ", {}, clear=True),
             patch.object(launcher, "_is_listening", return_value=False),
             patch.object(launcher, "_qwen_python", return_value="/usr/bin/python"),
+            patch.object(launcher.settings, "qwen_tts_device", "cuda:1"),
             patch.object(launcher.subprocess, "run", return_value=completed),
             patch.object(launcher.subprocess, "Popen") as popen,
             patch.object(launcher.time, "time", side_effect=[0, 0, 91]),
@@ -49,3 +51,34 @@ class QwenTtsLauncherTest(unittest.TestCase):
                 launcher.main()
 
         popen.assert_called_once()
+        self.assertEqual(popen.call_args.kwargs["env"]["QWEN_TTS_DEVICE"], "cuda:0")
+        self.assertEqual(popen.call_args.kwargs["env"]["QWEN_TTS_PHYSICAL_DEVICE"], "cuda:1")
+        self.assertEqual(popen.call_args.kwargs["env"]["CUDA_VISIBLE_DEVICES"], "1")
+
+    def test_launcher_environment_device_overrides_app_config_device(self) -> None:
+        launcher = _load_launcher()
+        completed = subprocess.CompletedProcess(
+            args=["/usr/bin/python", "-c", "import torch, qwen_tts"],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+        with (
+            patch.dict("os.environ", {"QWEN_TTS_DEVICE": "cpu"}, clear=True),
+            patch.object(launcher, "_is_listening", return_value=False),
+            patch.object(launcher, "_qwen_python", return_value="/usr/bin/python"),
+            patch.object(launcher.settings, "qwen_tts_device", "cuda:1"),
+            patch.object(launcher.subprocess, "run", return_value=completed),
+            patch.object(launcher.subprocess, "Popen") as popen,
+            patch.object(launcher.time, "time", side_effect=[0, 0, 91]),
+            patch.object(launcher, "_health_ok", return_value=False),
+        ):
+            process = popen.return_value
+            process.poll.return_value = None
+            with self.assertRaisesRegex(SystemExit, "did not start within 90 seconds"):
+                launcher.main()
+
+        popen.assert_called_once()
+        self.assertEqual(popen.call_args.kwargs["env"]["QWEN_TTS_DEVICE"], "cpu")
+        self.assertNotIn("QWEN_TTS_PHYSICAL_DEVICE", popen.call_args.kwargs["env"])
+        self.assertNotIn("CUDA_VISIBLE_DEVICES", popen.call_args.kwargs["env"])

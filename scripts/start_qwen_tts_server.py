@@ -23,6 +23,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from gamma.config import settings
 from gamma.system.python_runtime import resolve_python_executable
 
 
@@ -107,6 +108,9 @@ def main() -> int:
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("PYTHONUTF8", "1")
     env.setdefault("QWEN_TTS_PYTHON", "/usr/bin/python")
+    configured_device = str(settings.qwen_tts_device or "").strip()
+    if configured_device:
+        env.setdefault("QWEN_TTS_DEVICE", configured_device)
     requested_device = env.get("QWEN_TTS_DEVICE", "").strip().lower()
     if requested_device.startswith("cuda:") and "CUDA_VISIBLE_DEVICES" not in env:
         physical_index = requested_device.split(":", 1)[1].strip()

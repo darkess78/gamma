@@ -82,6 +82,7 @@ rvc_protect = 0.33
 rvc_resample_sr = 0
 rvc_device = ""
 qwen_tts_endpoint = ""
+qwen_tts_device = ""
 qwen_tts_reference_audio = ""
 qwen_tts_reference_text = ""
 qwen_tts_language = "English"
@@ -175,7 +176,7 @@ default_estimated_vram_mb = 0
 local_ollama_gpu_0 = "http://127.0.0.1:11434"
 local_ollama_gpu_1 = "http://127.0.0.1:11435"
 local_ollama_cpu = "http://127.0.0.1:11436"
-qwen_tts_local = "http://127.0.0.1:9884"
+qwen_tts_local = "http://127.0.0.1:9882"
 audio_understanding_local = "http://127.0.0.1:9883"
 
 [[resource_routing.targets]]

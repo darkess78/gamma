@@ -868,6 +868,12 @@ class Settings:
         "SHANA_QWEN_TTS_ENDPOINT",
         _config_value(APP_CONFIG, "qwen_tts_endpoint", default=""),
     )
+    qwen_tts_device: str = str(
+        _setting(
+            "SHANA_QWEN_TTS_DEVICE",
+            _config_value(APP_CONFIG, "qwen_tts_device", default=""),
+        )
+    )
     qwen_tts_reference_audio: str | None = _setting(
         "SHANA_QWEN_TTS_REFERENCE_AUDIO",
         _config_value(APP_CONFIG, "qwen_tts_reference_audio", default=""),

@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from gamma.config import settings
+from gamma.resources.runtime_registry import ResourceRoutingPolicy, ResourceRoutingRegistry
 from gamma.supervisor.manager import ProcessManager
 
 
@@ -70,6 +71,7 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
         manager = ProcessManager()
         with (
             patch.dict("os.environ", {"QWEN_TTS_DEVICE": "auto"}, clear=False),
+            patch.object(settings, "qwen_tts_device", ""),
             patch.object(manager, "_admitted_sidecar_device", return_value="cuda:1") as admitted,
         ):
             env = manager._qwen_tts_admission_env()
@@ -79,12 +81,54 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
 
         with (
             patch.dict("os.environ", {"QWEN_TTS_DEVICE": "cuda:0"}, clear=False),
+            patch.object(settings, "qwen_tts_device", "auto"),
             patch.object(manager, "_admitted_sidecar_device", return_value="cuda:1") as admitted,
         ):
             env = manager._qwen_tts_admission_env()
 
         admitted.assert_not_called()
         self.assertEqual(env, {})
+
+    def test_qwen_startup_admission_reads_auto_from_app_config(self) -> None:
+        manager = ProcessManager()
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch.object(settings, "qwen_tts_device", "auto"),
+            patch.object(manager, "_admitted_sidecar_device", return_value="cuda:1") as admitted,
+        ):
+            env = manager._qwen_tts_admission_env()
+
+        admitted.assert_called_once_with(provider="qwen-tts", kind="qwen-tts", modality="speech", model="qwen-tts")
+        self.assertEqual(env, {"QWEN_TTS_DEVICE": "cuda:1"})
+
+    def test_qwen_explicit_app_config_device_skips_startup_admission(self) -> None:
+        manager = ProcessManager()
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch.object(settings, "qwen_tts_device", "cpu"),
+            patch.object(manager, "_admitted_sidecar_device", return_value="cuda:1") as admitted,
+        ):
+            env = manager._qwen_tts_admission_env()
+
+        admitted.assert_not_called()
+        self.assertEqual(env, {})
+
+    def test_startup_admission_disabled_does_not_select_sidecar_device(self) -> None:
+        manager = ProcessManager()
+        registry = ResourceRoutingRegistry(policy=ResourceRoutingPolicy(startup_admission=False), targets=())
+        with (
+            patch("gamma.supervisor.manager.load_resource_routing_registry", return_value=registry),
+            patch("gamma.supervisor.manager.ResourcePlacementCoordinator") as coordinator,
+        ):
+            device = manager._admitted_sidecar_device(
+                provider="qwen-tts",
+                kind="qwen-tts",
+                modality="speech",
+                model="qwen-tts",
+            )
+
+        coordinator.assert_not_called()
+        self.assertIsNone(device)
 
 
 if __name__ == "__main__":

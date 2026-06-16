@@ -384,6 +384,64 @@
       }).join('');
   }
 
+  function renderStartupAdmission(data) {
+    var target = element('startupAdmission');
+    if (!target) return;
+    var admission = data.startup_admission || {};
+    var entries = Array.isArray(admission.entries) ? admission.entries.slice().reverse() : [];
+    var summary = admission.summary || {};
+    if (!entries.length) {
+      target.innerHTML = '<div class="empty-state">No startup admission decisions have been recorded.</div>';
+      return;
+    }
+    var lines = [
+      'Recent decisions: ' + Number(summary.count || entries.length),
+      'Selected: ' + Number(summary.selected_count || 0)
+        + ' / rejected: ' + Number(summary.rejected_count || 0)
+        + ' / skipped: ' + Number(summary.skipped_count || 0)
+        + ' / bypassed: ' + Number(summary.bypassed_count || 0)
+    ];
+    var targetCounts = summary.target_counts || {};
+    var targetNames = Object.keys(targetCounts);
+    if (targetNames.length) {
+      lines.push('Targets: ' + targetNames.map(function (name) {
+        return name + ': ' + targetCounts[name];
+      }).join(' / '));
+    }
+    target.innerHTML = '<div class="shadow-summary">' + escapeHtml(lines.join('\n')) + '</div>'
+      + entries.map(function (entry) {
+        var eventName = String(entry.event || '').replace('resource.startup_admission.', '') || 'unknown';
+        var selected = entry.target_id
+          ? entry.target_id + ' (' + (entry.endpoint_ref || entry.device || entry.kind || 'target') + ')'
+          : (entry.requested_device ? 'Explicit device: ' + entry.requested_device : 'No target selected');
+        var estimate = entry.estimated_vram_mb == null
+          ? 'Estimate: n/a'
+          : 'Estimate: ' + Number(entry.estimated_vram_mb) + ' MB'
+            + (entry.minimum_headroom_mb == null ? '' : ' / min headroom: ' + Number(entry.minimum_headroom_mb) + ' MB');
+        var vram = entry.free_vram_mb == null
+          ? 'VRAM: n/a'
+          : 'VRAM: ' + Number(entry.free_vram_mb) + ' MB free / ' + Number(entry.projected_headroom_mb || 0) + ' MB projected';
+        var age = entry.snapshot_age_seconds == null ? 'n/a' : Number(entry.snapshot_age_seconds).toFixed(1) + ' sec';
+        var rejected = entry.rejected_count
+          ? 'Rejected: ' + Object.keys(entry.rejected || {}).map(function (id) {
+            return id + '=' + entry.rejected[id];
+          }).join(', ')
+          : 'Rejected: none';
+        var validation = Array.isArray(entry.validation_errors) && entry.validation_errors.length
+          ? 'Validation: ' + entry.validation_errors.join(' / ')
+          : '';
+        return '<div class="shadow-route-row">'
+          + '<strong>' + escapeHtml(eventName) + '</strong>'
+          + '<span>' + escapeHtml(selected) + '</span>'
+          + '<span>' + escapeHtml((entry.kind || 'sidecar') + ' / ' + (entry.provider || 'provider') + ' / ' + (entry.model || 'model')) + '</span>'
+          + '<span>' + escapeHtml(estimate + ' / ' + vram + ' / snapshot age: ' + age) + '</span>'
+          + '<span>' + escapeHtml('Reason: ' + (entry.reason || entry.status || entry.message || 'n/a')) + '</span>'
+          + '<span>' + escapeHtml(rejected) + '</span>'
+          + (validation ? '<span>' + escapeHtml(validation) + '</span>' : '')
+          + '</div>';
+      }).join('');
+  }
+
   function renderStatus(data) {
     latestStatus = data;
     window.gammaDashboardStatus = data;
@@ -439,6 +497,7 @@
     renderOverview(data);
     renderTwitch(data);
     renderPlacementShadow(data);
+    renderStartupAdmission(data);
   }
 
   async function loadStatus() {

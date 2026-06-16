@@ -167,6 +167,7 @@ class DashboardService:
             "provider_actions": self._latest_provider_action,
             "timings": self._recent_timings(),
             "llm_routing": route_info,
+            "startup_admission": self._recent_startup_admission(),
         }
 
     def _tts_test_control_state(self, provider: str, profile_id: str | None) -> dict[str, Any]:
@@ -2089,6 +2090,83 @@ class DashboardService:
             "entries": entries,
             "summary": summary,
             "placement_shadow": self._placement_shadow_routes(entries),
+        }
+
+    def _recent_startup_admission(self, limit: int = 12) -> dict[str, Any]:
+        log_path = settings.data_dir / "runtime" / "logs" / "supervisor.jsonl"
+        if not log_path.exists():
+            return {"entries": [], "summary": {"count": 0, "event_counts": {}, "target_counts": {}}}
+        events: deque[dict[str, Any]] = deque(maxlen=max(1, limit))
+        with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    payload = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                event = str(payload.get("event") or "")
+                if not event.startswith("resource.startup_admission."):
+                    continue
+                events.append(self._format_startup_admission_entry(payload))
+        entries = list(events)
+        event_counts: dict[str, int] = {}
+        target_counts: dict[str, int] = {}
+        for entry in entries:
+            event = str(entry.get("event") or "unknown")
+            event_counts[event] = event_counts.get(event, 0) + 1
+            target_id = entry.get("target_id")
+            if target_id:
+                target_key = str(target_id)
+                target_counts[target_key] = target_counts.get(target_key, 0) + 1
+        return {
+            "entries": entries,
+            "summary": {
+                "count": len(entries),
+                "selected_count": event_counts.get("resource.startup_admission.selected", 0),
+                "rejected_count": event_counts.get("resource.startup_admission.rejected", 0),
+                "skipped_count": event_counts.get("resource.startup_admission.skipped", 0),
+                "bypassed_count": event_counts.get("resource.startup_admission.bypassed", 0),
+                "event_counts": event_counts,
+                "target_counts": target_counts,
+            },
+        }
+
+    def _format_startup_admission_entry(self, payload: dict[str, Any]) -> dict[str, Any]:
+        selected = payload.get("selected")
+        selected_payload = selected if isinstance(selected, dict) else {}
+        rejected = payload.get("rejected")
+        rejected_payload = rejected if isinstance(rejected, dict) else {}
+        return {
+            "timestamp": payload.get("timestamp"),
+            "level": payload.get("level"),
+            "event": payload.get("event"),
+            "message": payload.get("message"),
+            "provider": payload.get("provider"),
+            "kind": payload.get("kind"),
+            "modality": payload.get("modality"),
+            "model": payload.get("model"),
+            "workload_id": payload.get("workload_id"),
+            "status": payload.get("status"),
+            "requested_device": payload.get("requested_device"),
+            "estimated_vram_mb": payload.get("estimated_vram_mb"),
+            "minimum_headroom_mb": payload.get("minimum_headroom_mb"),
+            "snapshot_age_seconds": payload.get("snapshot_age_seconds"),
+            "target_id": selected_payload.get("target_id"),
+            "endpoint_ref": selected_payload.get("endpoint_ref"),
+            "device": selected_payload.get("device"),
+            "gpu_index": selected_payload.get("gpu_index"),
+            "gpu_uuid": selected_payload.get("gpu_uuid"),
+            "free_vram_mb": selected_payload.get("free_vram_mb"),
+            "projected_headroom_mb": selected_payload.get("projected_headroom_mb"),
+            "reason": selected_payload.get("reason"),
+            "score": selected_payload.get("score"),
+            "rejected_count": len(rejected_payload),
+            "rejected": rejected_payload,
+            "validation_errors": payload.get("validation_errors") if isinstance(payload.get("validation_errors"), list) else [],
         }
 
     def _placement_shadow_routes(self, entries: list[dict[str, Any]], *, limit: int = 8) -> dict[str, Any]:

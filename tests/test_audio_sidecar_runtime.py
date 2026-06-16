@@ -64,6 +64,7 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
             patch.object(settings, "speaker_emotion_device", "cuda:0"),
             patch.object(settings, "audio_event_device", "cpu"),
             patch.object(manager, "_admitted_sidecar_device", return_value="cuda:1") as admitted,
+            patch("gamma.supervisor.manager.log_event"),
         ):
             env = manager._audio_understanding_admission_env()
 
@@ -93,6 +94,7 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
             patch.dict("os.environ", {"QWEN_TTS_DEVICE": "cuda:0"}, clear=False),
             patch.object(settings, "qwen_tts_device", "auto"),
             patch.object(manager, "_admitted_sidecar_device", return_value="cuda:1") as admitted,
+            patch("gamma.supervisor.manager.log_event"),
         ):
             env = manager._qwen_tts_admission_env()
 
@@ -124,6 +126,7 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
             patch.dict("os.environ", {}, clear=True),
             patch.object(settings, "qwen_tts_device", "cpu"),
             patch.object(manager, "_admitted_sidecar_device", return_value="cuda:1") as admitted,
+            patch("gamma.supervisor.manager.log_event"),
         ):
             env = manager._qwen_tts_admission_env()
 
@@ -136,6 +139,7 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
         with (
             patch("gamma.supervisor.manager.load_resource_routing_registry", return_value=registry),
             patch("gamma.supervisor.manager.ResourcePlacementCoordinator") as coordinator,
+            patch("gamma.supervisor.manager.log_event"),
         ):
             device = manager._admitted_sidecar_device(
                 provider="qwen-tts",

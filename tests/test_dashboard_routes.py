@@ -305,13 +305,16 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn("window.selectTtsProfile = selectTtsProfile;", status_script)
         self.assertIn("renderTtsControls((data.providers || {}).tts);", status_script)
         self.assertIn("renderPlacementShadow(data);", status_script)
+        self.assertIn("renderStartupAdmission(data);", status_script)
         self.assertIn("placement_shadow", status_script)
+        self.assertIn("startup_admission", status_script)
         self.assertNotIn("dashboardPage !== 'status'", status_script)
         self.assertIn("formatMemory(data);", status_script)
         self.assertIn("renderAssistant(data);", status_script)
         self.assertIn("renderOverview(data);", status_script)
         status_html = (main.STATIC_DIR / "index.html").read_text(encoding="utf-8")
         self.assertIn('id="placementShadow"', status_html)
+        self.assertIn('id="startupAdmission"', status_html)
 
     def test_monitor_has_stream_controls_and_status_reporting(self) -> None:
         body = main.dashboard_monitor_page().body.decode("utf-8")
@@ -960,14 +963,30 @@ class DashboardRoutesTest(unittest.TestCase):
                 payload = {"status": "ok", "provider": "local", "route_family": f"family-{index}", "duration_ms": index + 0.5}
                 with routes_log.open("a", encoding="utf-8") as handle:
                     handle.write(json.dumps(payload) + "\n")
+            supervisor_log = runtime_dir / "logs" / "supervisor.jsonl"
+            supervisor_log.parent.mkdir(parents=True, exist_ok=True)
+            supervisor_log.write_text(
+                json.dumps(
+                    {
+                        "event": "resource.startup_admission.selected",
+                        "provider": "qwen-tts",
+                        "kind": "qwen-tts",
+                        "selected": {"target_id": "qwen-gpu", "device": "cuda:0"},
+                    }
+                ) + "\n",
+                encoding="utf-8",
+            )
 
             with patch.object(settings, "data_dir", Path(temp_dir)):
                 self.assertEqual(service._tail(stdout_log, limit=2), "three\nfour")
                 timings = service._recent_timings(limit=3)
                 routes = service._recent_llm_routes(limit=4)
+                startup_admission = service._recent_startup_admission(limit=4)
 
         self.assertEqual([entry["timing_ms"]["total_ms"] for entry in timings["entries"]], [4, 5, 6])
         self.assertEqual([entry["route_family"] for entry in routes["entries"]], ["family-4", "family-5", "family-6", "family-7"])
+        self.assertEqual(startup_admission["summary"]["selected_count"], 1)
+        self.assertEqual(startup_admission["summary"]["target_counts"], {"qwen-gpu": 1})
 
     def test_recent_llm_routes_extracts_placement_shadow_status(self) -> None:
         service = DashboardService()
@@ -1060,6 +1079,78 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertTrue(selected["warm"])
         self.assertEqual(selected["rejected_count"], 1)
         self.assertEqual(shadow["entries"][1]["shadow_status"], "no_fit")
+
+    def test_recent_startup_admission_extracts_supervisor_decisions(self) -> None:
+        service = DashboardService()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_dir = Path(temp_dir) / "runtime" / "logs"
+            log_dir.mkdir(parents=True)
+            supervisor_log = log_dir / "supervisor.jsonl"
+            payloads = [
+                {"event": "unrelated.event", "message": "ignore"},
+                {
+                    "timestamp": "2026-06-16T09:00:00Z",
+                    "event": "resource.startup_admission.selected",
+                    "provider": "qwen-tts",
+                    "kind": "qwen-tts",
+                    "modality": "speech",
+                    "model": "qwen-tts",
+                    "workload_id": "qwen-tts:startup",
+                    "estimated_vram_mb": 9216,
+                    "minimum_headroom_mb": 1024,
+                    "status": "selected",
+                    "snapshot_age_seconds": 0.1,
+                    "selected": {
+                        "target_id": "qwen_tts_gpu_0",
+                        "endpoint_ref": "qwen_tts_local",
+                        "device": "cuda:0",
+                        "gpu_index": 0,
+                        "gpu_uuid": "GPU-0",
+                        "free_vram_mb": 15000,
+                        "projected_headroom_mb": 3700,
+                        "reason": "gpu-headroom",
+                        "score": 3700.0,
+                    },
+                    "rejected": {"qwen_tts_gpu_1": "insufficient_vram_headroom"},
+                },
+                {
+                    "timestamp": "2026-06-16T09:00:01Z",
+                    "event": "resource.startup_admission.bypassed",
+                    "provider": "qwen-tts",
+                    "kind": "qwen-tts",
+                    "modality": "speech",
+                    "model": "qwen-tts",
+                    "requested_device": "cuda:0",
+                },
+                {
+                    "timestamp": "2026-06-16T09:00:02Z",
+                    "event": "resource.startup_admission.rejected",
+                    "provider": "audio-understanding",
+                    "kind": "audio-understanding",
+                    "modality": "audio",
+                    "status": "no_fit",
+                    "rejected": {"audio_gpu": "insufficient_vram_headroom"},
+                },
+            ]
+            with supervisor_log.open("w", encoding="utf-8") as handle:
+                handle.write("{not json}\n")
+                for payload in payloads:
+                    handle.write(json.dumps(payload) + "\n")
+
+            with patch.object(settings, "data_dir", Path(temp_dir)):
+                admission = service._recent_startup_admission(limit=10)
+
+        self.assertEqual(admission["summary"]["count"], 3)
+        self.assertEqual(admission["summary"]["selected_count"], 1)
+        self.assertEqual(admission["summary"]["rejected_count"], 1)
+        self.assertEqual(admission["summary"]["bypassed_count"], 1)
+        self.assertEqual(admission["summary"]["target_counts"], {"qwen_tts_gpu_0": 1})
+        selected = admission["entries"][0]
+        self.assertEqual(selected["target_id"], "qwen_tts_gpu_0")
+        self.assertEqual(selected["device"], "cuda:0")
+        self.assertEqual(selected["estimated_vram_mb"], 9216)
+        self.assertEqual(selected["rejected"], {"qwen_tts_gpu_1": "insufficient_vram_headroom"})
+        self.assertEqual(admission["entries"][1]["requested_device"], "cuda:0")
 
 
 if __name__ == "__main__":

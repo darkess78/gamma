@@ -3,9 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
-import threading
 import time
 import urllib.error
 import urllib.parse
@@ -18,8 +16,6 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-import psutil
-
 from ..config import app_local_config_path, load_app_file_config, load_desired_tts_selection, settings
 from ..errors import ConfigurationError
 from ..integrations.discord import DiscordRuntimeConfig, read_discord_worker_state
@@ -31,6 +27,7 @@ from ..integrations.twitch.worker import TwitchWorkerConfig, read_twitch_worker_
 from ..llm.router_adapter import RouterLLMAdapter
 from ..memory.service import MemoryService
 from ..persona.emotion_service import EmotionMemoryService
+from ..resources import MachineResourceMonitor
 from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..supervisor.manager import ProcessManager
 from ..system.cuda_env import prepend_cuda_library_path
@@ -67,12 +64,13 @@ class DashboardService:
         self._viewer_trust = ViewerTrustStore()
         self._process_manager = ProcessManager()
         self._system_status = SystemStatusService()
-        self._metrics_lock = threading.Lock()
-        self._cached_machine_status: dict[str, Any] = {}
-        self._cached_machine_status_at: str | None = None
+        self._resource_monitor = MachineResourceMonitor(
+            project_root=settings.project_root,
+            enable_gpu=lambda: settings.dashboard_enable_gpu,
+            refresh_interval_seconds=lambda: settings.dashboard_metrics_interval_seconds,
+        )
         self._latest_provider_action: dict[str, Any] = {"status": "idle", "detail": "No provider action has been run yet."}
         self._latest_twitch_replay_summary: dict[str, Any] = {}
-        self._refresh_machine_status()
 
     def build_status(self) -> dict[str, Any]:
         local_status = self._system_status.build_status()
@@ -2008,93 +2006,7 @@ class DashboardService:
         return response_payload
 
     def _machine_status(self) -> dict[str, Any]:
-        now = time.time()
-        needs_refresh = False
-        with self._metrics_lock:
-            if not self._cached_machine_status_at:
-                needs_refresh = True
-            elif not self._cached_machine_status:
-                needs_refresh = True
-            else:
-                last = datetime.fromisoformat(self._cached_machine_status_at.replace("Z", "+00:00")).timestamp()
-                needs_refresh = now - last >= settings.dashboard_metrics_interval_seconds
-
-        if needs_refresh:
-            self._refresh_machine_status()
-
-        with self._metrics_lock:
-            return {
-                **self._cached_machine_status,
-                "sampled_at": self._cached_machine_status_at,
-                "gpu_enabled": settings.dashboard_enable_gpu,
-                "refresh_interval_seconds": settings.dashboard_metrics_interval_seconds,
-            }
-
-    def _refresh_machine_status(self) -> None:
-        vm = psutil.virtual_memory()
-        disk = shutil.disk_usage(settings.project_root)
-        payload = {
-            "cpu_percent": psutil.cpu_percent(interval=0.1),
-            "memory": {
-                "total_bytes": vm.total,
-                "available_bytes": vm.available,
-                "used_bytes": vm.used,
-                "percent": vm.percent,
-            },
-            "disk": {
-                "total_bytes": disk.total,
-                "used_bytes": disk.used,
-                "free_bytes": disk.free,
-                "percent": round((disk.used / disk.total) * 100, 2) if disk.total else 0,
-            },
-            "gpu": self._gpu_status() if settings.dashboard_enable_gpu else {"ok": False, "detail": "disabled"},
-        }
-        with self._metrics_lock:
-            self._cached_machine_status = payload
-            self._cached_machine_status_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-    def _gpu_status(self) -> dict[str, Any]:
-        try:
-            run_kwargs: dict[str, Any] = {
-                "capture_output": True,
-                "text": True,
-                "timeout": 5,
-                "check": True,
-            }
-            if os.name == "nt":
-                run_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            completed = subprocess.run(
-                [
-                    "nvidia-smi",
-                    "--query-gpu=name,memory.total,memory.used,utilization.gpu,temperature.gpu",
-                    "--format=csv,noheader,nounits",
-                ],
-                **run_kwargs,
-            )
-        except FileNotFoundError:
-            return {"ok": False, "detail": "nvidia-smi-not-found"}
-        except subprocess.CalledProcessError as exc:
-            return {"ok": False, "detail": exc.stderr.strip() or exc.stdout.strip() or "nvidia-smi-failed"}
-        except subprocess.TimeoutExpired:
-            return {"ok": False, "detail": "nvidia-smi-timeout"}
-
-        gpus: list[dict[str, Any]] = []
-        for index, line in enumerate(completed.stdout.splitlines()):
-            parts = [part.strip() for part in line.split(",")]
-            if len(parts) != 5:
-                continue
-            gpus.append(
-                {
-                    "index": index,
-                    "label": f"GPU {index}",
-                    "name": parts[0],
-                    "memory_total_mb": int(parts[1]),
-                    "memory_used_mb": int(parts[2]),
-                    "utilization_percent": int(parts[3]),
-                    "temperature_c": int(parts[4]),
-                }
-            )
-        return {"ok": True, "gpus": gpus}
+        return self._resource_monitor.dashboard_payload()
 
     def _tail(self, path: Path, *, limit: int = 60) -> str:
         if not path.exists():

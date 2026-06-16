@@ -386,6 +386,16 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - Host binding and LAN access configuration are implemented.
 - Local/machine-specific config override files are supported and ignored by git.
 
+## Resource Telemetry
+
+- `src/gamma/resources/probe.py` provides a shared read-only machine resource
+  snapshot with CPU, RAM, disk, GPU, and optional GPU compute-process
+  attribution.
+- The dashboard machine-status view consumes this shared monitor while
+  preserving the existing API response shape.
+- Resource-aware placement policy, reservations, model loading, and GPU
+  endpoint selection remain unimplemented future work.
+
 ## Automated Coverage Currently Present
 
 - API route tests.

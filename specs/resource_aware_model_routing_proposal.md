@@ -271,6 +271,15 @@ deployment without requiring duplicate Ollama instances.
 - Preserve the existing dashboard response contract.
 - Add probe caching, timeouts, and structured failure logs.
 
+Implementation started on June 15, 2026:
+
+- `src/gamma/resources/probe.py` provides read-only resource snapshots with
+  CPU, RAM, disk, GPU, and optional GPU compute-process attribution.
+- The dashboard consumes the shared monitor while preserving its existing
+  machine-status payload.
+- No placement policy, reservation API, model lifecycle management, or runtime
+  endpoint selection has been implemented yet.
+
 ### Phase 2: Shadow placement decisions
 
 - Define workload and target models.

@@ -162,6 +162,7 @@ log_stderr_enabled = true
 [resource_routing.policy]
 shadow_mode = false
 active_llm_routing = false
+startup_admission = false
 snapshot_max_age_seconds = 5
 reservation_ttl_seconds = 30
 minimum_headroom_mb = 2048

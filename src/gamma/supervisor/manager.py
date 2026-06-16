@@ -12,6 +12,8 @@ from urllib.parse import urlparse
 import psutil
 
 from ..config import settings
+from ..resources import ResourcePlacementCoordinator, WorkloadSpec
+from ..resources.runtime_registry import load_resource_routing_registry
 from ..system.cuda_env import prepend_cuda_library_path
 from ..system.python_runtime import python_candidates, resolve_python_executable
 from ..voice.voice_profiles import resolve_tts_config
@@ -159,6 +161,8 @@ class ProcessManager:
             "--no-access-log",
         ]
         runtime_env = prepend_cuda_library_path(os.environ.copy())
+        if name == "audio-understanding":
+            runtime_env.update(self._audio_understanding_admission_env())
 
         with stdout_log.open("ab") as stdout_handle, stderr_log.open("ab") as stderr_handle:
             if os.name == "nt":
@@ -625,7 +629,7 @@ class ProcessManager:
             }
         script = self._tts_script(action, provider=provider)
         try:
-            completed = self._run_sidecar_command(script, timeout=45)
+            completed = self._run_sidecar_command(script, timeout=45, env_overlay=self._qwen_tts_admission_env())
             return {
                 "name": "tts",
                 "status": "ok",
@@ -673,7 +677,13 @@ class ProcessManager:
             str(scripts_dir / f"{'start' if action == 'start' else 'stop'}_qwen_tts_server.py"),
         ]
 
-    def _run_sidecar_command(self, command: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]:
+    def _run_sidecar_command(
+        self,
+        command: list[str],
+        *,
+        timeout: int,
+        env_overlay: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         kwargs: dict[str, Any] = {
             "cwd": settings.project_root,
             "capture_output": True,
@@ -681,6 +691,10 @@ class ProcessManager:
             "timeout": timeout,
             "check": True,
         }
+        if env_overlay:
+            env = os.environ.copy()
+            env.update(env_overlay)
+            kwargs["env"] = env
         if os.name == "nt":
             kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             si = subprocess.STARTUPINFO()
@@ -688,6 +702,57 @@ class ProcessManager:
             si.wShowWindow = 0  # SW_HIDE
             kwargs["startupinfo"] = si
         return subprocess.run(command, **kwargs)
+
+    def _qwen_tts_admission_env(self) -> dict[str, str]:
+        requested = os.environ.get("QWEN_TTS_DEVICE", "auto")
+        if not self._is_auto_device(requested):
+            return {}
+        device = self._admitted_sidecar_device(provider="qwen-tts", kind="qwen-tts", modality="speech", model="qwen-tts")
+        return {"QWEN_TTS_DEVICE": device} if device else {}
+
+    def _audio_understanding_admission_env(self) -> dict[str, str]:
+        if not any(
+            self._is_auto_device(value)
+            for value in (settings.audio_analysis_device, settings.speaker_emotion_device, settings.audio_event_device)
+        ):
+            return {}
+        device = self._admitted_sidecar_device(
+            provider="audio-understanding",
+            kind="audio-understanding",
+            modality="audio",
+            model=None,
+        )
+        if not device:
+            return {}
+        env: dict[str, str] = {}
+        if self._is_auto_device(settings.audio_analysis_device):
+            env["SHANA_AUDIO_ANALYSIS_DEVICE"] = device
+        if self._is_auto_device(settings.speaker_emotion_device):
+            env["SHANA_SPEAKER_EMOTION_DEVICE"] = device
+        if self._is_auto_device(settings.audio_event_device):
+            env["SHANA_AUDIO_EVENT_DEVICE"] = device
+        return env
+
+    def _admitted_sidecar_device(self, *, provider: str, kind: str, modality: str, model: str | None) -> str | None:
+        registry = load_resource_routing_registry()
+        if not registry.policy.startup_admission or registry.validation_errors:
+            return None
+        decision = ResourcePlacementCoordinator(registry=registry).rank(
+            WorkloadSpec(
+                id=f"{kind}:startup",
+                kind=kind,
+                provider=provider,
+                model=model,
+                modality=modality,
+            )
+        )
+        if decision.selected is None:
+            return None
+        return decision.selected.target.device or None
+
+    @staticmethod
+    def _is_auto_device(value: str | None) -> bool:
+        return str(value or "").strip().lower() == "auto"
 
     def _is_local_url(self, value: str | None) -> bool:
         if not value:

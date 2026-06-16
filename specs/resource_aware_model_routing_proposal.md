@@ -320,6 +320,9 @@ Phase 2 implementation started on June 15, 2026:
   LLM routing among configured targets, but it defaults to `false`. When
   disabled, Gamma keeps the existing deterministic provider/model route and
   default local endpoint behavior.
+- `resource_routing.policy.startup_admission` can enable startup-only device
+  admission for model sidecars in future `auto` device modes. Explicit sidecar
+  devices bypass coordinator admission and continue to win.
 - Shadow placement does not change provider/model selection, fallback order,
   adapter transport, model loading, or service lifecycle.
 
@@ -327,9 +330,10 @@ Phase 2 implementation started on June 15, 2026:
 
 Continue in this order so each step remains observable and reversible:
 
-1. Add startup admission for model sidecars only after LLM endpoint routing is
-   stable. Explicit configured devices must continue to win; coordinator
-   suggestions apply only to future `auto` placement modes.
+1. Validate active endpoint-aware LLM routing against real separately managed
+   Ollama endpoints before enabling it in local configuration.
+2. Add measured reservation reconciliation for persistent sidecars only after
+   startup admission has been validated.
 
 ### Phase 3: Endpoint-aware LLM routing
 
@@ -343,6 +347,14 @@ Continue in this order so each step remains observable and reversible:
 - Let STT, TTS, and audio-understanding startup consult the coordinator.
 - Select a device before process launch; never move an active sidecar.
 - Preserve each service's explicit configured device as an override.
+
+Phase 4 implementation started on June 16, 2026:
+
+- Qwen TTS and audio-understanding startup can consult resource placement only
+  when `resource_routing.policy.startup_admission = true` and the relevant
+  device setting is `auto`.
+- Explicit configured devices bypass startup admission and are passed through
+  unchanged.
 
 ### Phase 5: Optional lifecycle management
 

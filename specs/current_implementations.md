@@ -419,10 +419,15 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
   `resource_routing.policy.active_llm_routing = false` by default. When enabled,
   it can pass a selected configured endpoint to the local Ollama adapter without
   changing provider/model fallback behavior.
+- Startup-only device admission for Qwen TTS and audio-understanding sidecars
+  exists behind `resource_routing.policy.startup_admission = false` by default.
+  Explicit configured devices bypass admission; only `auto` device settings can
+  receive coordinator-selected devices before process launch.
 - The dashboard machine-status view consumes this shared monitor while
   preserving the existing API response shape.
-- Active resource-aware routing, reservations, model loading, and GPU endpoint
-  selection remain unimplemented future work.
+- Automatic model loading, model eviction, managed GPU endpoint startup, and
+  measured persistent-allocation reconciliation remain unimplemented future
+  work.
 
 ## Automated Coverage Currently Present
 

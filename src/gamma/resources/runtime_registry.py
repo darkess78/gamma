@@ -13,6 +13,7 @@ from .models import RuntimeEndpoint, RuntimeTarget
 class ResourceRoutingPolicy:
     shadow_mode: bool = False
     active_llm_routing: bool = False
+    startup_admission: bool = False
     snapshot_max_age_seconds: int = 5
     reservation_ttl_seconds: int = 30
     minimum_headroom_mb: int = 2048
@@ -58,6 +59,7 @@ def _policy(value: Any) -> ResourceRoutingPolicy:
     return ResourceRoutingPolicy(
         shadow_mode=_as_bool(payload.get("shadow_mode", False)),
         active_llm_routing=_as_bool(payload.get("active_llm_routing", False)),
+        startup_admission=_as_bool(payload.get("startup_admission", False)),
         snapshot_max_age_seconds=_as_int(payload.get("snapshot_max_age_seconds", 5), default=5),
         reservation_ttl_seconds=_as_int(payload.get("reservation_ttl_seconds", 30), default=30),
         minimum_headroom_mb=_as_int(payload.get("minimum_headroom_mb", 2048), default=2048),

@@ -21,6 +21,7 @@ class MockLLMAdapter(LLMAdapter):
         *,
         call_context: LLMCallContext | None = None,
         model_override: str | None = None,
+        endpoint_override: str | None = None,
     ) -> LLMReply:
         """Generate a mock reply.
         
@@ -30,6 +31,7 @@ class MockLLMAdapter(LLMAdapter):
             image_inputs: Ignored; raises error if provided.
             call_context: Ignored (for interface compatibility).
             model_override: Ignored (for interface compatibility).
+            endpoint_override: Ignored (for interface compatibility).
             
         Returns:
             LLMReply with canned text response.
@@ -40,6 +42,7 @@ class MockLLMAdapter(LLMAdapter):
         _ = system_prompt
         _ = call_context
         _ = model_override
+        _ = endpoint_override
         if image_inputs:
             raise ConfigurationError("The mock LLM provider does not support image input.")
         return LLMReply(text=f"I heard you say: {user_text}")

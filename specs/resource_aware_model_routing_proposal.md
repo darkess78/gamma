@@ -316,6 +316,10 @@ Phase 2 implementation started on June 15, 2026:
 - Route logs include shadow comparison metadata showing the actual
   provider/model/current endpoint ref used versus the advisory target, model,
   provider, and endpoint ref.
+- `resource_routing.policy.active_llm_routing` can enable endpoint-aware local
+  LLM routing among configured targets, but it defaults to `false`. When
+  disabled, Gamma keeps the existing deterministic provider/model route and
+  default local endpoint behavior.
 - Shadow placement does not change provider/model selection, fallback order,
   adapter transport, model loading, or service lifecycle.
 
@@ -323,10 +327,7 @@ Phase 2 implementation started on June 15, 2026:
 
 Continue in this order so each step remains observable and reversible:
 
-1. Enable active routing only for preconfigured, already-running local LLM
-   endpoints after shadow logs show stable decisions. Keep a single config flag
-   that immediately restores the current deterministic router.
-2. Add startup admission for model sidecars only after LLM endpoint routing is
+1. Add startup admission for model sidecars only after LLM endpoint routing is
    stable. Explicit configured devices must continue to win; coordinator
    suggestions apply only to future `auto` placement modes.
 

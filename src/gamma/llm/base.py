@@ -87,6 +87,7 @@ class LLMAdapter:
         *,
         call_context: LLMCallContext | None = None,
         model_override: str | None = None,
+        endpoint_override: str | None = None,
     ) -> LLMReply:
         """Generate a text reply to a prompt.
         
@@ -96,6 +97,7 @@ class LLMAdapter:
             image_inputs: Optional list of image inputs.
             call_context: Call context or None.
             model_override: Optional model name override.
+            endpoint_override: Optional provider endpoint override.
             
         Returns:
             LLMReply with generated text.

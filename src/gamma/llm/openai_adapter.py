@@ -49,6 +49,7 @@ class OpenAIAdapter(LLMAdapter):
         *,
         call_context: LLMCallContext | None = None,
         model_override: str | None = None,
+        endpoint_override: str | None = None,
     ) -> LLMReply:
         """Generate text response via OpenAI.
         
@@ -58,6 +59,7 @@ class OpenAIAdapter(LLMAdapter):
             image_inputs: Optional list of image inputs.
             call_context: Ignored (for interface compatibility).
             model_override: Optional model name override.
+            endpoint_override: Ignored (for interface compatibility).
             
         Returns:
             LLMReply with generated text.
@@ -66,6 +68,7 @@ class OpenAIAdapter(LLMAdapter):
             ExternalServiceError: If response fails or returns empty text.
         """
         _ = call_context
+        _ = endpoint_override
         user_content: list[dict[str, object]] = [{"type": "input_text", "text": user_text}]
         for image_input in image_inputs or []:
             encoded = base64.b64encode(image_input.data).decode("ascii")

@@ -39,6 +39,7 @@ class LocalLLMAdapter(LLMAdapter):
         *,
         call_context: LLMCallContext | None = None,
         model_override: str | None = None,
+        endpoint_override: str | None = None,
     ) -> LLMReply:
         """Generate text response via local Ollama endpoint.
         
@@ -48,6 +49,7 @@ class LocalLLMAdapter(LLMAdapter):
             image_inputs: Optional list of image inputs.
             call_context: Ignored (for interface compatibility).
             model_override: Optional model name override.
+            endpoint_override: Optional Ollama endpoint override.
             
         Returns:
             LLMReply with generated text.
@@ -58,6 +60,7 @@ class LocalLLMAdapter(LLMAdapter):
             ExternalServiceError: If request fails or returns empty response.
         """
         _ = call_context
+        endpoint = (endpoint_override or settings.local_llm_endpoint).rstrip("/")
         if image_inputs:
             if not self.supports_vision:
                 raise ConfigurationError(
@@ -65,7 +68,7 @@ class LocalLLMAdapter(LLMAdapter):
                 )
             target_model = self._model_name_for_request(has_images=True, model_override=model_override)
             capability = probe_ollama_model_capabilities(
-                endpoint=settings.local_llm_endpoint,
+                endpoint=endpoint,
                 model=target_model,
                 timeout_seconds=min(settings.local_llm_timeout_seconds, 15),
             )
@@ -93,7 +96,7 @@ class LocalLLMAdapter(LLMAdapter):
             payload["images"] = [base64.b64encode(item.data).decode("ascii") for item in image_inputs]
         body = json.dumps(payload).encode("utf-8")
         req = request.Request(
-            settings.local_llm_endpoint.rstrip("/") + "/api/generate",
+            endpoint + "/api/generate",
             data=body,
             headers={"Content-Type": "application/json"},
             method="POST",

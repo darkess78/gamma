@@ -9,7 +9,9 @@ from datetime import datetime, timezone
 
 from ..config import settings
 from ..errors import ConfigurationError
-from ..resources import llm_shadow_placement_payload, release_advisory_reservation
+from ..resources import ResourcePlacementCoordinator, llm_shadow_placement_payload, release_advisory_reservation
+from ..resources.models import WorkloadSpec
+from ..resources.runtime_registry import load_resource_routing_registry
 from .base import LLMAdapter, LLMCallContext, LLMImageInput, LLMReply
 
 _ROUTE_TRACE = threading.local()
@@ -29,6 +31,10 @@ class RouteDecision:
     model: str | None
     reason: str
     route_family: str = "chat_default"
+    endpoint_ref: str | None = None
+    endpoint: str | None = None
+    resource_placement: dict[str, object] | None = None
+    resource_reservation_id: str | None = None
 
 
 def begin_route_trace() -> None:
@@ -139,13 +145,16 @@ class RouterLLMAdapter(LLMAdapter):
             if key in seen:
                 continue
             seen.add(key)
+            decision = self._active_resource_route_decision(decision=decision, has_images=bool(image_inputs))
             availability = self._provider_availability(
                 provider=decision.provider,
                 model=decision.model,
                 has_images=bool(image_inputs),
                 route_family=decision.route_family,
+                endpoint=decision.endpoint,
             )
             if not availability.get("ok"):
+                placement_shadow = decision.resource_placement
                 self._record_route_event(
                     decision=decision,
                     call_context=call_context,
@@ -155,14 +164,16 @@ class RouterLLMAdapter(LLMAdapter):
                     duration_ms=0.0,
                     detail=str(availability.get("detail", "unavailable")),
                     fallback_index=index,
+                    placement_shadow=placement_shadow,
                 )
+                release_advisory_reservation(decision.resource_reservation_id)
                 continue
             placement_shadow = llm_shadow_placement_payload(
                 provider=decision.provider,
                 model=decision.model,
                 route_family=decision.route_family,
                 has_images=bool(image_inputs),
-            )
+            ) if decision.resource_placement is None else decision.resource_placement
             started_at = time.perf_counter()
             try:
                 adapter = self._adapter_for_provider(decision.provider)
@@ -172,6 +183,7 @@ class RouterLLMAdapter(LLMAdapter):
                     image_inputs=image_inputs,
                     call_context=call_context,
                     model_override=decision.model,
+                    endpoint_override=decision.endpoint,
                 )
                 duration_ms = round((time.perf_counter() - started_at) * 1000, 1)
                 event = self._record_route_event(
@@ -217,6 +229,7 @@ class RouterLLMAdapter(LLMAdapter):
                 reservation_id = None
                 if isinstance(placement_shadow, dict):
                     reservation_id = str(placement_shadow.get("reservation_id") or "") or None
+                reservation_id = decision.resource_reservation_id or reservation_id
                 release_advisory_reservation(reservation_id)
         if last_exc is not None:
             raise last_exc
@@ -258,6 +271,39 @@ class RouterLLMAdapter(LLMAdapter):
             route_family=route_family,
         )
         return self._build_route_chain(primary=primary, route_family=route_family, has_images=bool(image_inputs))
+
+    def _active_resource_route_decision(self, *, decision: RouteDecision, has_images: bool) -> RouteDecision:
+        if has_images or decision.provider not in {"local", "ollama"}:
+            return decision
+        registry = load_resource_routing_registry()
+        if not registry.policy.active_llm_routing or registry.validation_errors:
+            return decision
+        placement = ResourcePlacementCoordinator(registry=registry).rank_and_reserve(
+            WorkloadSpec(
+                id=f"llm:{decision.route_family}",
+                kind="llm",
+                provider=decision.provider,
+                model=decision.model,
+                modality="text",
+            )
+        )
+        selected = placement.selected
+        if selected is None:
+            return decision
+        endpoint = registry.endpoint_for_target(selected.target)
+        if endpoint is None:
+            release_advisory_reservation(placement.reservation_id)
+            return decision
+        return RouteDecision(
+            provider=decision.provider,
+            model=decision.model,
+            reason=f"{decision.reason}+resource-endpoint",
+            route_family=decision.route_family,
+            endpoint_ref=endpoint.id,
+            endpoint=endpoint.url,
+            resource_placement=placement.as_payload(),
+            resource_reservation_id=placement.reservation_id,
+        )
 
     def _route_request(
         self,
@@ -561,6 +607,7 @@ class RouterLLMAdapter(LLMAdapter):
         model: str | None,
         has_images: bool,
         route_family: str | None = None,
+        endpoint: str | None = None,
     ) -> dict[str, object]:
         """Check provider health and availability.
         
@@ -569,6 +616,7 @@ class RouterLLMAdapter(LLMAdapter):
             model: Model for hosted providers.
             has_images: Whether request has images.
             route_family: Route family for backoff key.
+            endpoint: Optional local endpoint override.
             
         Returns:
             dict[str, object]: Health check result.
@@ -579,7 +627,7 @@ class RouterLLMAdapter(LLMAdapter):
         backoff_until = self._provider_backoff_until_global.get(backoff_key, 0.0)
         if backoff_until > now:
             return {"ok": False, "detail": f"backoff-active:{backoff_key}:{round(backoff_until - now, 1)}s"}
-        cache_key = (normalized, "vision" if has_images else "text")
+        cache_key = (normalized, "vision" if has_images else "text", endpoint or "")
         cached = self._health_cache.get(cache_key)
         if cached and (now - cached[0]) < 5:
             return cached[1]
@@ -587,7 +635,7 @@ class RouterLLMAdapter(LLMAdapter):
             api_key = settings.openai_api_key or os.getenv("OPENAI_API_KEY")
             result = {"ok": bool(api_key and (model or settings.llm_model).strip()), "detail": "ready" if api_key else "missing-openai-api-key"}
         elif normalized in {"local", "ollama"}:
-            local_health = self._check_local_llm_health()
+            local_health = self._check_local_llm_health(endpoint=endpoint)
             if not local_health.get("ok"):
                 result = local_health
             elif has_images and not self._provider_supports_vision(normalized):
@@ -601,7 +649,7 @@ class RouterLLMAdapter(LLMAdapter):
         self._health_cache[cache_key] = (now, result)
         return result
 
-    def _check_local_llm_health(self) -> dict[str, object]:
+    def _check_local_llm_health(self, *, endpoint: str | None = None) -> dict[str, object]:
         """Check local Ollama service health.
         
         Returns:
@@ -609,7 +657,7 @@ class RouterLLMAdapter(LLMAdapter):
         """
         from ..system.status import probe_ollama_health
 
-        health = probe_ollama_health(settings.local_llm_endpoint, timeout_seconds=5)
+        health = probe_ollama_health(endpoint or settings.local_llm_endpoint, timeout_seconds=5)
         if health.get("ok"):
             return {"ok": True, "detail": "ready"}
         return {"ok": False, "detail": str(health.get("detail", "local-llm-unhealthy"))}
@@ -648,6 +696,8 @@ class RouterLLMAdapter(LLMAdapter):
             "route_family": decision.route_family,
             "provider": decision.provider,
             "model": decision.model,
+            "endpoint_ref": decision.endpoint_ref,
+            "endpoint": decision.endpoint,
             "reason": decision.reason,
             "profile": self._profile(),
             "status": status,
@@ -708,6 +758,8 @@ class RouterLLMAdapter(LLMAdapter):
         }
 
     def _actual_endpoint_for_decision(self, decision: RouteDecision) -> tuple[str, str]:
+        if decision.endpoint_ref or decision.endpoint:
+            return decision.endpoint_ref or "resource_endpoint", decision.endpoint or ""
         provider = (decision.provider or "").strip().lower()
         if provider in {"local", "ollama"}:
             return "local_llm_endpoint", settings.local_llm_endpoint

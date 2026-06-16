@@ -415,6 +415,10 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - Route logs include shadow comparison metadata for actual provider, model, and
   current endpoint ref versus the advisory target, provider, model, and endpoint
   ref.
+- Endpoint-aware local LLM routing exists behind
+  `resource_routing.policy.active_llm_routing = false` by default. When enabled,
+  it can pass a selected configured endpoint to the local Ollama adapter without
+  changing provider/model fallback behavior.
 - The dashboard machine-status view consumes this shared monitor while
   preserving the existing API response shape.
 - Active resource-aware routing, reservations, model loading, and GPU endpoint

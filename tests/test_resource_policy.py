@@ -146,6 +146,7 @@ class ResourcePolicyTest(unittest.TestCase):
         targets = {target.id: target for target in registry.targets}
         endpoints = {endpoint.id: endpoint for endpoint in registry.endpoints}
         self.assertFalse(registry.policy.shadow_mode)
+        self.assertFalse(registry.policy.active_llm_routing)
         self.assertEqual(registry.validation_errors, ())
         for endpoint_id in ("local_ollama_gpu_0", "local_ollama_gpu_1", "local_ollama_cpu", "qwen_tts_local", "audio_understanding_local"):
             self.assertIn(endpoint_id, endpoints)

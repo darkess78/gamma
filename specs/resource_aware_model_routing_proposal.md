@@ -295,6 +295,9 @@ Phase 2 implementation started on June 15, 2026:
 - `RouterLLMAdapter` can append `placement_shadow` metadata to route logs only
   when `resource_routing.policy.shadow_mode = true` and at least one target is
   configured.
+- The dashboard status payload and Status page expose recent
+  `placement_shadow` route-log entries, including selected advisory target,
+  rejected reasons, VRAM/headroom fields, warm state, and snapshot age.
 - Shadow placement does not change provider/model selection, fallback order,
   adapter transport, model loading, or service lifecycle.
 
@@ -302,30 +305,27 @@ Phase 2 implementation started on June 15, 2026:
 
 Continue in this order so each step remains observable and reversible:
 
-1. Add dashboard/status visibility for recent `placement_shadow` route-log
-   entries. Show selected advisory target, rejected reasons, free/projected
-   VRAM, warm state, and snapshot age. This must not alter routing behavior.
-2. Add portable target-configuration examples for common local layouts, such as
+1. Add portable target-configuration examples for common local layouts, such as
    `ollama_gpu_0`, `ollama_gpu_1`, CPU sidecars, Qwen TTS, and
    audio-understanding. Keep real endpoints, GPU UUIDs, and machine limits in
    ignored local configuration.
-3. Add validation for malformed shadow target config: missing IDs, unsupported
+2. Add validation for malformed shadow target config: missing IDs, unsupported
    devices, duplicate IDs, invalid modalities, and targets with no supported
    models when a model-specific workload is required.
-4. Add advisory reservations in shadow mode only. Reservations should influence
+3. Add advisory reservations in shadow mode only. Reservations should influence
    `would-select` metadata for concurrent requests, but they must not block,
    reroute, start, stop, unload, or evict any real workload.
-5. Add an endpoint registry that maps configured target IDs to actual runtime
+4. Add an endpoint registry that maps configured target IDs to actual runtime
    endpoints. For Ollama, active routing requires separately configured
    instances, such as `127.0.0.1:11434` and `127.0.0.1:11435`, because one
    Ollama endpoint does not provide reliable per-request GPU selection.
-6. Add shadow comparison reporting: actual provider/model/endpoint used versus
+5. Add shadow comparison reporting: actual provider/model/endpoint used versus
    advisory target, with the policy reason. Use this to tune the policy before
    enabling active routing.
-7. Enable active routing only for preconfigured, already-running local LLM
+6. Enable active routing only for preconfigured, already-running local LLM
    endpoints after shadow logs show stable decisions. Keep a single config flag
    that immediately restores the current deterministic router.
-8. Add startup admission for model sidecars only after LLM endpoint routing is
+7. Add startup admission for model sidecars only after LLM endpoint routing is
    stable. Explicit configured devices must continue to win; coordinator
    suggestions apply only to future `auto` placement modes.
 

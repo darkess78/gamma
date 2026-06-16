@@ -396,6 +396,9 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - Optional `resource_routing.policy.shadow_mode` can attach advisory
   `placement_shadow` metadata to LLM route logs when explicit targets are
   configured.
+- Dashboard status surfaces recent `placement_shadow` route-log entries with
+  selected advisory target, rejected reasons, VRAM/headroom fields, warm state,
+  and snapshot age.
 - The dashboard machine-status view consumes this shared monitor while
   preserving the existing API response shape.
 - Active resource-aware routing, reservations, model loading, and GPU endpoint

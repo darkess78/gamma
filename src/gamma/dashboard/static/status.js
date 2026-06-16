@@ -322,6 +322,54 @@
     setText('overviewWarningsMini', warnings.length ? warnings.join(' / ') : 'No current warnings');
   }
 
+  function renderPlacementShadow(data) {
+    var target = element('placementShadow');
+    if (!target) return;
+    var shadow = ((data.llm_routing || {}).placement_shadow || {});
+    var entries = Array.isArray(shadow.entries) ? shadow.entries.slice().reverse() : [];
+    var summary = shadow.summary || {};
+    if (!entries.length) {
+      target.innerHTML = '<div class="empty-state">No placement shadow route-log entries have been recorded.</div>';
+      return;
+    }
+    var lines = [
+      'Recent entries: ' + Number(summary.count || entries.length),
+      'Selected: ' + Number(summary.selected_count || 0)
+        + ' / no fit: ' + Number(summary.no_fit_count || 0)
+        + ' / stale snapshot: ' + Number(summary.snapshot_stale_count || 0)
+    ];
+    var targetCounts = summary.target_counts || {};
+    var targetNames = Object.keys(targetCounts);
+    if (targetNames.length) {
+      lines.push('Targets: ' + targetNames.map(function (name) {
+        return name + ': ' + targetCounts[name];
+      }).join(' / '));
+    }
+    target.innerHTML = '<div class="shadow-summary">' + escapeHtml(lines.join('\n')) + '</div>'
+      + entries.map(function (entry) {
+        var selected = entry.target_id
+          ? entry.target_id + ' (' + (entry.device || entry.target_kind || 'target') + ')'
+          : 'No advisory target';
+        var age = entry.snapshot_age_seconds == null ? 'n/a' : Number(entry.snapshot_age_seconds).toFixed(1) + ' sec';
+        var vram = entry.free_vram_mb == null
+          ? 'n/a'
+          : Number(entry.free_vram_mb) + ' MB free / ' + Number(entry.projected_headroom_mb || 0) + ' MB projected';
+        var rejected = entry.rejected_count
+          ? 'Rejected: ' + Object.keys(entry.rejected || {}).map(function (id) {
+            return id + '=' + entry.rejected[id];
+          }).join(', ')
+          : 'Rejected: none';
+        return '<div class="shadow-route-row">'
+          + '<strong>' + escapeHtml(entry.shadow_status || 'unknown') + '</strong>'
+          + '<span>' + escapeHtml(selected) + '</span>'
+          + '<span>' + escapeHtml((entry.route_family || 'route') + ' / ' + (entry.provider || 'provider') + ' / ' + (entry.model || 'model')) + '</span>'
+          + '<span>' + escapeHtml('VRAM: ' + vram + ' / warm: ' + (entry.warm ? 'yes' : 'no') + ' / snapshot age: ' + age) + '</span>'
+          + '<span>' + escapeHtml('Reason: ' + (entry.reason || entry.shadow_status || 'n/a')) + '</span>'
+          + '<span>' + escapeHtml(rejected) + '</span>'
+          + '</div>';
+      }).join('');
+  }
+
   function renderStatus(data) {
     latestStatus = data;
     window.gammaDashboardStatus = data;
@@ -376,6 +424,7 @@
     renderAssistant(data);
     renderOverview(data);
     renderTwitch(data);
+    renderPlacementShadow(data);
   }
 
   async function loadStatus() {

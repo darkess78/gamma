@@ -671,6 +671,30 @@ pre {
   align-items: start;
 }
 
+.shadow-summary {
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.shadow-route-row {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  white-space: normal;
+}
+
+.shadow-route-row strong {
+  color: var(--text);
+}
+
+.shadow-route-row span {
+  color: var(--muted);
+}
+
 .provider-status-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

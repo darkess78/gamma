@@ -304,10 +304,14 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn("window.loadStatus = loadStatus;", status_script)
         self.assertIn("window.selectTtsProfile = selectTtsProfile;", status_script)
         self.assertIn("renderTtsControls((data.providers || {}).tts);", status_script)
+        self.assertIn("renderPlacementShadow(data);", status_script)
+        self.assertIn("placement_shadow", status_script)
         self.assertNotIn("dashboardPage !== 'status'", status_script)
         self.assertIn("formatMemory(data);", status_script)
         self.assertIn("renderAssistant(data);", status_script)
         self.assertIn("renderOverview(data);", status_script)
+        status_html = (main.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="placementShadow"', status_html)
 
     def test_monitor_has_stream_controls_and_status_reporting(self) -> None:
         body = main.dashboard_monitor_page().body.decode("utf-8")
@@ -964,6 +968,74 @@ class DashboardRoutesTest(unittest.TestCase):
 
         self.assertEqual([entry["timing_ms"]["total_ms"] for entry in timings["entries"]], [4, 5, 6])
         self.assertEqual([entry["route_family"] for entry in routes["entries"]], ["family-4", "family-5", "family-6", "family-7"])
+
+    def test_recent_llm_routes_extracts_placement_shadow_status(self) -> None:
+        service = DashboardService()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_dir = Path(temp_dir) / "runtime"
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            routes_log = runtime_dir / "llm.routes.jsonl"
+            payloads = [
+                {"status": "ok", "provider": "local", "route_family": "chat_light"},
+                {"status": "ok", "provider": "local", "route_family": "metadata", "placement_shadow": "bad"},
+                {
+                    "timestamp": "2026-06-15T12:00:00Z",
+                    "purpose": "conversation",
+                    "status": "ok",
+                    "provider": "local",
+                    "model": "gpt-oss:20b",
+                    "route_family": "chat_default",
+                    "placement_shadow": {
+                        "status": "selected",
+                        "snapshot_age_seconds": 0.42,
+                        "selected": {
+                            "target_id": "ollama_gpu_1",
+                            "provider": "local",
+                            "kind": "ollama",
+                            "device": "cuda:1",
+                            "gpu_index": 1,
+                            "gpu_uuid": "GPU-1",
+                            "free_vram_mb": 12000,
+                            "projected_headroom_mb": 6400,
+                            "warm": True,
+                            "reason": "gpu-headroom",
+                            "score": 7400.0,
+                        },
+                        "rejected": {"ollama_gpu_0": "insufficient_vram_headroom"},
+                    },
+                },
+                {
+                    "status": "ok",
+                    "provider": "local",
+                    "route_family": "vision",
+                    "placement_shadow": {
+                        "status": "no_fit",
+                        "selected": None,
+                        "rejected": {"ollama_gpu_0": "modality_unavailable", "ollama_gpu_1": "model_unavailable"},
+                    },
+                },
+            ]
+            with routes_log.open("w", encoding="utf-8") as handle:
+                handle.write("{not json}\n")
+                for payload in payloads:
+                    handle.write(json.dumps(payload) + "\n")
+
+            with patch.object(settings, "data_dir", Path(temp_dir)):
+                routes = service._recent_llm_routes(limit=10)
+
+        shadow = routes["placement_shadow"]
+        self.assertEqual(shadow["summary"]["count"], 2)
+        self.assertEqual(shadow["summary"]["selected_count"], 1)
+        self.assertEqual(shadow["summary"]["no_fit_count"], 1)
+        self.assertEqual(shadow["summary"]["target_counts"], {"ollama_gpu_1": 1})
+        selected = shadow["entries"][0]
+        self.assertEqual(selected["target_id"], "ollama_gpu_1")
+        self.assertEqual(selected["device"], "cuda:1")
+        self.assertEqual(selected["free_vram_mb"], 12000)
+        self.assertEqual(selected["projected_headroom_mb"], 6400)
+        self.assertTrue(selected["warm"])
+        self.assertEqual(selected["rejected_count"], 1)
+        self.assertEqual(shadow["entries"][1]["shadow_status"], "no_fit")
 
 
 if __name__ == "__main__":

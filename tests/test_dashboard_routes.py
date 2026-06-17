@@ -306,8 +306,10 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn("renderTtsControls((data.providers || {}).tts);", status_script)
         self.assertIn("renderPlacementShadow(data);", status_script)
         self.assertIn("renderStartupAdmission(data);", status_script)
+        self.assertIn("renderSidecarAllocations(data);", status_script)
         self.assertIn("placement_shadow", status_script)
         self.assertIn("startup_admission", status_script)
+        self.assertIn("sidecar_allocations", status_script)
         self.assertNotIn("dashboardPage !== 'status'", status_script)
         self.assertIn("formatMemory(data);", status_script)
         self.assertIn("renderAssistant(data);", status_script)
@@ -315,6 +317,7 @@ class DashboardRoutesTest(unittest.TestCase):
         status_html = (main.STATIC_DIR / "index.html").read_text(encoding="utf-8")
         self.assertIn('id="placementShadow"', status_html)
         self.assertIn('id="startupAdmission"', status_html)
+        self.assertIn('id="sidecarAllocations"', status_html)
 
     def test_monitor_has_stream_controls_and_status_reporting(self) -> None:
         body = main.dashboard_monitor_page().body.decode("utf-8")
@@ -982,11 +985,13 @@ class DashboardRoutesTest(unittest.TestCase):
                 timings = service._recent_timings(limit=3)
                 routes = service._recent_llm_routes(limit=4)
                 startup_admission = service._recent_startup_admission(limit=4)
+                sidecar_allocations = service._recent_sidecar_allocations(limit=4)
 
         self.assertEqual([entry["timing_ms"]["total_ms"] for entry in timings["entries"]], [4, 5, 6])
         self.assertEqual([entry["route_family"] for entry in routes["entries"]], ["family-4", "family-5", "family-6", "family-7"])
         self.assertEqual(startup_admission["summary"]["selected_count"], 1)
         self.assertEqual(startup_admission["summary"]["target_counts"], {"qwen-gpu": 1})
+        self.assertEqual(sidecar_allocations["summary"]["count"], 0)
 
     def test_recent_llm_routes_extracts_placement_shadow_status(self) -> None:
         service = DashboardService()
@@ -1151,6 +1156,63 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(selected["estimated_vram_mb"], 9216)
         self.assertEqual(selected["rejected"], {"qwen_tts_gpu_1": "insufficient_vram_headroom"})
         self.assertEqual(admission["entries"][1]["requested_device"], "cuda:0")
+
+    def test_recent_sidecar_allocations_extracts_observed_vram(self) -> None:
+        service = DashboardService()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_dir = Path(temp_dir) / "runtime" / "logs"
+            log_dir.mkdir(parents=True)
+            supervisor_log = log_dir / "supervisor.jsonl"
+            payloads = [
+                {"event": "resource.startup_admission.selected", "message": "ignore"},
+                {
+                    "timestamp": "2026-06-17T00:00:00Z",
+                    "event": "resource.sidecar_allocation.observed",
+                    "provider": "qwen-tts",
+                    "kind": "qwen-tts",
+                    "pid": 111,
+                    "process_running": True,
+                    "estimated_vram_mb": 9216,
+                    "observed_vram_mb": 8900,
+                    "allocation_delta_mb": -316,
+                    "gpu_allocations": [{"gpu_index": 0, "gpu_uuid": "GPU-0", "used_memory_mb": 8900}],
+                    "gpu_process_match_count": 1,
+                    "snapshot_sampled_at": "2026-06-17T00:00:00Z",
+                    "gpu_status": "ok",
+                },
+                {
+                    "timestamp": "2026-06-17T00:00:01Z",
+                    "event": "resource.sidecar_allocation.observed",
+                    "provider": "audio-understanding",
+                    "kind": "audio-understanding",
+                    "pid": 222,
+                    "process_running": True,
+                    "estimated_vram_mb": 1536,
+                    "observed_vram_mb": 1018,
+                    "allocation_delta_mb": -518,
+                    "gpu_allocations": [{"gpu_index": 1, "gpu_uuid": "GPU-1", "used_memory_mb": 1018}],
+                    "gpu_process_match_count": 1,
+                    "snapshot_sampled_at": "2026-06-17T00:00:01Z",
+                    "gpu_status": "ok",
+                },
+            ]
+            with supervisor_log.open("w", encoding="utf-8") as handle:
+                handle.write("{not json}\n")
+                for payload in payloads:
+                    handle.write(json.dumps(payload) + "\n")
+
+            with patch.object(settings, "data_dir", Path(temp_dir)):
+                allocations = service._recent_sidecar_allocations(limit=10)
+
+        self.assertEqual(allocations["summary"]["count"], 2)
+        self.assertEqual(allocations["summary"]["current_count"], 2)
+        self.assertEqual(allocations["summary"]["provider_counts"], {"qwen-tts": 1, "audio-understanding": 1})
+        self.assertEqual(allocations["summary"]["observed_vram_mb"], 9918)
+        self.assertEqual(allocations["summary"]["estimated_vram_mb"], 10752)
+        self.assertEqual(allocations["summary"]["allocation_delta_mb"], -834)
+        first = allocations["entries"][0]
+        self.assertEqual(first["provider"], "qwen-tts")
+        self.assertEqual(first["gpu_allocations"], [{"gpu_index": 0, "gpu_uuid": "GPU-0", "used_memory_mb": 8900}])
 
 
 if __name__ == "__main__":

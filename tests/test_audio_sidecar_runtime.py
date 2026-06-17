@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -216,6 +217,69 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
         self.assertIsNone(device)
         self.assertEqual(log_event.call_args.args[2], "resource.startup_admission.rejected")
         self.assertEqual(log_event.call_args.kwargs["rejected"], {"qwen-gpu": "insufficient_vram_headroom"})
+
+    def test_sidecar_allocation_payload_matches_gpu_process_by_pid(self) -> None:
+        manager = ProcessManager()
+        process = SimpleNamespace(pid=1234)
+        snapshot = SimpleNamespace(
+            sampled_at="2026-06-17T00:00:00Z",
+            gpu={
+                "ok": True,
+                "gpus": [
+                    {
+                        "index": 0,
+                        "uuid": "GPU-0",
+                        "processes": [{"pid": 1234, "gpu_uuid": "GPU-0", "used_memory_mb": 8900}],
+                    },
+                    {
+                        "index": 1,
+                        "uuid": "GPU-1",
+                        "processes": [{"pid": 5678, "gpu_uuid": "GPU-1", "used_memory_mb": 1024}],
+                    },
+                ],
+            },
+        )
+        with (
+            patch("gamma.supervisor.manager.collect_resource_snapshot", return_value=snapshot),
+            patch.object(manager, "process_payload", return_value={"running": True, "pid": 1234}),
+        ):
+            payload = manager._sidecar_allocation_payload(
+                provider="qwen-tts",
+                kind="qwen-tts",
+                process=process,  # type: ignore[arg-type]
+                estimated_vram_mb=9216,
+            )
+
+        self.assertEqual(payload["pid"], 1234)
+        self.assertTrue(payload["process_running"])
+        self.assertEqual(payload["estimated_vram_mb"], 9216)
+        self.assertEqual(payload["observed_vram_mb"], 8900)
+        self.assertEqual(payload["allocation_delta_mb"], -316)
+        self.assertEqual(payload["gpu_allocations"], [{"gpu_index": 0, "gpu_uuid": "GPU-0", "used_memory_mb": 8900}])
+
+    def test_sidecar_allocation_logs_observed_event(self) -> None:
+        manager = ProcessManager()
+        with (
+            patch.object(manager, "_sidecar_allocation_payload", return_value={"provider": "qwen-tts", "kind": "qwen-tts"}) as payload,
+            patch("gamma.supervisor.manager.log_event") as log_event,
+        ):
+            result = manager._log_sidecar_allocation(
+                provider="qwen-tts",
+                kind="qwen-tts",
+                process=None,
+                estimated_vram_mb=9216,
+            )
+
+        payload.assert_called_once()
+        self.assertEqual(result, {"provider": "qwen-tts", "kind": "qwen-tts"})
+        self.assertEqual(log_event.call_args.args[2], "resource.sidecar_allocation.observed")
+
+    def test_health_url_uses_endpoint_origin(self) -> None:
+        self.assertEqual(
+            ProcessManager._health_url("http://127.0.0.1:9883/analyze"),
+            "http://127.0.0.1:9883/health",
+        )
+        self.assertIsNone(ProcessManager._health_url("not-a-url"))
 
 
 if __name__ == "__main__":

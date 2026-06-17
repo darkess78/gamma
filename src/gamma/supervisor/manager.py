@@ -8,13 +8,15 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
+import urllib.request
 
 import psutil
 
 from ..config import settings
 from ..observability import configure_logging, log_event
 from ..resources import ResourcePlacementCoordinator, WorkloadSpec
+from ..resources.probe import collect_resource_snapshot
 from ..resources.runtime_registry import load_resource_routing_registry
 from ..system.cuda_env import prepend_cuda_library_path
 from ..system.python_runtime import python_candidates, resolve_python_executable
@@ -633,6 +635,13 @@ class ProcessManager:
         script = self._tts_script(action, provider=provider)
         try:
             completed = self._run_sidecar_command(script, timeout=45, env_overlay=self._qwen_tts_admission_env())
+            if action == "start":
+                self._log_sidecar_allocation(
+                    provider="qwen-tts",
+                    kind="qwen-tts",
+                    process=self._find_local_url_process(endpoint),
+                    estimated_vram_mb=self._sidecar_estimated_vram_mb("qwen-tts"),
+                )
             return {
                 "name": "tts",
                 "status": "ok",
@@ -664,6 +673,14 @@ class ProcessManager:
             }
         try:
             result = self.start("audio-understanding") if action == "start" else self.stop("audio-understanding")
+            if action == "start" and result.get("ok"):
+                self._wait_sidecar_health(endpoint, timeout_seconds=30)
+                self._log_sidecar_allocation(
+                    provider="audio-understanding",
+                    kind="audio-understanding",
+                    process=self.find_process("audio-understanding"),
+                    estimated_vram_mb=self._sidecar_estimated_vram_mb("audio-understanding"),
+                )
             return {
                 "name": "audio-understanding",
                 "status": "ok" if result.get("ok") else "error",
@@ -855,6 +872,120 @@ class ProcessManager:
         if normalized == "audio-understanding":
             return max(0, int(getattr(load_resource_routing_registry().policy, "audio_understanding_estimated_vram_mb", 0)))
         return 0
+
+    def _log_sidecar_allocation(
+        self,
+        *,
+        provider: str,
+        kind: str,
+        process: psutil.Process | None,
+        estimated_vram_mb: int,
+    ) -> dict[str, Any]:
+        payload = self._sidecar_allocation_payload(
+            provider=provider,
+            kind=kind,
+            process=process,
+            estimated_vram_mb=estimated_vram_mb,
+        )
+        log_event(
+            self._logger,
+            logging.INFO,
+            "resource.sidecar_allocation.observed",
+            "Observed sidecar GPU allocation after startup.",
+            **payload,
+        )
+        return payload
+
+    def _sidecar_allocation_payload(
+        self,
+        *,
+        provider: str,
+        kind: str,
+        process: psutil.Process | None,
+        estimated_vram_mb: int,
+    ) -> dict[str, Any]:
+        pid = process.pid if process else None
+        gpu_allocations: list[dict[str, Any]] = []
+        snapshot = collect_resource_snapshot(
+            project_root=settings.project_root,
+            include_gpu=bool(settings.dashboard_enable_gpu),
+        )
+        gpu_payload = snapshot.gpu if isinstance(snapshot.gpu, dict) else {}
+        if pid is not None and gpu_payload.get("ok"):
+            for gpu in gpu_payload.get("gpus", []):
+                if not isinstance(gpu, dict):
+                    continue
+                for gpu_process in gpu.get("processes", []):
+                    if not isinstance(gpu_process, dict):
+                        continue
+                    if int(gpu_process.get("pid") or -1) != pid:
+                        continue
+                    gpu_allocations.append(
+                        {
+                            "gpu_index": gpu.get("index"),
+                            "gpu_uuid": gpu.get("uuid") or gpu_process.get("gpu_uuid"),
+                            "used_memory_mb": int(gpu_process.get("used_memory_mb") or 0),
+                        }
+                    )
+        observed_vram_mb = sum(max(0, int(item.get("used_memory_mb") or 0)) for item in gpu_allocations)
+        process_payload = self.process_payload(process)
+        return {
+            "provider": provider,
+            "kind": kind,
+            "pid": pid,
+            "process_running": bool(process_payload.get("running")),
+            "estimated_vram_mb": max(0, int(estimated_vram_mb)),
+            "observed_vram_mb": observed_vram_mb,
+            "allocation_delta_mb": observed_vram_mb - max(0, int(estimated_vram_mb)),
+            "gpu_allocations": gpu_allocations,
+            "gpu_process_match_count": len(gpu_allocations),
+            "snapshot_sampled_at": snapshot.sampled_at,
+            "gpu_status": gpu_payload.get("detail") if not gpu_payload.get("ok") else "ok",
+        }
+
+    def _find_local_url_process(self, value: str | None) -> psutil.Process | None:
+        if not value:
+            return None
+        parsed = urlparse(value)
+        port = parsed.port
+        if port is None:
+            if parsed.scheme == "http":
+                port = 80
+            elif parsed.scheme == "https":
+                port = 443
+        if port is None:
+            return None
+        for conn in psutil.net_connections(kind="inet"):
+            if conn.status != psutil.CONN_LISTEN or not conn.laddr or conn.pid is None:
+                continue
+            if conn.laddr.port != port:
+                continue
+            try:
+                return psutil.Process(conn.pid)
+            except psutil.Error:
+                continue
+        return None
+
+    def _wait_sidecar_health(self, endpoint: str, *, timeout_seconds: float) -> bool:
+        health_url = self._health_url(endpoint)
+        if not health_url:
+            return False
+        deadline = time.time() + max(0.0, timeout_seconds)
+        while time.time() < deadline:
+            try:
+                with urllib.request.urlopen(health_url, timeout=1) as response:
+                    if 200 <= response.status < 300:
+                        return True
+            except Exception:
+                time.sleep(0.5)
+        return False
+
+    @staticmethod
+    def _health_url(endpoint: str) -> str | None:
+        parsed = urlparse(endpoint)
+        if not parsed.scheme or not parsed.netloc:
+            return None
+        return urlunparse((parsed.scheme, parsed.netloc, "/health", "", "", ""))
 
     @staticmethod
     def _is_auto_device(value: str | None) -> bool:

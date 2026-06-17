@@ -442,6 +442,51 @@
       }).join('');
   }
 
+  function renderSidecarAllocations(data) {
+    var target = element('sidecarAllocations');
+    if (!target) return;
+    var allocations = data.sidecar_allocations || {};
+    var entries = Array.isArray(allocations.entries) ? allocations.entries.slice().reverse() : [];
+    var summary = allocations.summary || {};
+    if (!entries.length) {
+      target.innerHTML = '<div class="empty-state">No sidecar allocation observations have been recorded.</div>';
+      return;
+    }
+    var lines = [
+      'Recent observations: ' + Number(summary.count || entries.length),
+      'Current sidecars: ' + Number(summary.current_count || 0)
+        + ' / observed: ' + Number(summary.observed_vram_mb || 0) + ' MB'
+        + ' / estimated: ' + Number(summary.estimated_vram_mb || 0) + ' MB'
+        + ' / delta: ' + Number(summary.allocation_delta_mb || 0) + ' MB'
+    ];
+    var providerCounts = summary.provider_counts || {};
+    var providerNames = Object.keys(providerCounts);
+    if (providerNames.length) {
+      lines.push('Providers: ' + providerNames.map(function (name) {
+        return name + ': ' + providerCounts[name];
+      }).join(' / '));
+    }
+    target.innerHTML = '<div class="shadow-summary">' + escapeHtml(lines.join('\n')) + '</div>'
+      + entries.map(function (entry) {
+        var gpuText = Array.isArray(entry.gpu_allocations) && entry.gpu_allocations.length
+          ? entry.gpu_allocations.map(function (item) {
+            return 'GPU ' + (item.gpu_index == null ? '?' : item.gpu_index)
+              + ' / ' + (item.gpu_uuid || 'uuid n/a')
+              + ' / ' + Number(item.used_memory_mb || 0) + ' MB';
+          }).join(', ')
+          : 'No GPU process match';
+        return '<div class="shadow-route-row">'
+          + '<strong>' + escapeHtml(entry.kind || 'sidecar') + '</strong>'
+          + '<span>' + escapeHtml((entry.provider || 'provider') + ' / PID ' + (entry.pid || 'n/a') + ' / running: ' + (entry.process_running ? 'yes' : 'no')) + '</span>'
+          + '<span>' + escapeHtml('Observed: ' + Number(entry.observed_vram_mb || 0) + ' MB'
+            + ' / estimated: ' + Number(entry.estimated_vram_mb || 0) + ' MB'
+            + ' / delta: ' + Number(entry.allocation_delta_mb || 0) + ' MB') + '</span>'
+          + '<span>' + escapeHtml(gpuText) + '</span>'
+          + '<span>' + escapeHtml('Snapshot: ' + (entry.snapshot_sampled_at || 'n/a') + ' / GPU status: ' + (entry.gpu_status || 'n/a')) + '</span>'
+          + '</div>';
+      }).join('');
+  }
+
   function renderStatus(data) {
     latestStatus = data;
     window.gammaDashboardStatus = data;
@@ -498,6 +543,7 @@
     renderTwitch(data);
     renderPlacementShadow(data);
     renderStartupAdmission(data);
+    renderSidecarAllocations(data);
   }
 
   async function loadStatus() {

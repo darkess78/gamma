@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
@@ -217,6 +219,74 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
         self.assertIsNone(device)
         self.assertEqual(log_event.call_args.args[2], "resource.startup_admission.rejected")
         self.assertEqual(log_event.call_args.kwargs["rejected"], {"qwen-gpu": "insufficient_vram_headroom"})
+
+    def test_sidecar_estimate_uses_fresh_observed_allocation(self) -> None:
+        manager = ProcessManager()
+        registry = ResourceRoutingRegistry(
+            policy=ResourceRoutingPolicy(
+                qwen_tts_estimated_vram_mb=9216,
+                sidecar_allocation_ttl_seconds=300,
+            ),
+            targets=(),
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            log_path = data_dir / "runtime" / "logs" / "supervisor.jsonl"
+            log_path.parent.mkdir(parents=True)
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "event": "resource.sidecar_allocation.observed",
+                        "provider": "qwen-tts",
+                        "kind": "qwen-tts",
+                        "estimated_vram_mb": 9216,
+                        "observed_vram_mb": 8900,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(settings, "data_dir", data_dir),
+                patch("gamma.supervisor.manager.load_resource_routing_registry", return_value=registry),
+            ):
+                estimate = manager._sidecar_estimated_vram_mb("qwen-tts")
+
+        self.assertEqual(estimate, 8900)
+
+    def test_sidecar_estimate_falls_back_when_observation_is_stale(self) -> None:
+        manager = ProcessManager()
+        registry = ResourceRoutingRegistry(
+            policy=ResourceRoutingPolicy(
+                audio_understanding_estimated_vram_mb=1536,
+                sidecar_allocation_ttl_seconds=1,
+            ),
+            targets=(),
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            log_path = data_dir / "runtime" / "logs" / "supervisor.jsonl"
+            log_path.parent.mkdir(parents=True)
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "timestamp": "2026-06-17T00:00:00+00:00",
+                        "event": "resource.sidecar_allocation.observed",
+                        "provider": "audio-understanding",
+                        "kind": "audio-understanding",
+                        "estimated_vram_mb": 1536,
+                        "observed_vram_mb": 900,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(settings, "data_dir", data_dir),
+                patch("gamma.supervisor.manager.load_resource_routing_registry", return_value=registry),
+            ):
+                estimate = manager._sidecar_estimated_vram_mb("audio-understanding")
+
+        self.assertEqual(estimate, 1536)
 
     def test_sidecar_allocation_payload_matches_gpu_process_by_pid(self) -> None:
         manager = ProcessManager()

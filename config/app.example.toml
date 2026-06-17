@@ -166,6 +166,7 @@ active_llm_routing = false
 startup_admission = false
 snapshot_max_age_seconds = 5
 reservation_ttl_seconds = 30
+sidecar_allocation_ttl_seconds = 300
 minimum_headroom_mb = 2048
 default_estimated_vram_mb = 0
 qwen_tts_estimated_vram_mb = 0

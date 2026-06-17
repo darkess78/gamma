@@ -16,6 +16,7 @@ import psutil
 from ..config import settings
 from ..observability import configure_logging, log_event
 from ..resources import ResourcePlacementCoordinator, WorkloadSpec
+from ..resources.allocations import latest_sidecar_allocations
 from ..resources.probe import collect_resource_snapshot
 from ..resources.runtime_registry import load_resource_routing_registry
 from ..system.cuda_env import prepend_cuda_library_path
@@ -864,14 +865,25 @@ class ProcessManager:
             requested_device=requested_device,
         )
 
-    @staticmethod
-    def _sidecar_estimated_vram_mb(kind: str) -> int:
+    def _sidecar_estimated_vram_mb(self, kind: str) -> int:
         normalized = kind.strip().lower()
+        registry = load_resource_routing_registry()
         if normalized == "qwen-tts":
-            return max(0, int(getattr(load_resource_routing_registry().policy, "qwen_tts_estimated_vram_mb", 0)))
-        if normalized == "audio-understanding":
-            return max(0, int(getattr(load_resource_routing_registry().policy, "audio_understanding_estimated_vram_mb", 0)))
-        return 0
+            configured = max(0, int(getattr(registry.policy, "qwen_tts_estimated_vram_mb", 0)))
+            provider = "qwen-tts"
+        elif normalized == "audio-understanding":
+            configured = max(0, int(getattr(registry.policy, "audio_understanding_estimated_vram_mb", 0)))
+            provider = "audio-understanding"
+        else:
+            return 0
+        log_path = settings.data_dir / "runtime" / "logs" / "supervisor.jsonl"
+        for allocation in latest_sidecar_allocations(
+            log_path,
+            ttl_seconds=registry.policy.sidecar_allocation_ttl_seconds,
+        ):
+            if allocation.provider == provider and allocation.kind == normalized and allocation.fresh and allocation.observed_vram_mb > 0:
+                return allocation.observed_vram_mb
+        return configured
 
     def _log_sidecar_allocation(
         self,

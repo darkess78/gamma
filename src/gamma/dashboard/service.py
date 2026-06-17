@@ -28,6 +28,8 @@ from ..llm.router_adapter import RouterLLMAdapter
 from ..memory.service import MemoryService
 from ..persona.emotion_service import EmotionMemoryService
 from ..resources import MachineResourceMonitor
+from ..resources.allocations import recent_sidecar_allocation_entries
+from ..resources.runtime_registry import load_resource_routing_registry
 from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..supervisor.manager import ProcessManager
 from ..system.cuda_env import prepend_cuda_library_path
@@ -2172,24 +2174,30 @@ class DashboardService:
 
     def _recent_sidecar_allocations(self, limit: int = 12) -> dict[str, Any]:
         log_path = settings.data_dir / "runtime" / "logs" / "supervisor.jsonl"
+        ttl_seconds = load_resource_routing_registry().policy.sidecar_allocation_ttl_seconds
         if not log_path.exists():
-            return {"entries": [], "summary": {"count": 0, "provider_counts": {}, "observed_vram_mb": 0}}
-        entries: deque[dict[str, Any]] = deque(maxlen=max(1, limit))
-        with log_path.open("r", encoding="utf-8", errors="replace") as handle:
-            for line in handle:
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                try:
-                    payload = json.loads(stripped)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(payload, dict):
-                    continue
-                if payload.get("event") != "resource.sidecar_allocation.observed":
-                    continue
-                entries.append(self._format_sidecar_allocation_entry(payload))
-        entries_list = list(entries)
+            return {
+                "entries": [],
+                "summary": {
+                    "count": 0,
+                    "current_count": 0,
+                    "fresh_count": 0,
+                    "stale_count": 0,
+                    "ttl_seconds": ttl_seconds,
+                    "provider_counts": {},
+                    "observed_vram_mb": 0,
+                    "estimated_vram_mb": 0,
+                    "allocation_delta_mb": 0,
+                },
+            }
+        entries_list = [
+            allocation.as_payload()
+            for allocation in recent_sidecar_allocation_entries(
+                log_path,
+                ttl_seconds=ttl_seconds,
+                limit=limit,
+            )
+        ]
         provider_counts: dict[str, int] = {}
         latest_by_sidecar: dict[str, dict[str, Any]] = {}
         for entry in entries_list:
@@ -2197,36 +2205,23 @@ class DashboardService:
             kind = str(entry.get("kind") or "unknown")
             provider_counts[provider] = provider_counts.get(provider, 0) + 1
             latest_by_sidecar[f"{provider}:{kind}"] = entry
-        observed_total = sum(int(entry.get("observed_vram_mb") or 0) for entry in latest_by_sidecar.values())
-        estimated_total = sum(int(entry.get("estimated_vram_mb") or 0) for entry in latest_by_sidecar.values())
+        fresh_latest = [entry for entry in latest_by_sidecar.values() if not entry.get("stale")]
+        observed_total = sum(int(entry.get("observed_vram_mb") or 0) for entry in fresh_latest)
+        estimated_total = sum(int(entry.get("estimated_vram_mb") or 0) for entry in fresh_latest)
+        stale_count = sum(1 for entry in entries_list if entry.get("stale"))
         return {
             "entries": entries_list,
             "summary": {
                 "count": len(entries_list),
-                "current_count": len(latest_by_sidecar),
+                "current_count": len(fresh_latest),
+                "fresh_count": len(entries_list) - stale_count,
+                "stale_count": stale_count,
+                "ttl_seconds": ttl_seconds,
                 "provider_counts": provider_counts,
                 "observed_vram_mb": observed_total,
                 "estimated_vram_mb": estimated_total,
                 "allocation_delta_mb": observed_total - estimated_total,
             },
-        }
-
-    def _format_sidecar_allocation_entry(self, payload: dict[str, Any]) -> dict[str, Any]:
-        gpu_allocations = payload.get("gpu_allocations")
-        allocation_payload = gpu_allocations if isinstance(gpu_allocations, list) else []
-        return {
-            "timestamp": payload.get("timestamp"),
-            "provider": payload.get("provider"),
-            "kind": payload.get("kind"),
-            "pid": payload.get("pid"),
-            "process_running": payload.get("process_running"),
-            "estimated_vram_mb": payload.get("estimated_vram_mb"),
-            "observed_vram_mb": payload.get("observed_vram_mb"),
-            "allocation_delta_mb": payload.get("allocation_delta_mb"),
-            "gpu_allocations": allocation_payload,
-            "gpu_process_match_count": payload.get("gpu_process_match_count"),
-            "snapshot_sampled_at": payload.get("snapshot_sampled_at"),
-            "gpu_status": payload.get("gpu_status"),
         }
 
     def _placement_shadow_routes(self, entries: list[dict[str, Any]], *, limit: int = 8) -> dict[str, Any]:

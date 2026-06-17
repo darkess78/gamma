@@ -14,6 +14,7 @@ import gamma.config as config_module
 from gamma.config import settings
 from gamma.dashboard import main
 from gamma.dashboard.service import DashboardService
+from gamma.resources.runtime_registry import ResourceRoutingPolicy, ResourceRoutingRegistry
 from gamma.schemas.response import AssistantResponse, VisionAnalysis
 from gamma.schemas.voice import VoiceRoundtripResponse
 from gamma.system.status import SystemStatusService
@@ -1159,6 +1160,7 @@ class DashboardRoutesTest(unittest.TestCase):
 
     def test_recent_sidecar_allocations_extracts_observed_vram(self) -> None:
         service = DashboardService()
+        current_timestamp = datetime.now(timezone.utc).isoformat()
         with tempfile.TemporaryDirectory() as temp_dir:
             log_dir = Path(temp_dir) / "runtime" / "logs"
             log_dir.mkdir(parents=True)
@@ -1166,7 +1168,7 @@ class DashboardRoutesTest(unittest.TestCase):
             payloads = [
                 {"event": "resource.startup_admission.selected", "message": "ignore"},
                 {
-                    "timestamp": "2026-06-17T00:00:00Z",
+                    "timestamp": current_timestamp,
                     "event": "resource.sidecar_allocation.observed",
                     "provider": "qwen-tts",
                     "kind": "qwen-tts",
@@ -1177,11 +1179,11 @@ class DashboardRoutesTest(unittest.TestCase):
                     "allocation_delta_mb": -316,
                     "gpu_allocations": [{"gpu_index": 0, "gpu_uuid": "GPU-0", "used_memory_mb": 8900}],
                     "gpu_process_match_count": 1,
-                    "snapshot_sampled_at": "2026-06-17T00:00:00Z",
+                    "snapshot_sampled_at": current_timestamp,
                     "gpu_status": "ok",
                 },
                 {
-                    "timestamp": "2026-06-17T00:00:01Z",
+                    "timestamp": current_timestamp,
                     "event": "resource.sidecar_allocation.observed",
                     "provider": "audio-understanding",
                     "kind": "audio-understanding",
@@ -1192,7 +1194,22 @@ class DashboardRoutesTest(unittest.TestCase):
                     "allocation_delta_mb": -518,
                     "gpu_allocations": [{"gpu_index": 1, "gpu_uuid": "GPU-1", "used_memory_mb": 1018}],
                     "gpu_process_match_count": 1,
-                    "snapshot_sampled_at": "2026-06-17T00:00:01Z",
+                    "snapshot_sampled_at": current_timestamp,
+                    "gpu_status": "ok",
+                },
+                {
+                    "timestamp": "2000-01-01T00:00:00Z",
+                    "event": "resource.sidecar_allocation.observed",
+                    "provider": "stale-sidecar",
+                    "kind": "stale-sidecar",
+                    "pid": 333,
+                    "process_running": False,
+                    "estimated_vram_mb": 2048,
+                    "observed_vram_mb": 2048,
+                    "allocation_delta_mb": 0,
+                    "gpu_allocations": [{"gpu_index": 1, "gpu_uuid": "GPU-1", "used_memory_mb": 2048}],
+                    "gpu_process_match_count": 1,
+                    "snapshot_sampled_at": "2000-01-01T00:00:00Z",
                     "gpu_status": "ok",
                 },
             ]
@@ -1201,18 +1218,28 @@ class DashboardRoutesTest(unittest.TestCase):
                 for payload in payloads:
                     handle.write(json.dumps(payload) + "\n")
 
-            with patch.object(settings, "data_dir", Path(temp_dir)):
+            registry = ResourceRoutingRegistry(policy=ResourceRoutingPolicy(sidecar_allocation_ttl_seconds=300), targets=())
+            with (
+                patch.object(settings, "data_dir", Path(temp_dir)),
+                patch("gamma.dashboard.service.load_resource_routing_registry", return_value=registry),
+            ):
                 allocations = service._recent_sidecar_allocations(limit=10)
 
-        self.assertEqual(allocations["summary"]["count"], 2)
+        self.assertEqual(allocations["summary"]["count"], 3)
         self.assertEqual(allocations["summary"]["current_count"], 2)
-        self.assertEqual(allocations["summary"]["provider_counts"], {"qwen-tts": 1, "audio-understanding": 1})
+        self.assertEqual(allocations["summary"]["fresh_count"], 2)
+        self.assertEqual(allocations["summary"]["stale_count"], 1)
+        self.assertEqual(allocations["summary"]["ttl_seconds"], 300)
+        self.assertEqual(allocations["summary"]["provider_counts"], {"qwen-tts": 1, "audio-understanding": 1, "stale-sidecar": 1})
         self.assertEqual(allocations["summary"]["observed_vram_mb"], 9918)
         self.assertEqual(allocations["summary"]["estimated_vram_mb"], 10752)
         self.assertEqual(allocations["summary"]["allocation_delta_mb"], -834)
         first = allocations["entries"][0]
         self.assertEqual(first["provider"], "qwen-tts")
+        self.assertFalse(first["stale"])
+        self.assertGreaterEqual(first["age_seconds"], 0)
         self.assertEqual(first["gpu_allocations"], [{"gpu_index": 0, "gpu_uuid": "GPU-0", "used_memory_mb": 8900}])
+        self.assertTrue(allocations["entries"][2]["stale"])
 
 
 if __name__ == "__main__":

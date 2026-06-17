@@ -454,7 +454,10 @@
     }
     var lines = [
       'Recent observations: ' + Number(summary.count || entries.length),
-      'Current sidecars: ' + Number(summary.current_count || 0)
+      'Fresh observations: ' + Number(summary.fresh_count || 0)
+        + ' / stale: ' + Number(summary.stale_count || 0)
+        + ' / TTL: ' + Number(summary.ttl_seconds || 0) + ' sec',
+      'Current fresh sidecars: ' + Number(summary.current_count || 0)
         + ' / observed: ' + Number(summary.observed_vram_mb || 0) + ' MB'
         + ' / estimated: ' + Number(summary.estimated_vram_mb || 0) + ' MB'
         + ' / delta: ' + Number(summary.allocation_delta_mb || 0) + ' MB'
@@ -475,9 +478,11 @@
               + ' / ' + Number(item.used_memory_mb || 0) + ' MB';
           }).join(', ')
           : 'No GPU process match';
+        var ageText = entry.age_seconds == null ? 'age n/a' : Number(entry.age_seconds) + ' sec old';
+        var freshness = entry.stale ? 'stale' : 'fresh';
         return '<div class="shadow-route-row">'
           + '<strong>' + escapeHtml(entry.kind || 'sidecar') + '</strong>'
-          + '<span>' + escapeHtml((entry.provider || 'provider') + ' / PID ' + (entry.pid || 'n/a') + ' / running: ' + (entry.process_running ? 'yes' : 'no')) + '</span>'
+          + '<span>' + escapeHtml((entry.provider || 'provider') + ' / ' + freshness + ' / ' + ageText + ' / PID ' + (entry.pid || 'n/a') + ' / running: ' + (entry.process_running ? 'yes' : 'no')) + '</span>'
           + '<span>' + escapeHtml('Observed: ' + Number(entry.observed_vram_mb || 0) + ' MB'
             + ' / estimated: ' + Number(entry.estimated_vram_mb || 0) + ' MB'
             + ' / delta: ' + Number(entry.allocation_delta_mb || 0) + ' MB') + '</span>'

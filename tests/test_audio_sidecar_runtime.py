@@ -11,7 +11,7 @@ from unittest.mock import patch
 from gamma.config import settings
 from gamma.resources.models import PlacementCandidate, PlacementDecision, RuntimeTarget, WorkloadSpec
 from gamma.resources.runtime_registry import ResourceRoutingPolicy, ResourceRoutingRegistry
-from gamma.supervisor.manager import ProcessManager
+from gamma.supervisor.manager import ProcessManager, SidecarVramEstimate
 
 
 class AudioSidecarRuntimeTest(unittest.TestCase):
@@ -46,7 +46,7 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
             patch.object(settings, "audio_analysis_device", "cpu"),
             patch.object(settings, "speaker_emotion_device", "auto"),
             patch.object(settings, "audio_event_device", "cuda:0"),
-            patch.object(manager, "_sidecar_estimated_vram_mb", return_value=1234),
+            patch.object(manager, "_sidecar_vram_estimate", return_value=SidecarVramEstimate(vram_mb=1234, source="configured_fallback")),
             patch.object(manager, "_admitted_sidecar_device", return_value="cuda:1") as admitted,
         ):
             env = manager._audio_understanding_admission_env()
@@ -57,6 +57,9 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
             modality="audio",
             model=None,
             estimated_vram_mb=1234,
+            estimate_source="configured_fallback",
+            estimate_observed_age_seconds=None,
+            estimate_ttl_seconds=None,
         )
         self.assertEqual(env, {"SHANA_SPEAKER_EMOTION_DEVICE": "cuda:1"})
 
@@ -79,7 +82,7 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
         with (
             patch.dict("os.environ", {"QWEN_TTS_DEVICE": "auto"}, clear=False),
             patch.object(settings, "qwen_tts_device", ""),
-            patch.object(manager, "_sidecar_estimated_vram_mb", return_value=4321),
+            patch.object(manager, "_sidecar_vram_estimate", return_value=SidecarVramEstimate(vram_mb=4321, source="configured_fallback")),
             patch.object(manager, "_admitted_sidecar_device", return_value="cuda:1") as admitted,
         ):
             env = manager._qwen_tts_admission_env()
@@ -90,6 +93,9 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
             modality="speech",
             model="qwen-tts",
             estimated_vram_mb=4321,
+            estimate_source="configured_fallback",
+            estimate_observed_age_seconds=None,
+            estimate_ttl_seconds=None,
         )
         self.assertEqual(env, {"QWEN_TTS_DEVICE": "cuda:1"})
 
@@ -109,7 +115,7 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
         with (
             patch.dict("os.environ", {}, clear=True),
             patch.object(settings, "qwen_tts_device", "auto"),
-            patch.object(manager, "_sidecar_estimated_vram_mb", return_value=4321),
+            patch.object(manager, "_sidecar_vram_estimate", return_value=SidecarVramEstimate(vram_mb=4321, source="configured_fallback")),
             patch.object(manager, "_admitted_sidecar_device", return_value="cuda:1") as admitted,
         ):
             env = manager._qwen_tts_admission_env()
@@ -120,6 +126,9 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
             modality="speech",
             model="qwen-tts",
             estimated_vram_mb=4321,
+            estimate_source="configured_fallback",
+            estimate_observed_age_seconds=None,
+            estimate_ttl_seconds=None,
         )
         self.assertEqual(env, {"QWEN_TTS_DEVICE": "cuda:1"})
 
@@ -179,6 +188,9 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
                 modality="speech",
                 model="qwen-tts",
                 estimated_vram_mb=9000,
+                estimate_source="observed_fresh",
+                estimate_observed_age_seconds=12.5,
+                estimate_ttl_seconds=300,
             )
 
         self.assertEqual(device, "cuda:1")
@@ -187,6 +199,9 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
         self.assertEqual(workload.estimated_vram_mb, 9000)
         self.assertEqual(log_event.call_args.args[2], "resource.startup_admission.selected")
         self.assertEqual(log_event.call_args.kwargs["estimated_vram_mb"], 9000)
+        self.assertEqual(log_event.call_args.kwargs["estimate_source"], "observed_fresh")
+        self.assertEqual(log_event.call_args.kwargs["estimate_observed_age_seconds"], 12.5)
+        self.assertEqual(log_event.call_args.kwargs["estimate_ttl_seconds"], 300)
         self.assertEqual(log_event.call_args.kwargs["selected"]["target_id"], "qwen-gpu")
 
     def test_startup_admission_logs_rejected_decision(self) -> None:
@@ -218,6 +233,7 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
 
         self.assertIsNone(device)
         self.assertEqual(log_event.call_args.args[2], "resource.startup_admission.rejected")
+        self.assertEqual(log_event.call_args.kwargs["estimate_source"], "configured_fallback")
         self.assertEqual(log_event.call_args.kwargs["rejected"], {"qwen-gpu": "insufficient_vram_headroom"})
 
     def test_sidecar_estimate_uses_fresh_observed_allocation(self) -> None:
@@ -250,9 +266,11 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
                 patch.object(settings, "data_dir", data_dir),
                 patch("gamma.supervisor.manager.load_resource_routing_registry", return_value=registry),
             ):
-                estimate = manager._sidecar_estimated_vram_mb("qwen-tts")
+                estimate = manager._sidecar_vram_estimate("qwen-tts")
 
-        self.assertEqual(estimate, 8900)
+        self.assertEqual(estimate.vram_mb, 8900)
+        self.assertEqual(estimate.source, "observed_fresh")
+        self.assertEqual(estimate.ttl_seconds, 300)
 
     def test_sidecar_estimate_falls_back_when_observation_is_stale(self) -> None:
         manager = ProcessManager()
@@ -284,9 +302,10 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
                 patch.object(settings, "data_dir", data_dir),
                 patch("gamma.supervisor.manager.load_resource_routing_registry", return_value=registry),
             ):
-                estimate = manager._sidecar_estimated_vram_mb("audio-understanding")
+                estimate = manager._sidecar_vram_estimate("audio-understanding")
 
-        self.assertEqual(estimate, 1536)
+        self.assertEqual(estimate.vram_mb, 1536)
+        self.assertEqual(estimate.source, "configured_fallback")
 
     def test_sidecar_allocation_payload_matches_gpu_process_by_pid(self) -> None:
         manager = ProcessManager()

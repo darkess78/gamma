@@ -54,6 +54,14 @@ class ManagedService:
         return f"http://{self.public_host}:{self.port}"
 
 
+@dataclass(frozen=True, slots=True)
+class SidecarVramEstimate:
+    vram_mb: int
+    source: str
+    observed_age_seconds: float | None = None
+    ttl_seconds: int | None = None
+
+
 class ProcessManager:
     """Process manager.
     
@@ -735,12 +743,16 @@ class ProcessManager:
                 requested_device=requested,
             )
             return {}
+        estimate = self._sidecar_vram_estimate("qwen-tts")
         device = self._admitted_sidecar_device(
             provider="qwen-tts",
             kind="qwen-tts",
             modality="speech",
             model="qwen-tts",
-            estimated_vram_mb=self._sidecar_estimated_vram_mb("qwen-tts"),
+            estimated_vram_mb=estimate.vram_mb,
+            estimate_source=estimate.source,
+            estimate_observed_age_seconds=estimate.observed_age_seconds,
+            estimate_ttl_seconds=estimate.ttl_seconds,
         )
         return {"QWEN_TTS_DEVICE": device} if device else {}
 
@@ -757,12 +769,16 @@ class ProcessManager:
                 requested_device="explicit",
             )
             return {}
+        estimate = self._sidecar_vram_estimate("audio-understanding")
         device = self._admitted_sidecar_device(
             provider="audio-understanding",
             kind="audio-understanding",
             modality="audio",
             model=None,
-            estimated_vram_mb=self._sidecar_estimated_vram_mb("audio-understanding"),
+            estimated_vram_mb=estimate.vram_mb,
+            estimate_source=estimate.source,
+            estimate_observed_age_seconds=estimate.observed_age_seconds,
+            estimate_ttl_seconds=estimate.ttl_seconds,
         )
         if not device:
             return {}
@@ -783,6 +799,9 @@ class ProcessManager:
         modality: str,
         model: str | None,
         estimated_vram_mb: int = 0,
+        estimate_source: str = "configured_fallback",
+        estimate_observed_age_seconds: float | None = None,
+        estimate_ttl_seconds: int | None = None,
     ) -> str | None:
         registry = load_resource_routing_registry()
         if not registry.policy.startup_admission:
@@ -834,6 +853,9 @@ class ProcessManager:
             model=model,
             workload_id=decision.workload.id,
             estimated_vram_mb=decision.workload.estimated_vram_mb,
+            estimate_source=estimate_source,
+            estimate_observed_age_seconds=estimate_observed_age_seconds,
+            estimate_ttl_seconds=estimate_ttl_seconds,
             minimum_headroom_mb=decision.workload.minimum_headroom_mb,
             status=decision.status,
             selected=selected,
@@ -866,6 +888,9 @@ class ProcessManager:
         )
 
     def _sidecar_estimated_vram_mb(self, kind: str) -> int:
+        return self._sidecar_vram_estimate(kind).vram_mb
+
+    def _sidecar_vram_estimate(self, kind: str) -> SidecarVramEstimate:
         normalized = kind.strip().lower()
         registry = load_resource_routing_registry()
         if normalized == "qwen-tts":
@@ -875,15 +900,24 @@ class ProcessManager:
             configured = max(0, int(getattr(registry.policy, "audio_understanding_estimated_vram_mb", 0)))
             provider = "audio-understanding"
         else:
-            return 0
+            return SidecarVramEstimate(vram_mb=0, source="unsupported_sidecar")
         log_path = settings.data_dir / "runtime" / "logs" / "supervisor.jsonl"
         for allocation in latest_sidecar_allocations(
             log_path,
             ttl_seconds=registry.policy.sidecar_allocation_ttl_seconds,
         ):
             if allocation.provider == provider and allocation.kind == normalized and allocation.fresh and allocation.observed_vram_mb > 0:
-                return allocation.observed_vram_mb
-        return configured
+                return SidecarVramEstimate(
+                    vram_mb=allocation.observed_vram_mb,
+                    source="observed_fresh",
+                    observed_age_seconds=allocation.age_seconds,
+                    ttl_seconds=registry.policy.sidecar_allocation_ttl_seconds,
+                )
+        return SidecarVramEstimate(
+            vram_mb=configured,
+            source="configured_fallback",
+            ttl_seconds=registry.policy.sidecar_allocation_ttl_seconds,
+        )
 
     def _log_sidecar_allocation(
         self,

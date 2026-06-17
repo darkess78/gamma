@@ -417,6 +417,9 @@
         var estimate = entry.estimated_vram_mb == null
           ? 'Estimate: n/a'
           : 'Estimate: ' + Number(entry.estimated_vram_mb) + ' MB'
+            + (entry.estimate_source ? ' / source: ' + entry.estimate_source : '')
+            + (entry.estimate_observed_age_seconds == null ? '' : ' / observed age: ' + Number(entry.estimate_observed_age_seconds) + ' sec')
+            + (entry.estimate_ttl_seconds == null ? '' : ' / TTL: ' + Number(entry.estimate_ttl_seconds) + ' sec')
             + (entry.minimum_headroom_mb == null ? '' : ' / min headroom: ' + Number(entry.minimum_headroom_mb) + ' MB');
         var vram = entry.free_vram_mb == null
           ? 'VRAM: n/a'

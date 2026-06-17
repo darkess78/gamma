@@ -1103,6 +1103,8 @@ class DashboardRoutesTest(unittest.TestCase):
                     "model": "qwen-tts",
                     "workload_id": "qwen-tts:startup",
                     "estimated_vram_mb": 9216,
+                    "estimate_source": "configured_fallback",
+                    "estimate_ttl_seconds": 300,
                     "minimum_headroom_mb": 1024,
                     "status": "selected",
                     "snapshot_age_seconds": 0.1,
@@ -1155,6 +1157,8 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(selected["target_id"], "qwen_tts_gpu_0")
         self.assertEqual(selected["device"], "cuda:0")
         self.assertEqual(selected["estimated_vram_mb"], 9216)
+        self.assertEqual(selected["estimate_source"], "configured_fallback")
+        self.assertEqual(selected["estimate_ttl_seconds"], 300)
         self.assertEqual(selected["rejected"], {"qwen_tts_gpu_1": "insufficient_vram_headroom"})
         self.assertEqual(admission["entries"][1]["requested_device"], "cuda:0")
 

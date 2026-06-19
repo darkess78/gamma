@@ -426,89 +426,7 @@
           <div id="ttsArtifactList" class="tts-artifacts"><span style="color:var(--muted);font-size:13px;">No recent audio files.</span></div>
         </div>
       </section>
-      <section class="panel full-width stream-live-voice-panel" data-dashboard-tab="voice">
-        <div class="panel-head">
-          <button type="button" class="collapse-toggle collapse-toggle-panel" onclick="toggleSection('browserVoicePanel')">
-            <span>Live Voice</span>
-            <span class="collapse-chevron" id="browserVoicePanelChevron">></span>
-          </button>
-        </div>
-        <div id="browserVoicePanel" class="collapse-body" style="display: none;">
-        <div class="provider-actions">
-          <div class="action-group">
-            <div class="action-title">Live Session</div>
-            <div class="action-buttons">
-              <button class="secondary" id="liveVoiceButton" onclick="toggleLiveVoice()">Start Live</button>
-              <button class="ghost danger-outline" onclick="stopLiveVoice()">Stop Live</button>
-            </div>
-          </div>
-          <div class="action-group">
-            <div class="action-title">Capture</div>
-            <div class="action-buttons">
-              <button class="secondary" id="recordButton" onclick="toggleVoiceRecording()">Start Recording</button>
-              <button class="ghost" onclick="sendRecordedVoice()">Send Last Clip</button>
-            </div>
-          </div>
-          <div class="action-group">
-            <div class="action-title">Session</div>
-            <div class="action-buttons">
-              <input class="text-input" id="voiceSessionId" placeholder="optional session id" title="Optional session id used to group live voice turns into the same conversation context.">
-              <label class="checkbox-row" title="When enabled, live/browser voice requests also return synthesized reply audio."><input id="voiceSynthesizeSpeech" type="checkbox" checked> Return audio</label>
-              <label class="checkbox-row" title="Allow your speech to interrupt Shana mid-reply during live voice playback."><input id="liveBargeInEnabled" type="checkbox" checked> Barge-in</label>
-              <button type="button" class="secondary" id="liveSpeakerMuteButton" onclick="toggleLiveSpeakerMuted()">Mute Shana</button>
-              <button type="button" class="secondary" id="liveMicMuteButton" onclick="toggleLiveMicMuted()">Mute Mic</button>
-            </div>
-          </div>
-          <div class="action-group">
-            <div class="action-title">Capture Tuning</div>
-            <div class="action-buttons action-stack">
-              <label class="range-row" title="Choose how Shana chunks live replies. Incremental is lower-latency but more experimental.">Response mode <select class="text-input" id="liveResponseMode"><option value="simple_chunked">Simple chunked</option><option value="incremental_experimental">Incremental experimental</option></select></label>
-              <label class="range-row" title="Minimum detected mic energy before live voice treats your input as speech. Higher values ignore more background noise.">Speech threshold <input id="liveSpeechThreshold" type="range" min="8" max="40" step="1" value="18"><span id="liveSpeechThresholdValue">0.018</span></label>
-              <label class="checkbox-row" title="Estimate the room noise floor while idle and raise the speech threshold when needed."><input id="liveAdaptiveNoiseEnabled" type="checkbox" checked> Adaptive noise threshold</label>
-              <label class="range-row" title="Multiplier applied to the measured room noise. Increase this if fans or keyboard noise open turns.">Noise multiplier <input id="liveNoiseMultiplier" type="number" min="1.2" max="5" step="0.1" value="2.2" class="text-input"><span>x</span></label>
-              <label class="range-row" title="Speech may fall to this fraction of the opening threshold before it is considered silence. This prevents choppy turn detection.">Release ratio <input id="liveVadReleaseRatio" type="number" min="0.3" max="0.95" step="0.05" value="0.65" class="text-input"><span>x</span></label>
-              <label class="range-row" title="How much silence must pass before live voice closes your turn and sends it for STT/LLM processing.">Silence ms <input id="liveSilenceMs" type="range" min="400" max="1800" step="50" value="900"><span id="liveSilenceMsValue">900</span></label>
-              <label class="range-row" title="Minimum duration of a captured turn before silence is allowed to submit it.">Minimum turn ms <input id="liveMinimumTurnMs" type="number" min="150" max="3000" step="50" value="550" class="text-input"><span>ms</span></label>
-              <label class="range-row" title="Force-submit a turn after this duration even if background sound prevents silence detection.">Maximum turn sec <input id="liveMaximumTurnSeconds" type="number" min="3" max="120" step="1" value="30" class="text-input"><span>sec</span></label>
-              <label class="range-row" title="How often the backend may run partial STT while you are speaking. Lower values update subtitles faster but use more GPU.">Partial STT ms <input id="livePartialIntervalMs" type="number" min="250" max="3000" step="50" value="1100" class="text-input"><span>ms</span></label>
-              <label class="range-row" title="Minimum captured speech required before the first partial transcript is attempted.">Partial audio ms <input id="livePartialMinAudioMs" type="number" min="200" max="3000" step="50" value="500" class="text-input"><span>ms</span></label>
-            </div>
-          </div>
-          <div class="action-group">
-            <div class="action-title">Barge-in Recognition</div>
-            <div class="action-buttons action-stack">
-              <label class="range-row" title="Transcript-confirmed mode uses STT and echo checks before interrupting. Amplitude-only mode is retained for diagnostics.">Barge-in mode <select class="text-input" id="liveBargeInMode"><option value="transcript">Transcript-confirmed</option><option value="amplitude">Amplitude only</option></select></label>
-              <label class="range-row" title="How long your speech must continue before it counts as an interrupt candidate while Shana is talking.">Interrupt speech ms <input id="liveInterruptSpeechMs" type="range" min="80" max="800" step="20" value="260"><span id="liveInterruptSpeechMsValue">260</span></label>
-              <label class="range-row" title="Recent microphone audio included in each transcript confirmation probe. Longer probes improve recognition but add latency.">Probe audio ms <input id="liveInterruptProbeMs" type="number" min="250" max="2000" step="50" value="900" class="text-input"><span>ms</span></label>
-              <label class="range-row" title="Minimum recognized words required to interrupt. Direct commands such as stop, wait, no, hey, or Shana may interrupt with one word.">Minimum words <input id="liveInterruptMinWords" type="number" min="1" max="8" step="1" value="2" class="text-input"><span>words</span></label>
-              <label class="range-row" title="Number of successful transcript probes required before playback stops. Use 2 in noisy rooms.">Confirmations <input id="liveInterruptConfirmations" type="number" min="1" max="3" step="1" value="1" class="text-input"><span>probes</span></label>
-              <label class="checkbox-row" title="Reject probe transcripts that substantially match the words Shana is currently speaking."><input id="liveRejectPlaybackEcho" type="checkbox" checked> Reject playback echo</label>
-              <label class="range-row" title="Minimum delay after an interruption before another barge-in can fire, reducing repeated triggers from echo or background noise.">Barge cooldown <input id="liveBargeCooldownMs" type="number" min="0" max="5000" step="50" value="750" class="text-input"><span>ms</span></label>
-            </div>
-          </div>
-        </div>
-        <canvas id="liveVoiceMeter" class="voice-meter" width="900" height="88"></canvas>
-        <details class="legend-details">
-          <summary><strong>Timing legend</strong></summary>
-          <div class="legend-body">
-            <strong>stt</strong>: speech-to-text time for your audio.<br>
-            <strong>llm+tts</strong>: assistant reply generation plus any speech synthesis work done in that backend call.<br>
-            <strong>tts</strong>: speech synthesis time only.<br>
-            <strong>total</strong>: end-to-end time for the full turn.
-          </div>
-        </details>
-        <div class="render" id="liveVoiceMeta">No active live turn.</div>
-        <div class="render live-debug-panel" id="liveDebugPanel" hidden>Live debug information appears after a session starts.</div>
-        <div class="render" id="liveVoiceStatus">Live voice session is idle.</div>
-        <div class="render" id="liveSubtitleStatus">Subtitles idle.</div>
-        <div class="action-buttons" style="margin-top: 10px;">
-          <button class="ghost" onclick="toggleSubtitleWindow()">Pop Out Subtitles</button>
-        </div>
-        <div class="render" id="liveVoiceHistory">No live turns yet.</div>
-        <div class="render" id="voiceRoundtripStatus">No browser voice roundtrip has run yet.</div>
-        <audio id="voicePlayback" controls preload="none"></audio>
-        </div>
-      </section>
+<!-- GAMMA_LIVE_VOICE_PANEL -->
       <section class="panel wide" data-dashboard-tab="settings">
         <div class="panel-head">
           <button type="button" class="collapse-toggle collapse-toggle-panel" onclick="toggleSection('visionPanel')">
@@ -782,10 +700,10 @@
   <!-- Modular scripts -->
   <script src="/static/init.js?v=20260529"></script>
   <script src="/static/providers.js?v=20260529"></script>
-  <script src="/static/stream.js?v=20260529"></script>
+  <script src="/static/stream.js?v=20260618"></script>
   <script src="/static/nav.js?v=20260611e"></script>
   <script src="/static/memory.js?v=20260611e"></script>
-  <script src="/static/api.js?v=20260529"></script>
+  <script src="/static/api.js?v=20260618"></script>
   <script src="/static/live.js?v=20260611e"></script>
   <script src="/static/render.js?v=20260529"></script>
   <script src="/static/controls.js?v=20260611a"></script>

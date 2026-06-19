@@ -7,6 +7,8 @@
   let playing = false;
   let audioQueue = [];
   let lastSequence = 0;
+  let monitorStatusInFlight = false;
+  let monitorStatusController = null;
 
   const params = new URLSearchParams(location.search);
   const token = params.get('token') || '';
@@ -53,7 +55,32 @@
       if (apiIsLocal && browserHost && !browserIsLocal) {
         apiUrl.hostname = browserHost;
       }
+      if (location.protocol === 'https:' && apiUrl.protocol !== 'https:') {
+        const internalPort = ['8000', '8001', '8080'].includes(apiUrl.port);
+        const sameHost = apiUrl.hostname === browserHost;
+        if (sameHost || internalPort || !browserIsLocal) {
+          return location.origin.replace(/\/$/, '');
+        }
+      }
       return apiUrl.toString().replace(/\/$/, '');
+    } catch (error) {
+      return value;
+    }
+  }
+
+  function browserReachableUrl(rawUrl) {
+    const value = String(rawUrl || '').trim();
+    if (!value) return '';
+    try {
+      const parsed = new URL(value, apiBase || location.origin);
+      if (location.protocol === 'https:' && parsed.protocol !== 'https:') {
+        const internalPort = ['8000', '8001', '8080'].includes(parsed.port);
+        const sameHost = parsed.hostname === location.hostname;
+        if (sameHost || internalPort) {
+          return location.origin.replace(/\/$/, '') + parsed.pathname + parsed.search + parsed.hash;
+        }
+      }
+      return parsed.toString();
     } catch (error) {
       return value;
     }
@@ -349,7 +376,7 @@
   function audioSourceFromEvent(payload) {
     const eventPayload = payload.payload || {};
     if (eventPayload.audio_url) {
-      return eventPayload.audio_url;
+      return browserReachableUrl(eventPayload.audio_url);
     }
     if (eventPayload.audio_base64 && eventPayload.audio_content_type) {
       return `data:${eventPayload.audio_content_type};base64,${eventPayload.audio_base64}`;
@@ -442,6 +469,48 @@
     }
   }
 
+  async function submitMonitorInput() {
+    const status = document.getElementById('monitorInputStatus');
+    const textInput = document.getElementById('monitorInputText');
+    const text = textInput ? textInput.value.trim() : '';
+    if (!text) {
+      if (status) status.textContent = 'Input text is required.';
+      return;
+    }
+    const payload = {
+      input_mode: document.getElementById('monitorInputMode')?.value || 'owner_mic',
+      session_id: document.getElementById('monitorInputSession')?.value || 'monitor-local-stream',
+      text: text,
+      output_target_policy: targetPolicy || 'dashboard_monitor',
+      synthesize_speech: true,
+      fast_mode: true
+    };
+    if (status) status.textContent = 'Sending input through stream path...';
+    try {
+      const response = await fetch('/api/monitor/input', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (!response.ok || result.ok === false) {
+        throw new Error(result.detail || `HTTP ${response.status}`);
+      }
+      const decision = result.result && result.result.decision ? result.result.decision : {};
+      const reply = result.result && result.result.assistant_response ? result.result.assistant_response.spoken_text || '' : '';
+      if (status) {
+        status.textContent = [
+          `Decision: ${decision.decision || 'n/a'} / ${decision.reason || 'n/a'}`,
+          reply ? `Reply: ${reply}` : ''
+        ].filter(Boolean).join('\n');
+      }
+      if (textInput) textInput.value = '';
+      window.setTimeout(loadMonitorStatus, 350);
+    } catch (error) {
+      if (status) status.textContent = `Input failed: ${String(error)}`;
+    }
+  }
+
   async function monitorStopAllOutput() {
     const targets = ['dashboard_monitor', 'stream_public', 'discord_call'];
     const results = await Promise.allSettled(targets.map(target => (
@@ -466,8 +535,16 @@
   }
 
   async function loadMonitorStatus() {
+    if (monitorStatusInFlight) return;
+    monitorStatusInFlight = true;
+    const controller = new AbortController();
+    monitorStatusController = controller;
+    const timeoutId = window.setTimeout(() => controller.abort(), 8000);
     try {
-      const response = await fetch('/api/status?_=' + Date.now(), { cache: 'no-store' });
+      const response = await fetch('/api/monitor/status?_=' + Date.now(), {
+        cache: 'no-store',
+        signal: controller.signal
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       const shana = data.shana || {};
@@ -510,10 +587,19 @@
         `Disk: ${machine.disk ? Number(machine.disk.percent || 0).toFixed(1) : 'n/a'}%`
       ].concat(gpuLines).join('\n');
     } catch (error) {
+      const message = error && error.name === 'AbortError'
+        ? 'Status request timed out.'
+        : `Status unavailable: ${String(error)}`;
       ['monitorBackendHealth', 'monitorProviders', 'monitorWorkers', 'monitorMachine'].forEach(id => {
         const target = document.getElementById(id);
-        if (target) target.textContent = `Status unavailable: ${String(error)}`;
+        if (target) target.textContent = message;
       });
+    } finally {
+      window.clearTimeout(timeoutId);
+      if (monitorStatusController === controller) {
+        monitorStatusController = null;
+      }
+      monitorStatusInFlight = false;
     }
   }
 
@@ -560,5 +646,6 @@
   window.toggleMute = toggleMute;
   window.clearOutput = clearOutput;
   window.monitorAction = monitorAction;
+  window.submitMonitorInput = submitMonitorInput;
   window.monitorStopAllOutput = monitorStopAllOutput;
 })();

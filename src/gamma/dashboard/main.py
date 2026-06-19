@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import mimetypes
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -25,6 +26,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 INDEX_PAGE = STATIC_DIR / "index.html"
 MONITOR_PAGE = STATIC_DIR / "monitor.html"
 SUBTITLE_OVERLAY_PAGE = STATIC_DIR / "overlay.html"
+LIVE_VOICE_PANEL = STATIC_DIR / "live_voice_panel.html"
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="dashboard-static")
 
@@ -114,43 +116,43 @@ def favicon() -> FileResponse:
 
 @app.get("/")
 @app.get("/dashboard")
-def dashboard() -> HTMLResponse:
+def dashboard(request: Request = None) -> HTMLResponse:
     """Return main dashboard page.
 
     Returns:
         HTMLResponse: Dashboard index HTML with GAMMA_SHANA_BASE_URL injected.
     """
-    return _dashboard_page(INDEX_PAGE, dashboard_page="dashboard")
+    return _dashboard_page(INDEX_PAGE, dashboard_page="dashboard", request=request)
 
 
 @app.get("/dashboard/live")
-def dashboard_live_page() -> HTMLResponse:
+def dashboard_live_page(request: Request = None) -> HTMLResponse:
     """Return live dashboard page.
 
     Returns:
         HTMLResponse: Live view HTML with base URLs injected.
     """
-    return _dashboard_page(INDEX_PAGE, dashboard_page="live")
+    return _dashboard_page(INDEX_PAGE, dashboard_page="live", request=request)
 
 
 @app.get("/dashboard/status")
-def dashboard_status_page() -> HTMLResponse:
+def dashboard_status_page(request: Request = None) -> HTMLResponse:
     """Return dashboard status page.
 
     Returns:
         HTMLResponse: Status view HTML with base URLs injected.
     """
-    return _dashboard_page(INDEX_PAGE, dashboard_page="status")
+    return _dashboard_page(INDEX_PAGE, dashboard_page="status", request=request)
 
 
 @app.get("/dashboard/stream")
-def dashboard_stream_page() -> HTMLResponse:
+def dashboard_stream_page(request: Request = None) -> HTMLResponse:
     """Return stream dashboard page.
 
     Returns:
         HTMLResponse: Stream view HTML with base URLs injected.
     """
-    return _dashboard_page(INDEX_PAGE, dashboard_page="stream")
+    return _dashboard_page(INDEX_PAGE, dashboard_page="stream", request=request)
 
 
 @app.get("/dashboard/twitch")
@@ -164,23 +166,23 @@ def dashboard_twitch_page() -> RedirectResponse:
 
 
 @app.get("/dashboard/memory")
-def dashboard_memory_page() -> HTMLResponse:
+def dashboard_memory_page(request: Request = None) -> HTMLResponse:
     """Return memory dashboard page.
 
     Returns:
         HTMLResponse: Memory view HTML with base URLs injected.
     """
-    return _dashboard_page(INDEX_PAGE, dashboard_page="memory")
+    return _dashboard_page(INDEX_PAGE, dashboard_page="memory", request=request)
 
 
 @app.get("/dashboard/settings")
-def dashboard_settings_page() -> HTMLResponse:
+def dashboard_settings_page(request: Request = None) -> HTMLResponse:
     """Return settings dashboard page.
 
     Returns:
         HTMLResponse: Settings view HTML with base URLs injected.
     """
-    return _dashboard_page(INDEX_PAGE, dashboard_page="settings")
+    return _dashboard_page(INDEX_PAGE, dashboard_page="settings", request=request)
 
 
 @app.get("/monitor")
@@ -194,13 +196,13 @@ def monitor_page() -> RedirectResponse:
 
 
 @app.get("/dashboard/monitor")
-def dashboard_monitor_page() -> HTMLResponse:
+def dashboard_monitor_page(request: Request = None) -> HTMLResponse:
     """Return monitor dashboard page.
     
     Returns:
         HTMLResponse: Monitor view HTML with base URLs injected.
     """
-    return _dashboard_output_page(MONITOR_PAGE, dashboard_page="monitor")
+    return _dashboard_output_page(MONITOR_PAGE, dashboard_page="monitor", request=request)
 
 
 @app.get("/performer")
@@ -214,20 +216,20 @@ def performer_redirect() -> RedirectResponse:
 
 
 @app.get("/overlay/subtitles")
-def subtitle_overlay_page() -> HTMLResponse:
+def subtitle_overlay_page(request: Request = None) -> HTMLResponse:
     """Return subtitle overlay dashboard page.
     
     Returns:
         HTMLResponse: Subtitle overlay HTML with base URLs injected.
     """
-    return _dashboard_output_page(SUBTITLE_OVERLAY_PAGE)
+    return _dashboard_output_page(SUBTITLE_OVERLAY_PAGE, request=request)
 
 
-def _dashboard_output_page(path: Path, *, dashboard_page: str = "") -> HTMLResponse:
-    return _dashboard_page(path, dashboard_page=dashboard_page)
+def _dashboard_output_page(path: Path, *, dashboard_page: str = "", request: Request = None) -> HTMLResponse:
+    return _dashboard_page(path, dashboard_page=dashboard_page, request=request)
 
 
-def _dashboard_page(path: Path, *, dashboard_page: str = "") -> HTMLResponse:
+def _dashboard_page(path: Path, *, dashboard_page: str = "", request: Request = None) -> HTMLResponse:
     """Return dashboard page with injected configuration.
     
     Args:
@@ -239,13 +241,23 @@ def _dashboard_page(path: Path, *, dashboard_page: str = "") -> HTMLResponse:
     """
     html = path.read_text(encoding="utf-8")
     html = _with_dashboard_public_links(html)
+    html = _with_dashboard_partials(html)
+    shana_base_url = _request_public_base(_app_settings.shana_base_url, request=request)
+    dashboard_base_url = _request_public_base(_app_settings.dashboard_base_url, request=request)
     config = (
-        f'<script>window.GAMMA_SHANA_BASE_URL = "{_app_settings.shana_base_url}";' 
-        f' window.GAMMA_DASHBOARD_BASE_URL = "{_app_settings.dashboard_base_url}";' 
+        f'<script>window.GAMMA_SHANA_BASE_URL = "{shana_base_url}";'
+        f' window.GAMMA_DASHBOARD_BASE_URL = "{dashboard_base_url}";'
         f' window.GAMMA_DASHBOARD_PAGE = "{dashboard_page}";</script>'
     )
     html = html.replace("</head>", f"  {config}\n</head>", 1)
     return HTMLResponse(html)
+
+
+def _with_dashboard_partials(html: str) -> str:
+    """Replace shared dashboard HTML partial markers."""
+    if "<!-- GAMMA_LIVE_VOICE_PANEL -->" in html:
+        html = html.replace("<!-- GAMMA_LIVE_VOICE_PANEL -->", LIVE_VOICE_PANEL.read_text(encoding="utf-8"))
+    return html
 
 
 def _with_dashboard_public_links(html: str) -> str:
@@ -264,6 +276,34 @@ def _with_dashboard_public_links(html: str) -> str:
     # Only replace overlay/subtitles (external output view), not navbar links
     html = html.replace('href="/overlay/subtitles', f'href="{dashboard_base}/overlay/subtitles')
     return html
+
+
+def _request_public_base(configured_base: str, *, request: Request = None) -> str:
+    configured = str(configured_base or "").rstrip("/")
+    if request is None:
+        return configured
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").strip()
+    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "").split(",", 1)[0].strip().lower()
+    if not host or not proto:
+        return configured
+    try:
+        parsed = urlparse(configured)
+    except ValueError:
+        return configured
+    internal_host = (parsed.hostname or "").lower() in {"127.0.0.1", "localhost", "0.0.0.0", "::1"}
+    internal_port = parsed.port in {8000, 8001, 8080}
+    if proto == "https" and (parsed.scheme != "https" or internal_host or internal_port):
+        return f"https://{host}".rstrip("/")
+    if internal_host and host:
+        return f"{proto}://{host}".rstrip("/")
+    return configured
+
+
+async def _json_object_payload(request: Request) -> dict:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="object payload is required")
+    return payload
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -406,6 +446,12 @@ def runtime_status() -> dict:
         dict: Runtime status including services and workers.
     """
     return get_dashboard_service().build_runtime_status()
+
+
+@app.get("/api/monitor/status")
+def monitor_status() -> dict:
+    """Return lightweight status for the long-running monitor page."""
+    return get_dashboard_service().build_monitor_status()
 
 
 @app.post("/api/client-log")
@@ -1165,6 +1211,45 @@ def dashboard_stream_stop() -> dict:
         dict: Confirmation response.
     """
     return get_dashboard_service().stop_stream_speech(reason="dashboard_stop")
+
+
+@app.get("/api/stream/rehearsal")
+def dashboard_stream_rehearsal_status() -> dict:
+    """Return local stream rehearsal state."""
+    return get_dashboard_service().stream_rehearsal_status()
+
+
+@app.post("/api/stream/rehearsal/start")
+async def dashboard_stream_rehearsal_start(request: Request) -> dict:
+    """Start local stream rehearsal state."""
+    payload = await _json_object_payload(request)
+    return get_dashboard_service().start_stream_rehearsal(payload)
+
+
+@app.post("/api/stream/rehearsal/stop")
+def dashboard_stream_rehearsal_stop() -> dict:
+    """Stop local stream rehearsal state."""
+    return get_dashboard_service().stop_stream_rehearsal()
+
+
+@app.post("/api/stream/rehearsal/events")
+async def dashboard_stream_rehearsal_event(request: Request) -> dict:
+    """Inject a local rehearsal event into the stream brain."""
+    payload = await _json_object_payload(request)
+    try:
+        return get_dashboard_service().inject_stream_rehearsal_event(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/monitor/input")
+async def dashboard_monitor_input(request: Request) -> dict:
+    """Submit local monitor input through the stream/performer path."""
+    payload = await _json_object_payload(request)
+    try:
+        return get_dashboard_service().submit_monitor_stream_input(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/performer/targets/{target_policy}/mute")

@@ -550,4 +550,17 @@
     }
   }
 
+  window.streamEmptyHtml = streamEmptyHtml;
+  window.humanStreamTraces = humanStreamTraces;
+  window.humanStreamSafety = humanStreamSafety;
+  window.humanStreamOutputs = humanStreamOutputs;
+  window.humanStreamQueue = humanStreamQueue;
+  window.humanStreamTempMemory = humanStreamTempMemory;
+  window.humanStreamSelfGoals = humanStreamSelfGoals;
+  window.humanTwitchWorker = humanTwitchWorker;
+  window.humanTwitchViewerTrust = humanTwitchViewerTrust;
+  window.humanTwitchReplayResult = humanTwitchReplayResult;
+  window.humanPerformerBus = humanPerformerBus;
+  window.humanProviderAction = humanProviderAction;
+
 })();

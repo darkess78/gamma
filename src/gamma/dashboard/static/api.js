@@ -118,6 +118,7 @@
     } catch (error) {
       renderHtmlBlockIfChanged('streamSelfGoalFeed', { error: String(error) }, streamEmptyHtml('Self-goals load failed. ' + String(error)), 'streamSelfGoalFeed');
     }
+
   }
 
   async function loadTwitchViewerTrust() {

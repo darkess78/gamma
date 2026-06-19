@@ -73,6 +73,19 @@ class DashboardService:
         )
         self._latest_provider_action: dict[str, Any] = {"status": "idle", "detail": "No provider action has been run yet."}
         self._latest_twitch_replay_summary: dict[str, Any] = {}
+        self._stream_rehearsal_state: dict[str, Any] = {
+            "enabled": False,
+            "session_id": "",
+            "synthesize_speech": False,
+            "fast_mode": True,
+            "output_target_policy": "dashboard_monitor",
+            "started_at": "",
+            "stopped_at": "",
+            "event_count": 0,
+            "last_error": "",
+        }
+        self._stream_rehearsal_events: deque[dict[str, Any]] = deque(maxlen=25)
+        self._stream_rehearsal_results: deque[dict[str, Any]] = deque(maxlen=25)
 
     def build_status(self) -> dict[str, Any]:
         local_status = self._system_status.build_status()
@@ -171,6 +184,37 @@ class DashboardService:
             "llm_routing": route_info,
             "startup_admission": self._recent_startup_admission(),
             "sidecar_allocations": self._recent_sidecar_allocations(),
+        }
+
+    def build_monitor_status(self) -> dict[str, Any]:
+        local_status = self._system_status.build_status()
+        selected_tts_provider = self.selected_tts_provider()
+        selected_tts_profile = self.selected_tts_profile()
+        running_tts_provider = self._canonical_tts_provider(
+            str(local_status["providers"]["tts"].get("provider") or "")
+        )
+        local_status["providers"]["tts"]["provider"] = running_tts_provider
+        local_status["providers"]["tts"]["selected_provider"] = selected_tts_provider
+        local_status["providers"]["tts"]["selected_profile"] = selected_tts_profile
+        local_status["providers"]["tts"]["restart_required"] = (
+            selected_tts_provider != running_tts_provider
+            or (selected_tts_profile or "") != str(local_status["providers"]["tts"].get("profile_id") or "").strip()
+        )
+        runtime_status = self.build_runtime_status()
+        return {
+            "ok": True,
+            "dashboard": {
+                "name": f"{settings.app_name} monitor",
+                "url": settings.dashboard_base_url,
+            },
+            "providers": local_status["providers"],
+            "shana": runtime_status["shana"],
+            "machine": runtime_status["machine"],
+            "twitch": {
+                "worker": self.twitch_worker_status(),
+                "eventsub": self.twitch_eventsub_status(),
+            },
+            "performer": self.performer_output_status(),
         }
 
     def _tts_test_control_state(self, provider: str, profile_id: str | None) -> dict[str, Any]:
@@ -1543,6 +1587,173 @@ class DashboardService:
     def stop_stream_speech(self, *, reason: str = "operator_stop") -> dict[str, Any]:
         return self._post_remote_json(f"/v1/stream/stop?reason={urllib.parse.quote(reason)}", {})
 
+    def stream_rehearsal_status(self) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "state": dict(self._stream_rehearsal_state),
+            "events": list(self._stream_rehearsal_events),
+            "results": list(self._stream_rehearsal_results),
+        }
+
+    def start_stream_rehearsal(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        payload = payload or {}
+        session_id = str(payload.get("session_id") or "").strip()
+        if not session_id:
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+            session_id = f"local-rehearsal-{stamp}"
+        target_policy = self._normalize_output_target_policy(payload.get("output_target_policy"))
+        self._stream_rehearsal_state = {
+            "enabled": True,
+            "session_id": session_id,
+            "synthesize_speech": bool(payload.get("synthesize_speech", False)),
+            "fast_mode": bool(payload.get("fast_mode", True)),
+            "output_target_policy": target_policy,
+            "started_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "stopped_at": "",
+            "event_count": 0,
+            "last_error": "",
+        }
+        self._stream_rehearsal_events.clear()
+        self._stream_rehearsal_results.clear()
+        return self.stream_rehearsal_status()
+
+    def stop_stream_rehearsal(self) -> dict[str, Any]:
+        self._stream_rehearsal_state["enabled"] = False
+        self._stream_rehearsal_state["stopped_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        return self.stream_rehearsal_status()
+
+    def inject_stream_rehearsal_event(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not self._stream_rehearsal_state.get("enabled"):
+            raise ValueError("stream rehearsal is not running")
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            raise ValueError("text is required")
+        event_type = str(payload.get("event_type") or payload.get("kind") or "chat").strip().lower()
+        event_kind = self._rehearsal_event_kind(event_type)
+        display_name = str(payload.get("display_name") or "Local operator").strip() or "Local operator"
+        priority = max(0, min(100, int(payload.get("priority", 5 if event_kind == "chat_message" else 0))))
+        session_id = str(payload.get("session_id") or self._stream_rehearsal_state.get("session_id") or "").strip()
+        event = {
+            "kind": event_kind,
+            "text": text,
+            "session_id": session_id,
+            "priority": priority,
+            "actor": {
+                "source": "local_rehearsal",
+                "platform_id": "dashboard",
+                "display_name": display_name,
+                "roles": ["operator"],
+            },
+            "metadata": {
+                "rehearsal": True,
+                "rehearsal_event_type": event_type,
+                "output_target_policy": self._stream_rehearsal_state.get("output_target_policy") or "dashboard_monitor",
+                "source": "dashboard_stream_rehearsal",
+            },
+        }
+        self._stream_rehearsal_events.append(
+            {
+                "injected_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "event": event,
+            }
+        )
+        path = (
+            "/v1/stream/events"
+            f"?synthesize_speech={'true' if self._stream_rehearsal_state.get('synthesize_speech') else 'false'}"
+            f"&fast_mode={'true' if self._stream_rehearsal_state.get('fast_mode', True) else 'false'}"
+        )
+        try:
+            result = self._post_remote_json(path, event, timeout=180)
+        except Exception as exc:
+            self._stream_rehearsal_state["last_error"] = str(exc)
+            raise
+        if isinstance(result.get("input_event"), dict):
+            self._stream_rehearsal_events[-1]["event"] = result["input_event"]
+        self._stream_rehearsal_state["event_count"] = int(self._stream_rehearsal_state.get("event_count") or 0) + 1
+        self._stream_rehearsal_state["last_error"] = ""
+        self._stream_rehearsal_results.append(
+            {
+                "received_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "result": result,
+            }
+        )
+        return {"ok": True, "event": event, "result": result, "state": dict(self._stream_rehearsal_state)}
+
+    def submit_monitor_stream_input(self, payload: dict[str, Any]) -> dict[str, Any]:
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            raise ValueError("text is required")
+        input_mode = str(payload.get("input_mode") or "owner_mic").strip().lower()
+        event_kind = self._monitor_event_kind(input_mode)
+        session_id = str(payload.get("session_id") or "monitor-local-stream").strip()
+        controls = self.twitch_runtime_settings()
+        controls["dry_run"] = False
+        event = {
+            "kind": event_kind,
+            "text": text,
+            "session_id": session_id,
+            "priority": max(0, min(100, int(payload.get("priority", 20 if event_kind in {"mic_transcript", "owner_command"} else 5)))),
+            "actor": {
+                "source": "local_monitor",
+                "platform_id": "owner",
+                "display_name": str(payload.get("display_name") or "Owner").strip() or "Owner",
+                "roles": ["owner", "operator"],
+            },
+            "metadata": {
+                "local_monitor": True,
+                "input_mode": input_mode,
+                "output_target_policy": self._normalize_output_target_policy(payload.get("output_target_policy")),
+                "twitch_controls": controls,
+                "source": "dashboard_monitor_input",
+            },
+        }
+        synthesize_speech = payload.get("synthesize_speech")
+        if synthesize_speech is None:
+            synthesize_speech = True
+        fast_mode = payload.get("fast_mode")
+        if fast_mode is None:
+            fast_mode = True
+        path = (
+            "/v1/stream/events"
+            f"?synthesize_speech={'true' if synthesize_speech else 'false'}"
+            f"&fast_mode={'true' if fast_mode else 'false'}"
+        )
+        result = self._post_remote_json(path, event, timeout=180)
+        return {"ok": True, "event": result.get("input_event", event), "result": result}
+
+    @staticmethod
+    def _normalize_output_target_policy(value: Any) -> str:
+        target_policy = str(value or "dashboard_monitor").strip().lower()
+        return target_policy if target_policy in {"dashboard_monitor", "stream_public", "discord_call"} else "dashboard_monitor"
+
+    @staticmethod
+    def _monitor_event_kind(input_mode: str) -> str:
+        mapping = {
+            "owner_mic": "mic_transcript",
+            "mic_transcript": "mic_transcript",
+            "owner_command": "owner_command",
+            "chat": "chat_message",
+            "chat_message": "chat_message",
+            "context": "chat_message",
+            "gameplay": "game_state",
+            "game_state": "game_state",
+        }
+        return mapping.get(input_mode, "mic_transcript")
+
+    @staticmethod
+    def _rehearsal_event_kind(event_type: str) -> str:
+        mapping = {
+            "chat": "chat_message",
+            "chat_message": "chat_message",
+            "gameplay_note": "game_state",
+            "game_state": "game_state",
+            "context_note": "chat_message",
+            "system_note": "system",
+            "system": "system",
+            "owner_command": "owner_command",
+        }
+        return mapping.get(event_type, "chat_message")
+
     def live_idle_settings(self) -> dict[str, Any]:
         return self.assistant_runtime_settings()
 
@@ -1988,7 +2199,7 @@ class DashboardService:
         except Exception as exc:
             return {"ok": False, "detail": str(exc)}
 
-    def _post_remote_json(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _post_remote_json(self, path: str, payload: dict[str, Any], *, timeout: float = 10) -> dict[str, Any]:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers = {"Content-Type": "application/json", **self._api_headers()}
         request = urllib.request.Request(
@@ -1998,7 +2209,7 @@ class DashboardService:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=10) as response:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 response_payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")

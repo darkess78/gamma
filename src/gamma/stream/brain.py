@@ -228,6 +228,7 @@ class StreamBrain:
                 output_events = _mark_filtered_output_events(output_events, safety_decision)
             else:
                 output_events = _apply_estimated_subtitle_timing(event, output_events)
+            output_events = _apply_output_target_policy(event, output_events)
         output_events = _filter_stream_output_events(event, output_events)
         output_dispatch = self._output_dispatcher.dispatch(output_events) if output_events else None
 
@@ -954,6 +955,18 @@ def _filter_stream_output_events(event: StreamInputEvent, output_events: list[St
         }
         filtered.append(output_event.model_copy(update={"payload": payload}))
     return filtered
+
+
+def _apply_output_target_policy(event: StreamInputEvent, output_events: list[StreamOutputEvent]) -> list[StreamOutputEvent]:
+    target_policy = str(event.metadata.get("output_target_policy") or "").strip().lower()
+    if target_policy not in {"stream_public", "dashboard_monitor", "discord_call"}:
+        return output_events
+    targeted: list[StreamOutputEvent] = []
+    for output_event in output_events:
+        payload = dict(output_event.payload)
+        payload["target_policy"] = target_policy
+        targeted.append(output_event.model_copy(update={"payload": payload}))
+    return targeted
 
 
 def _mark_filtered_output_events(output_events: list[StreamOutputEvent], safety_decision: dict) -> list[StreamOutputEvent]:

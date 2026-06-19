@@ -389,6 +389,26 @@ class StreamBrainTest(unittest.TestCase):
         )
         self.assertEqual(result.output_events[1].payload["audio_path"], "audio.wav")
 
+    def test_output_target_policy_metadata_marks_stream_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=_FakeConversation(),  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            result = brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana hello",
+                    priority=5,
+                    actor=StreamActor(source="local_rehearsal", display_name="Operator"),
+                    metadata={"output_target_policy": "dashboard_monitor"},
+                )
+            )
+
+        self.assertEqual(result.decision.decision, "reply")
+        self.assertTrue(result.output_events)
+        self.assertTrue(all(event.payload["target_policy"] == "dashboard_monitor" for event in result.output_events))
+
     def test_twitch_speech_pacing_defers_second_low_priority_reply(self) -> None:
         clock = _FakeClock(100.0)
         conversation = _FakeConversation()

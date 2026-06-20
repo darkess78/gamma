@@ -1,6 +1,6 @@
 # Current Implementations
 
-Last updated: 2026-06-15
+Last updated: 2026-06-20
 
 This is a baseline inventory of features that are already implemented in Gamma. It is intended to support future TODO planning, so it focuses on concrete working surfaces in the codebase rather than aspirational roadmap items.
 
@@ -36,8 +36,14 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 ## Persona And Assistant State
 
 - Current persona target is Shana.
-- Persona content is loaded from `gamma/persona/` and `config/persona.yaml`.
+- Persona content is loaded from `src/gamma/persona/` and `config/persona.yaml`.
 - Core persona and boundary files are part of prompt assembly.
+- Dashboard Presence state exists for Shana lifecycle modes: sleep, wake,
+  go_live, and break. Presence is runtime state under `data/runtime/presence/`
+  and gates stream-facing autonomy/output separately from backend process
+  controls.
+- Persisted `go_live` state is not trusted after Shana backend restart; stream
+  handling downgrades stale public/live state to wake pending confirmation.
 - Assistant emotional state tracking is implemented.
 - Emotion memory tracks recent emotional patterns and can be shown in the dashboard.
 - Hidden style/emotion tags can be stripped from generated text while preserving emotion metadata.
@@ -270,6 +276,7 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
   - `/dashboard/live` focused browser live voice testing.
   - `/dashboard/monitor` minimalist output monitor.
   - `/dashboard/status` detailed service, process, provider health, metrics, and log view.
+  - `/dashboard/presence` Shana lifecycle/stream-output state controls.
   - `/dashboard/stream` combined Stream and Twitch operations.
   - `/dashboard/memory` memory stats, latest memories, known people, and safer cleanup controls.
   - `/dashboard/settings` central settings hub.
@@ -280,7 +287,7 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - Navbar includes dashboard page links, visually separate Performer/Subtitles output links, compact status chips, a status dropdown, mobile menu behavior, and a permanent `Stop Output` button.
 - `Stop Output` stops current speech output and clears dashboard, stream, and Discord performer targets without stopping Shana, dashboard, Twitch, EventSub, or ingestion workers.
 - `/dashboard/monitor` is a dedicated monitor page with one-click audio enable, monitor mute, clear output, connection/current event state, subtitle text, expression metadata, actor/input context, and dashboard/compact/focus themes saved in local storage.
-- Latest dashboard/output-bus validation for this state: `node --check src/gamma/dashboard/static/dashboard.js`, focused dashboard/API pytest (41 passed, 50 subtests), stream output/brain pytest, and full pytest suite (`218 passed`).
+- Latest dashboard/output-bus validation for this state used focused dashboard/API pytest, stream output/brain pytest, and full pytest suite (`218 passed`) before the later resource-routing and Presence work.
 - Dashboard status endpoint includes app, providers, Shana process, machine metrics, memory, assistant state, timings, and LLM routing.
 - Runtime status endpoint checks Shana process and API health.
 - Start, stop, and restart Shana controls.
@@ -296,6 +303,8 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
 - Stream safety, pending speech queue, temporary memory, and self-goal panels.
 - Stream stop control for stopping speech and clearing stream subtitles.
 - Twitch worker, EventSub, runtime settings, viewer trust, replay, and dry-run replay controls.
+- Discord text-worker status/start/stop controls.
+- Presence status and mode controls.
 - Dashboard vision analysis and vision response routes.
 - WebSocket live voice route.
 
@@ -423,6 +432,12 @@ Runtime assumption: Gamma is primarily run on Linux. Windows compatibility exist
   exists behind `resource_routing.policy.startup_admission = false` by default.
   Explicit configured devices bypass admission; only `auto` device settings can
   receive coordinator-selected devices before process launch.
+- Supervisor startup records observed sidecar GPU allocations after Qwen TTS
+  and audio-understanding launches; recent allocation logs can override stale
+  configured estimates inside their configured TTL.
+- Dashboard status surfaces recent startup-admission decisions and sidecar
+  allocation observations with selected/rejected/bypassed states, observed
+  VRAM, estimates, deltas, freshness, and GPU process matches.
 - The dashboard machine-status view consumes this shared monitor while
   preserving the existing API response shape.
 - Automatic model loading, model eviction, managed GPU endpoint startup, and

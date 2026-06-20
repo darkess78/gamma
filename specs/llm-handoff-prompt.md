@@ -1,500 +1,591 @@
-# Gamma — LLM Handoff Prompt (Full)
+# Gamma LLM Handoff Prompt
 
-Use this document to orient yourself to the current Gamma repo before making changes. It is meant for handoff between coding agents and should reflect the repo as it exists now, not an old roadmap.
+Use this document to orient yourself to the current Gamma repo before making
+changes. It is meant for handoff between coding agents and should reflect the
+repo as it exists now, not an old roadmap.
+
+Last refreshed: 2026-06-20, against the current committed implementation plus
+the existing working-tree Presence notes.
 
 ## What Gamma Is
 
-Gamma is a local assistant stack centered on a Shana persona, with these main parts:
+Gamma is a local assistant stack centered on the Shana persona. It has four
+main runtime surfaces:
 
 1. Assistant backend
-   `gamma.main` is a FastAPI app that owns conversation, memory, STT, TTS, vision, and live voice worker orchestration.
+   `src/gamma/main.py` starts the Shana FastAPI app. It owns conversation,
+   memory, vision, STT, TTS, live voice jobs, stream events, performer output,
+   and Shana-owned `/v1/*` routes.
 
 2. Dashboard
-   `gamma.dashboard.main` is a separate FastAPI app that provides the operator dashboard, browser voice UI, provider controls, logs, and memory visibility/maintenance.
+   `src/gamma/dashboard/main.py` starts a separate FastAPI app. It owns the
+   operator dashboard, dashboard `/api/*` routes, browser live voice UI,
+   status panels, settings, stream/Twitch controls, Presence controls, monitor
+   views, and dashboard static assets.
 
-3. Voice pipeline
-   The repo supports:
-   - browser voice roundtrip
-   - browser live voice over websocket
-   - CLI voice loops
-   - local STT/TTS provider tests
+3. Voice and audio
+   Gamma supports browser voice roundtrip, browser live voice over websocket,
+   CLI voice loops, local/hosted STT, local/hosted TTS, optional RVC
+   post-processing, and a persistent audio-understanding sidecar for speaker
+   emotion/audio events.
 
-4. Stream/Twitch operator stack
-   Stream events can flow through a stream brain, safety review, queueing,
-   temporary stream memory, self-goal proposal review, Twitch IRC/EventSub
-   ingestion, and dashboard operator controls.
+4. Stream and output
+   Stream events flow through stream decision logic, safety review, queueing,
+   temporary stream memory, self-goal review, Twitch/Discord ingestion, and the
+   performer output bus. Performer clients can consume generic subtitle,
+   speech, expression, motion, and clear events.
 
-5. Performer output path
-   The assistant backend now has an early performer output bus. Stream output
-   events can be translated into generic performer events and served to browser
-   clients over a Shana API websocket. A minimal `/performer` page exists for
-   Stream PC / OBS browser-source testing.
-
-6. TTS dataset prep tooling
-   The Tkinter dataset-prep tool still exists, but it is not the primary focus of the current repo state.
-
-Current practical focus: the dashboard/browser voice workflow, the Twitch/stream operator workflow, the new performer output bus, and Linux/Windows compatibility for the live assistant path.
+The current practical focus is the dashboard/browser voice workflow, Twitch and
+stream operator workflow, Presence-controlled public output, resource-aware
+local model placement, and the performer output path.
 
 ## Current State
 
-The repo currently has working support for:
+Working support includes:
 
-- Dashboard process supervision
-- Shana backend supervision
-- Browser live voice through `WebSocket /api/voice/live`
-- Browser voice roundtrip through `POST /api/voice/roundtrip`
-- Local TTS provider control for GPT-SoVITS and Qwen3-TTS sidecars
-- HTTPS dashboard use behind a reverse proxy
-- Dashboard auth
-- Memory inspection and recent-memory cleanup from the dashboard
-- Subtitle-style browser transcript display and pop-out subtitle window
-- Browser mute controls for mic and assistant playback
-- Stream event handling through `POST /v1/stream/events`
-- Stream output logging, queue visibility, temporary memory, and self-goal review
-- Twitch IRC worker, Twitch EventSub worker, replay tooling, and viewer-trust controls
-- Dashboard safety and stream controls for Twitch-facing operation
+- Shana backend and dashboard process supervision.
+- Separate Shana API on port `8000` and dashboard app on port `8001`.
+- Browser live voice through dashboard `WebSocket /api/voice/live`.
+- Browser voice roundtrip through dashboard `POST /api/voice/roundtrip`.
+- Shana voice APIs under `/v1/voice/*`.
+- Local TTS through Piper or Qwen TTS, hosted TTS through OpenAI, and test-only
+  stub TTS.
+- Local STT through faster-whisper, hosted STT through OpenAI, and test stub
+  transcription.
+- Optional audio-understanding sidecar on loopback port `9883`.
+- Dashboard auth, status, settings, memory maintenance, live voice, monitor,
+  Presence, stream, Twitch, Discord text-worker, and provider controls.
+- HTTPS dashboard use behind a reverse proxy with separate bind URL and public
+  URL settings.
+- Stream event handling through `POST /v1/stream/events`.
+- Twitch IRC ingestion, Twitch EventSub ingestion, replay tooling, viewer trust,
+  and dashboard runtime controls.
+- Discord text ingestion worker for one allowlisted guild/channel; Discord
+  replies and Discord voice transport remain deferred.
+- Stream output logging, performer output events, pending speech queue,
+  temporary stream memory, self-goal review, and stream replay/eval inspection.
+- VTube Studio adapter/client/runner for translating performer events into VTS
+  hotkey requests. It is disabled by default and still needs live machine-local
+  validation/configuration.
+- Resource telemetry, shadow placement, endpoint-aware local LLM routing behind
+  a feature flag, startup-only device admission for sidecars behind a feature
+  flag, and observed sidecar allocation logs.
 
-Recent important changes:
+## Recent Important Changes
 
-- Dashboard navigation is now page-oriented with `/dashboard`, `/dashboard/live`, `/dashboard/monitor`, `/dashboard/status`, `/dashboard/stream`, `/dashboard/memory`, and `/dashboard/settings`.
-- `/dashboard` is a glanceable overview, `/dashboard/stream` combines Stream and Twitch operations, and `/dashboard/settings` is the central settings hub.
-- `/dashboard/twitch` redirects to `/dashboard/stream`; `/monitor` redirects to `/dashboard/monitor`.
-- The Shana API app redirects dashboard subpage requests to the standalone dashboard app so browser links do not open JSON 404 pages.
-- The dashboard navbar is the first visible element and includes compact status chips, a status dropdown, mobile menu behavior, visually separate Performer/Subtitles output links, and a permanent `Stop Output` control.
-- `Stop Output` stops current speech/output and clears `dashboard_monitor`, `stream_public`, and `discord_call` performer targets without killing Shana or stream workers.
-- `/dashboard/monitor` is restored as the minimalist monitor view with one-click audio enable, mute, clear output, current event/turn state, subtitles, expression metadata, actor/input context, and `dashboard`/`compact`/`focus` local-storage themes.
-- Latest validation for this state: `node --check src/gamma/dashboard/static/dashboard.js`, dashboard/API pytest (41 passed, 50 subtests), stream output/brain pytest, and full pytest (`218 passed`).
-- Qwen3-TTS startup now falls back cleanly when requested CUDA devices are unavailable
-- Local faster-whisper STT also falls back more safely across device availability differences
-- Dashboard public URL handling now separates bind port from public/proxied URL
-- Dashboard memory panel now includes "Latest Memories"
-- Memory cleanup is no longer a blind full wipe in normal UI flow; there is now a recent-memory selection/delete flow
-- Browser voice controls now include mute mic, mute assistant playback, and pop-out subtitles
-- Dashboard stream panels now include traces, safety review visibility, output events, pending stream speech, temporary stream memory, and self-goals
-- Twitch controls now cover IRC worker lifecycle, EventSub lifecycle, runtime settings, viewer trust, replay, and dry-run replay
-- Stream safety now has configurable LLM review timeout behavior and fallback audio support
-- Stream/voice stack launcher scripts were added for starting the practical Shana runtime bundles
-- A new performer output bus was added under `gamma/performer/`
-- Stream output dispatch now publishes both JSONL log events and generic performer events
-- Shana API exposes `WebSocket /v1/performer/events`, `GET /v1/performer/events/recent`, `GET /performer`, and `GET /v1/audio/artifacts/{filename}`
-- The `/performer` browser page can be opened on the Stream PC or in OBS as an early audio/subtitle/expression monitor
-- Pytest discovery is scoped to `tests/` in `pyproject.toml` so vendored/sidecar tests under `data/` are not collected by normal Gamma test runs
+- The package uses a `src/` layout. Authoritative source is under
+  `src/gamma`, not the stale top-level `gamma/` runtime bytecode/log folder.
+- Dashboard navigation is page-oriented:
+  `/dashboard`, `/dashboard/live`, `/dashboard/monitor`, `/dashboard/status`,
+  `/dashboard/presence`, `/dashboard/stream`, `/dashboard/memory`, and
+  `/dashboard/settings`.
+- Dashboard-owned public/browser routes include `/dashboard*`, `/api/*`,
+  `/static/*`, `/login`, `/logout`, `/monitor*`, and `/overlay/*`.
+- Shana-owned routes include `/health`, `/v1/*`, `/performer*`, and
+  `/stream/*`.
+- `/dashboard/twitch` redirects to `/dashboard/stream`; `/monitor` redirects to
+  `/dashboard/monitor`.
+- The Shana API redirects valid dashboard page requests to the configured
+  dashboard public URL so misrouted browser links do not become JSON 404s.
+- Dashboard links use `SHANA_DASHBOARD_PUBLIC_*` / `settings.dashboard_base_url`
+  rather than assuming root-relative links are always public-safe.
+- The dashboard navbar includes page links, Performer/Subtitles output links,
+  compact status chips, a status dropdown, mobile menu behavior, and a permanent
+  `Stop Output` control.
+- `Stop Output` stops current speech/output and clears `dashboard_monitor`,
+  `stream_public`, and `discord_call` performer targets without killing Shana,
+  dashboard, Twitch, EventSub, or ingestion workers.
+- Presence state exists for Shana lifecycle modes `sleep`, `wake`, `go_live`,
+  and `break`. It gates stream-facing autonomy/output separately from backend
+  process controls. Stale persisted `go_live` state is downgraded after Shana
+  restart until confirmed again.
+- `/dashboard/monitor` is the minimalist monitor view; `/overlay/subtitles` is
+  the subtitle overlay; `/performer` is served by Shana for Stream PC / OBS
+  browser-source testing.
+- The performer bus has target policies, recent history, replay resume, replay
+  gap reporting, per-target control events, VTube Studio adapter status, Discord
+  output isolation, and a derived in-memory spoken-turn store.
+- Audio artifacts are exposed with network-safe URLs through
+  `GET /v1/audio/artifacts/{filename}`; performer clients should not depend on
+  local file paths from the Shana PC.
+- Resource routing can define named runtime endpoints and resource targets.
+  Shadow ranking and reservation metadata are advisory by default. Active local
+  LLM endpoint routing is behind `resource_routing.policy.active_llm_routing`.
+- Startup admission for Qwen TTS and audio-understanding sidecars is behind
+  `resource_routing.policy.startup_admission` and only changes `auto` device
+  settings. Explicit configured devices bypass admission.
 
 ## Architecture Map
 
 ### Backend
 
-- [gamma/main.py](/home/neety/.openclaw/workspace/gamma-main/gamma/main.py)
-  FastAPI entrypoint for the assistant backend.
+- `src/gamma/main.py`
+  Shana FastAPI entrypoint.
 
-- [gamma/api/routes.py](/home/neety/.openclaw/workspace/gamma-main/gamma/api/routes.py)
-  Main API routes for conversation, vision, voice, stream, performer websocket, performer page, and audio artifact APIs.
+- `src/gamma/api/routes.py`
+  Shana API routes for conversation, memory, status, stream events, stream
+  logs, queues, temp memory, self-goals, stream stop, performer events/status,
+  VTube Studio runner controls, performer target controls, audio artifacts,
+  vision, voice, monitor redirects, overlay page, and dashboard redirects.
 
-- [gamma/conversation/service.py](/home/neety/.openclaw/workspace/gamma-main/gamma/conversation/service.py)
-  Core conversation pipeline. Builds persona/system prompt, runs LLM, memory extraction, and optional TTS.
+- `src/gamma/conversation/service.py`
+  Main conversation pipeline. Builds persona/system prompt, resolves speaker
+  context, retrieves memory context, runs LLM draft generation, optional
+  metadata/tool extraction, memory persistence, speech filtering, and optional
+  TTS.
 
-- [gamma/persona/loader.py](/home/neety/.openclaw/workspace/gamma-main/gamma/persona/loader.py)
-  Builds the effective system prompt from persona files and memory.
+- `src/gamma/persona/loader.py`
+  Prompt assembly from `src/gamma/persona/` and `config/persona.yaml`.
 
-- [gamma/memory/service.py](/home/neety/.openclaw/workspace/gamma-main/gamma/memory/service.py)
-  SQLite-backed memory layer. Stores profile facts and episodic memory. Recent-memory deletion and latest-memory listing now live here.
+- `src/gamma/memory/service.py`
+  SQLite/SQLModel memory layer. Stores profile facts, episodic memories, known
+  people, platform account links, recent memory lists, targeted deletion, and
+  core-memory append support.
 
-- [gamma/voice/stt.py](/home/neety/.openclaw/workspace/gamma-main/gamma/voice/stt.py)
+- `src/gamma/presence.py`
+  Presence state construction, stale live-state downgrade, and stream-event
+  gating helpers.
+
+- `src/gamma/llm/`
+  Mock, OpenAI, local/Ollama, capability probing, and router adapters. The
+  router supports local/default/hosted paths, balanced small-model routing,
+  hosted escalation, fallback/backoff, route traces, and optional
+  resource-placement metadata.
+
+### Voice And Audio
+
+- `src/gamma/voice/stt.py`
   STT provider selection. Current local STT path is faster-whisper.
 
-- [gamma/voice/tts.py](/home/neety/.openclaw/workspace/gamma-main/gamma/voice/tts.py)
-  TTS provider selection and synthesis. Supports OpenAI, Piper, GPT-SoVITS, Qwen3-TTS, stub.
+- `src/gamma/voice/tts.py`
+  TTS provider selection and synthesis. Runtime providers are OpenAI, Piper,
+  Qwen TTS, and test stub. RVC is an optional post-process layer, not a
+  standalone provider.
 
-- [gamma/voice/live.py](/home/neety/.openclaw/workspace/gamma-main/gamma/voice/live.py)
-  Browser live voice websocket session manager.
+- `src/gamma/voice/live.py`
+  Dashboard live voice websocket session manager.
 
-- [gamma/voice/live_jobs.py](/home/neety/.openclaw/workspace/gamma-main/gamma/voice/live_jobs.py)
-  Background worker job manager for live voice turns.
+- `src/gamma/voice/live_jobs.py`
+  Background live-turn job manager with subprocess isolation/cancellation.
 
-- [gamma/run_live_voice_worker.py](/home/neety/.openclaw/workspace/gamma-main/gamma/run_live_voice_worker.py)
-  Worker process for live turns.
+- `src/gamma/run_live_voice_worker.py`
+  Worker process used for live turns.
+
+- `src/gamma/voice/audio_understanding.py` and
+  `src/gamma/audio_understanding_server.py`
+  Prosody, optional model-backed speaker emotion/audio events, and loopback
+  sidecar server.
+
+- `scripts/start_qwen_tts_server.py`, `scripts/stop_qwen_tts_server.py`, and
+  `scripts/qwen_tts_server.py`
+  Qwen TTS sidecar helpers.
 
 ### Stream Brain And Output
 
-- [gamma/stream/brain.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/brain.py)
-  Stream event decision engine. Classifies chat/events, applies safety and policy, calls conversation, queues speech, and emits output events.
+- `src/gamma/stream/brain.py`
+  Stream decision engine. Classifies chat/events, applies runtime controls,
+  safety policy, Presence gating metadata, conversation calls, speech queueing,
+  fallback audio, self-goal proposals, and output emission.
 
-- [gamma/stream/actions.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/actions.py)
+- `src/gamma/stream/actions.py`
   Converts stream decisions and assistant replies into action plans.
 
-- [gamma/stream/models.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/models.py)
+- `src/gamma/stream/models.py`
   Shared stream input, decision, action, and result models.
 
-- [gamma/stream/output.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/output.py)
-  Stream output dispatchers. The default dispatcher persists JSONL output records and publishes generic performer events to the performer bus.
+- `src/gamma/stream/output.py`
+  Stream output dispatch. The default dispatcher persists JSONL output records
+  and publishes generic performer events.
 
-- [gamma/stream/trace.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/trace.py)
+- `src/gamma/stream/trace.py`
   Stream trace persistence and recent trace reading.
 
-- [gamma/stream/replay.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/replay.py)
-  Recent stream turn replay/evaluation helpers for dashboard inspection.
+- `src/gamma/stream/replay.py`
+  Recent stream turn replay/evaluation helpers.
 
-- [gamma/stream/temp_memory.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/temp_memory.py)
-  Ephemeral stream memory store for short-lived stream context.
+- `src/gamma/stream/temp_memory.py`
+  Temporary stream memory for bounded background context.
 
-- [gamma/stream/self_goals.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/self_goals.py)
+- `src/gamma/stream/self_goals.py`
   Proposed self-goal storage and approve/reject/clear workflow.
 
 ### Performer Output Bus
 
-- [gamma/performer/models.py](/home/neety/.openclaw/workspace/gamma-main/gamma/performer/models.py)
-  Generic performer output event models and mapping from stream output events. This is where subtitle, speech, expression, motion, and clear events become runtime-agnostic performer events.
+- `src/gamma/performer/models.py`
+  Generic performer output event models and mapping from stream output events.
+  Target policies include `dashboard_monitor`, `stream_public`, and
+  `discord_call`.
 
-- [gamma/performer/bus.py](/home/neety/.openclaw/workspace/gamma-main/gamma/performer/bus.py)
-  In-process performer event bus with recent history and asyncio subscriber queues.
+- `src/gamma/performer/bus.py`
+  In-process performer bus with recent history, per-target mute/clear control
+  events, websocket subscribers, replay resume, and state persistence.
 
-- [gamma/performer/static/performer.html](/home/neety/.openclaw/workspace/gamma-main/gamma/performer/static/performer.html)
-  Minimal Stream PC / OBS browser-source page. It connects to `/v1/performer/events`, shows subtitles/state, and plays audio from network-safe `audio_url` payloads.
+- `src/gamma/performer/turns.py`
+  Derived spoken-turn view over recent performer events.
 
-Performer API routes currently live in [gamma/api/routes.py](/home/neety/.openclaw/workspace/gamma-main/gamma/api/routes.py):
+- `src/gamma/performer/vtube_studio.py`
+  VTube Studio config, websocket client, adapter, and runner.
+
+- `src/gamma/performer/static/performer.html`
+  Stream PC / OBS browser-source page for subtitles, state, and Shana audio.
+
+Shana performer routes currently include:
+
 - `GET /performer`
 - `GET /performer/assets/shana/default.png`
 - `GET /v1/performer/events/recent`
+- `GET /v1/performer/status`
+- `POST /v1/performer/adapters/vtube-studio/start`
+- `POST /v1/performer/adapters/vtube-studio/stop`
+- `POST /v1/performer/targets/{target_policy}/mute`
+- `POST /v1/performer/targets/{target_policy}/unmute`
+- `POST /v1/performer/targets/{target_policy}/clear`
 - `WebSocket /v1/performer/events`
 - `GET /v1/audio/artifacts/{filename}`
+- `GET /overlay/subtitles`
 
-### Twitch Integration
+### Integrations
 
-- [gamma/integrations/twitch/worker.py](/home/neety/.openclaw/workspace/gamma-main/gamma/integrations/twitch/worker.py)
-  Twitch IRC ingestion worker. Reads chat, applies Twitch controls, and posts normalized events to the stream API.
+- `src/gamma/integrations/twitch/worker.py`
+  Twitch IRC ingestion worker.
 
-- [gamma/integrations/twitch/eventsub.py](/home/neety/.openclaw/workspace/gamma-main/gamma/integrations/twitch/eventsub.py)
-  Twitch EventSub websocket worker for follows, raids, redeems, bits, subscriptions, and moderation-style events.
+- `src/gamma/integrations/twitch/eventsub.py`
+  Twitch EventSub websocket worker.
 
-- [gamma/integrations/twitch/normalize.py](/home/neety/.openclaw/workspace/gamma-main/gamma/integrations/twitch/normalize.py)
-  Maps Twitch IRC/EventSub/replay payloads into `StreamInputEvent` records.
+- `src/gamma/integrations/twitch/normalize.py`
+  Twitch IRC/EventSub/replay normalization into `StreamInputEvent`.
 
-- [gamma/integrations/twitch/sanitize.py](/home/neety/.openclaw/workspace/gamma-main/gamma/integrations/twitch/sanitize.py)
-  Twitch chat safety/trust classification before events reach the stream brain.
+- `src/gamma/integrations/twitch/sanitize.py`
+  Twitch chat trust/safety classification.
 
-- [gamma/integrations/twitch/trust.py](/home/neety/.openclaw/workspace/gamma-main/gamma/integrations/twitch/trust.py)
-  Viewer trust store and pronunciation/notes metadata.
+- `src/gamma/integrations/twitch/trust.py`
+  Viewer trust, pronunciation alias, and notes store.
 
-- [gamma/integrations/twitch/replay.py](/home/neety/.openclaw/workspace/gamma-main/gamma/integrations/twitch/replay.py)
-  JSONL replay utility for testing Twitch-style events through the stream API.
+- `src/gamma/integrations/twitch/replay.py`
+  JSONL replay utility for repeatable stream tests.
 
-- [gamma/integrations/twitch/client.py](/home/neety/.openclaw/workspace/gamma-main/gamma/integrations/twitch/client.py)
-  HTTP client used by Twitch workers/replay to post stream events to Gamma.
+- `src/gamma/integrations/discord/adapter.py`
+  Discord text/voice normalization into stream events.
+
+- `src/gamma/integrations/discord/runtime.py`
+  Dependency-light Discord runtime and isolated `discord_call` output handling.
+
+- `src/gamma/integrations/discord/worker.py`
+  Optional `discord.py` text ingestion worker. It ignores bot/self messages,
+  other guilds/channels, and empty messages before posting accepted text to the
+  stream API with speech disabled.
 
 ### Dashboard
 
-- [gamma/dashboard/main.py](/home/neety/.openclaw/workspace/gamma-main/gamma/dashboard/main.py)
+- `src/gamma/dashboard/main.py`
   Dashboard FastAPI app and dashboard API routes.
 
-- [gamma/dashboard/service.py](/home/neety/.openclaw/workspace/gamma-main/gamma/dashboard/service.py)
-  Dashboard-facing orchestration: status payloads, provider test actions, memory operations, audio serving, stream/Twitch status, Twitch runtime settings, viewer trust, and replay actions.
+- `src/gamma/dashboard/service.py`
+  Dashboard orchestration: status payloads, Presence, provider actions, memory,
+  stream/Twitch/Discord operations, performer controls, monitor input, replay,
+  settings, logs, resource panels, and proxying Shana-owned APIs.
 
-- [gamma/dashboard/auth.py](/home/neety/.openclaw/workspace/gamma-main/gamma/dashboard/auth.py)
-  Dashboard auth helpers.
+- `src/gamma/dashboard/auth.py`
+  Dashboard session auth helpers.
 
-- [gamma/dashboard/static/index.html](/home/neety/.openclaw/workspace/gamma-main/gamma/dashboard/static/index.html)
-  Dashboard UI shell.
+- `src/gamma/dashboard/static/index.html`
+  Dashboard shell.
 
-- [gamma/dashboard/static/dashboard.js](/home/neety/.openclaw/workspace/gamma-main/gamma/dashboard/static/dashboard.js)
-  Dashboard behavior. This file owns:
-  - live browser voice control
-  - browser recording/upload
-  - provider actions
-  - subtitles UI
-  - memory delete modal
-  - mute mic / mute assistant toggles
-  - stream trace/output/queue/temp-memory/self-goal panels
-  - Twitch worker/EventSub/settings/viewer-trust/replay controls
+- `src/gamma/dashboard/static/*.js`
+  Modular dashboard browser code. Use the relevant module instead of restoring
+  logic to a legacy monolithic `dashboard.js`.
 
-- [gamma/dashboard/static/dashboard.css](/home/neety/.openclaw/workspace/gamma-main/gamma/dashboard/static/dashboard.css)
-  Dashboard styling.
+Important modules include:
+
+- `api.js`
+- `controls.js`
+- `init.js`
+- `live.js`
+- `memory.js`
+- `monitor.js`
+- `nav.js`
+- `presence.js`
+- `providers.js`
+- `render.js`
+- `status.js`
+- `stream.js`
+
+### Resource Telemetry And Routing
+
+- `src/gamma/resources/probe.py`
+  Shared read-only resource snapshots with CPU, RAM, disk, GPU, and optional GPU
+  compute-process attribution.
+
+- `src/gamma/resources/models.py`, `policy.py`, `coordinator.py`, and
+  `runtime_registry.py`
+  Resource targets, endpoint refs, workload specs, deterministic ranking, shadow
+  policy, and target validation.
+
+- `src/gamma/resources/allocations.py`
+  Reads recent sidecar allocation observations from structured logs.
+
+Resource-routing behavior is intentionally conservative:
+
+- Shadow placement is advisory unless active routing is explicitly enabled.
+- Endpoint-aware local LLM routing is behind
+  `resource_routing.policy.active_llm_routing = false` by default.
+- Startup admission is behind
+  `resource_routing.policy.startup_admission = false` by default.
+- Automatic model loading, model eviction, managed GPU endpoint startup, and
+  measured persistent-allocation reconciliation remain future work.
 
 ### Process Supervision
 
-- [gamma/supervisor/manager.py](/home/neety/.openclaw/workspace/gamma-main/gamma/supervisor/manager.py)
-  Starts/stops `shana`, `dashboard`, `twitch-worker`, `twitch-eventsub`, plus managed local TTS sidecars.
+- `src/gamma/supervisor/manager.py`
+  Starts/stops `shana`, `dashboard`, `audio-understanding`, Twitch workers, and
+  local sidecars where supported.
 
-- [gamma/supervisor/cli.py](/home/neety/.openclaw/workspace/gamma-main/gamma/supervisor/cli.py)
+- `src/gamma/supervisor/cli.py`
   CLI wrapper around the process manager.
 
-### Config
+Use:
 
-- [gamma/config.py](/home/neety/.openclaw/workspace/gamma-main/gamma/config.py)
-  Central settings loader from `.env` and `config/*.toml`, including dashboard, voice, stream safety, and Twitch settings.
-
-- `.env`
-  Local active environment config in this workspace.
-
-- `config/app.example.toml`, `config/app.toml`, `config/app.local.toml`
-  App config layering.
-
-- `config/voices.example.toml`, `config/voices.toml`, `config/voices.local.toml`
-  Voice profile layering.
-
-### Scripts And Runtime Bundles
-
-- `scripts/start_shana_voice_stack.py`, `scripts/start_shana_voice_stack_linux.sh`
-  Starts the voice-focused runtime bundle.
-
-- `scripts/start_shana_stream_stack.py`, `scripts/start_shana_stream_stack_linux.sh`
-  Starts the stream-focused runtime bundle.
-
-- `scripts/start_qwen_tts_server.py`, `scripts/stop_qwen_tts_server.py`, `scripts/qwen_tts_server.py`
-  Qwen TTS sidecar helpers.
-
-- `scripts/start_gpt_sovits_*`, `scripts/stop_gpt_sovits_*`
-  GPT-SoVITS sidecar helpers.
+```bash
+.venv/bin/python -m gamma.supervisor.cli status all
+.venv/bin/python -m gamma.supervisor.cli restart shana
+.venv/bin/python -m gamma.supervisor.cli restart dashboard
+```
 
 ## Current File Structure
 
-Use this as the high-level map before editing:
+- `src/gamma/api/` - Shana API routes.
+- `src/gamma/avatar_events/` - downstream avatar event models.
+- `src/gamma/conversation/` - main assistant response pipeline.
+- `src/gamma/dashboard/` - dashboard app, service layer, auth, and static UI.
+- `src/gamma/identity/` - speaker profiles and known-user resolution.
+- `src/gamma/integrations/` - Twitch and Discord adapters/workers.
+- `src/gamma/llm/` - mock, OpenAI, local/Ollama, and router LLM adapters.
+- `src/gamma/memory/` - SQLModel memory service.
+- `src/gamma/performer/` - performer event bus, models, VTube Studio adapter,
+  and browser performer page.
+- `src/gamma/persona/` - Shana prompt source files and assistant state.
+- `src/gamma/presence.py` - Presence state and stream gating helpers.
+- `src/gamma/resources/` - resource telemetry and placement policy.
+- `src/gamma/safety/` - privacy guard, speech filter, and safety review layers.
+- `src/gamma/stream/` - stream brain, output, traces, replay, temp memory, and
+  self-goals.
+- `src/gamma/supervisor/` - process manager and CLI.
+- `src/gamma/system/` - runtime status, CUDA/Torch helpers, Python resolution,
+  and lazy singletons.
+- `src/gamma/tools/` - assistant tool registry and built-in tools.
+- `src/gamma/voice/` - STT, TTS, live voice, audio understanding, reply
+  planning, RVC, and voice profiles.
+- `config/` - layered app, model, memory, persona, voice, integration, and
+  resource-routing config.
+- `scripts/` - launchers, service scripts, and sidecar helpers.
+- `specs/` - architecture and behavior docs.
+- `tests/` - pytest coverage.
 
-- `gamma/api/` - assistant API routes for conversation, memory, system status, stream, vision, and voice
-- `gamma/avatar_events/` - downstream avatar event models
-- `gamma/conversation/` - main assistant response pipeline
-- `gamma/dashboard/` - operator dashboard app, service layer, auth, and static UI assets
-- `gamma/identity/` - speaker profile and owner/known-user resolution
-- `gamma/integrations/twitch/` - Twitch IRC/EventSub/replay/client/safety/trust adapters
-- `gamma/llm/` - mock, OpenAI, local/Ollama, and router LLM adapters
-- `gamma/memory/` - SQLModel memory models and SQLite-backed memory service
-- `gamma/persona/` - Shana prompt source files, emotional state, and persona loaders
-- `gamma/performer/` - performer output event models, in-process output bus, and Stream PC browser performer page
-- `gamma/safety/` - privacy guard, speech filter, hard rules, heuristic checks, LLM reviewer, and rewrite guard
-- `gamma/schemas/` - API schema models
-- `gamma/stream/` - stream brain, models, traces, output log, replay, temporary memory, and self-goals
-- `gamma/supervisor/` - process manager and CLI
-- `gamma/system/` - runtime status, CUDA/Torch helpers, Python resolution, lazy singletons
-- `gamma/tools/` - assistant tool registry and built-in tools
-- `gamma/tray/` - desktop tray app wrapper
-- `gamma/vision/` - image analysis service
-- `gamma/voice/` - STT/TTS, live voice, live jobs/runtime, roundtrip, controller, affect, reply planning/chunking, RVC, and voice profiles
-- `config/` - layered app/model/memory/persona/voice config
-- `scripts/` - platform launchers, service starters/stoppers, and TTS sidecar scripts
-- `specs/` - product, architecture, implementation, voice, memory, model, stream, Twitch, and handoff docs
-- `tests/` - unit/integration tests for API, dashboard, voice, stream, Twitch, memory, routing, and system helpers
+The untracked top-level `gamma/` directory is stale runtime bytecode/log state,
+not source. Do not import from it or add files there.
 
-## Current Important Environment / Deployment Facts
+## Deployment Facts
 
-### Dashboard Behind HTTPS Proxy
+For networking, Nginx/OpenResty, ports, public URLs, dashboard startup, or
+proxy routing, read `specs/LOCKED_GAMMA_NETWORK_DEPLOYMENT.md` first. Do not
+edit that file.
 
 Current intended deployment model:
 
-- dashboard process binds locally on port `8001`
-- reverse proxy terminates HTTPS and exposes `https://gamma.neety.me`
-- dashboard public URL is configured separately from the bind port
-- public `/dashboard/*`, dashboard `/api/*`, and dashboard `/static/*` browser requests must route to the dashboard process, not the Shana API process
-- the Shana API process keeps fallback redirects for `/dashboard` and valid `/dashboard/<page>` paths so a misrouted page request redirects to the configured dashboard public URL instead of returning JSON 404
-- rendered dashboard page links use `SHANA_DASHBOARD_PUBLIC_*` through `settings.dashboard_base_url`; do not replace this with root-relative public links
+- Shana API binds internally on port `8000`.
+- Dashboard binds internally on port `8001`.
+- A reverse proxy terminates HTTPS and exposes the public dashboard/API URLs.
+- Public dashboard `/dashboard/*`, dashboard `/api/*`, dashboard `/static/*`,
+  `/login`, `/logout`, `/monitor*`, and `/overlay/*` browser requests should go
+  to the dashboard process.
+- Shana-owned `/health`, `/v1/*`, `/performer*`, and `/stream/*` requests
+  should go to the Shana process.
+- Public scheme/host/port are separate from bind host/port. Preserve
+  `SHANA_*_PUBLIC_SCHEME`, `SHANA_*_PUBLIC_HOST`, and
+  `SHANA_*_PUBLIC_PORT`.
 
-Important settings:
+Do not collapse public proxy port and internal bind port. They are intentionally
+separate.
 
-- `SHANA_DASHBOARD_BIND_HOST`
-- `SHANA_DASHBOARD_PORT`
-- `SHANA_DASHBOARD_PUBLIC_HOST`
-- `SHANA_DASHBOARD_PUBLIC_PORT`
-- `SHANA_DASHBOARD_PUBLIC_SCHEME`
-- `SHANA_DASHBOARD_COOKIE_SECURE`
+## Provider Defaults In Practice
 
-Do not collapse public proxy port and internal bind port again. They are intentionally separated.
+Exact local `.env` values vary. The repo is designed around combinations like:
 
-### Browser DNS / Local HTTPS
+- LLM: `mock`, `openai`, `local`, `ollama`, or router-managed combinations.
+- STT: `stub`, `openai`, `local`, or `faster-whisper`.
+- TTS: `stub`, `openai`, `piper`, or `qwen-tts`.
 
-The dashboard may be used behind Nginx Proxy Manager or another reverse proxy on LAN. Browsers may need local DNS overrides or hosts-file overrides if secure DNS bypasses LAN DNS.
+Local does not mean the same thing everywhere:
 
-### Live Browser Voice
+- LLM `local` means an Ollama-compatible model.
+- STT `local` means faster-whisper.
+- TTS `piper` means local offline ONNX synthesis.
+- TTS `qwen-tts` means a local HTTP-backed sidecar.
 
-The browser live voice path currently uses `ScriptProcessorNode` for audio capture. Browsers warn that it is deprecated. Follow-up cleanup should migrate this to `AudioWorkletNode`.
+RVC can layer on top of generated WAV output. It is not a standalone TTS
+provider.
 
-This is a cleanup task, not a known blocker for the currently working flow.
+## Dashboard And Operator UX
 
-### Stream / Twitch Operation
+Current dashboard browser/operator behavior includes:
 
-The current stream path is operator-supervised. Twitch workers can run in dry-run or speech-enabled modes, and stream-facing actions should remain safe by default.
+- Page-based navigation with overview, live, monitor, status, Presence, stream,
+  memory, and settings sections.
+- `Mute Mic`, `Mute Shana`, pop-out subtitles, monitor audio enable/mute, and
+  compact/focus monitor modes.
+- Presence controls for Sleep, Wake, Go Live, and Break.
+- Provider status, provider tests, voice profile editor, TTS profile selection,
+  Qwen sidecar start/stop, and generated audio management.
+- Memory stats, known people, latest/recent memories, targeted edit/delete, and
+  safer cleanup controls.
+- Stream traces, safety findings, output events, queue, temporary memory,
+  self-goals, rehearsal, local monitor input, and stream stop.
+- Twitch IRC/EventSub controls, runtime settings, viewer trust, replay, and
+  dry-run replay.
+- Discord text-worker start/stop/status.
+- Resource telemetry panels for placement shadow, startup admission, and sidecar
+  allocation observations.
 
-Important settings include:
+If behavior is operator-facing, verify both backend route support and dashboard
+JS/UI behavior.
 
-- `SHANA_TWITCH_*` for IRC/EventSub credentials, runtime controls, dry-run behavior, speech/subtitle enablement, safety review, and rate limits
-- `SHANA_STREAM_*` for proactive idle behavior, stream safety review timeout, fallback behavior, output paths, and queue/temp-memory/self-goal behavior
+## Safety And Public Output
 
-Dashboard controls exist for:
+Public stream speech should stay operator-supervised and safe by default.
 
-- Twitch IRC worker start/stop/status
-- Twitch EventSub worker start/stop/status
-- Twitch runtime setting toggles
-- viewer trust save/list
-- replay and dry-run replay
-- stream traces, safety findings, outputs, queue, temp memory, self-goals, and stream stop
+Preserve:
 
-Preserve operator review points for potentially public speech. Avoid making Twitch speech-on behavior the default unless the config already explicitly enables it.
+- Privacy guard checks before LLM calls.
+- Speech safety filtering before spoken text is returned or synthesized.
+- Stream safety review timeout/fallback behavior.
+- Dry-run, queueing, rate limits, and operator review points.
+- Presence gating for public stream output.
+- Separation between dashboard monitor output, stream-public output, and
+  Discord-call output.
 
-### Performer / Stream PC Output
-
-The new performer path is the first implementation slice of `specs/shana_output_bus.md`.
-
-Current behavior:
-
-- Stream output events are still persisted to JSONL.
-- The same stream output events are also mapped into generic performer events.
-- Performer clients can subscribe to `WebSocket /v1/performer/events`.
-- Clients can request recent events through `GET /v1/performer/events/recent`.
-- The `/performer` page is intended as a simple Stream PC / OBS browser source.
-- Audio payloads should be network-safe. If a stream event has an `audio_path` inside `settings.audio_output_dir`, the performer payload removes the local path and exposes:
-  - `audio_artifact`
-  - `audio_url`
-- The Shana API serves those artifacts through `GET /v1/audio/artifacts/{filename}`.
-
-Important design intent:
-
-- Keep Gamma/StreamBrain runtime-agnostic. Do not put VTube Studio-specific logic in `ConversationService`, `StreamBrain`, or core voice code.
-- The current `/performer` page is a first browser client, not the final VTuber adapter.
-- Future VTube Studio support should translate generic performer events into VTS API calls in an adapter/client layer.
-
-## Current Provider Defaults In Practice
-
-The exact local `.env` can vary, but the repo is currently designed around combinations like:
-
-- LLM: local/Ollama
-- STT: local faster-whisper
-- TTS: Qwen3-TTS or GPT-SoVITS
-
-The current local STT path is whisper-based:
-
-- `SHANA_STT_PROVIDER=local`
-- implemented through faster-whisper in [gamma/voice/stt.py](/home/neety/.openclaw/workspace/gamma-main/gamma/voice/stt.py)
-
-## Memory Model
-
-There are two stored memory types:
-
-1. `ProfileFact`
-   Semi-stable user/person facts.
-
-2. `EpisodicMemory`
-   Event-ish memories with optional session scope.
-
-Important current behavior:
-
-- recent-memory listing exists in the dashboard
-- targeted recent-memory deletion exists in the dashboard
-- memory rows now carry `created_at`
-- dashboard "clear memory" flow is intentionally no longer a one-click wipe
-
-If you touch memory behavior, preserve:
-
-- selective writing
-- subject scoping
-- recent-memory visibility
-- safer deletion semantics
-
-## Dashboard UX Behaviors That Matter
-
-Current dashboard browser voice UX includes:
-
-- `Mute Mic`
-- `Mute Shana`
-- pop-out subtitle window
-- live subtitle text updated on transcript / reply chunk events
-- memory-delete modal with per-item selection
-
-If you change these, keep the operator-facing workflow simple. The dashboard is now an active control surface, not just a debug page.
-
-## Platform Notes
-
-Gamma is expected to stay runnable on both Linux and Windows.
-
-Rules:
-
-- shared runtime logic should not assume Windows-only paths or executables
-- platform-specific wrappers are acceptable in `scripts/`
-- do not break Windows compatibility just to improve Linux
-- do not break Linux proxy/browser workflow just to preserve an old Windows-only assumption
-
-Important recent portability work:
-
-- safer CUDA device selection
-- Qwen3-TTS Linux startup fixes
-- dashboard public-vs-bind URL separation
-- browser voice path validated through Linux-hosted dashboard + Windows client browser
+Do not weaken authentication, privacy, speech safety, or stream moderation to
+make a test pass.
 
 ## What To Check Before Editing
 
-If you are changing browser voice or dashboard controls:
+For dashboard/browser changes:
 
-1. Check [gamma/dashboard/static/index.html](/home/neety/.openclaw/workspace/gamma-main/gamma/dashboard/static/index.html)
-2. Check [gamma/dashboard/static/dashboard.js](/home/neety/.openclaw/workspace/gamma-main/gamma/dashboard/static/dashboard.js)
-3. Check [gamma/dashboard/main.py](/home/neety/.openclaw/workspace/gamma-main/gamma/dashboard/main.py)
-4. Check [gamma/dashboard/service.py](/home/neety/.openclaw/workspace/gamma-main/gamma/dashboard/service.py)
+1. `src/gamma/dashboard/static/index.html`
+2. The relevant module in `src/gamma/dashboard/static/`
+3. `src/gamma/dashboard/main.py`
+4. `src/gamma/dashboard/service.py`
 
-If you are changing memory:
+For Presence:
 
-1. Check [gamma/memory/models.py](/home/neety/.openclaw/workspace/gamma-main/gamma/memory/models.py)
-2. Check [gamma/memory/service.py](/home/neety/.openclaw/workspace/gamma-main/gamma/memory/service.py)
-3. Check dashboard memory routes/UI if the behavior is operator-visible
+1. `src/gamma/presence.py`
+2. `src/gamma/dashboard/service.py`
+3. `src/gamma/dashboard/main.py`
+4. `src/gamma/dashboard/static/presence.js`
+5. `src/gamma/api/routes.py`
+6. `src/gamma/stream/brain.py`
 
-If you are changing provider behavior:
+For memory:
 
-1. Check [gamma/voice/stt.py](/home/neety/.openclaw/workspace/gamma-main/gamma/voice/stt.py)
-2. Check [gamma/voice/tts.py](/home/neety/.openclaw/workspace/gamma-main/gamma/voice/tts.py)
-3. Check [gamma/supervisor/manager.py](/home/neety/.openclaw/workspace/gamma-main/gamma/supervisor/manager.py)
-4. Check relevant scripts in `scripts/`
+1. `src/gamma/memory/models.py`
+2. `src/gamma/memory/service.py`
+3. Dashboard memory routes/UI if operator-visible
 
-If you are changing stream/Twitch behavior:
+For provider behavior:
 
-1. Check [gamma/stream/brain.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/brain.py)
-2. Check [gamma/stream/models.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/models.py)
-3. Check [gamma/api/routes.py](/home/neety/.openclaw/workspace/gamma-main/gamma/api/routes.py)
-4. Check [gamma/dashboard/main.py](/home/neety/.openclaw/workspace/gamma-main/gamma/dashboard/main.py)
-5. Check [gamma/dashboard/service.py](/home/neety/.openclaw/workspace/gamma-main/gamma/dashboard/service.py)
-6. Check [gamma/dashboard/static/dashboard.js](/home/neety/.openclaw/workspace/gamma-main/gamma/dashboard/static/dashboard.js)
-7. Check relevant Twitch adapter files under [gamma/integrations/twitch/](/home/neety/.openclaw/workspace/gamma-main/gamma/integrations/twitch)
+1. `src/gamma/voice/stt.py`
+2. `src/gamma/voice/tts.py`
+3. `src/gamma/voice/voice_profiles.py`
+4. `src/gamma/supervisor/manager.py`
+5. Relevant scripts in `scripts/`
 
-If you are changing performer/output-bus behavior:
+For LLM routing/resource behavior:
 
-1. Check [specs/shana_output_bus.md](/home/neety/.openclaw/workspace/gamma-main/specs/shana_output_bus.md)
-2. Check [gamma/performer/models.py](/home/neety/.openclaw/workspace/gamma-main/gamma/performer/models.py)
-3. Check [gamma/performer/bus.py](/home/neety/.openclaw/workspace/gamma-main/gamma/performer/bus.py)
-4. Check [gamma/stream/output.py](/home/neety/.openclaw/workspace/gamma-main/gamma/stream/output.py)
-5. Check [gamma/api/routes.py](/home/neety/.openclaw/workspace/gamma-main/gamma/api/routes.py)
-6. Check [gamma/performer/static/performer.html](/home/neety/.openclaw/workspace/gamma-main/gamma/performer/static/performer.html)
+1. `src/gamma/llm/router_adapter.py`
+2. `src/gamma/resources/`
+3. `src/gamma/supervisor/manager.py`
+4. `config/app.example.toml`
+5. Dashboard status/resource panels
 
-## Test / Validation Expectations
+For stream/Twitch/Discord behavior:
 
-Current useful validation commands:
+1. `src/gamma/stream/brain.py`
+2. `src/gamma/stream/models.py`
+3. `src/gamma/api/routes.py`
+4. `src/gamma/dashboard/main.py`
+5. `src/gamma/dashboard/service.py`
+6. Relevant integration files under `src/gamma/integrations/`
+
+For performer/output-bus behavior:
+
+1. `specs/shana_output_bus.md`
+2. `src/gamma/performer/models.py`
+3. `src/gamma/performer/bus.py`
+4. `src/gamma/performer/turns.py`
+5. `src/gamma/performer/vtube_studio.py`
+6. `src/gamma/stream/output.py`
+7. `src/gamma/api/routes.py`
+8. `src/gamma/performer/static/performer.html`
+
+## Validation Expectations
+
+Use the repo virtual environment:
 
 ```bash
-./.venv/bin/python -m pytest
-./.venv/bin/python -m gamma.supervisor.cli start dashboard
-./.venv/bin/python -m gamma.supervisor.cli start shana
-./.venv/bin/python -m gamma.supervisor.cli restart dashboard
+.venv/bin/python
 ```
 
-`pytest` is intentionally scoped to `tests/` in `pyproject.toml`; do not remove that unless vendored/sidecar test directories under `data/` are excluded another way.
-
-Useful provider smoke tests:
+Focused tests:
 
 ```bash
-./.venv/bin/python -m gamma.run_llm_test "Dashboard LLM smoke test."
-./.venv/bin/python -m gamma.run_stt_test test_audio/jfk.flac
-./.venv/bin/python -m gamma.run_tts_test "Dashboard TTS smoke test."
-./.venv/bin/python -m gamma.run_voice_roundtrip test_audio/jfk.flac
+.venv/bin/python -m pytest tests/test_dashboard_routes.py tests/test_api_routes.py -q
+.venv/bin/python -m pytest tests/test_stream_brain.py tests/test_stream_output.py -q
+.venv/bin/python -m pytest tests/test_llm_router.py tests/test_resource_policy.py -q
+.venv/bin/python -m pytest tests/test_audio_sidecar_runtime.py tests/test_sidecar_allocations.py -q
+.venv/bin/python -m pytest tests/test_vtube_studio_adapter.py tests/test_discord_adapter.py -q
+.venv/bin/python -m pytest tests/test_presence.py -q
 ```
 
-Useful focused tests:
+Full suite:
 
 ```bash
-./.venv/bin/python -m pytest tests/test_stream_brain.py tests/test_stream_output.py tests/test_twitch_integration.py -v
-./.venv/bin/python -m pytest tests/test_dashboard_routes.py tests/test_api_routes.py -v
+.venv/bin/python -m pytest -q
 ```
+
+For changed dashboard JS modules, run:
+
+```bash
+node --check src/gamma/dashboard/static/<changed-file>.js
+```
+
+Useful smoke tests:
+
+```bash
+.venv/bin/python -m gamma.run_llm_test "Dashboard LLM smoke test."
+.venv/bin/python -m gamma.run_stt_test test_audio/jfk.flac
+.venv/bin/python -m gamma.run_tts_test "Dashboard TTS smoke test."
+.venv/bin/python -m gamma.run_voice_roundtrip test_audio/jfk.flac
+.venv/bin/python -m gamma.run_audio_understanding_test ./sample.wav --transcript "sample transcript"
+```
+
+Before finishing changes, run `git diff --check` and report which tests ran.
 
 ## Handoff Guidance
 
 When taking over work in this repo:
 
-- assume dashboard/browser voice and Twitch/stream operator paths matter more than old speculative roadmap text
-- prefer small, concrete fixes over broad architecture churn
-- preserve both Linux and Windows runnability
-- if behavior is operator-facing, verify both backend route support and dashboard JS/UI behavior
-- if behavior can produce public stream speech, verify safety, dry-run, queueing, and operator controls
-- if browser behavior seems inconsistent, suspect stale static assets or proxy/browser caching before overcomplicating the logic
+- Read `README.md`, `specs/README.md`, `specs/current_implementations.md`, and
+  the relevant domain spec before editing.
+- For networking/proxy/service-port changes, read
+  `specs/LOCKED_GAMMA_NETWORK_DEPLOYMENT.md` first and do not edit it.
+- Prefer small, concrete fixes over broad architecture churn.
+- Preserve both Linux and Windows runnability.
+- Keep the two FastAPI apps separate.
+- Use structured config/TOML/JSON parsing instead of ad hoc string edits.
+- Do not edit `.env`, `config/app.local.toml`, or `config/voices.local.toml`
+  unless the user explicitly asks for a machine-local config change.
+- Do not touch generated runtime data under `data/` or stale top-level
+  `gamma/`.
+- If browser behavior seems inconsistent, check stale static assets or proxy
+  caching before overcomplicating the implementation.
 
-For a condensed version, see [specs/llm-handoff-prompt-lite.md](/home/neety/.openclaw/workspace/gamma-main/specs/llm-handoff-prompt-lite.md).
+For a condensed version, see `specs/llm-handoff-prompt-lite.md`.

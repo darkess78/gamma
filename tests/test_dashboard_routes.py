@@ -106,6 +106,11 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(response, {"summary": "ok"})
         status_summary.assert_called_once_with()
 
+        with patch.object(self.mock_service, "build_header_status", return_value={"header": "ok"}) as header_status:
+            response = main.status_header()
+        self.assertEqual(response, {"header": "ok"})
+        header_status.assert_called_once_with()
+
         with patch.object(self.mock_service, "presence_status", return_value={"presence": "ok"}) as presence_status:
             response = main.presence_status()
         self.assertEqual(response, {"presence": "ok"})
@@ -335,7 +340,7 @@ class DashboardRoutesTest(unittest.TestCase):
         status_script = (main.STATIC_DIR / "status.js").read_text(encoding="utf-8")
 
         self.assertIn("statusPollEndpoint() + '?_='", status_script)
-        self.assertIn("return '/api/status/summary';", status_script)
+        self.assertIn("return '/api/status/header';", status_script)
         self.assertIn("renderStatus(await response.json());", status_script)
         self.assertIn("window.loadStatus = loadStatus;", status_script)
         self.assertIn("window.selectTtsProfile = selectTtsProfile;", status_script)
@@ -354,6 +359,16 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('id="placementShadow"', status_html)
         self.assertIn('id="startupAdmission"', status_html)
         self.assertIn('id="sidecarAllocations"', status_html)
+
+    def test_presence_uses_shared_native_module_without_legacy_initializer(self) -> None:
+        dashboard_html = (main.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        presence_script = (main.STATIC_DIR / "presence.mjs").read_text(encoding="utf-8")
+
+        self.assertIn('type="module" src="/static/presence.mjs?v=20260622"', dashboard_html)
+        self.assertNotIn("/static/init.js", dashboard_html)
+        self.assertFalse((main.STATIC_DIR / "init.js").exists())
+        self.assertIn("from './core.mjs'", presence_script)
+        self.assertIn("window.setPresenceMode = setPresenceMode;", presence_script)
 
     def test_monitor_has_stream_controls_and_status_reporting(self) -> None:
         body = main.dashboard_monitor_page().body.decode("utf-8")
@@ -1052,6 +1067,22 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertNotIn("startup_admission", payload)
         self.assertNotIn("sidecar_allocations", payload)
         self.assertEqual(payload["providers"]["tts"]["provider"], "qwen-tts")
+
+    def test_header_status_avoids_full_system_status(self) -> None:
+        service = DashboardService()
+        with (
+            patch.object(service, "_build_shana_runtime_status", return_value={"api_health": {"ok": True}}),
+            patch.object(service._process_manager, "module_status", return_value={"process": {"running": False}}),
+            patch.object(service, "presence_summary", return_value={"ok": True, "state": {"mode": "wake"}}),
+            patch.object(service, "performer_output_status", return_value={"ok": True, "recent_event": None}),
+            patch.object(service, "_remote_system_status", side_effect=AssertionError("full status must not run")),
+            patch.object(service, "_machine_status", side_effect=AssertionError("machine status must not run")),
+        ):
+            payload = service.build_header_status()
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["presence"]["state"]["mode"], "wake")
+        self.assertTrue(payload["shana"]["api_health"]["ok"])
 
     def test_qwen_presets_are_discovered_and_returned_by_dashboard_status(self) -> None:
         service = DashboardService()

@@ -584,7 +584,7 @@
     if (page === 'status' || page === 'settings' || page === 'memory') {
       return '/api/status';
     }
-    return '/api/status/summary';
+    return '/api/status/header';
   }
 
   async function action(path, options) {

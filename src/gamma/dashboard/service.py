@@ -241,6 +241,50 @@ class DashboardService:
             "performer": self.performer_output_status(),
         }
 
+    def build_header_status(self) -> dict[str, Any]:
+        """Return inexpensive state used by navigation and overview polling."""
+        shana_status = self._build_shana_runtime_status()
+        twitch_process = self._process_manager.module_status(
+            self.TWITCH_WORKER_SERVICE,
+            self.TWITCH_WORKER_MODULE,
+        ).get("process", {})
+        eventsub_process = self._process_manager.module_status(
+            self.TWITCH_EVENTSUB_SERVICE,
+            self.TWITCH_EVENTSUB_MODULE,
+        ).get("process", {})
+        discord_process = self._process_manager.module_status(
+            self.DISCORD_TEXT_SERVICE,
+            self.DISCORD_TEXT_MODULE,
+        ).get("process", {})
+        return {
+            "ok": True,
+            "dashboard": {
+                "name": f"{settings.app_name} dashboard",
+                "url": settings.dashboard_base_url,
+            },
+            "app": {"name": settings.app_name},
+            "providers": {
+                "llm": {"provider": settings.llm_provider, "model": settings.llm_model},
+                "stt": {"provider": settings.stt_provider, "model": settings.stt_model},
+                "tts": {
+                    "provider": self.selected_tts_provider(),
+                    "selected_profile": self.selected_tts_profile(),
+                },
+            },
+            "shana": shana_status,
+            "machine": {},
+            "memory_db": {"stats": {}, "known_people": [], "recent_items": []},
+            "assistant": {},
+            "twitch": {
+                "worker": {"process": twitch_process},
+                "eventsub": {"process": eventsub_process},
+                "stream_ready": {},
+            },
+            "discord": {"text_worker": {"process": discord_process}},
+            "presence": self.presence_summary(),
+            "performer": self.performer_output_status(),
+        }
+
     def _tts_test_control_state(self, provider: str, profile_id: str | None) -> dict[str, Any]:
         normalized = (provider or "").strip().lower()
         profile = get_voice_profile(profile_id)
@@ -272,6 +316,13 @@ class DashboardService:
         return path.exists()
 
     def build_runtime_status(self) -> dict[str, Any]:
+        return {
+            "shana": self._build_shana_runtime_status(),
+            "machine": self._machine_status(),
+        }
+
+    def _build_shana_runtime_status(self) -> dict[str, Any]:
+        """Return Shana process and API state without sampling host resources."""
         shana_process = self._process_manager.find_process("shana")
         api_probe = self._shana.safe_get("/health")
         api_ok = self._remote_probe_ok(api_probe)
@@ -280,12 +331,9 @@ class DashboardService:
             "detail": "ok" if api_ok else api_probe.get("detail", "unreachable"),
         }
         return {
-            "shana": {
-                "url": settings.shana_base_url,
-                "process": self._process_manager.process_payload(shana_process),
-                "api_health": api_health,
-            },
-            "machine": self._machine_status(),
+            "url": settings.shana_base_url,
+            "process": self._process_manager.process_payload(shana_process),
+            "api_health": api_health,
         }
 
     def _remote_system_status(self) -> dict[str, Any]:

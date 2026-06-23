@@ -461,6 +461,12 @@ def status_summary() -> dict:
     return get_dashboard_service().build_status_summary()
 
 
+@app.get("/api/status/header")
+def status_header() -> dict:
+    """Return inexpensive state for navigation and overview polling."""
+    return get_dashboard_service().build_header_status()
+
+
 @app.get("/api/presence")
 def presence_status() -> dict:
     """Return Shana Presence runtime state."""

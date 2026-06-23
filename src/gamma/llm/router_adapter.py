@@ -13,6 +13,7 @@ from ..resources import ResourcePlacementCoordinator, llm_shadow_placement_paylo
 from ..resources.models import WorkloadSpec
 from ..resources.runtime_registry import load_resource_routing_registry
 from .base import LLMAdapter, LLMCallContext, LLMImageInput, LLMReply
+from .capabilities import estimate_text_tokens, model_capability
 
 _ROUTE_TRACE = threading.local()
 
@@ -146,6 +147,49 @@ class RouterLLMAdapter(LLMAdapter):
                 continue
             seen.add(key)
             decision = self._active_resource_route_decision(decision=decision, has_images=bool(image_inputs))
+            capability = model_capability(decision.provider, decision.model)
+            candidate_system_prompt = system_prompt
+            candidate_user_text = user_text
+            prompt_metrics: dict[str, object] = {
+                "estimated_input_tokens": estimate_text_tokens(system_prompt, user_text),
+                "model_context_limit": capability.advertised_context_tokens,
+                "usable_input_tokens": capability.usable_input_tokens,
+                "reserved_output_tokens": capability.reserved_output_tokens,
+                "safety_margin_tokens": capability.safety_margin_tokens,
+                "context_provenance": capability.provenance,
+                "compaction_level": 0,
+                "compaction_actions": [],
+            }
+            if call_context.prompt_builder is not None:
+                candidate_system_prompt, candidate_user_text, built_metrics = call_context.prompt_builder(
+                    capability.usable_input_tokens
+                )
+                prompt_metrics.update(built_metrics)
+                prompt_metrics["estimated_input_tokens"] = estimate_text_tokens(
+                    candidate_system_prompt,
+                    candidate_user_text,
+                )
+            capability_error = None
+            if call_context.persona_sensitive and not capability.persona_capable:
+                capability_error = "model-is-not-persona-capable"
+            elif capability.usable_input_tokens < max(0, call_context.minimum_context_tokens):
+                capability_error = "model-context-below-required-minimum"
+            elif int(prompt_metrics["estimated_input_tokens"]) > capability.usable_input_tokens:
+                capability_error = "assembled-prompt-exceeds-model-budget"
+            if capability_error:
+                self._record_route_event(
+                    decision=decision,
+                    call_context=call_context,
+                    user_text=candidate_user_text,
+                    has_images=bool(image_inputs),
+                    status="skipped",
+                    duration_ms=0.0,
+                    detail=capability_error,
+                    fallback_index=index,
+                    prompt_metrics=prompt_metrics,
+                )
+                release_advisory_reservation(decision.resource_reservation_id)
+                continue
             availability = self._provider_availability(
                 provider=decision.provider,
                 model=decision.model,
@@ -158,13 +202,14 @@ class RouterLLMAdapter(LLMAdapter):
                 self._record_route_event(
                     decision=decision,
                     call_context=call_context,
-                    user_text=user_text,
+                    user_text=candidate_user_text,
                     has_images=bool(image_inputs),
                     status="skipped",
                     duration_ms=0.0,
                     detail=str(availability.get("detail", "unavailable")),
                     fallback_index=index,
                     placement_shadow=placement_shadow,
+                    prompt_metrics=prompt_metrics,
                 )
                 release_advisory_reservation(decision.resource_reservation_id)
                 continue
@@ -178,8 +223,8 @@ class RouterLLMAdapter(LLMAdapter):
             try:
                 adapter = self._adapter_for_provider(decision.provider)
                 reply = adapter.generate_reply(
-                    system_prompt=system_prompt,
-                    user_text=user_text,
+                    system_prompt=candidate_system_prompt,
+                    user_text=candidate_user_text,
                     image_inputs=image_inputs,
                     call_context=call_context,
                     model_override=decision.model,
@@ -189,13 +234,14 @@ class RouterLLMAdapter(LLMAdapter):
                 event = self._record_route_event(
                     decision=decision,
                     call_context=call_context,
-                    user_text=user_text,
+                    user_text=candidate_user_text,
                     has_images=bool(image_inputs),
                     status="ok",
                     duration_ms=duration_ms,
                     detail=str(availability.get("detail", "ready")),
                     fallback_index=index,
                     placement_shadow=placement_shadow,
+                    prompt_metrics=prompt_metrics,
                 )
                 metadata = dict(reply.metadata or {})
                 metadata["route"] = event
@@ -217,13 +263,14 @@ class RouterLLMAdapter(LLMAdapter):
                 self._record_route_event(
                     decision=decision,
                     call_context=call_context,
-                    user_text=user_text,
+                    user_text=candidate_user_text,
                     has_images=bool(image_inputs),
                     status="error",
                     duration_ms=duration_ms,
                     detail=str(exc),
                     fallback_index=index,
                     placement_shadow=placement_shadow,
+                    prompt_metrics=prompt_metrics,
                 )
             finally:
                 reservation_id = None
@@ -360,6 +407,13 @@ class RouterLLMAdapter(LLMAdapter):
             light_model = (settings.local_llm_light_model or "").strip()
             if light_model:
                 return RouteDecision(provider="local", model=light_model, reason="tool-finalizer-light-model", route_family=route_family)
+        if route_family == "presence_wake":
+            return RouteDecision(
+                provider=self._default_provider(),
+                model=self._default_model(),
+                reason="presence-wake-primary-quality",
+                route_family=route_family,
+            )
 
         light_model = (settings.local_llm_light_model or "").strip()
         fast_requested = bool(call_context and (call_context.fast_mode or call_context.brief_mode or call_context.micro_mode))
@@ -425,6 +479,8 @@ class RouterLLMAdapter(LLMAdapter):
             return "voice_fast"
         if purpose == "tool_finalizer":
             return "tool_finalize"
+        if purpose == "presence_wake":
+            return "presence_wake"
         reasoning_depth = (call_context.reasoning_depth if call_context else "normal").strip().lower()
         persona_sensitive = bool(call_context and call_context.persona_sensitive)
         fast_requested = bool(call_context and (call_context.fast_mode or call_context.brief_mode or call_context.micro_mode))
@@ -473,6 +529,17 @@ class RouterLLMAdapter(LLMAdapter):
                 candidates.append(RouteDecision(provider="local", model=light_model, reason="tool-light-fallback", route_family=route_family))
             if local_primary and (primary.provider, primary.model) != ("local", local_primary):
                 candidates.append(RouteDecision(provider="local", model=local_primary, reason="tool-primary-fallback", route_family=route_family))
+        elif route_family == "presence_wake":
+            if local_primary and (primary.provider, primary.model) != ("local", local_primary):
+                candidates.append(RouteDecision(provider="local", model=local_primary, reason="presence-wake-primary-fallback", route_family=route_family))
+            if light_model and (primary.provider, primary.model) != ("local", light_model):
+                candidates.append(RouteDecision(provider="local", model=light_model, reason="presence-wake-persona-fallback", route_family=route_family))
+            if self._persona_heavy_hosted_fallback_enabled():
+                hosted_primary = self._hosted_route()
+                if hosted_primary is not None and (hosted_primary.provider, hosted_primary.model) != (primary.provider, primary.model):
+                    hosted_primary.reason = "presence-wake-hosted-fallback"
+                    hosted_primary.route_family = route_family
+                    candidates.append(hosted_primary)
         elif route_family in {"chat_light", "chat_persona", "chat_default", "reasoning_heavy", "reasoning_heavy_persona"}:
             if route_family in {"chat_light", "chat_persona"} and light_model and (primary.provider, primary.model) != ("local", light_model):
                 candidates.append(RouteDecision(provider="local", model=light_model, reason="local-light-fallback", route_family=route_family))
@@ -490,13 +557,13 @@ class RouterLLMAdapter(LLMAdapter):
         hosted = self._hosted_route()
         if (
             hosted is not None
-            and route_family not in {"chat_persona", "reasoning_heavy_persona", "voice_fast", "metadata"}
+            and route_family not in {"chat_persona", "reasoning_heavy_persona", "presence_wake", "voice_fast", "metadata"}
             and (hosted.provider, hosted.model) != (primary.provider, primary.model)
         ):
             hosted.reason = "hosted-escalation-fallback"
             hosted.route_family = route_family
             candidates.append(hosted)
-        if not has_images and self._default_provider() != "mock":
+        if not has_images and self._default_provider() != "mock" and route_family != "presence_wake":
             candidates.append(RouteDecision(provider="mock", model=None, reason="mock-last-resort", route_family=route_family))
         return candidates
 
@@ -674,6 +741,7 @@ class RouterLLMAdapter(LLMAdapter):
         detail: str,
         fallback_index: int,
         placement_shadow: dict[str, object] | None = None,
+        prompt_metrics: dict[str, object] | None = None,
     ) -> dict[str, object]:
         """Record route event for logging and metrics.
         
@@ -712,8 +780,12 @@ class RouterLLMAdapter(LLMAdapter):
             "persona_sensitive": bool(call_context.persona_sensitive),
             "interaction_mode": call_context.interaction_mode,
             "cost_sensitive": bool(call_context.cost_sensitive),
+            "quality_tier": call_context.quality_tier,
+            "minimum_context_tokens": call_context.minimum_context_tokens,
             "fallback_index": fallback_index,
         }
+        if prompt_metrics:
+            event.update(prompt_metrics)
         if placement_shadow is not None:
             event["placement_shadow"] = placement_shadow
             event["placement_shadow_comparison"] = self._placement_shadow_comparison(

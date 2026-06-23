@@ -22,3 +22,33 @@ enabled = true
 summary_model = "gemma4:e4b"
 tagging_model = "gemma4:e4b"
 retrieval_model = ""
+
+[[model_capabilities]]
+provider = "local"
+model = "gpt-oss:20b"
+advertised_context_tokens = 131072
+usable_input_tokens = 16384
+reserved_output_tokens = 2048
+safety_margin_tokens = 2048
+persona_capable = true
+provenance = "configured"
+
+[[model_capabilities]]
+provider = "local"
+model = "gemma4:e4b"
+advertised_context_tokens = 131072
+usable_input_tokens = 12288
+reserved_output_tokens = 1536
+safety_margin_tokens = 2048
+persona_capable = true
+provenance = "configured"
+
+[[model_capabilities]]
+provider = "local"
+model = "qwen3.5:4b"
+advertised_context_tokens = 262144
+usable_input_tokens = 16384
+reserved_output_tokens = 1536
+safety_margin_tokens = 2048
+persona_capable = false
+provenance = "configured"

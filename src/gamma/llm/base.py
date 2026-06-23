@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
+
+
+PromptBuilder = Callable[[int], tuple[str, str, dict[str, object]]]
 
 
 @dataclass(slots=True)
@@ -33,6 +37,9 @@ class LLMCallContext:
     persona_sensitive: bool = False
     interaction_mode: str = "chat"
     cost_sensitive: bool = False
+    quality_tier: str = "standard"
+    minimum_context_tokens: int = 0
+    prompt_builder: PromptBuilder | None = None
 
 
 @dataclass(slots=True)

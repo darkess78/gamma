@@ -25,6 +25,7 @@ specs own detailed contracts; target documents own future work.
 - Privacy guard and layered speech-safety filtering before public or synthesized output.
 - Mock, OpenAI, and Ollama-compatible LLM adapters.
 - Deterministic LLM routing, fallback/backoff state, and route traces.
+- Explicit primary-quality `presence_wake` routing with candidate capability checks and prompt rebuilding.
 - Image analysis and image-aware conversation.
 - Faster-Whisper, OpenAI, and stub STT paths.
 - Piper, OpenAI, and Qwen TTS paths with named voice profiles and optional RVC post-processing.

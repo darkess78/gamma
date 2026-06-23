@@ -11,6 +11,7 @@ from ..errors import ConversationError, GammaError
 from ..identity.profile import SpeakerProfile
 from ..identity.resolver import IdentityResolver
 from ..llm.base import LLMCallContext
+from ..llm.capabilities import estimate_text_tokens
 from ..llm.factory import build_llm_adapter
 from ..llm.router_adapter import begin_route_trace, take_route_trace
 from ..memory.service import MemoryService
@@ -146,23 +147,39 @@ class ConversationService:
         try:
             begin_route_trace()
             started_at = time.perf_counter()
-            system_prompt = build_system_prompt(
+            persona_prompt = build_system_prompt(
                 memory_service=self._memory,
                 user_text=None,
                 session_id=session_id,
                 speaker=speaker,
             )
-            system_prompt += (
-                "\n\n# Presence Wake Event\n"
-                + wake_context.strip()[:32_000]
-                + "\n\nBegin this session naturally as Shana using the supplied context. "
+            wake_instruction = (
+                "\n\nBegin this session naturally as Shana using the supplied context. "
                 "Do not list or explain the context. Choose one brief greeting, observation, "
                 "remembered thread, or question. Avoid repeating recent openings. "
                 "Do not invent an external event. Keep the opening to one or two short sentences."
             )
+            event_user_text = "Begin the presence_wake event now."
+
+            def build_wake_prompt(usable_input_tokens: int) -> tuple[str, str, dict[str, object]]:
+                prefix = persona_prompt + "\n\n# Presence Wake Event\n"
+                mandatory_tokens = estimate_text_tokens(prefix, wake_instruction, event_user_text)
+                optional_tokens = max(0, usable_input_tokens - mandatory_tokens - 128)
+                bounded_context = wake_context.strip()[: optional_tokens * 4]
+                compacted = len(bounded_context) < len(wake_context.strip())
+                return (
+                    prefix + bounded_context + wake_instruction,
+                    event_user_text,
+                    {
+                        "compaction_level": 1 if compacted else 0,
+                        "compaction_actions": ["truncate_wake_optional_context"] if compacted else [],
+                    },
+                )
+
+            system_prompt, event_user_text, _prompt_metrics = build_wake_prompt(12_288)
             draft = self._llm_adapter().generate_reply(
                 system_prompt=system_prompt,
-                user_text="Begin the presence_wake event now.",
+                user_text=event_user_text,
                 call_context=LLMCallContext(
                     session_id=session_id,
                     purpose="presence_wake",
@@ -170,6 +187,9 @@ class ConversationService:
                     interaction_mode="presence",
                     reasoning_depth="normal",
                     cost_sensitive=False,
+                    quality_tier="primary",
+                    minimum_context_tokens=8192,
+                    prompt_builder=build_wake_prompt,
                 ),
             )
             expressive = strip_hidden_style_tags(self._cleanup_spoken_text(draft.text), default_emotion="neutral")

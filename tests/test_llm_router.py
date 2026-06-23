@@ -17,6 +17,7 @@ class _FakeAdapter:
     def __init__(self, provider: str) -> None:
         self.provider = provider
         self.calls: list[dict[str, object]] = []
+        self.fail_models: set[str] = set()
 
     @property
     def supports_vision(self) -> bool:
@@ -24,6 +25,8 @@ class _FakeAdapter:
 
     def generate_reply(self, system_prompt: str, user_text: str, image_inputs=None, **kwargs) -> LLMReply:
         self.calls.append({"system_prompt": system_prompt, "user_text": user_text, "image_inputs": image_inputs, "kwargs": kwargs})
+        if str(kwargs.get("model_override") or "") in self.fail_models:
+            raise RuntimeError("forced model failure")
         return LLMReply(text=f"{self.provider}:{user_text}")
 
 
@@ -170,6 +173,60 @@ class RouterLLMAdapterTest(unittest.TestCase):
         self.assertEqual(decision.model, "qwen2.5:7b")
         self.assertEqual(decision.reason, "tool-finalizer-light-model")
         self.assertEqual(decision.route_family, "tool_finalize")
+
+    def test_presence_wake_prefers_primary_even_for_short_event_text(self) -> None:
+        router = RouterLLMAdapter()
+        decision = router._route_request(
+            system_prompt="persona prompt",
+            user_text="Wake.",
+            image_inputs=None,
+            call_context=LLMCallContext(
+                purpose="presence_wake",
+                persona_sensitive=True,
+                quality_tier="primary",
+                minimum_context_tokens=8192,
+            ),
+            model_override=None,
+        )
+
+        self.assertEqual(decision.route_family, "presence_wake")
+        self.assertEqual(decision.model, "gpt-oss:20b")
+        self.assertEqual(decision.reason, "presence-wake-primary-quality")
+
+    def test_presence_wake_rebuilds_prompt_for_compatible_fallback(self) -> None:
+        settings.local_llm_light_model = "gemma4:e4b"
+        settings.llm_router_failure_backoff_seconds = 0
+        router = _TestRouter()
+        router.fake_adapters["local"].fail_models.add("gpt-oss:20b")
+        requested_budgets: list[int] = []
+
+        def prompt_builder(budget: int):
+            requested_budgets.append(budget)
+            return ("p" * (budget * 3), "Wake.", {"compaction_level": len(requested_budgets) - 1})
+
+        begin_route_trace()
+        reply = router.generate_reply(
+            system_prompt="initial",
+            user_text="Wake.",
+            call_context=LLMCallContext(
+                purpose="presence_wake",
+                persona_sensitive=True,
+                quality_tier="primary",
+                minimum_context_tokens=8192,
+                prompt_builder=prompt_builder,
+            ),
+        )
+        events = take_route_trace()
+
+        self.assertEqual(reply.text, "local:Wake.")
+        self.assertEqual(requested_budgets[:2], [16384, 12288])
+        self.assertGreater(
+            len(router.fake_adapters["local"].calls[0]["system_prompt"]),
+            len(router.fake_adapters["local"].calls[1]["system_prompt"]),
+        )
+        self.assertEqual(events[-1]["route_family"], "presence_wake")
+        self.assertEqual(events[-1]["model"], "gemma4:e4b")
+        self.assertEqual(events[-1]["usable_input_tokens"], 12288)
 
     def test_voice_helper_prefers_tagging_model(self) -> None:
         router = RouterLLMAdapter()

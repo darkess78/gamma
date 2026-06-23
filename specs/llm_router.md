@@ -28,9 +28,16 @@ Routing considers:
 - provider failure backoff
 - optional hosted escalation
 - optional resource-routing endpoint advice
+- configured model context/persona capability metadata
+
+`presence_wake` is a dedicated persona-sensitive, primary-quality route. Its
+short event instruction never selects the light path by itself. Each fallback
+receives a prompt rebuilt for that candidate's usable context budget, and
+models below the required context/persona capability are skipped.
 
 Every routed call records provider, model, purpose, fallback attempts, timing,
-failure/backoff state, and optional placement metadata.
+prompt estimate, context limit/reserves, compaction, failure/backoff state, and
+optional placement metadata.
 
 ## Product Rules
 

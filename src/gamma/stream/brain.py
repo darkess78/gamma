@@ -593,6 +593,20 @@ class StreamBrain:
         if event.kind == "conversation_lull":
             idle_policy_decision = str(event.metadata.get("idle_policy_decision") or "defer")
             would_reply = idle_policy_decision in {"reply", "topic_shift", "check_in"}
+            if event.metadata.get("scheduler_authorized") and would_reply:
+                return TurnDecision(
+                    decision="reply",
+                    reason="bounded_proactive_scheduler_authorized",
+                    should_call_conversation=True,
+                    response_mode="proactive_public" if event.metadata.get("public_output") else "proactive_local",
+                    metadata={
+                        "event_kind": event.kind,
+                        "dry_run": False,
+                        "idle_policy_decision": idle_policy_decision,
+                        "idle_policy_reason": event.metadata.get("idle_policy_reason"),
+                        "tools_allowed": False,
+                    },
+                )
             return TurnDecision(
                 decision="defer" if would_reply else "ignore",
                 reason="proactive_idle_dry_run_would_reply" if would_reply else "proactive_idle_policy_suppressed",
@@ -1126,7 +1140,7 @@ def _late_safety_override_events(
 
 
 def _is_public_stream_event(event: StreamInputEvent) -> bool:
-    return event.actor.source == "twitch" or event.kind in {
+    return bool(event.metadata.get("public_output")) or event.actor.source == "twitch" or event.kind in {
         "chat_message",
         "follow",
         "raid",

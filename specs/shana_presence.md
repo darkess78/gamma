@@ -38,6 +38,7 @@ It is not provider configuration and is not tracked source. The state includes:
 - current activity summary
 - explicit audience selection and lifecycle timestamps
 - bounded recent Wake openings and the latest spoken/text-only/suppressed result
+- bounded scheduler status, suppression reason, cooldown, and next check time
 
 Wake defaults to an unknown audience. Dashboard authentication is not proof
 that the owner is physically present. Owner or known-person context is only
@@ -58,3 +59,9 @@ Presence dashboard APIs remain under `/api/presence*`, but proxy to the
 Shana-owned `/v1/presence*` lifecycle APIs. Shana owns Wake context, inference,
 safety, TTS eligibility, and performer dispatch. This preserves the locked
 two-app network boundary.
+
+The Shana process also owns the proactive scheduler. It is disabled by default
+and evaluates deterministic Presence, privacy, listener, active-turn, cooldown,
+attempt, quiet-hours, resource, interruption, and operator-mute gates before
+any model call. Sleep and Break emit nothing; Wake is local/generic-safe and Go
+Live is public-safe with tools disabled.

@@ -272,6 +272,29 @@ class StreamBrainTest(unittest.TestCase):
         self.assertIsNone(result.assistant_response)
         self.assertEqual(result.output_events, [])
 
+    def test_authorized_scheduler_lull_calls_conversation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=_FakeConversation(),  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            decision = brain.decide(
+                StreamInputEvent(
+                    kind="conversation_lull",
+                    text="Offer one brief privacy-safe check-in.",
+                    metadata={
+                        "scheduler_authorized": True,
+                        "idle_policy_decision": "check_in",
+                        "presence_mode": "wake",
+                        "output_target_policy": "dashboard_monitor",
+                    },
+                )
+            )
+
+        self.assertEqual(decision.decision, "reply")
+        self.assertTrue(decision.should_call_conversation)
+        self.assertEqual(decision.response_mode, "proactive_local")
+
     def test_conversation_lull_proposes_self_goal_for_dashboard_approval(self) -> None:
         conversation = _FakeConversation()
         with tempfile.TemporaryDirectory() as temp_dir:

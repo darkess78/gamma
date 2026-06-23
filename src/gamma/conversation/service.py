@@ -121,6 +121,7 @@ class ConversationService:
                     "tool_results": [item.model_dump() for item in response.tool_results],
                 },
             )
+            self._record_presence_interaction(session_id)
         return response
 
     def continuity_snapshot(self, session_id: str) -> dict:
@@ -148,6 +149,21 @@ class ConversationService:
 
     def durable_output_state(self, target_policy: str) -> dict | None:
         return self._continuity.last_output(target_policy)
+
+    @staticmethod
+    def _record_presence_interaction(session_id: str) -> None:
+        try:
+            from ..presence import load_presence_state, save_presence_state, utc_now
+
+            state = load_presence_state(downgrade_stale_live=True)
+            state.setdefault("lifecycle", {})["last_interaction_at"] = utc_now()
+            state.setdefault("activity", {})["session_id"] = session_id
+            scheduler = dict((state.setdefault("autonomy", {})).get("scheduler") or {})
+            scheduler["attempts_for_topic"] = 0
+            state["autonomy"]["scheduler"] = scheduler
+            save_presence_state(state)
+        except Exception:
+            pass
 
     def respond_with_image(
         self,

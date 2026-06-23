@@ -1,15 +1,26 @@
 from __future__ import annotations
 
 import secrets
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from .config import settings
-from .api.routes import router
+from .api.routes import get_proactive_scheduler, router
 from .observability import configure_logging, install_request_logging
 
-app = FastAPI(title=settings.app_name)
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    scheduler = get_proactive_scheduler()
+    await scheduler.start()
+    try:
+        yield
+    finally:
+        await scheduler.stop()
+
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.include_router(router)
 
 

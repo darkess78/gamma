@@ -57,8 +57,6 @@ def get_live_voice_session() -> LiveVoiceSession:
             job_fetcher=dashboard_service.get_remote_live_job,
             job_canceler=dashboard_service.cancel_remote_live_job,
             partial_transcriber=dashboard_service.transcribe_remote_live_audio,
-            idle_settings_provider=dashboard_service.live_idle_settings,
-            idle_event_recorder=dashboard_service.record_remote_stream_event,
         )
 
     return live_voice_session.get(_build_live_voice_session)

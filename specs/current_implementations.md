@@ -40,7 +40,7 @@ specs own detailed contracts; target documents own future work.
 - Browser-side VAD, partial transcript snapshots, chunked playback, and transcript-confirmed barge-in.
 - Subprocess-isolated live turns with queued/running/speaking/completed/cancelled/failed states.
 - Hard cancellation, cancel latency, persisted job history, and reply interruptibility metadata.
-- Proactive-idle policy exists but is configurable and disabled by default.
+- Shana-owned bounded proactive scheduler exists, is configurable and disabled by default, and does not depend on browser WebSockets.
 - Browser capture still uses deprecated `ScriptProcessorNode`; AudioWorklet migration remains future work.
 
 ## Audio Understanding

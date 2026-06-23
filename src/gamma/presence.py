@@ -68,6 +68,14 @@ def default_presence_state() -> dict[str, Any]:
             "proactive_idle_enabled": False,
             "ambient_chat_enabled": False,
             "self_goal_proposals_enabled": False,
+            "scheduler": {
+                "status": "idle",
+                "reason": "not_checked",
+                "last_checked_at": None,
+                "next_check_at": None,
+                "last_emitted_at": None,
+                "attempts_for_topic": 0,
+            },
         },
         "inputs": {
             "local_mic": False,
@@ -227,9 +235,16 @@ def apply_presence_to_stream_event(
     metadata["presence_mode"] = mode
     metadata["presence"] = public_presence_payload(presence)
 
-    if event.kind == "conversation_lull" and mode != "go_live":
-        metadata["presence_suppressed"] = True
-        return event.model_copy(update={"metadata": metadata}), False
+    if event.kind == "conversation_lull":
+        authorized = bool(metadata.get("scheduler_authorized"))
+        if mode == "wake" and authorized:
+            metadata["output_target_policy"] = "dashboard_monitor"
+            return event.model_copy(update={"metadata": metadata}), bool(synthesize_speech and presence["outputs"].get("voice"))
+        if mode == "go_live" and authorized:
+            metadata["output_target_policy"] = "stream_public"
+        elif mode != "go_live":
+            metadata["presence_suppressed"] = True
+            return event.model_copy(update={"metadata": metadata}), False
 
     if not is_public_stream_event(event):
         if mode in {"wake", "go_live", "break"} and not metadata.get("output_target_policy"):
@@ -472,7 +487,10 @@ class PresenceService:
             "last_event_kind": "presence_wake",
             "last_output_target": DASHBOARD_MONITOR_TARGET if status in {"spoken", "text_only"} else None,
             "current_turn_id": details.get("turn_id"),
+            "session_id": details.get("session_id"),
         }
+        if status in {"spoken", "text_only"}:
+            state.setdefault("lifecycle", {})["last_interaction_at"] = now
         saved = save_presence_state(state)
         return {"ok": status != "failed", "state": saved, "wake": {"status": status, **details}}
 

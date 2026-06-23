@@ -530,6 +530,18 @@ class Settings:
         ),
         default=False,
     )
+    proactive_quiet_hours_start: str = str(
+        _setting(
+            "SHANA_PROACTIVE_QUIET_HOURS_START",
+            _config_value(APP_CONFIG, "proactive_quiet_hours_start", default=""),
+        )
+    ).strip()
+    proactive_quiet_hours_end: str = str(
+        _setting(
+            "SHANA_PROACTIVE_QUIET_HOURS_END",
+            _config_value(APP_CONFIG, "proactive_quiet_hours_end", default=""),
+        )
+    ).strip()
     twitch_channel: str = str(
         _setting("SHANA_TWITCH_CHANNEL", _config_value(APP_CONFIG, "twitch_channel", default=""))
     ).strip()

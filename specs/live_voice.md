@@ -18,7 +18,7 @@ Shana owns transcription, generation, synthesis, job state, and cancellation.
 
 - WebSocket endpoint: `/api/voice/live`
 - Shana job endpoints: `/v1/voice/live/*` and `/v1/voice/transcribe`
-- messages cover ready, ping/pong, start/end/cancel/interrupt, partial transcripts, reply chunks, job results, idle decisions, and errors
+- messages cover ready, ping/pong, start/end/cancel/interrupt, partial transcripts, reply chunks, job results, and errors
 - jobs use queued, running, speaking, completed, cancelled, and failed states
 - finalized turns run in cancellable subprocess workers
 - chunk metadata includes ordering, finality, interruptibility, and protection time
@@ -37,6 +37,9 @@ Shana owns transcription, generation, synthesis, job state, and cancellation.
 - browser capture uses `ScriptProcessorNode`; AudioWorklet is future work
 - the protocol is phrase/chunk based, not continuous token-level speech streaming
 - client history is bounded operational state, not the durable memory system
+
+Proactive-idle evaluation is owned by Shana's process scheduler and no longer
+depends on an open live-voice WebSocket.
 
 ## Acceptance
 

@@ -145,7 +145,9 @@ class LiveVoiceSession:
                 if decision.would_reply:
                     proactive_attempts_for_topic += 1
 
-        idle_task = asyncio.create_task(idle_loop())
+        # Proactive evaluation is owned by the Shana process scheduler. The
+        # browser live-voice socket no longer starts an autonomy loop.
+        idle_task = None
 
         async def cancel_partial_loop() -> None:
             nonlocal partial_task

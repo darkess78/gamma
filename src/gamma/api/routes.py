@@ -25,6 +25,7 @@ from ..integrations.discord import DiscordRuntime
 from ..performer.bus import PerformerEventBus, get_performer_event_bus
 from ..performer.models import DEFAULT_TARGET_POLICY, KNOWN_TARGET_POLICIES
 from ..presence import PresenceService, apply_presence_to_stream_event, load_presence_state, save_presence_state
+from ..proactive import ProactiveScheduler
 from ..performer.vtube_studio import VTubeStudioAdapter, VTubeStudioRunner
 from ..observability import current_request_id
 from ..stream.replay import StreamEvalReport, StreamReplayService
@@ -42,6 +43,7 @@ DASHBOARD_STATIC_DIR = DASHBOARD_DIR / "static"
 SHANA_DEFAULT_IMAGE = settings.project_root / "images" / "shana" / "jacket shana mouth closed eyes open.png"
 conversation_service = LazySingleton[ConversationService]()
 presence_service = LazySingleton[PresenceService]()
+proactive_scheduler = LazySingleton[ProactiveScheduler]()
 system_status_service = LazySingleton[SystemStatusService]()
 memory_service = LazySingleton[MemoryService]()
 viewer_trust_store = LazySingleton[ViewerTrustStore]()
@@ -70,6 +72,10 @@ def get_conversation_service() -> ConversationService:
 
 def get_presence_service() -> PresenceService:
     return presence_service.get(lambda: PresenceService(conversation=get_conversation_service(), bus=get_performer_bus()))
+
+
+def get_proactive_scheduler() -> ProactiveScheduler:
+    return proactive_scheduler.get(lambda: ProactiveScheduler(stream_brain=get_stream_brain(), bus=get_performer_bus()))
 
 
 def get_system_status_service() -> SystemStatusService:

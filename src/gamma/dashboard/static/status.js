@@ -630,7 +630,10 @@
 
   function statusPollEndpoint() {
     var page = String(window.GAMMA_DASHBOARD_PAGE || 'dashboard');
-    if (page === 'status' || page === 'settings' || page === 'memory') {
+    if (page === 'status') {
+      return '/api/status/diagnostics';
+    }
+    if (page === 'settings' || page === 'memory') {
       return '/api/status';
     }
     return '/api/status/header';

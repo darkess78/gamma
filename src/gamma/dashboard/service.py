@@ -293,6 +293,70 @@ class DashboardService:
             "performer": self.performer_output_status(),
         }
 
+    def build_diagnostics_status(self) -> dict[str, Any]:
+        """Return Status-page data without duplicating unbounded domain history."""
+        payload = self.build_status()
+
+        system_status = dict(payload.get("shana", {}).get("system_status") or {})
+        payload["shana"]["system_status"] = {
+            "ok": bool(system_status.get("ok")),
+            "detail": system_status.get("detail") or ("ok" if system_status.get("ok") else "unavailable"),
+        }
+        logs = payload["shana"].get("logs") or {}
+        for key in ("stdout_tail", "stderr_tail"):
+            value = str(logs.get(key) or "")
+            logs[key] = value[-2000:]
+
+        payload["memory_db"] = {"stats": {}, "known_people": [], "recent_items": []}
+        payload["assistant"] = {}
+        payload["timings"] = {"summary": (payload.get("timings") or {}).get("summary", {})}
+
+        tts = payload.get("providers", {}).get("tts", {})
+        tts["available_profiles"] = [
+            {
+                "id": profile.get("id"),
+                "label": profile.get("label"),
+                "provider": profile.get("provider"),
+            }
+            for profile in tts.get("available_profiles", [])
+            if isinstance(profile, dict)
+        ]
+
+        routing = payload.get("llm_routing") or {}
+        shadow = dict(routing.get("placement_shadow") or {})
+        shadow["entries"] = list(shadow.get("entries") or [])[-4:]
+        payload["llm_routing"] = {"placement_shadow": shadow}
+        for key in ("startup_admission", "sidecar_allocations"):
+            section = dict(payload.get(key) or {})
+            section["entries"] = list(section.get("entries") or [])[-4:]
+            payload[key] = section
+
+        twitch = payload.get("twitch") or {}
+        worker = twitch.get("worker") or {}
+        eventsub = twitch.get("eventsub") or {}
+        stream_ready = twitch.get("stream_ready") or {}
+        payload["twitch"] = {
+            "worker": {
+                "process": worker.get("process", {}),
+                "configured": worker.get("configured"),
+                "missing_config": worker.get("missing_config", []),
+            },
+            "eventsub": {
+                "process": eventsub.get("process", {}),
+                "configured": eventsub.get("configured"),
+                "enabled": eventsub.get("enabled"),
+                "missing_config": eventsub.get("missing_config", []),
+            },
+            "stream_ready": {
+                "ok": stream_ready.get("ok"),
+                "mode": stream_ready.get("mode"),
+                "detail": stream_ready.get("detail"),
+                "blocker_count": stream_ready.get("blocker_count", 0),
+                "warning_count": stream_ready.get("warning_count", 0),
+            },
+        }
+        return payload
+
     def _tts_test_control_state(self, provider: str, profile_id: str | None) -> dict[str, Any]:
         normalized = (provider or "").strip().lower()
         profile = get_voice_profile(profile_id)

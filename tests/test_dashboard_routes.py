@@ -112,6 +112,11 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(response, {"header": "ok"})
         header_status.assert_called_once_with()
 
+        with patch.object(self.mock_service, "build_diagnostics_status", return_value={"diagnostics": "ok"}) as diagnostics:
+            response = main.status_diagnostics()
+        self.assertEqual(response, {"diagnostics": "ok"})
+        diagnostics.assert_called_once_with()
+
         with patch.object(self.mock_service, "presence_status", return_value={"presence": "ok"}) as presence_status:
             response = main.presence_status()
         self.assertEqual(response, {"presence": "ok"})
@@ -191,7 +196,7 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('src="/static/live.js?v=20260611e"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/memory.js?v=20260611e"', dashboard.body.decode("utf-8"))
         self.assertIn('href="/static/dashboard.css?v=20260623a"', dashboard.body.decode("utf-8"))
-        self.assertIn('src="/static/status.js?v=20260623a"', dashboard.body.decode("utf-8"))
+        self.assertIn('src="/static/status.js?v=20260623b"', dashboard.body.decode("utf-8"))
         self.assertEqual(talk.status_code, 200)
         self.assertIn('window.GAMMA_DASHBOARD_PAGE = "talk"', talk.body.decode("utf-8"))
         self.assertIn('src="/static/talk.mjs?v=20260622"', talk.body.decode("utf-8"))
@@ -373,6 +378,7 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn("renderStatus(await response.json());", status_script)
         self.assertIn("fetch('/api/status/header?_='", status_script)
         self.assertIn("renderNavbarStatus(await response.json());", status_script)
+        self.assertIn("return '/api/status/diagnostics';", status_script)
         self.assertIn("'Shana: API down'", status_script)
         self.assertIn("'Twitch: stopped'", status_script)
         self.assertIn("window.loadStatus = loadStatus;", status_script)
@@ -1126,6 +1132,43 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn("configured", payload["twitch"]["worker"])
         self.assertIn("configured", payload["twitch"]["eventsub"])
         self.assertIn("enabled", payload["twitch"]["eventsub"])
+
+    def test_diagnostics_status_removes_large_duplicate_and_history_payloads(self) -> None:
+        service = DashboardService()
+        full_status = {
+            "dashboard": {"url": "http://dashboard"},
+            "providers": {
+                "tts": {
+                    "available_profiles": [
+                        {"id": "voice", "label": "Voice", "provider": "qwen-tts", "values": {"blob": "x" * 20_000}}
+                    ],
+                    "editor_profile": {"id": "voice", "values": {"speed": 1}},
+                }
+            },
+            "shana": {
+                "system_status": {"ok": True, "payload": {"blob": "x" * 100_000}},
+                "logs": {"stdout_tail": "o" * 10_000, "stderr_tail": "e" * 10_000},
+            },
+            "memory_db": {"recent_items": [{"text": "m" * 20_000}]},
+            "assistant": {"settings": {"blob": "x" * 20_000}},
+            "timings": {"entries": [{"blob": "x" * 20_000}], "summary": {"count": 1}},
+            "llm_routing": {"placement_shadow": {"entries": [{"id": index} for index in range(10)]}},
+            "startup_admission": {"entries": [{"id": index} for index in range(10)], "summary": {}},
+            "sidecar_allocations": {"entries": [{"id": index} for index in range(10)], "summary": {}},
+            "twitch": {
+                "worker": {"process": {"running": False}, "configured": True, "state": {"blob": "x" * 20_000}},
+                "eventsub": {"process": {"running": False}, "configured": True, "enabled": True},
+                "stream_ready": {"ok": False, "mode": "stopped", "checks": [{"blob": "x" * 20_000}]},
+            },
+        }
+        with patch.object(service, "build_status", return_value=full_status):
+            payload = service.build_diagnostics_status()
+
+        self.assertNotIn("payload", payload["shana"]["system_status"])
+        self.assertNotIn("values", payload["providers"]["tts"]["available_profiles"][0])
+        self.assertEqual(len(payload["llm_routing"]["placement_shadow"]["entries"]), 4)
+        self.assertEqual(payload["timings"], {"summary": {"count": 1}})
+        self.assertLess(len(json.dumps(payload)), 20_000)
 
     def test_qwen_presets_are_discovered_and_returned_by_dashboard_status(self) -> None:
         service = DashboardService()

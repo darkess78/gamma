@@ -481,6 +481,12 @@ def status_header() -> dict:
     return get_dashboard_service().build_header_status()
 
 
+@app.get("/api/status/diagnostics")
+def status_diagnostics() -> dict:
+    """Return the bounded payload used by the Status dashboard page."""
+    return get_dashboard_service().build_diagnostics_status()
+
+
 @app.post("/api/conversation/respond", response_model=AssistantResponse)
 def conversation_respond(request: ConversationRequest) -> AssistantResponse:
     """Proxy a typed conversation turn to the separately running Shana API."""

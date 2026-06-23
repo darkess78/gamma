@@ -500,6 +500,8 @@ async def presence_mode(request: Request) -> dict:
         return get_dashboard_service().set_presence_mode(
             mode,
             confirm_public_output=bool(payload.get("confirm_public_output", False)),
+            audience=payload.get("audience") if isinstance(payload.get("audience"), dict) else {"kind": "unknown"},
+            session_id=str(payload.get("session_id") or "") or None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

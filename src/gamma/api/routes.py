@@ -15,6 +15,7 @@ from ..integrations.twitch.trust import VALID_TRUST_LEVELS, ViewerTrustStore
 from ..memory.service import MemoryService
 from ..schemas.conversation import ConversationRequest
 from ..schemas.memory import KnownPersonPayload, MemoryClearRequest, MemoryItemCreate, MemoryItemUpdate, ViewerTrustPayload
+from ..schemas.presence import PresenceModeRequest, PresenceWakeRequest
 from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..schemas.voice import LiveVoiceJobResponse, VoiceRoundtripResponse, VoiceTranscriptionResponse
 from ..stream.brain import StreamBrain
@@ -23,7 +24,7 @@ from ..stream.output import StreamOutputLogService
 from ..integrations.discord import DiscordRuntime
 from ..performer.bus import PerformerEventBus, get_performer_event_bus
 from ..performer.models import DEFAULT_TARGET_POLICY, KNOWN_TARGET_POLICIES
-from ..presence import apply_presence_to_stream_event, load_presence_state, save_presence_state
+from ..presence import PresenceService, apply_presence_to_stream_event, load_presence_state, save_presence_state
 from ..performer.vtube_studio import VTubeStudioAdapter, VTubeStudioRunner
 from ..observability import current_request_id
 from ..stream.replay import StreamEvalReport, StreamReplayService
@@ -40,6 +41,7 @@ DASHBOARD_DIR = Path(__file__).resolve().parents[1] / "dashboard"
 DASHBOARD_STATIC_DIR = DASHBOARD_DIR / "static"
 SHANA_DEFAULT_IMAGE = settings.project_root / "images" / "shana" / "jacket shana mouth closed eyes open.png"
 conversation_service = LazySingleton[ConversationService]()
+presence_service = LazySingleton[PresenceService]()
 system_status_service = LazySingleton[SystemStatusService]()
 memory_service = LazySingleton[MemoryService]()
 viewer_trust_store = LazySingleton[ViewerTrustStore]()
@@ -64,6 +66,10 @@ def get_conversation_service() -> ConversationService:
         ConversationService: Lazy singleton instance.
     """
     return conversation_service.get(ConversationService)
+
+
+def get_presence_service() -> PresenceService:
+    return presence_service.get(lambda: PresenceService(conversation=get_conversation_service(), bus=get_performer_bus()))
 
 
 def get_system_status_service() -> SystemStatusService:
@@ -309,6 +315,10 @@ def memory_stats() -> dict[str, str | int]:
         return get_conversation_service().memory_stats()
     except ConfigurationError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except ExternalServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except GammaError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/v1/memory")
@@ -421,6 +431,33 @@ def conversation_respond(request: ConversationRequest) -> AssistantResponse:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except GammaError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/v1/presence")
+def shana_presence_status() -> dict:
+    return get_presence_service().status()
+
+
+@router.post("/v1/presence/mode")
+def shana_presence_mode(request: PresenceModeRequest) -> dict:
+    try:
+        return get_presence_service().transition(
+            request.mode,
+            audience=request.audience,
+            confirm_public_output=request.confirm_public_output,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/v1/presence/wake")
+def shana_presence_wake(request: PresenceWakeRequest) -> dict:
+    try:
+        return get_presence_service().wake(audience=request.audience, session_id=request.session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except GammaError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/v1/stream/events", response_model=StreamTurnResult)
@@ -634,13 +671,32 @@ async def performer_events(
             "stats": bus.stats(),
         }
     )
+    queue_task = asyncio.create_task(queue.get())
+    receive_task = asyncio.create_task(websocket.receive_json())
     try:
         while True:
-            payload = await queue.get()
-            await websocket.send_json(payload)
+            done, _pending = await asyncio.wait(
+                {queue_task, receive_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if queue_task in done:
+                await websocket.send_json(queue_task.result())
+                queue_task = asyncio.create_task(queue.get())
+            if receive_task in done:
+                message = receive_task.result()
+                if isinstance(message, dict) and message.get("type") == "subscriber_capabilities":
+                    capabilities = bus.update_subscriber_capabilities(
+                        subscriber_id,
+                        text_ready=message.get("text_ready"),
+                        audio_ready=message.get("audio_ready"),
+                    )
+                    await websocket.send_json({"type": "subscriber_capabilities", "capabilities": capabilities})
+                receive_task = asyncio.create_task(websocket.receive_json())
     except WebSocketDisconnect:
         pass
     finally:
+        queue_task.cancel()
+        receive_task.cancel()
         bus.unsubscribe(subscriber_id)
 
 

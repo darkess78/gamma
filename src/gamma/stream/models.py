@@ -33,6 +33,7 @@ StreamEventKind = Literal[
     "redeem",
     "game_state",
     "conversation_lull",
+    "presence_wake",
     "system",
 ]
 TurnDecisionKind = Literal["reply", "acknowledge", "ignore", "defer", "tool_action", "moderation_escalation"]

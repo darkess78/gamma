@@ -10,6 +10,7 @@ import gamma.voice.live_jobs as live_jobs_module
 import gamma.voice.roundtrip as roundtrip_module
 from gamma.errors import ConfigurationError, ConversationError, ExternalServiceError
 from gamma.schemas.conversation import SpeakerContext
+from gamma.schemas.presence import AudienceSelection, PresenceModeRequest, PresenceWakeRequest
 from gamma.schemas.response import AssistantResponse
 
 with patch.object(status_module, "SystemStatusService", autospec=True), patch.object(
@@ -20,6 +21,23 @@ with patch.object(status_module, "SystemStatusService", autospec=True), patch.ob
 
 
 class ApiRoutesTest(unittest.TestCase):
+    def test_shana_presence_routes_delegate_to_presence_service(self) -> None:
+        presence = Mock()
+        presence.status.return_value = {"ok": True, "state": {"mode": "sleep"}}
+        presence.transition.return_value = {"ok": True, "state": {"mode": "break"}}
+        presence.wake.return_value = {"ok": True, "wake": {"status": "text_only"}}
+        with patch("gamma.api.routes.get_presence_service", return_value=presence):
+            status = routes.shana_presence_status()
+            changed = routes.shana_presence_mode(PresenceModeRequest(mode="break"))
+            wake = routes.shana_presence_wake(
+                PresenceWakeRequest(audience=AudienceSelection(kind="unknown"), session_id="wake-api")
+            )
+
+        self.assertEqual(status["state"]["mode"], "sleep")
+        self.assertEqual(changed["state"]["mode"], "break")
+        self.assertEqual(wake["wake"]["status"], "text_only")
+        presence.wake.assert_called_once()
+
     def test_conversation_respond_serializes_filtered_voice_metadata(self) -> None:
         assistant_response = AssistantResponse(
             spoken_text="Hey there.",

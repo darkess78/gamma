@@ -41,7 +41,17 @@
     }
     if (gate) gate.classList.add('enabled');
     if (text) text.textContent = 'Monitor audio is enabled for future Shana speech.';
+    sendCapabilities();
     playNextAudio();
+  }
+
+  function sendCapabilities() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({
+      type: 'subscriber_capabilities',
+      text_ready: true,
+      audio_ready: audioEnabled && !muted
+    }));
   }
 
   function browserReachableApiBase(rawBase) {
@@ -147,6 +157,7 @@
         document.getElementById('connectionText').textContent = 'Connected';
       }
       console.log('Monitor connected to performer events');
+      sendCapabilities();
     };
 
     ws.onmessage = (event) => {
@@ -430,6 +441,7 @@
       playing = false;
       playNextAudio();
     }
+    sendCapabilities();
   }
 
   function clearOutput() {

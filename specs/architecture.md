@@ -28,6 +28,11 @@ The dashboard must not construct Shana-owned services or open Shana-owned
 state stores directly. Shared Pydantic schemas and configuration types may be
 imported by both processes.
 
+Presence lifecycle requests use dashboard `/api/presence*` proxies and
+Shana-owned `/v1/presence*` services. The dashboard may apply dashboard-owned
+process/output controls after a transition, but does not assemble Wake context
+or invoke memory/conversation services directly.
+
 `/dashboard/monitor` is the persistent interaction/output room and submits
 local text through the supported dashboard-to-Shana stream API boundary.
 `/dashboard/live` remains the microphone and live-voice diagnostic client.

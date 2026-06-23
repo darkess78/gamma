@@ -908,12 +908,22 @@ class DashboardRoutesTest(unittest.TestCase):
         with patch.object(self.mock_service, "set_presence_mode", return_value=wake_result) as method:
             response = anyio.run(main.presence_mode, _JsonRequest({"mode": "wake"}))
         self.assertEqual(response, wake_result)
-        method.assert_called_once_with("wake", confirm_public_output=False)
+        method.assert_called_once_with(
+            "wake",
+            confirm_public_output=False,
+            audience={"kind": "unknown"},
+            session_id=None,
+        )
 
         with patch.object(self.mock_service, "set_presence_mode", return_value=live_result) as method:
             response = anyio.run(main.presence_mode, _JsonRequest({"mode": "go_live", "confirm_public_output": True}))
         self.assertEqual(response, live_result)
-        method.assert_called_once_with("go_live", confirm_public_output=True)
+        method.assert_called_once_with(
+            "go_live",
+            confirm_public_output=True,
+            audience={"kind": "unknown"},
+            session_id=None,
+        )
 
         self.mock_service.set_presence_mode.side_effect = ValueError("confirm_public_output is required for Go Live")
         with self.assertRaises(Exception) as ctx:
@@ -934,29 +944,32 @@ class DashboardRoutesTest(unittest.TestCase):
 
     def test_presence_service_mode_side_effects(self) -> None:
         service = DashboardService()
-        previous = {"mode": "sleep"}
         with (
-            patch("gamma.dashboard.service.load_presence_state", return_value=previous),
-            patch("gamma.dashboard.service.save_presence_state", side_effect=lambda state: state),
+            patch.object(service._shana, "post", return_value={"ok": True, "state": {"mode": "wake"}}) as post,
             patch.object(service, "clear_performer_target", return_value={"ok": True, "cleared": True}) as clear_target,
             patch.object(service, "set_performer_target_mute", return_value={"ok": True, "muted": True}) as mute_target,
         ):
             wake = service.set_presence_mode("wake")
 
         self.assertEqual(wake["state"]["mode"], "wake")
+        self.assertEqual(post.call_args.args[0], "/v1/presence/wake")
         clear_target.assert_called_once_with("stream_public", reason="presence_wake")
         mute_target.assert_any_call("stream_public", muted=True, reason="presence_wake")
         mute_target.assert_any_call("dashboard_monitor", muted=False, reason="presence_wake")
 
         with (
-            patch("gamma.dashboard.service.load_presence_state", return_value=previous),
-            patch("gamma.dashboard.service.save_presence_state", side_effect=lambda state: state),
+            patch.object(
+                service._shana,
+                "post",
+                return_value={"ok": True, "state": {"mode": "go_live", "safety": {"dry_run": False}}},
+            ) as post,
             patch.object(service, "set_performer_target_mute", return_value={"ok": True, "muted": False}) as mute_target,
         ):
             live = service.set_presence_mode("go_live", confirm_public_output=True)
 
         self.assertEqual(live["state"]["mode"], "go_live")
         self.assertFalse(live["state"]["safety"]["dry_run"])
+        self.assertEqual(post.call_args.args[0], "/v1/presence/mode")
         mute_target.assert_any_call("stream_public", muted=False, reason="presence_go_live")
 
         with self.assertRaises(ValueError):

@@ -11,8 +11,9 @@ sidecar processes exist.
 
 - `sleep`: no autonomous or public behavior. Explicit local requests may still
   be handled by normal routes, but stream-facing output is suppressed.
-- `wake`: local/manual/mic interaction is allowed through dashboard monitor
-  paths. Public stream output remains muted.
+- `wake`: begins a local Shana session, emits one bounded opening to
+  `dashboard_monitor`, and allows local/manual/mic interaction. Public stream
+  output remains muted.
 - `go_live`: stream-facing co-host behavior is allowed for the current Shana
   backend session. Public voice, subtitles, ambient chat handling, proactive
   behavior, and safety review are enabled by Presence policy.
@@ -35,6 +36,13 @@ It is not provider configuration and is not tracked source. The state includes:
 - output flags for dashboard monitor, stream public, voice, and subtitles
 - safety flags for dry run and LLM safety review
 - current activity summary
+- explicit audience selection and lifecycle timestamps
+- bounded recent Wake openings and the latest spoken/text-only/suppressed result
+
+Wake defaults to an unknown audience. Dashboard authentication is not proof
+that the owner is physically present. Owner or known-person context is only
+eligible after explicit selection; public and guest audiences receive generic
+privacy-safe context.
 
 ## Restart Rule
 
@@ -46,7 +54,7 @@ effective state to `wake`, keeps `desired_mode` as `go_live`, and sets
 
 ## Dashboard Boundary
 
-Presence dashboard APIs live on the dashboard app under `/api/presence*`.
-Stream and performer enforcement remains on the Shana API side through
-`/v1/stream/events` and `/v1/performer/*`. This preserves the locked two-app
-network boundary.
+Presence dashboard APIs remain under `/api/presence*`, but proxy to the
+Shana-owned `/v1/presence*` lifecycle APIs. Shana owns Wake context, inference,
+safety, TTS eligibility, and performer dispatch. This preserves the locked
+two-app network boundary.

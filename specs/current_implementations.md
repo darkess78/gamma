@@ -54,6 +54,8 @@ specs own detailed contracts; target documents own future work.
 - Persisted runtime state under `data/runtime/presence/`.
 - Stale go-live confirmation is downgraded after a Shana restart.
 - Public output and stream autonomy are gated independently from process lifecycle.
+- Shana-owned dynamic Wake events with explicit unknown/owner/known-person audience selection.
+- Wake targets Monitor, skips TTS without an audio-ready listener, and keeps bounded opening history.
 
 ## Streamer Foundation
 

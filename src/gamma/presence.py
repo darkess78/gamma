@@ -5,9 +5,18 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from .config import settings
-from .stream.models import StreamInputEvent
+from .conversation.service import ConversationService
+from .identity.profile import SpeakerProfile, UNKNOWN_PUBLIC
+from .identity.resolver import IdentityResolver
+from .memory.service import MemoryService
+from .performer.bus import PerformerEventBus, get_performer_event_bus
+from .performer.models import DASHBOARD_MONITOR_TARGET
+from .schemas.presence import AudienceSelection
+from .stream.models import StreamActor, StreamInputEvent, output_events_from_response
+from .stream.output import StreamOutputDispatcher
 
 PRESENCE_MODES = {"sleep", "wake", "go_live", "break"}
 SHANA_BOOTED_AT = datetime.now(timezone.utc)
@@ -41,6 +50,20 @@ def default_presence_state() -> dict[str, Any]:
         "last_confirmed_live_at": None,
         "updated_at": utc_now(),
         "updated_by": "default",
+        "audience": {"kind": "unknown", "known_person_id": None, "display_name": "Unknown"},
+        "lifecycle": {
+            "last_sleep_at": None,
+            "last_wake_at": None,
+            "last_interaction_at": None,
+        },
+        "wake": {
+            "enabled": True,
+            "last_status": None,
+            "last_opening": None,
+            "last_event_at": None,
+            "recent_openings": [],
+            "suppression_reason": None,
+        },
         "autonomy": {
             "proactive_idle_enabled": False,
             "ambient_chat_enabled": False,
@@ -83,6 +106,9 @@ def presence_state_for_mode(
     if previous:
         state["activity"] = dict(previous.get("activity") or state["activity"])
         state["last_confirmed_live_at"] = previous.get("last_confirmed_live_at")
+        state["audience"] = dict(previous.get("audience") or state["audience"])
+        state["lifecycle"] = dict(previous.get("lifecycle") or state["lifecycle"])
+        state["wake"] = dict(previous.get("wake") or state["wake"])
     state["mode"] = normalized
     state["desired_mode"] = normalized
     state["requires_confirmation"] = False
@@ -90,9 +116,13 @@ def presence_state_for_mode(
     state["updated_by"] = updated_by
 
     if normalized == "sleep":
+        state["lifecycle"]["last_sleep_at"] = state["updated_at"]
         return state
     if normalized == "wake":
         state["inputs"]["local_mic"] = True
+        state["outputs"]["voice"] = True
+        state["outputs"]["subtitles"] = True
+        state["lifecycle"]["last_wake_at"] = state["updated_at"]
         return state
     if normalized == "break":
         state["inputs"].update({"local_mic": True, "twitch_irc_observe": True, "twitch_eventsub_observe": True})
@@ -159,7 +189,7 @@ def merge_presence_state(payload: dict[str, Any]) -> dict[str, Any]:
     state["last_confirmed_live_at"] = payload.get("last_confirmed_live_at") or None
     state["updated_at"] = str(payload.get("updated_at") or state["updated_at"])
     state["updated_by"] = str(payload.get("updated_by") or state["updated_by"])
-    for key in ("autonomy", "inputs", "outputs", "safety", "activity"):
+    for key in ("audience", "lifecycle", "wake", "autonomy", "inputs", "outputs", "safety", "activity"):
         if isinstance(payload.get(key), dict):
             state[key].update(payload[key])
     return state
@@ -175,6 +205,7 @@ def downgrade_stale_live_state(state: dict[str, Any], *, booted_at: datetime) ->
     downgraded["desired_mode"] = "go_live"
     downgraded["requires_confirmation"] = True
     downgraded["last_confirmed_live_at"] = state.get("last_confirmed_live_at")
+    downgraded["outputs"]["voice"] = False
     return downgraded
 
 
@@ -250,3 +281,201 @@ def public_presence_payload(state: dict[str, Any]) -> dict[str, Any]:
         "autonomy": dict(state.get("autonomy") or {}),
         "safety": dict(state.get("safety") or {}),
     }
+
+
+class PresenceService:
+    """Own Presence transitions and dedicated Wake event generation inside Shana."""
+
+    def __init__(
+        self,
+        *,
+        conversation: ConversationService | None = None,
+        memory: MemoryService | None = None,
+        bus: PerformerEventBus | None = None,
+        dispatcher: StreamOutputDispatcher | None = None,
+        identity: IdentityResolver | None = None,
+    ) -> None:
+        self._conversation = conversation or ConversationService()
+        self._memory = memory or MemoryService()
+        self._identity = identity or IdentityResolver()
+        self._bus = bus or get_performer_event_bus()
+        self._dispatcher = dispatcher or StreamOutputDispatcher()
+
+    def status(self) -> dict[str, Any]:
+        state = load_presence_state(downgrade_stale_live=True)
+        save_presence_state(state)
+        return {"ok": True, "state": state, "performer": self._bus.stats()}
+
+    def transition(
+        self,
+        mode: str,
+        *,
+        audience: AudienceSelection | None = None,
+        confirm_public_output: bool = False,
+        updated_by: str = "dashboard",
+    ) -> dict[str, Any]:
+        normalized = normalize_presence_mode(mode)
+        if normalized == "go_live" and not confirm_public_output:
+            raise ValueError("confirm_public_output is required for Go Live")
+        previous = load_presence_state(downgrade_stale_live=True)
+        state = presence_state_for_mode(
+            normalized,
+            previous=previous,
+            updated_by=updated_by,
+            confirmed_live_at=utc_now() if normalized == "go_live" else None,
+        )
+        if audience is not None:
+            state["audience"] = self._audience_payload(audience)
+        if normalized == "go_live":
+            state["audience"] = {"kind": "unknown", "known_person_id": None, "display_name": "Public audience"}
+        saved = save_presence_state(state)
+        return {"ok": True, "state": saved, "detail": self._detail(saved)}
+
+    def wake(self, *, audience: AudienceSelection, session_id: str | None = None) -> dict[str, Any]:
+        transition = self.transition("wake", audience=audience, updated_by="presence_wake")
+        state = transition["state"]
+        if not state.get("wake", {}).get("enabled", True):
+            return self._record_wake_result(state, status="suppressed", reason="wake_opening_disabled")
+
+        speaker = self._speaker_for_audience(audience)
+        session = str(session_id or f"presence-{datetime.now(timezone.utc).date().isoformat()}")[:120]
+        audio_eligible = self._bus.has_eligible_listener(DASHBOARD_MONITOR_TARGET, audio=True)
+        response = self._conversation.respond_presence_wake(
+            session_id=session,
+            speaker=speaker,
+            wake_context=self._build_wake_context(state=state, speaker=speaker),
+            synthesize_speech=audio_eligible,
+        )
+        event = StreamInputEvent(
+            kind="presence_wake",
+            session_id=session,
+            actor=StreamActor(
+                source="presence",
+                platform_id=str(state["audience"].get("known_person_id") or state["audience"].get("kind")),
+                display_name=str(state["audience"].get("display_name") or "Unknown"),
+                roles=[str(state["audience"].get("kind") or "unknown")],
+            ),
+            metadata={
+                "presence_mode": "wake",
+                "privacy_scope": "local_private" if speaker.memory_read_allowed else "local_generic",
+                "output_target_policy": DASHBOARD_MONITOR_TARGET,
+            },
+        )
+        turn_id = f"presence-wake-{uuid4().hex}"
+        output_events = output_events_from_response(input_event=event, turn_id=turn_id, response=response)
+        for output_event in output_events:
+            output_event.payload["target_policy"] = DASHBOARD_MONITOR_TARGET
+        dispatch = self._dispatcher.dispatch(output_events)
+        status = "spoken" if response.audio_path or response.audio_content_type else "text_only"
+        return self._record_wake_result(
+            state,
+            status=status,
+            opening=response.spoken_text,
+            event_id=event.event_id,
+            turn_id=turn_id,
+            session_id=session,
+            route_events=response.tts_metadata.get("route_events", []),
+            dispatch=dispatch.model_dump(),
+            reason=None if audio_eligible else "no_audio_ready_monitor_listener",
+        )
+
+    def _speaker_for_audience(self, audience: AudienceSelection) -> SpeakerProfile:
+        if audience.kind == "unknown":
+            return UNKNOWN_PUBLIC
+        if audience.kind == "owner":
+            return self._identity.resolve(None)
+        person = self._memory.get_known_person(int(audience.known_person_id or 0))
+        if person is None:
+            raise ValueError("known person not found")
+        trust = str(person.get("trust") or "guest")
+        if trust not in {"owner", "trusted", "guest", "public"}:
+            trust = "guest"
+        return SpeakerProfile(
+            name=str(person.get("name") or "Known person"),
+            trust=trust,  # type: ignore[arg-type]
+            notes=str(person.get("notes") or "") if trust in {"owner", "trusted"} else "",
+            resolved_via="presence_selection",
+            is_owner=trust == "owner",
+        )
+
+    def _audience_payload(self, audience: AudienceSelection) -> dict[str, Any]:
+        if audience.kind == "unknown":
+            return {"kind": "unknown", "known_person_id": None, "display_name": "Unknown"}
+        if audience.kind == "owner":
+            owner = self._identity.resolve(None)
+            return {"kind": "owner", "known_person_id": None, "display_name": owner.name}
+        person = self._memory.get_known_person(int(audience.known_person_id or 0))
+        if person is None:
+            raise ValueError("known person not found")
+        return {
+            "kind": "known_person",
+            "known_person_id": int(person["id"]),
+            "display_name": str(person.get("name") or "Known person"),
+        }
+
+    def _build_wake_context(self, *, state: dict[str, Any], speaker: SpeakerProfile) -> str:
+        lifecycle = dict(state.get("lifecycle") or {})
+        recent_openings = list((state.get("wake") or {}).get("recent_openings") or [])[-5:]
+        lines = [
+            f"Local time: {datetime.now().astimezone().isoformat(timespec='minutes')}",
+            "Presence mode: wake",
+            "Output target: dashboard_monitor",
+            f"Audience: {speaker.name}; trust={speaker.trust}; memory_read_allowed={speaker.memory_read_allowed}",
+            f"Last sleep: {lifecycle.get('last_sleep_at') or 'unknown'}",
+            f"Last wake: {lifecycle.get('last_wake_at') or 'unknown'}",
+            f"Last meaningful interaction: {lifecycle.get('last_interaction_at') or 'unknown'}",
+        ]
+        if speaker.memory_read_allowed:
+            memories = self._memory.search_memories(
+                "",
+                limit=min(5, settings.memory_top_k),
+                subject_type=speaker.subject_type,
+                subject_name=speaker.name if speaker.subject_type == "other_person" else None,
+            )
+            if memories:
+                lines.append("Selected relevant memories:")
+                lines.extend(f"- {memory.summary[:500]}" for memory in memories)
+        if recent_openings:
+            lines.append("Recent Wake openings to avoid repeating:")
+            lines.extend(f"- {str(item.get('opening') or '')[:300]}" for item in recent_openings)
+        lines.append(
+            "Privacy: do not reveal owner or known-person facts unless this audience is explicitly permitted to read them."
+        )
+        return "\n".join(lines)[:12_000]
+
+    def _record_wake_result(self, state: dict[str, Any], *, status: str, **details: Any) -> dict[str, Any]:
+        now = utc_now()
+        wake = dict(state.get("wake") or {})
+        opening = details.get("opening")
+        history = list(wake.get("recent_openings") or [])
+        if opening:
+            history.append({"occurred_at": now, "opening": str(opening)[:1000], "status": status})
+        wake.update(
+            {
+                "last_status": status,
+                "last_opening": opening,
+                "last_event_at": now,
+                "recent_openings": history[-10:],
+                "suppression_reason": details.get("reason"),
+            }
+        )
+        state["wake"] = wake
+        state["activity"] = {
+            **dict(state.get("activity") or {}),
+            "last_event_kind": "presence_wake",
+            "last_output_target": DASHBOARD_MONITOR_TARGET if status in {"spoken", "text_only"} else None,
+            "current_turn_id": details.get("turn_id"),
+        }
+        saved = save_presence_state(state)
+        return {"ok": status != "failed", "state": saved, "wake": {"status": status, **details}}
+
+    @staticmethod
+    def _detail(state: dict[str, Any]) -> str:
+        mode = str(state.get("mode") or "sleep")
+        if mode == "sleep":
+            return "Presence set to Sleep. Autonomous and public output are suppressed."
+        if mode == "wake":
+            return "Presence set to Wake. Local Monitor interaction is enabled."
+        if mode == "break":
+            return "Presence set to Break. Observation may continue while proactive/public speech is suppressed."
+        return "Presence set to Go Live. Public-safe stream output is enabled for this backend session."

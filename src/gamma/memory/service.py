@@ -586,6 +586,12 @@ class MemoryService:
                 for person in stored_people
             ]
 
+    def get_known_person(self, person_id: int) -> dict[str, object] | None:
+        return next(
+            (person for person in self.get_known_people(limit=1000) if int(person.get("id") or 0) == person_id),
+            None,
+        )
+
     def _materialize_people_from_facts(self, session: Session) -> None:
         existing = {person.name.casefold() for person in session.exec(select(KnownPerson))}
         statement = (

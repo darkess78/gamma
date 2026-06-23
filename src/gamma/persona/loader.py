@@ -87,7 +87,12 @@ def build_system_prompt(
     if memory_read_ok and memory_service and settings.memory_enabled and memory_config.get("enabled", True):
         if memory_config.get("profile_enabled", True):
             subject_type = speaker.subject_type if speaker else "primary_user"
-            profile_facts = memory_service.get_profile_facts(limit=settings.memory_top_k, subject_type=subject_type)
+            subject_name = speaker.name if speaker and subject_type == "other_person" else None
+            profile_facts = memory_service.get_profile_facts(
+                limit=settings.memory_top_k,
+                subject_type=subject_type,
+                subject_name=subject_name,
+            )
             if profile_facts:
                 memory_lines.append("## Stored Facts About The User")
                 for fact in profile_facts:
@@ -112,6 +117,8 @@ def build_system_prompt(
                 user_text,
                 session_id=session_id,
                 limit=settings.memory_top_k,
+                subject_type=speaker.subject_type if speaker else "primary_user",
+                subject_name=speaker.name if speaker and speaker.subject_type == "other_person" else None,
             )
             if memories:
                 memory_lines.append("## Relevant Episodic Memories")

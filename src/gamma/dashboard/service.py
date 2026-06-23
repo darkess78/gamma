@@ -22,7 +22,7 @@ from ..integrations.twitch.client import GammaStreamClient
 from ..integrations.twitch.eventsub import TwitchEventSubConfig, read_twitch_eventsub_state
 from ..integrations.twitch.replay import replay_jsonl_text
 from ..integrations.twitch.worker import TwitchWorkerConfig, read_twitch_worker_state
-from ..presence import load_presence_state, presence_state_for_mode, save_presence_state
+from ..presence import load_presence_state
 from ..resources import MachineResourceMonitor
 from ..resources.allocations import recent_sidecar_allocation_entries
 from ..resources.runtime_registry import load_resource_routing_registry
@@ -425,13 +425,11 @@ class DashboardService:
         return payload.get("status") == "ok" or "app" in payload or "providers" in payload
 
     def presence_summary(self) -> dict[str, Any]:
-        return {
-            "ok": True,
-            "state": load_presence_state(downgrade_stale_live=False),
-        }
+        return self._shana.safe_get("/v1/presence")
 
     def presence_status(self) -> dict[str, Any]:
-        state = load_presence_state(downgrade_stale_live=False)
+        remote_presence = self._shana.safe_get("/v1/presence")
+        state = dict(remote_presence.get("state") or load_presence_state(downgrade_stale_live=False))
         runtime_status = self.build_runtime_status()
         performer = self.performer_output_status()
         stream_ready = self.stream_ready_status()
@@ -457,25 +455,33 @@ class DashboardService:
             },
         }
 
-    def set_presence_mode(self, mode: str, *, confirm_public_output: bool = False, updated_by: str = "dashboard") -> dict[str, Any]:
+    def set_presence_mode(
+        self,
+        mode: str,
+        *,
+        confirm_public_output: bool = False,
+        updated_by: str = "dashboard",
+        audience: dict[str, Any] | None = None,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
         normalized = str(mode or "").strip().lower().replace("-", "_")
-        previous = load_presence_state(downgrade_stale_live=False)
         if normalized == "go_live" and not confirm_public_output:
             raise ValueError("confirm_public_output is required for Go Live")
-        state = presence_state_for_mode(
-            normalized,
-            previous=previous,
-            updated_by=updated_by,
-            confirmed_live_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z") if normalized == "go_live" else None,
-        )
-        saved = save_presence_state(state)
-        actions = self._apply_presence_side_effects(saved)
-        return {
-            "ok": True,
-            "state": saved,
-            "actions": actions,
-            "detail": self._presence_detail(saved),
+        payload = {
+            "mode": normalized,
+            "confirm_public_output": confirm_public_output,
+            "audience": audience or {"kind": "unknown"},
+            "session_id": session_id,
         }
+        path = "/v1/presence/wake" if normalized == "wake" else "/v1/presence/mode"
+        if normalized == "wake":
+            payload.pop("mode", None)
+            payload.pop("confirm_public_output", None)
+        result = self._shana.post(path, payload, timeout=180)
+        state = dict(result.get("state") or {})
+        result["actions"] = self._apply_presence_side_effects(state)
+        result.setdefault("detail", self._presence_detail(state))
+        return result
 
     def _apply_presence_side_effects(self, state: dict[str, Any]) -> dict[str, Any]:
         mode = str(state.get("mode") or "sleep")

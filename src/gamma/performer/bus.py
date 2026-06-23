@@ -30,6 +30,8 @@ class _Subscriber:
     connected_at: str
     loop: asyncio.AbstractEventLoop
     queue: asyncio.Queue[dict[str, Any]]
+    text_ready: bool = True
+    audio_ready: bool = False
 
 
 class PerformerEventBus:
@@ -137,6 +139,40 @@ class PerformerEventBus:
         with self._lock:
             self._subscribers.pop(subscriber_id, None)
 
+    def update_subscriber_capabilities(
+        self,
+        subscriber_id: str,
+        *,
+        text_ready: bool | None = None,
+        audio_ready: bool | None = None,
+    ) -> dict[str, Any] | None:
+        with self._lock:
+            subscriber = self._subscribers.get(subscriber_id)
+            if subscriber is None:
+                return None
+            if text_ready is not None:
+                subscriber.text_ready = bool(text_ready)
+            if audio_ready is not None:
+                subscriber.audio_ready = bool(audio_ready)
+            return {
+                "subscriber_id": subscriber.subscriber_id,
+                "target_policy": subscriber.target_policy,
+                "text_ready": subscriber.text_ready,
+                "audio_ready": subscriber.audio_ready,
+            }
+
+    def has_eligible_listener(self, target_policy: str, *, audio: bool = False) -> bool:
+        target = _normalize_target_policy(target_policy)
+        with self._lock:
+            if target in self._muted_targets:
+                return False
+            return any(
+                _subscriber_receives_event(subscriber.target_policy, target)
+                and subscriber.text_ready
+                and (subscriber.audio_ready if audio else True)
+                for subscriber in self._subscribers.values()
+            )
+
     def set_target_muted(self, target_policy: str, muted: bool, *, reason: str = "operator") -> dict[str, Any]:
         target = _normalize_target_policy(target_policy)
         with self._lock:
@@ -183,6 +219,8 @@ class PerformerEventBus:
                         "client_name": subscriber.client_name,
                         "client_host": subscriber.client_host,
                         "connected_at": subscriber.connected_at,
+                        "text_ready": subscriber.text_ready,
+                        "audio_ready": subscriber.audio_ready,
                     }
                 )
             return {

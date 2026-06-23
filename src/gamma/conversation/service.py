@@ -134,6 +134,76 @@ class ConversationService:
             speaker=self._identity.resolve(speaker_ctx),
         )
 
+    def respond_presence_wake(
+        self,
+        *,
+        session_id: str,
+        speaker: SpeakerProfile,
+        wake_context: str,
+        synthesize_speech: bool,
+    ) -> AssistantResponse:
+        """Generate a dedicated Presence Wake opening without creating user memory."""
+        try:
+            begin_route_trace()
+            started_at = time.perf_counter()
+            system_prompt = build_system_prompt(
+                memory_service=self._memory,
+                user_text=None,
+                session_id=session_id,
+                speaker=speaker,
+            )
+            system_prompt += (
+                "\n\n# Presence Wake Event\n"
+                + wake_context.strip()[:32_000]
+                + "\n\nBegin this session naturally as Shana using the supplied context. "
+                "Do not list or explain the context. Choose one brief greeting, observation, "
+                "remembered thread, or question. Avoid repeating recent openings. "
+                "Do not invent an external event. Keep the opening to one or two short sentences."
+            )
+            draft = self._llm_adapter().generate_reply(
+                system_prompt=system_prompt,
+                user_text="Begin the presence_wake event now.",
+                call_context=LLMCallContext(
+                    session_id=session_id,
+                    purpose="presence_wake",
+                    persona_sensitive=True,
+                    interaction_mode="presence",
+                    reasoning_depth="normal",
+                    cost_sensitive=False,
+                ),
+            )
+            expressive = strip_hidden_style_tags(self._cleanup_spoken_text(draft.text), default_emotion="neutral")
+            safe_spoken = self._speech_filter.apply(expressive.clean_text, include_llm=True)
+            response = AssistantResponse(
+                spoken_text=safe_spoken.spoken_text,
+                emotion=self._normalize_emotion(expressive.emotion),
+                voice_styles=expressive.styles,
+                internal_summary="Generated a Presence Wake opening.",
+            )
+            response.tts_metadata["speech_filter"] = {
+                "level": settings.speech_filter_level,
+                "blocked": safe_spoken.blocked,
+                "matched_rules": safe_spoken.matched_rules,
+                "action": safe_spoken.action,
+                "layers": safe_spoken.layers,
+            }
+            if synthesize_speech:
+                tts_result = self._tts_service().synthesize(
+                    response.spoken_text,
+                    emotion=response.emotion,
+                    styles=response.voice_styles,
+                )
+                response.audio_path = tts_result.audio_path
+                response.audio_content_type = tts_result.content_type
+                response.tts_metadata.update(dict(tts_result.metadata or {}))
+            response.timing_ms = {"total_ms": round((time.perf_counter() - started_at) * 1000, 1)}
+            response.tts_metadata["route_events"] = take_route_trace()
+            return response
+        except GammaError:
+            raise
+        except Exception as exc:
+            raise ConversationError(f"Presence Wake generation failed: {exc}") from exc
+
     def analyze_image(
         self,
         *,

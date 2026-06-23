@@ -1152,22 +1152,26 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertEqual(client.events[0].priority, 1)
 
     def test_dashboard_service_saves_viewer_trust(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            with patch("gamma.integrations.twitch.trust.settings.database_url", f"sqlite:///{Path(temp_dir) / 'trust.db'}"):
-                service = DashboardService()
-                result = service.save_twitch_viewer_trust(
-                    {
-                        "platform_user_id": "u1",
-                        "display_name": "Viewer",
-                        "trust_level": "regular",
-                        "notes": "recurring chatter",
-                    }
-                )
-                listing = service.twitch_viewer_trust()
+        service = DashboardService()
+        payload = {
+            "platform_user_id": "u1",
+            "display_name": "Viewer",
+            "trust_level": "regular",
+            "notes": "recurring chatter",
+        }
+        record = {"platform_user_id": "u1", "trust_level": "regular"}
+        with (
+            patch.object(service._shana, "put", return_value={"ok": True, "record": record}) as put,
+            patch.object(service._shana, "get", return_value={"items": [record]}) as get,
+        ):
+            result = service.save_twitch_viewer_trust(payload)
+            listing = service.twitch_viewer_trust()
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["record"]["trust_level"], "regular")
         self.assertEqual(listing["items"][0]["platform_user_id"], "u1")
+        put.assert_called_once_with("/v1/stream/viewer-trust", payload)
+        self.assertEqual(get.call_count, 2)
 
     def test_dashboard_service_saves_twitch_runtime_settings(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

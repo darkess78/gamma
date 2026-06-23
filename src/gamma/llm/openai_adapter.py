@@ -4,8 +4,9 @@ import base64
 import os
 
 from ..config import settings
-from ..errors import ConfigurationError, ExternalServiceError
+from ..errors import ConfigurationError, ContextOverflowError, ExternalServiceError
 from .base import LLMAdapter, LLMCallContext, LLMImageInput, LLMReply
+from .context_budget import is_context_overflow_message
 
 
 class OpenAIAdapter(LLMAdapter):
@@ -87,6 +88,8 @@ class OpenAIAdapter(LLMAdapter):
                 ],
             )
         except Exception as exc:
+            if is_context_overflow_message(str(exc)):
+                raise ContextOverflowError(f"OpenAI context overflow: {exc}") from exc
             raise ExternalServiceError(f"OpenAI response generation failed: {exc}") from exc
         text = getattr(response, "output_text", "").strip()
         if not text:

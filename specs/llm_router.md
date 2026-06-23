@@ -35,6 +35,19 @@ short event instruction never selects the light path by itself. Each fallback
 receives a prompt rebuilt for that candidate's usable context budget, and
 models below the required context/persona capability are skipped.
 
+## Context Budgeting
+
+Model capability records distinguish advertised context, configured usable
+input, reserved output, safety margin, persona/vision/tool capability, and
+provenance. Prompt assembly budgets the complete request for each candidate.
+Persona, boundaries, privacy/safety rules, current input, and current speaker
+are mandatory; working state, summary, memories, recent turns, and background
+are compacted in priority order.
+
+Provider context-overflow responses are typed separately from availability
+failures. They do not create provider backoff. The router rebuilds once under
+a smaller candidate budget and then selects only a compatible fallback.
+
 Every routed call records provider, model, purpose, fallback attempts, timing,
 prompt estimate, context limit/reserves, compaction, failure/backoff state, and
 optional placement metadata.

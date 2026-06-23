@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from ..config import settings
-from ..errors import ConfigurationError
+from ..errors import ConfigurationError, ContextBudgetError, ContextOverflowError
 from ..resources import ResourcePlacementCoordinator, llm_shadow_placement_payload, release_advisory_reservation
 from ..resources.models import WorkloadSpec
 from ..resources.runtime_registry import load_resource_routing_registry
@@ -161,9 +161,24 @@ class RouterLLMAdapter(LLMAdapter):
                 "compaction_actions": [],
             }
             if call_context.prompt_builder is not None:
-                candidate_system_prompt, candidate_user_text, built_metrics = call_context.prompt_builder(
-                    capability.usable_input_tokens
-                )
+                try:
+                    candidate_system_prompt, candidate_user_text, built_metrics = call_context.prompt_builder(
+                        capability.usable_input_tokens
+                    )
+                except ContextBudgetError as exc:
+                    self._record_route_event(
+                        decision=decision,
+                        call_context=call_context,
+                        user_text=user_text,
+                        has_images=bool(image_inputs),
+                        status="skipped",
+                        duration_ms=0.0,
+                        detail=str(exc),
+                        fallback_index=index,
+                        prompt_metrics=prompt_metrics,
+                    )
+                    release_advisory_reservation(decision.resource_reservation_id)
+                    continue
                 prompt_metrics.update(built_metrics)
                 prompt_metrics["estimated_input_tokens"] = estimate_text_tokens(
                     candidate_system_prompt,
@@ -252,6 +267,100 @@ class RouterLLMAdapter(LLMAdapter):
                     route_family=decision.route_family,
                 )
                 return reply
+            except ContextOverflowError as exc:
+                last_exc = exc
+                duration_ms = round((time.perf_counter() - started_at) * 1000, 1)
+                original_estimate = int(prompt_metrics.get("estimated_input_tokens") or 0)
+                overflow_metrics = {
+                    **prompt_metrics,
+                    "overflow_original_estimated_input_tokens": original_estimate,
+                }
+                self._record_route_event(
+                    decision=decision,
+                    call_context=call_context,
+                    user_text=candidate_user_text,
+                    has_images=bool(image_inputs),
+                    status="context_overflow",
+                    duration_ms=duration_ms,
+                    detail=str(exc),
+                    fallback_index=index,
+                    placement_shadow=placement_shadow,
+                    prompt_metrics=overflow_metrics,
+                )
+                if call_context.prompt_builder is not None:
+                    retry_budget = max(
+                        max(512, call_context.minimum_context_tokens),
+                        int(capability.usable_input_tokens * 0.75),
+                    )
+                    if retry_budget < capability.usable_input_tokens:
+                        try:
+                            retry_system, retry_user, retry_built_metrics = call_context.prompt_builder(retry_budget)
+                            retry_metrics = {
+                                **prompt_metrics,
+                                **retry_built_metrics,
+                                "estimated_input_tokens": estimate_text_tokens(retry_system, retry_user),
+                                "overflow_original_estimated_input_tokens": original_estimate,
+                                "overflow_retry_budget": retry_budget,
+                            }
+                            retry_started = time.perf_counter()
+                            retry_reply = adapter.generate_reply(
+                                system_prompt=retry_system,
+                                user_text=retry_user,
+                                image_inputs=image_inputs,
+                                call_context=call_context,
+                                model_override=decision.model,
+                                endpoint_override=decision.endpoint,
+                            )
+                            retry_duration = round((time.perf_counter() - retry_started) * 1000, 1)
+                            event = self._record_route_event(
+                                decision=decision,
+                                call_context=call_context,
+                                user_text=retry_user,
+                                has_images=bool(image_inputs),
+                                status="ok",
+                                duration_ms=retry_duration,
+                                detail="context-overflow-compacted-retry",
+                                fallback_index=index,
+                                placement_shadow=placement_shadow,
+                                prompt_metrics=retry_metrics,
+                            )
+                            metadata = dict(retry_reply.metadata or {})
+                            metadata["route"] = event
+                            retry_reply.metadata = metadata
+                            return retry_reply
+                        except (ContextOverflowError, ContextBudgetError) as retry_exc:
+                            last_exc = retry_exc
+                            self._record_route_event(
+                                decision=decision,
+                                call_context=call_context,
+                                user_text=candidate_user_text,
+                                has_images=bool(image_inputs),
+                                status="context_overflow",
+                                duration_ms=0.0,
+                                detail=f"compacted retry failed: {retry_exc}",
+                                fallback_index=index,
+                                placement_shadow=placement_shadow,
+                                prompt_metrics={**overflow_metrics, "overflow_retry_budget": retry_budget},
+                            )
+                        except Exception as retry_exc:
+                            last_exc = retry_exc
+                            self._mark_provider_failure(
+                                decision.provider,
+                                has_images=bool(image_inputs),
+                                route_family=decision.route_family,
+                            )
+                            self._record_route_event(
+                                decision=decision,
+                                call_context=call_context,
+                                user_text=candidate_user_text,
+                                has_images=bool(image_inputs),
+                                status="error",
+                                duration_ms=0.0,
+                                detail=f"compacted retry provider failure: {retry_exc}",
+                                fallback_index=index,
+                                placement_shadow=placement_shadow,
+                                prompt_metrics={**overflow_metrics, "overflow_retry_budget": retry_budget},
+                            )
             except Exception as exc:
                 last_exc = exc
                 duration_ms = round((time.perf_counter() - started_at) * 1000, 1)

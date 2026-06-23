@@ -6,9 +6,10 @@ from urllib import error, request
 
 from ..errors import ConfigurationError
 from ..config import settings
-from ..errors import ExternalServiceError
+from ..errors import ContextOverflowError, ExternalServiceError
 from .ollama_probe import probe_ollama_model_capabilities
 from .base import LLMAdapter, LLMCallContext, LLMImageInput, LLMReply
+from .context_budget import is_context_overflow_message
 
 
 class LocalLLMAdapter(LLMAdapter):
@@ -106,10 +107,14 @@ class LocalLLMAdapter(LLMAdapter):
                 data = json.loads(resp.read().decode("utf-8"))
         except error.HTTPError as exc:
             details = exc.read().decode("utf-8", errors="replace")
+            if is_context_overflow_message(details):
+                raise ContextOverflowError(f"Local LLM context overflow: {details}") from exc
             raise ExternalServiceError(f"Local LLM request failed: HTTP {exc.code}: {details}") from exc
         except error.URLError as exc:
             raise ExternalServiceError(f"Local LLM request failed: {exc}") from exc
         except Exception as exc:
+            if is_context_overflow_message(str(exc)):
+                raise ContextOverflowError(f"Local LLM context overflow: {exc}") from exc
             raise ExternalServiceError(f"Local LLM request failed: {exc}") from exc
         text = (data.get("response") or "").strip()
         if not text:

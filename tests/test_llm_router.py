@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from gamma.config import settings
+from gamma.errors import ContextOverflowError
 from gamma.llm.base import LLMCallContext
 from gamma.llm.base import LLMReply
 from gamma.llm.router_adapter import RouterLLMAdapter, begin_route_trace, take_route_trace
@@ -18,6 +19,7 @@ class _FakeAdapter:
         self.provider = provider
         self.calls: list[dict[str, object]] = []
         self.fail_models: set[str] = set()
+        self.overflow_once_models: set[str] = set()
 
     @property
     def supports_vision(self) -> bool:
@@ -27,6 +29,10 @@ class _FakeAdapter:
         self.calls.append({"system_prompt": system_prompt, "user_text": user_text, "image_inputs": image_inputs, "kwargs": kwargs})
         if str(kwargs.get("model_override") or "") in self.fail_models:
             raise RuntimeError("forced model failure")
+        model = str(kwargs.get("model_override") or "")
+        if model in self.overflow_once_models:
+            self.overflow_once_models.remove(model)
+            raise ContextOverflowError("maximum context length exceeded")
         return LLMReply(text=f"{self.provider}:{user_text}")
 
 
@@ -227,6 +233,35 @@ class RouterLLMAdapterTest(unittest.TestCase):
         self.assertEqual(events[-1]["route_family"], "presence_wake")
         self.assertEqual(events[-1]["model"], "gemma4:e4b")
         self.assertEqual(events[-1]["usable_input_tokens"], 12288)
+
+    def test_context_overflow_compacts_without_provider_backoff(self) -> None:
+        router = _TestRouter()
+        router.fake_adapters["local"].overflow_once_models.add("gpt-oss:20b")
+        budgets: list[int] = []
+
+        def prompt_builder(budget: int):
+            budgets.append(budget)
+            return ("p" * (budget * 3), "hello", {"compaction_level": len(budgets) - 1})
+
+        begin_route_trace()
+        reply = router.generate_reply(
+            system_prompt="initial",
+            user_text="hello",
+            call_context=LLMCallContext(
+                purpose="conversation_draft",
+                persona_sensitive=True,
+                minimum_context_tokens=4096,
+                prompt_builder=prompt_builder,
+            ),
+        )
+        events = take_route_trace()
+
+        self.assertEqual(reply.text, "local:hello")
+        self.assertEqual(budgets[:2], [16384, 12288])
+        self.assertEqual(events[-2]["status"], "context_overflow")
+        self.assertEqual(events[-1]["status"], "ok")
+        self.assertEqual(events[-1]["overflow_retry_budget"], 12288)
+        self.assertEqual(RouterLLMAdapter.provider_backoff_state(), {})
 
     def test_voice_helper_prefers_tagging_model(self) -> None:
         router = RouterLLMAdapter()

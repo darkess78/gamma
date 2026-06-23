@@ -12,6 +12,7 @@ from ..identity.profile import SpeakerProfile
 from ..identity.resolver import IdentityResolver
 from ..llm.base import LLMCallContext
 from ..llm.capabilities import estimate_text_tokens
+from ..llm.context_budget import ContextBudgetManager, prompt_layers_from_system_prompt
 from ..llm.factory import build_llm_adapter
 from ..llm.router_adapter import begin_route_trace, take_route_trace
 from ..memory.service import MemoryService
@@ -438,13 +439,33 @@ class ConversationService:
             tools_ok = speaker is None or speaker.tools_allowed
             inferred_tool_calls = self._infer_tool_calls(stripped, speaker=speaker) if tools_ok else []
             llm_started = time.perf_counter()
+            draft_user_text = self._build_user_input_text(
+                user_text=stripped,
+                image=image,
+                vision_analysis=vision_analysis,
+            )
+            prompt_layers = prompt_layers_from_system_prompt(system_prompt)
+            budget_manager = ContextBudgetManager()
+
+            def build_conversation_prompt(usable_input_tokens: int) -> tuple[str, str, dict[str, object]]:
+                built = budget_manager.build(
+                    layers=prompt_layers,
+                    user_text=draft_user_text,
+                    usable_input_tokens=usable_input_tokens,
+                )
+                return (
+                    built.system_prompt,
+                    built.user_text,
+                    {
+                        "compaction_level": built.compaction_level,
+                        "compaction_actions": list(built.compaction_actions),
+                        "included_layers": list(built.included_layers),
+                    },
+                )
+
             draft_reply = self._llm_adapter().generate_reply(
                 system_prompt=system_prompt,
-                user_text=self._build_user_input_text(
-                    user_text=stripped,
-                    image=image,
-                    vision_analysis=vision_analysis,
-                ),
+                user_text=draft_user_text,
                 image_inputs=[image.to_llm_input()] if image is not None else None,
                 call_context=LLMCallContext(
                     purpose="conversation_draft",
@@ -455,6 +476,8 @@ class ConversationService:
                     persona_sensitive=not bool(inferred_tool_calls),
                     interaction_mode="chat",
                     cost_sensitive=bool(fast_mode or brief_mode or micro_mode),
+                    minimum_context_tokens=4096,
+                    prompt_builder=build_conversation_prompt,
                 ),
             )
             timing["draft_reply_ms"] = round((time.perf_counter() - llm_started) * 1000, 1)

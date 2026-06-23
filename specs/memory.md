@@ -17,6 +17,20 @@ than opening the database directly.
 - recent assistant emotion episodes and patterns in their own service
 - owner-approved permanent core memories in `data/core_memories.md`
 
+## Conversation Continuity
+
+Ordinary session continuity is stored separately from long-term memory:
+
+- grouped user/assistant journal entries with completion, speaker, trace, target, and privacy scope
+- a token-bounded recent-turn view
+- a rolling session summary
+- a structured working-state checkpoint
+- the last durable text output per performer target
+
+Raw turns are not automatically promoted into profile or episodic memory.
+Journal retention defaults to 30 days and 500 completed exchanges per session;
+session deletion removes its journal, summary, and working checkpoint.
+
 ## Behavior
 
 - retrieval is bounded and selective
@@ -33,3 +47,4 @@ than opening the database directly.
 - private identifying information is filtered before output
 - raw untrusted stream text is not promoted into durable memory automatically
 - future streamer memory must retain explicit scope, TTL/retention, and deletion controls
+- continuity retrieval must match the current speaker/audience privacy scope

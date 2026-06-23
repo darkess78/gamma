@@ -181,6 +181,34 @@ class Settings:
         _setting("SHANA_DATABASE_URL", _config_value(APP_CONFIG, "database_url", default="sqlite:///./data/memory/gamma.db"))
     )
     memory_top_k: int = _as_int(_setting("SHANA_MEMORY_TOP_K", _config_value(APP_CONFIG, "memory_top_k", default=5)), default=5)
+    conversation_journal_retention_days: int = _as_int(
+        _setting(
+            "SHANA_CONVERSATION_JOURNAL_RETENTION_DAYS",
+            _config_value(APP_CONFIG, "conversation_journal_retention_days", default=30),
+        ),
+        default=30,
+    )
+    conversation_journal_max_exchanges_per_session: int = _as_int(
+        _setting(
+            "SHANA_CONVERSATION_JOURNAL_MAX_EXCHANGES_PER_SESSION",
+            _config_value(APP_CONFIG, "conversation_journal_max_exchanges_per_session", default=500),
+        ),
+        default=500,
+    )
+    conversation_recent_turn_tokens: int = _as_int(
+        _setting(
+            "SHANA_CONVERSATION_RECENT_TURN_TOKENS",
+            _config_value(APP_CONFIG, "conversation_recent_turn_tokens", default=2048),
+        ),
+        default=2048,
+    )
+    conversation_summary_interval_exchanges: int = _as_int(
+        _setting(
+            "SHANA_CONVERSATION_SUMMARY_INTERVAL_EXCHANGES",
+            _config_value(APP_CONFIG, "conversation_summary_interval_exchanges", default=6),
+        ),
+        default=6,
+    )
     data_dir: Path = PROJECT_ROOT / "data"
     audio_output_dir: Path = _as_path(
         _setting("SHANA_AUDIO_OUTPUT_DIR", _config_value(APP_CONFIG, "audio_output_dir", default="./data/audio")),

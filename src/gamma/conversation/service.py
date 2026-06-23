@@ -15,6 +15,7 @@ from ..llm.capabilities import estimate_text_tokens
 from ..llm.factory import build_llm_adapter
 from ..llm.router_adapter import begin_route_trace, take_route_trace
 from ..memory.service import MemoryService
+from ..memory.continuity import ContinuityService
 from ..persona.assistant_state import AssistantStateStore
 from ..persona.emotion_service import EmotionMemoryService
 from ..persona.loader import build_system_prompt
@@ -47,6 +48,7 @@ class ConversationService:
         self._assistant_state = AssistantStateStore()
         self._emotion_memory = EmotionMemoryService()
         self._speech_filter = SpeechSafetyFilter(settings.speech_filter_level)
+        self._continuity = ContinuityService()
 
     def respond(
         self,
@@ -76,17 +78,75 @@ class ConversationService:
         Returns:
             AssistantResponse with spoken text and timing.
         """
-        return self._respond(
-            user_text=user_text,
-            session_id=session_id,
-            synthesize_speech=synthesize_speech,
-            speaker=self._identity.resolve(speaker_ctx),
-            fast_mode=fast_mode,
-            brief_mode=brief_mode,
-            micro_mode=micro_mode,
-            defer_llm_safety_review=defer_llm_safety_review,
-            background_context=background_context,
+        speaker = self._identity.resolve(speaker_ctx)
+        exchange_id = None
+        privacy_scope = "local_private" if speaker.memory_read_allowed else "local_generic"
+        if session_id:
+            exchange_id = self._continuity.begin_exchange(
+                session_id=session_id,
+                text=user_text,
+                speaker_name=speaker.name,
+                input_source=speaker_ctx.source if speaker_ctx is not None else "local",
+                privacy_scope=privacy_scope,
+            )
+        try:
+            response = self._respond(
+                user_text=user_text,
+                session_id=session_id,
+                synthesize_speech=synthesize_speech,
+                speaker=speaker,
+                fast_mode=fast_mode,
+                brief_mode=brief_mode,
+                micro_mode=micro_mode,
+                defer_llm_safety_review=defer_llm_safety_review,
+                background_context=background_context,
+            )
+        except Exception:
+            if exchange_id:
+                self._continuity.fail_exchange(exchange_id)
+            raise
+        if exchange_id and session_id:
+            response.route_trace_id = exchange_id
+            self._continuity.complete_exchange(
+                exchange_id=exchange_id,
+                session_id=session_id,
+                assistant_text=response.spoken_text,
+                trace_id=response.route_trace_id,
+                output_target="dashboard_monitor",
+                privacy_scope=privacy_scope,
+                internal_summary=response.internal_summary,
+                tool_metadata={
+                    "tool_calls": [item.model_dump() for item in response.tool_calls],
+                    "tool_results": [item.model_dump() for item in response.tool_results],
+                },
+            )
+        return response
+
+    def continuity_snapshot(self, session_id: str) -> dict:
+        return self._continuity.snapshot(session_id)
+
+    def delete_continuity_session(self, session_id: str) -> int:
+        return self._continuity.delete_session(session_id)
+
+    def record_durable_output(
+        self,
+        *,
+        target_policy: str,
+        turn_id: str,
+        text: str,
+        status: str,
+        spoken: bool,
+    ) -> None:
+        self._continuity.record_output(
+            target_policy=target_policy,
+            turn_id=turn_id,
+            text=text,
+            status=status,
+            spoken=spoken,
         )
+
+    def durable_output_state(self, target_policy: str) -> dict | None:
+        return self._continuity.last_output(target_policy)
 
     def respond_with_image(
         self,
@@ -342,6 +402,13 @@ class ConversationService:
                 session_id=session_id,
                 speaker=speaker,
             )
+            if session_id:
+                continuity_context = self._continuity.prompt_context(
+                    session_id,
+                    privacy_scopes=self._privacy_scopes_for_speaker(speaker),
+                )
+                if continuity_context:
+                    system_prompt += "\n\n" + continuity_context
             if background_context and background_context.strip():
                 system_prompt += f"\n\n# Stream Background Context\n{background_context.strip()}"
             if brief_mode:
@@ -603,6 +670,12 @@ class ConversationService:
         cleaned = re.sub(r"^\s*[-•]\s+", "", cleaned, flags=re.MULTILINE)
         cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
         return cleaned
+
+    @staticmethod
+    def _privacy_scopes_for_speaker(speaker: SpeakerProfile | None) -> set[str]:
+        if speaker is not None and speaker.memory_read_allowed:
+            return {"local_private", "local_generic", "public"}
+        return {"local_generic", "public"}
 
     def _background_memory_save(self, user_text: str, reply_text: str, session_id: str | None) -> None:
         """Persist memory candidates in a background thread (fast_mode only)."""

@@ -438,6 +438,28 @@ def shana_presence_status() -> dict:
     return get_presence_service().status()
 
 
+@router.get("/v1/conversation/sessions/{session_id}/continuity")
+def conversation_continuity(session_id: str) -> dict:
+    return get_conversation_service().continuity_snapshot(session_id)
+
+
+@router.delete("/v1/conversation/sessions/{session_id}/continuity")
+def conversation_continuity_delete(session_id: str) -> dict:
+    deleted = get_conversation_service().delete_continuity_session(session_id)
+    return {"ok": True, "session_id": session_id, "deleted_entries": deleted}
+
+
+@router.get("/v1/performer/targets/{target_policy}/last-durable-output")
+def performer_last_durable_output(target_policy: str) -> dict:
+    if target_policy not in KNOWN_TARGET_POLICIES:
+        raise HTTPException(status_code=400, detail="unsupported target policy")
+    return {
+        "ok": True,
+        "target_policy": target_policy,
+        "output": get_conversation_service().durable_output_state(target_policy),
+    }
+
+
 @router.post("/v1/presence/mode")
 def shana_presence_mode(request: PresenceModeRequest) -> dict:
     try:

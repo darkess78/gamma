@@ -22,6 +22,8 @@ specs own detailed contracts; target documents own future work.
 - Stable persona prompt assembly and assistant emotion state.
 - Speaker identity resolution across local, Twitch, Discord, game, and linked accounts.
 - SQLite/SQLModel profile facts, episodic memory, known people, selective writes, and memory tools.
+- Durable per-session turn journals, rolling summaries, working-state checkpoints, and bounded recent-turn context.
+- Durable last-output text restoration without replaying stale speech after restart.
 - Privacy guard and layered speech-safety filtering before public or synthesized output.
 - Mock, OpenAI, and Ollama-compatible LLM adapters.
 - Deterministic LLM routing, fallback/backoff state, and route traces.

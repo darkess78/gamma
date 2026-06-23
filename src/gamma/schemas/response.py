@@ -78,3 +78,4 @@ class AssistantResponse(BaseModel):
     audio_content_type: str | None = None
     timing_ms: dict[str, float] = Field(default_factory=dict)
     tts_metadata: dict[str, Any] = Field(default_factory=dict)
+    route_trace_id: str | None = None

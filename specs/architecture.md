@@ -44,6 +44,7 @@ page navigation destroys browser audio and WebSocket state.
 - `conversation`: prompt assembly, response generation, tools, safety, memory
 - `llm`: swappable model adapters and deterministic routing
 - `memory`: profile facts, episodic memory, known people, identity links
+- `memory/continuity`: retained turn journal, rolling summaries, and resumable working state
 - `voice`: STT, TTS, audio understanding, live jobs, interruption
 - `stream`: normalized public inputs, turn policy, safety, replay
 - `performer`: ordered output events and presentation adapters

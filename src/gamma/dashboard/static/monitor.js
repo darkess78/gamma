@@ -158,6 +158,7 @@
       }
       console.log('Monitor connected to performer events');
       sendCapabilities();
+      restoreDurableOutput();
     };
 
     ws.onmessage = (event) => {
@@ -179,6 +180,24 @@
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
     };
+  }
+
+  async function restoreDurableOutput() {
+    if (lastSequence > 0) return;
+    try {
+      const response = await fetch(`${apiBase}/v1/performer/targets/${encodeURIComponent(targetPolicy)}/last-durable-output`);
+      const payload = await response.json();
+      const output = payload && payload.output;
+      if (!response.ok || !output || !output.text) return;
+      const subtitle = document.getElementById('subtitleDisplay');
+      const turn = document.getElementById('turnId');
+      const state = document.getElementById('turnState');
+      if (subtitle) subtitle.textContent = output.text;
+      if (turn) turn.textContent = output.turn_id || 'restored-output';
+      if (state) state.textContent = 'restored text';
+    } catch (error) {
+      console.debug('No durable Monitor output restored', error);
+    }
   }
 
   function updateMonitor(payload) {

@@ -367,6 +367,13 @@ class PresenceService:
             output_event.payload["target_policy"] = DASHBOARD_MONITOR_TARGET
         dispatch = self._dispatcher.dispatch(output_events)
         status = "spoken" if response.audio_path or response.audio_content_type else "text_only"
+        self._conversation.record_durable_output(
+            target_policy=DASHBOARD_MONITOR_TARGET,
+            turn_id=turn_id,
+            text=response.spoken_text,
+            status="completed",
+            spoken=status == "spoken",
+        )
         return self._record_wake_result(
             state,
             status=status,

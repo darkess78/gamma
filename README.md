@@ -126,6 +126,9 @@ and live-voice diagnostic surface. Legacy Talk URLs redirect to Monitor.
 The wider dashboard retains:
 
 - Presence lifecycle modes: sleep, wake, go live, and break
+- explicit Wake audience selection; unknown/unverified is the privacy-safe default
+- durable recent-turn continuity and resumable working state
+- bounded proactive checks, disabled by default
 - provider and process controls
 - memory and known-person management
 - Twitch, EventSub, Discord, stream replay, traces, and safety views

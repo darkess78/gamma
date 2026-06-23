@@ -430,6 +430,7 @@ class DashboardService:
     def presence_status(self) -> dict[str, Any]:
         remote_presence = self._shana.safe_get("/v1/presence")
         state = dict(remote_presence.get("state") or load_presence_state(downgrade_stale_live=False))
+        memory = self._shana.safe_get("/v1/memory", params={"limit": 100})
         runtime_status = self.build_runtime_status()
         performer = self.performer_output_status()
         stream_ready = self.stream_ready_status()
@@ -444,6 +445,9 @@ class DashboardService:
         return {
             "ok": True,
             "state": state,
+            "known_people": memory.get("known_people", []),
+            "continuity": remote_presence.get("continuity"),
+            "last_durable_output": remote_presence.get("last_durable_output"),
             "runtime": {
                 "shana": runtime_status.get("shana", {}),
                 "twitch": {

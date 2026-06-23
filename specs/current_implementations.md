@@ -85,6 +85,7 @@ specs own detailed contracts; target documents own future work.
 - Persistent `/dashboard/monitor` room for local text, performer replay, speech playback, and live-voice controls.
 - Legacy Talk routes redirect to Monitor.
 - Overview, Live, Monitor, Presence, Status, Stream, Memory, and Settings pages.
+- Presence UI exposes explicit audience selection, Wake history, Monitor listener readiness, working continuity, and bounded scheduler state.
 - Dashboard-to-Shana requests use a centralized HTTP client; assistant domain services and state stores remain owned by Shana.
 - Lightweight header polling avoids full provider, memory, log, and machine-status work on interaction and operations pages.
 - Service lifecycle and provider smoke-test controls.

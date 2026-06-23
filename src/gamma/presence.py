@@ -319,7 +319,15 @@ class PresenceService:
     def status(self) -> dict[str, Any]:
         state = load_presence_state(downgrade_stale_live=True)
         save_presence_state(state)
-        return {"ok": True, "state": state, "performer": self._bus.stats()}
+        session_id = str((state.get("activity") or {}).get("session_id") or "")
+        continuity = self._conversation.continuity_snapshot(session_id) if session_id else None
+        return {
+            "ok": True,
+            "state": state,
+            "performer": self._bus.stats(),
+            "continuity": continuity,
+            "last_durable_output": self._conversation.durable_output_state(DASHBOARD_MONITOR_TARGET),
+        }
 
     def transition(
         self,

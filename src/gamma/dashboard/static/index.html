@@ -99,6 +99,26 @@
             </div>
           </div>
           <div class="action-group">
+            <div class="action-title">Wake Audience</div>
+            <label>Audience
+              <select id="presenceAudienceKind" class="select" onchange="updatePresenceAudienceControls()">
+                <option value="unknown">Unknown / unverified</option>
+                <option value="owner">Owner</option>
+                <option value="known_person">Known person</option>
+              </select>
+            </label>
+            <label id="presenceKnownPersonRow" hidden>Known person
+              <select id="presenceKnownPersonId" class="select"></select>
+            </label>
+            <label>Session
+              <input id="presenceSessionId" class="text-input" value="presence-local" maxlength="120">
+            </label>
+            <div class="action-buttons">
+              <a class="button secondary" href="/dashboard/monitor" target="_blank" rel="noopener">Open Monitor Room</a>
+              <a class="button ghost" href="/dashboard/settings">Advanced Settings</a>
+            </div>
+          </div>
+          <div class="action-group">
             <div class="action-title">Current State</div>
             <div class="render compact-render" id="presenceModeStatus">Presence has not loaded yet.</div>
           </div>
@@ -109,6 +129,14 @@
           <div class="action-group">
             <div class="action-title">Outputs</div>
             <div class="render compact-render" id="presenceOutputStatus">Output state has not loaded yet.</div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">Wake and Continuity</div>
+            <div class="render compact-render" id="presenceWakeStatus">Wake history has not loaded yet.</div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">Bounded Autonomy</div>
+            <div class="render compact-render" id="presenceAutonomyStatus">Scheduler state has not loaded yet.</div>
           </div>
         </div>
       </section>
@@ -732,7 +760,7 @@
   <!-- Modular scripts -->
   <script src="/static/providers.js?v=20260529"></script>
   <script src="/static/stream.js?v=20260618"></script>
-  <script type="module" src="/static/presence.mjs?v=20260622"></script>
+  <script type="module" src="/static/presence.mjs?v=20260623"></script>
   <script src="/static/nav.js?v=20260619"></script>
   <script src="/static/memory.js?v=20260611e"></script>
   <script src="/static/api.js?v=20260618"></script>

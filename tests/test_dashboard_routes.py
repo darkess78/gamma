@@ -399,16 +399,22 @@ class DashboardRoutesTest(unittest.TestCase):
         dashboard_html = (main.STATIC_DIR / "index.html").read_text(encoding="utf-8")
         presence_script = (main.STATIC_DIR / "presence.mjs").read_text(encoding="utf-8")
 
-        self.assertIn('type="module" src="/static/presence.mjs?v=20260622"', dashboard_html)
+        self.assertIn('type="module" src="/static/presence.mjs?v=20260623"', dashboard_html)
         self.assertNotIn("/static/init.js", dashboard_html)
         self.assertFalse((main.STATIC_DIR / "init.js").exists())
         self.assertIn("from './core.mjs'", presence_script)
         self.assertIn("window.setPresenceMode = setPresenceMode;", presence_script)
+        self.assertIn('id="presenceAudienceKind"', dashboard_html)
+        self.assertIn('id="presenceKnownPersonId"', dashboard_html)
+        self.assertIn('id="presenceWakeStatus"', dashboard_html)
+        self.assertIn('id="presenceAutonomyStatus"', dashboard_html)
+        self.assertIn("body.audience = selectedAudience();", presence_script)
+        self.assertIn("audio_ready", presence_script)
 
     def test_monitor_has_stream_controls_and_status_reporting(self) -> None:
         body = main.dashboard_monitor_page().body.decode("utf-8")
 
-        self.assertIn('src="/static/monitor.js?v=20260618"', body)
+        self.assertIn('src="/static/monitor.js?v=20260623"', body)
         self.assertIn('src="/static/live.js?v=20260618"', body)
         self.assertIn("Server And Provider Status", body)
         self.assertIn("Live Voice", body)

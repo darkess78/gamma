@@ -11,12 +11,18 @@ Delivered in the current refactor:
 - removed dead dashboard initialization code and duplicate action/status loading
 - replaced expensive all-page status polling with a lightweight header contract
 - established Monitor as the persistent text and output room
+- removed the duplicate Talk client while preserving legacy redirects
+- added explicit-audience dynamic Wake events and primary-quality Wake routing
+- added durable turn continuity, rolling summaries, and working checkpoints
+- added model-aware context budgets and overflow-specific retry
+- moved bounded proactive evaluation into Shana with conservative Presence gates
 - moved hosted, local-voice, desktop, Discord, and model-backed audio features behind explicit extras
 
-Remaining milestone gate:
+Remaining operational gate:
 
 1. Define and run repeatable everyday conversation reliability and latency checks.
-2. Use those results to choose focused fixes rather than another structural rewrite.
+2. Run owner-facing Wake/restart/continuity soak sessions and use those results
+   for focused tuning rather than another structural rewrite.
 
 Completion means Shana can run independently of the dashboard, the dashboard
 uses supported APIs for Shana-owned state, and the owner has one obvious place

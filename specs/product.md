@@ -23,6 +23,8 @@ having to operate the streamer control plane.
 - Presence modes for sleep, wake, break, and live operation
 - privacy and speech-safety enforcement
 - a persistent Monitor room for local text and output playback
+- dynamic privacy-scoped Wake openings and restart-safe working continuity
+- bounded Presence-gated proactive behavior, disabled by default
 
 Core work takes priority over new integrations.
 

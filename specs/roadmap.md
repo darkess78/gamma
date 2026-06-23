@@ -5,11 +5,18 @@ Last verified: 2026-06-22
 
 ## Current Milestone: Persistent Shana
 
-1. Enforce the Shana API/dashboard ownership boundary.
-2. Remove dashboard duplication and expensive all-page polling.
-3. Add a dedicated text and live-voice Talk client.
-4. Keep setup and optional dependency paths understandable.
-5. Measure everyday conversation reliability and latency.
+Delivered in the current refactor:
+
+- enforced the Shana API/dashboard ownership boundary
+- removed dead dashboard initialization code and duplicate action/status loading
+- replaced expensive all-page status polling with a lightweight header contract
+- added a dedicated text and live-voice Talk client
+- moved hosted, local-voice, desktop, Discord, and model-backed audio features behind explicit extras
+
+Remaining milestone gate:
+
+1. Define and run repeatable everyday conversation reliability and latency checks.
+2. Use those results to choose focused fixes rather than another structural rewrite.
 
 Completion means Shana can run independently of the dashboard, the dashboard
 uses supported APIs for Shana-owned state, and the owner has one obvious place

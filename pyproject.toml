@@ -10,14 +10,9 @@ dependencies = [
   "uvicorn>=0.30.0",
   "pydantic>=2.8.0",
   "sqlmodel>=0.0.22",
-  "openai>=1.40.0",
   "PyYAML>=6.0.2",
   "python-dotenv>=1.0.1",
-  "faster-whisper>=1.1.0",
-  "sounddevice",
   "psutil>=5.9.8",
-  "pillow>=10.4.0",
-  "pystray>=0.19.5",
   "python-multipart>=0.0.9",
   "websockets>=12.0",
 ]
@@ -26,6 +21,17 @@ dependencies = [
 dev = [
   "pytest>=9.0.0",
   "requests>=2.32.0",
+]
+hosted = [
+  "openai>=1.40.0",
+]
+local-voice = [
+  "faster-whisper>=1.1.0",
+  "sounddevice",
+]
+desktop = [
+  "pillow>=10.4.0",
+  "pystray>=0.19.5",
 ]
 audio-understanding = [
   "transformers>=4.48.0",

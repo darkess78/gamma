@@ -76,7 +76,10 @@ specs own detailed contracts; target documents own future work.
 
 ## Dashboard
 
+- Dedicated `/dashboard/talk` client for typed and live-voice conversation using one session ID.
 - Overview, Live, Monitor, Presence, Status, Stream, Memory, and Settings pages.
+- Dashboard-to-Shana requests use a centralized HTTP client; assistant domain services and state stores remain owned by Shana.
+- Lightweight header polling avoids full provider, memory, log, and machine-status work on interaction and operations pages.
 - Service lifecycle and provider smoke-test controls.
 - TTS profile selection/editor and generated-audio controls.
 - Memory and known-person management.
@@ -104,7 +107,7 @@ specs own detailed contracts; target documents own future work.
 
 ## Current Architectural Debt
 
-- The dashboard still directly constructs some Shana-owned services.
-- Dashboard route/service modules and browser scripts contain duplicated responsibilities.
-- Everyday conversation lacks a dedicated minimal Talk client.
-- Several optional provider dependencies are installed as unconditional runtime dependencies.
+- `DashboardService` still combines several dashboard-owned concerns: supervisor controls, machine status, local provider configuration, and integration operations.
+- Existing operator pages retain compatibility-oriented classic scripts and global handlers; new focused clients use native modules.
+- Browser live capture still uses deprecated `ScriptProcessorNode` rather than `AudioWorkletNode`.
+- Conversation reliability and latency do not yet have a repeatable owner-facing soak/evaluation gate.

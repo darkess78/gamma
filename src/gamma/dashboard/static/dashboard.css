@@ -75,6 +75,7 @@ h2 {
   top: 0;
   z-index: 30;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
@@ -89,6 +90,8 @@ h2 {
 
 .topbar-main {
   display: flex;
+  flex: 1 1 760px;
+  flex-wrap: wrap;
   align-items: center;
   min-width: 0;
   gap: 16px;
@@ -96,7 +99,7 @@ h2 {
 
 .app-nav {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -104,7 +107,7 @@ h2 {
 
 .output-nav {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding-left: 14px;
@@ -159,7 +162,10 @@ h2 {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  margin: 0;
+  margin-left: auto;
+  margin-top: 0;
+  margin-right: 0;
+  margin-bottom: 0;
   padding: 0;
   background: transparent;
   border: 0;

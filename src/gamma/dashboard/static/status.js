@@ -287,6 +287,49 @@
     if (tone) chip.classList.add(tone);
   }
 
+  function renderNavbarStatus(data) {
+    var shana = data.shana || {};
+    var process = shana.process || {};
+    var health = shana.api_health || {};
+    var twitch = data.twitch || {};
+    var worker = twitch.worker || {};
+    var eventsub = twitch.eventsub || {};
+    var workerRunning = !!((worker.process || {}).running);
+    var eventsubRunning = !!((eventsub.process || {}).running);
+    var workerConfigured = worker.configured !== false;
+    var eventsubConfigured = eventsub.configured !== false && eventsub.enabled !== false;
+    var runningCount = Number(workerRunning) + Number(eventsubRunning);
+    var configuredCount = Number(workerConfigured) + Number(eventsubConfigured);
+
+    setText('navbarDashboardStatus', (data.dashboard || {}).url ? 'healthy' : 'unavailable');
+    setText('navbarApiStatus', healthText(health));
+    setText('navbarWorkerStatus', [
+      'Twitch IRC ' + (workerRunning ? 'running' : (workerConfigured ? 'stopped' : 'not configured')),
+      'EventSub ' + (eventsubRunning ? 'running' : (eventsubConfigured ? 'stopped' : (eventsub.enabled === false ? 'disabled' : 'not configured')))
+    ].join(' / '));
+
+    if (process.running && health.ok) {
+      updateChip('stickyShanaStatus', 'Shana: running', 'good');
+    } else if (process.running) {
+      updateChip('stickyShanaStatus', 'Shana: API down', 'bad');
+    } else if (health.ok) {
+      updateChip('stickyShanaStatus', 'Shana: API only', 'warn');
+    } else {
+      updateChip('stickyShanaStatus', 'Shana: stopped', 'bad');
+    }
+    updateChip('stickyBackendStatus', 'API: ' + (health.ok ? 'healthy' : 'down'), health.ok ? 'good' : 'bad');
+
+    if (!configuredCount) {
+      updateChip('stickyTwitchStatus', 'Twitch: not configured', 'warn');
+    } else if (runningCount === configuredCount) {
+      updateChip('stickyTwitchStatus', 'Twitch: all running', 'good');
+    } else if (runningCount) {
+      updateChip('stickyTwitchStatus', 'Twitch: ' + runningCount + '/' + configuredCount + ' running', 'warn');
+    } else {
+      updateChip('stickyTwitchStatus', 'Twitch: stopped', 'warn');
+    }
+  }
+
   function renderOverview(data) {
     var shana = data.shana || {};
     var process = shana.process || {};
@@ -517,6 +560,8 @@
     var workerRunning = !!(twitch.worker && twitch.worker.process && twitch.worker.process.running);
     var eventsubRunning = !!(twitch.eventsub && twitch.eventsub.process && twitch.eventsub.process.running);
 
+    renderNavbarStatus(data);
+
     setText('running', process.running ? 'Yes' : 'No');
     setText('pid', process.pid || 'n/a');
     setText('procCpu', process.running ? formatPercent(process.cpu_percent) : 'n/a');
@@ -546,14 +591,8 @@
     setText('recentTimings', 'Samples: ' + Number(((data.timings || {}).summary || {}).count || 0));
     setText('stdoutLog', logs.stdout_tail || 'No stdout output.');
     setText('stderrLog', logs.stderr_tail || 'No stderr output.');
-    setText('navbarDashboardStatus', 'healthy');
-    setText('navbarApiStatus', healthText(health));
-    setText('navbarWorkerStatus', (Number(workerRunning) + Number(eventsubRunning)) + ' active');
     setText('outputViewApiStatus', (data.performer || {}).ok ? 'healthy' : 'unavailable');
     setText('stamp', 'Last refreshed: ' + new Date().toLocaleString());
-    updateChip('stickyShanaStatus', 'Shana: ' + (process.running ? 'running' : 'stopped'), process.running ? 'good' : 'bad');
-    updateChip('stickyBackendStatus', 'API: ' + (health.ok ? 'healthy' : 'down'), health.ok ? 'good' : 'bad');
-    updateChip('stickyTwitchStatus', 'Twitch: ' + (workerRunning || eventsubRunning ? 'active' : 'stopped'), workerRunning || eventsubRunning ? 'good' : 'warn');
     formatMemory(data);
     renderAssistant(data);
     renderOverview(data);
@@ -576,6 +615,16 @@
       setText('stamp', 'Load failed');
       setText('backendHealth', 'Dashboard status request failed.\n' + String(error));
       updateChip('stickyBackendStatus', 'API: unavailable', 'bad');
+    }
+  }
+
+  async function loadNavbarStatus() {
+    try {
+      var response = await fetch('/api/status/header?_=' + Date.now(), { cache: 'no-store' });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      renderNavbarStatus(await response.json());
+    } catch (_error) {
+      updateChip('stickyBackendStatus', 'API: unknown', 'warn');
     }
   }
 
@@ -642,8 +691,12 @@
   window.selectTtsProfile = selectTtsProfile;
   window.gammaRenderStatus = renderStatus;
 
+  loadNavbarStatus();
   loadStatus();
-  pollTimer = window.setInterval(loadStatus, 10000);
+  pollTimer = window.setInterval(function () {
+    loadNavbarStatus();
+    loadStatus();
+  }, 10000);
   window.addEventListener('beforeunload', function () {
     if (pollTimer) window.clearInterval(pollTimer);
   });

@@ -277,8 +277,15 @@ class DashboardService:
             "memory_db": {"stats": {}, "known_people": [], "recent_items": []},
             "assistant": {},
             "twitch": {
-                "worker": {"process": twitch_process},
-                "eventsub": {"process": eventsub_process},
+                "worker": {
+                    "process": twitch_process,
+                    "configured": not self._missing_twitch_irc_config(),
+                },
+                "eventsub": {
+                    "process": eventsub_process,
+                    "configured": not self._missing_twitch_eventsub_config(),
+                    "enabled": bool(settings.twitch_eventsub_enabled),
+                },
                 "stream_ready": {},
             },
             "discord": {"text_worker": {"process": discord_process}},

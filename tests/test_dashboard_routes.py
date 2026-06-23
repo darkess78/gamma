@@ -190,7 +190,8 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('src="/static/nav.js?v=20260619"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/live.js?v=20260611e"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/memory.js?v=20260611e"', dashboard.body.decode("utf-8"))
-        self.assertIn('src="/static/status.js?v=20260619b"', dashboard.body.decode("utf-8"))
+        self.assertIn('href="/static/dashboard.css?v=20260623a"', dashboard.body.decode("utf-8"))
+        self.assertIn('src="/static/status.js?v=20260623a"', dashboard.body.decode("utf-8"))
         self.assertEqual(talk.status_code, 200)
         self.assertIn('window.GAMMA_DASHBOARD_PAGE = "talk"', talk.body.decode("utf-8"))
         self.assertIn('src="/static/talk.mjs?v=20260622"', talk.body.decode("utf-8"))
@@ -370,6 +371,10 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn("statusPollEndpoint() + '?_='", status_script)
         self.assertIn("return '/api/status/header';", status_script)
         self.assertIn("renderStatus(await response.json());", status_script)
+        self.assertIn("fetch('/api/status/header?_='", status_script)
+        self.assertIn("renderNavbarStatus(await response.json());", status_script)
+        self.assertIn("'Shana: API down'", status_script)
+        self.assertIn("'Twitch: stopped'", status_script)
         self.assertIn("window.loadStatus = loadStatus;", status_script)
         self.assertIn("window.selectTtsProfile = selectTtsProfile;", status_script)
         self.assertIn("renderTtsControls((data.providers || {}).tts);", status_script)
@@ -387,6 +392,13 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('id="placementShadow"', status_html)
         self.assertIn('id="startupAdmission"', status_html)
         self.assertIn('id="sidecarAllocations"', status_html)
+
+    def test_desktop_navigation_wraps_instead_of_overlapping_output_links(self) -> None:
+        stylesheet = (main.STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
+
+        self.assertIn("flex: 1 1 760px;", stylesheet)
+        self.assertIn(".app-nav {\n  display: flex;\n  flex-wrap: wrap;", stylesheet)
+        self.assertIn(".output-nav {\n  display: flex;\n  flex-wrap: wrap;", stylesheet)
 
     def test_presence_uses_shared_native_module_without_legacy_initializer(self) -> None:
         dashboard_html = (main.STATIC_DIR / "index.html").read_text(encoding="utf-8")
@@ -1111,6 +1123,9 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["presence"]["state"]["mode"], "wake")
         self.assertTrue(payload["shana"]["api_health"]["ok"])
+        self.assertIn("configured", payload["twitch"]["worker"])
+        self.assertIn("configured", payload["twitch"]["eventsub"])
+        self.assertIn("enabled", payload["twitch"]["eventsub"])
 
     def test_qwen_presets_are_discovered_and_returned_by_dashboard_status(self) -> None:
         service = DashboardService()

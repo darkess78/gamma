@@ -1,5 +1,8 @@
 # Twitch Stream Module Spec
 
+Status: Current with target sections
+Last verified: 2026-06-22
+
 ## Purpose
 Build the first real Twitch-facing stream module for Shana.
 

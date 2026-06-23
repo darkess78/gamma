@@ -1,12 +1,17 @@
-# Shana Output Bus And Performer Architecture
+# Shana Output Bus And Performer
+
+Status: Current with explicit future sections
+Last verified: 2026-06-22
 
 ## Purpose
 
-This spec records the intended long-term shape for Shana's audio, subtitle, avatar, dashboard, Discord, and stream output routing.
+This spec records the implemented output/performer contract and the remaining
+long-term direction for audio, subtitles, avatars, dashboard monitoring,
+Discord, and stream presentation.
 
 The goal is to support a three-PC setup without making the dashboard, Discord, or a specific VTuber program the center of the architecture.
 
-## Target Topology
+## Supported Topology
 
 ```text
 Gaming PC

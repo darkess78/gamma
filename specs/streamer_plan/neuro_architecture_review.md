@@ -1,5 +1,8 @@
 # Neuro-Inspired Architecture Review
 
+Status: Research interpretation
+Last verified: 2026-06-22
+
 ## Purpose
 This note captures the immediate engineering takeaways from the Neuro-sama research report and compares them to Gamma's current structure.
 

@@ -1,5 +1,8 @@
 # Shana Presence
 
+Status: Current
+Last verified: 2026-06-22
+
 Shana Presence is the operator-level lifecycle state above backend process
 controls. It describes what Shana is allowed to do, not whether `uvicorn` or
 sidecar processes exist.

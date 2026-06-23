@@ -1,5 +1,8 @@
 # Voice Dataset Prep
 
+Status: Experimental tooling
+Last verified: 2026-06-22
+
 `gamma.run_prepare_tts_dataset` is an offline helper for turning long-form episode media into reviewable speech clips.
 
 `gamma.run_tts_dataset_gui` is a dark-mode Tkinter desktop wrapper around staging, extraction, live logs, and manual review.

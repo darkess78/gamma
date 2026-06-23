@@ -1,21 +1,43 @@
-# Specs
+# Gamma Specifications
 
-This folder is the source of truth for product, architecture, and implementation intent.
+Status: Current
+Last verified: 2026-06-22
 
-If code and specs disagree, update one of them immediately.
+Specifications describe product intent and supported behavior. Code and specs
+must be updated together when a public contract changes.
 
-Suggested reading order:
-1. `product.md`
-2. `architecture.md`
-3. `phase1.md`
-4. domain-specific specs like `voice.md`, `memory.md`, `persona.md`
-5. `audio_understanding_plan.md` for speaker-affect and non-speech audio analysis
-6. `audio_understanding_deployment_proposal.md` for persistent model placement
-7. `audio_understanding_handoff.md` for current measurements and resumable next steps
-8. `integrations_observability_handoff.md` for the Twitch, Discord, VTube Studio, logging, and execution backlog
-9. `llm_router.md` for current LLM routing scope and future router upgrades
-10. `resource_aware_model_routing_proposal.md` for shared GPU/resource telemetry and future workload placement
-11. `streamer_plan/streamer_roadmap.md` for the staged AI-streamer architecture direction
-12. `streamer_plan/streamer_roadmap_current.md` for the mature current-state target architecture
-13. `streamer_plan/streamer_gap_backlog.md` for the bridge from the current repo to the target state
-14. `shana_output_bus.md` for the planned three-PC output bus, performer, dashboard monitor, VTuber, and Discord communication architecture
+## Authority Order
+
+1. `LOCKED_GAMMA_NETWORK_DEPLOYMENT.md` for deployment, ports, public URLs, and proxy routing.
+2. `product.md` for product tiers and priorities.
+3. `architecture.md` for runtime ownership and dependency direction.
+4. `current_implementations.md` for the concise implemented inventory.
+5. `roadmap.md` for ordered near-term work.
+6. Domain specs for detailed behavior.
+
+## Domain Specs
+
+- `persona.md`
+- `memory.md`
+- `voice.md`
+- `live_voice.md`
+- `audio_understanding.md`
+- `llm_router.md`
+- `resource_routing.md`
+- `integrations.md`
+- `shana_presence.md`
+- `shana_output_bus.md`
+- `voice_dataset.md`
+- `linux_portability.md`
+
+## Streamer Research And Target
+
+- `streamer_plan/roadmap.md`
+- `streamer_plan/neuro_architecture_review.md`
+- `streamer_plan/twitch_stream_module.md`
+- `streamer_plan/twitch_operator_setup.md`
+- `Neuro-sama Deep Research Report.pdf`
+- `streamer_plan/Neuro-sama Reverse-Engineering Report.pdf`
+
+Research documents are references, not claims about Neuro-sama's private
+implementation. Target documents must label future behavior explicitly.

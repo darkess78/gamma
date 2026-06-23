@@ -1,5 +1,8 @@
 # Linux Portability Checklist
 
+Status: Current
+Last verified: 2026-06-22
+
 Goal: run the same Gamma repo and code on Linux with Linux-local config, without forking the application code.
 
 ## Rules

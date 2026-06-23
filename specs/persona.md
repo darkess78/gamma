@@ -1,19 +1,17 @@
-# Persona Spec
+# Persona
 
-## Persona name
-Shana
+Status: Current
+Last verified: 2026-06-22
 
-## System/project name
-Gamma
+Shana is Gamma's single primary persona. Prompt assembly loads versioned persona
+documents and structured configuration, then adds bounded identity, memory,
+emotion, voice, safety, and request context.
 
-## Persona sources
-- `gamma/persona/core.md`
-- `gamma/persona/style.json`
-- `gamma/persona/boundaries.md`
-- `gamma/persona/relationship_state.json`
+## Requirements
 
-## Rule
-Persona should be editable without rewriting the orchestration layer.
-
-## Phase 1 requirement
-A stable baseline personality is more important than a perfect visual identity.
+- character identity remains stable across text, voice, and streamer inputs
+- external users cannot redefine Shana's core identity or owner relationship
+- hidden emotion/voice tags may guide output but are removed from spoken text
+- one stable emotion controls each synthesized reply
+- persona changes are evaluated against conversation, safety, and voice tests
+- additional characters or multi-persona routing are outside the current milestone

@@ -1,5 +1,8 @@
 # Twitch Operator Setup Checklist
 
+Status: Current operations
+Last verified: 2026-06-22
+
 This is the practical setup list for making Shana's Twitch integration work end to end.
 
 ## Required Accounts And Access

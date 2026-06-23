@@ -1,25 +1,62 @@
-# Architecture Spec
+# Gamma Architecture
 
-## Top-level components
-- backend API
-- conversation orchestration
-- voice input (STT)
-- voice output (TTS)
-- memory layer
-- avatar event bridge
-- tool system
+Status: Current
+Last verified: 2026-06-22
 
-## Rule
-Adapters must be swappable.
-Changing provider/model/language should mainly affect config + adapter code, not the whole system.
+## Runtime Topology
 
-## Orchestration rule
-The primary GPT brain owns conversation and orchestration.
-Specialists like Codex or local worker models may be called later for narrow tasks, but they should remain subordinate helpers.
+Gamma intentionally runs two FastAPI applications:
 
-## Interfaces to preserve
-- `llm/base.py`
-- `voice/stt.py`
-- `voice/tts.py`
-- `memory/service.py`
-- `tools/base.py`
+| Process | Port | Ownership |
+| --- | --- | --- |
+| Shana API | 8000 | conversation, memory, voice inference, vision, stream decisions, performer state |
+| Dashboard | 8001 | authentication, browser clients, supervisor controls, machine status, local configuration |
+
+The protected deployment and proxy contract is
+`LOCKED_GAMMA_NETWORK_DEPLOYMENT.md`.
+
+## Dependency Direction
+
+```text
+browser client
+  -> dashboard API/client
+  -> Shana HTTP API
+  -> conversation, memory, voice, stream, and performer services
+```
+
+The dashboard must not construct Shana-owned services or open Shana-owned
+state stores directly. Shared Pydantic schemas and configuration types may be
+imported by both processes.
+
+## Core Domains
+
+- `conversation`: prompt assembly, response generation, tools, safety, memory
+- `llm`: swappable model adapters and deterministic routing
+- `memory`: profile facts, episodic memory, known people, identity links
+- `voice`: STT, TTS, audio understanding, live jobs, interruption
+- `stream`: normalized public inputs, turn policy, safety, replay
+- `performer`: ordered output events and presentation adapters
+- `integrations`: Twitch, Discord, and future bounded external adapters
+- `dashboard`: authenticated operator and interaction clients
+- `supervisor`: local process lifecycle
+
+## Preserved Interfaces
+
+- provider adapters remain swappable
+- public route contracts remain compatible during internal refactors
+- bind addresses and public URLs remain separate
+- performer outputs remain generic rather than VTube Studio/OBS-specific
+- public actions and speech pass explicit safety and operator-control gates
+
+## Streamer Architecture
+
+The Neuro-inspired extension is a layered system, not an LLM connected
+directly to chat:
+
+```text
+inputs -> normalization/ranking -> turn policy -> conversation
+       -> safety -> speech/actions -> performer outputs -> replay/evaluation
+```
+
+New agentic tools and game integrations remain deferred until the core loop,
+moderation, replay, and human override are stable.

@@ -11,7 +11,10 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from ..config import settings
 from ..conversation.service import ConversationService
 from ..errors import ConfigurationError, ConversationError, ExternalServiceError, GammaError
+from ..integrations.twitch.trust import VALID_TRUST_LEVELS, ViewerTrustStore
+from ..memory.service import MemoryService
 from ..schemas.conversation import ConversationRequest
+from ..schemas.memory import KnownPersonPayload, MemoryClearRequest, MemoryItemCreate, MemoryItemUpdate, ViewerTrustPayload
 from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..schemas.voice import LiveVoiceJobResponse, VoiceRoundtripResponse, VoiceTranscriptionResponse
 from ..stream.brain import StreamBrain
@@ -38,6 +41,8 @@ DASHBOARD_STATIC_DIR = DASHBOARD_DIR / "static"
 SHANA_DEFAULT_IMAGE = settings.project_root / "images" / "shana" / "jacket shana mouth closed eyes open.png"
 conversation_service = LazySingleton[ConversationService]()
 system_status_service = LazySingleton[SystemStatusService]()
+memory_service = LazySingleton[MemoryService]()
+viewer_trust_store = LazySingleton[ViewerTrustStore]()
 voice_roundtrip_service = LazySingleton[VoiceRoundtripService]()
 live_turn_runtime = LazySingleton[LiveTurnRuntime]()
 stream_brain = LazySingleton[StreamBrain]()
@@ -68,6 +73,27 @@ def get_system_status_service() -> SystemStatusService:
         SystemStatusService: Lazy singleton instance.
     """
     return system_status_service.get(SystemStatusService)
+
+
+def get_memory_service() -> MemoryService:
+    return memory_service.get(MemoryService)
+
+
+def get_viewer_trust_store() -> ViewerTrustStore:
+    return viewer_trust_store.get(ViewerTrustStore)
+
+
+def _viewer_trust_payload(record) -> dict:
+    return {
+        "platform": record.platform,
+        "platform_user_id": record.platform_user_id,
+        "display_name": record.display_name,
+        "trust_level": record.trust_level,
+        "notes": record.notes,
+        "pronunciation_alias": record.pronunciation_alias,
+        "created_at": record.created_at,
+        "updated_at": record.updated_at,
+    }
 
 
 def get_voice_roundtrip_service() -> VoiceRoundtripService:
@@ -276,6 +302,88 @@ def memory_stats() -> dict[str, str | int]:
         return get_conversation_service().memory_stats()
     except ConfigurationError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/v1/memory")
+def memory_snapshot(limit: int = 100) -> dict:
+    service = get_memory_service()
+    return {
+        "stats": service.stats(),
+        "known_people": service.get_known_people(limit=max(1, min(limit, 1000))),
+        "recent_items": service.recent_items(limit=max(1, min(limit, 1000))),
+    }
+
+
+@router.post("/v1/memory/items")
+def memory_item_create(payload: MemoryItemCreate) -> dict:
+    try:
+        item = get_memory_service().create_item(payload.model_dump())
+        return {"ok": True, "detail": "Memory created.", "item": item}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch("/v1/memory/items/{kind}/{item_id}")
+def memory_item_update(kind: str, item_id: int, payload: MemoryItemUpdate) -> dict:
+    try:
+        item = get_memory_service().update_item(kind, item_id, payload.model_dump())
+        return {"ok": True, "detail": "Memory updated.", "item": item}
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+
+@router.post("/v1/memory/clear")
+def memory_clear(payload: MemoryClearRequest) -> dict:
+    service = get_memory_service()
+    if payload.scope == "all":
+        result = service.clear_all()
+    elif payload.scope == "recent":
+        result = service.clear_recent(minutes=payload.minutes)
+    else:
+        result = service.clear_selected([item.model_dump() for item in payload.selections])
+    return {"ok": True, "detail": "Memory cleared.", **result}
+
+
+@router.put("/v1/memory/people")
+def memory_person_save(payload: KnownPersonPayload) -> dict:
+    try:
+        person = get_memory_service().save_known_person(payload.model_dump())
+        return {"ok": True, "detail": "Known person saved.", "person": person}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/v1/memory/people/{person_id}")
+def memory_person_delete(person_id: int) -> dict:
+    if not get_memory_service().delete_known_person(person_id):
+        raise HTTPException(status_code=404, detail="known person not found")
+    return {"ok": True, "detail": "Known person deleted.", "id": person_id}
+
+
+@router.get("/v1/stream/viewer-trust")
+def stream_viewer_trust(platform: str = "twitch", limit: int = 100) -> dict:
+    records = get_viewer_trust_store().list_records(platform=platform, limit=limit)
+    return {
+        "items": [_viewer_trust_payload(record) for record in records],
+        "trust_levels": sorted(VALID_TRUST_LEVELS),
+    }
+
+
+@router.put("/v1/stream/viewer-trust")
+def stream_viewer_trust_save(payload: ViewerTrustPayload) -> dict:
+    trust_level = payload.trust_level.strip().lower()
+    if trust_level not in VALID_TRUST_LEVELS:
+        raise HTTPException(status_code=400, detail="unsupported trust_level")
+    record = get_viewer_trust_store().upsert(
+        platform=payload.platform.strip().lower() or "twitch",
+        platform_user_id=payload.platform_user_id.strip(),
+        display_name=payload.display_name,
+        trust_level=trust_level,  # type: ignore[arg-type]
+        notes=payload.notes,
+        pronunciation_alias=payload.pronunciation_alias,
+    )
+    return {"ok": True, "record": _viewer_trust_payload(record)}
 
 
 @router.get("/v1/system/status")

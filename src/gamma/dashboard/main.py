@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 
 from .service import DashboardService
+from .shana_client import ShanaClientError
 from ..config import settings as _app_settings
 from .auth import auth_config, dashboard_auth_ready, is_authenticated, session_cookie_value, verify_login, websocket_is_authenticated
 from ..schemas.response import AssistantResponse, VisionAnalysis
@@ -16,11 +17,9 @@ from ..schemas.voice import VoiceRoundtripResponse
 from ..observability import configure_logging, install_request_logging
 from ..system.lazy_singleton import LazySingleton
 from ..voice.live import LiveVoiceSession
-from ..voice.roundtrip import VoiceRoundtripService
 
 app = FastAPI(title="Gamma Dashboard")
 service = LazySingleton[DashboardService]()
-voice_roundtrip_service = LazySingleton[VoiceRoundtripService]()
 live_voice_session = LazySingleton[LiveVoiceSession]()
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 INDEX_PAGE = STATIC_DIR / "index.html"
@@ -31,6 +30,11 @@ LIVE_VOICE_PANEL = STATIC_DIR / "live_voice_panel.html"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="dashboard-static")
 
 
+@app.exception_handler(ShanaClientError)
+async def shana_client_error_handler(_request: Request, exc: ShanaClientError) -> JSONResponse:
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
+
 def get_dashboard_service() -> DashboardService:
     """Get DashboardService singleton instance.
 
@@ -38,15 +42,6 @@ def get_dashboard_service() -> DashboardService:
         DashboardService: Dashboard service instance.
     """
     return service.get(DashboardService)
-
-
-def get_voice_roundtrip_service() -> VoiceRoundtripService:
-    """Get VoiceRoundtripService singleton instance.
-
-    Returns:
-        VoiceRoundtripService: Voice roundtrip service instance.
-    """
-    return voice_roundtrip_service.get(VoiceRoundtripService)
 
 
 def get_live_voice_session() -> LiveVoiceSession:
@@ -1107,8 +1102,10 @@ async def dashboard_voice_roundtrip(
     Returns:
         VoiceRoundtripResponse: Test results including voice analysis.
     """
-    return await get_voice_roundtrip_service().run(
-        audio_file=audio_file,
+    return get_dashboard_service().run_remote_voice_roundtrip(
+        audio_bytes=await audio_file.read(),
+        filename=audio_file.filename or "dashboard-voice.wav",
+        content_type=audio_file.content_type or "application/octet-stream",
         session_id=session_id,
         synthesize_speech=synthesize_speech,
     )

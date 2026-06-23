@@ -128,14 +128,14 @@ class DashboardRoutesTest(unittest.TestCase):
         with (
             patch.object(settings, "shana_bind_host", "0.0.0.0"),
             patch.object(settings, "shana_port", 8000),
-            patch.object(service, "_probe_json", return_value={"ok": True}) as probe,
+            patch.object(service._shana, "safe_get", return_value={"status": "ok"}) as probe,
             patch.object(service._process_manager, "find_process", return_value=None),
             patch.object(service, "_machine_status", return_value={}),
         ):
             payload = service.build_runtime_status()
 
         self.assertTrue(payload["shana"]["api_health"]["ok"])
-        probe.assert_called_once_with("http://127.0.0.1:8000/v1/system/status")
+        probe.assert_called_once_with("/health")
 
     def test_local_sidecar_connection_refused_has_clear_health_detail(self) -> None:
         error = urllib.error.URLError(ConnectionRefusedError(111, "Connection refused"))
@@ -509,7 +509,7 @@ class DashboardRoutesTest(unittest.TestCase):
             audio_path.write_bytes(b"RIFF")
             with (
                 patch.object(settings, "stream_filtered_audio_path", str(audio_path)),
-                patch.object(DashboardService, "_probe_json", return_value={"ok": True}),
+                patch("gamma.dashboard.service.ShanaApiClient.safe_get", return_value={"status": "ok"}),
             ):
                 payload = DashboardService().stream_ready_status()
 
@@ -541,7 +541,7 @@ class DashboardRoutesTest(unittest.TestCase):
                 ],
             },
         }
-        with patch.object(DashboardService, "_probe_json", return_value=performer_payload) as probe:
+        with patch.object(service._shana, "safe_get", return_value=performer_payload) as probe:
             payload = service.performer_output_status()
 
         self.assertTrue(payload["ok"])
@@ -584,7 +584,7 @@ class DashboardRoutesTest(unittest.TestCase):
             patch.object(settings, "twitch_broadcaster_user_id", ""),
             patch.object(settings, "api_auth_enabled", True),
             patch.object(settings, "api_bearer_token", ""),
-            patch.object(DashboardService, "_probe_json", return_value={"ok": False, "detail": "unreachable"}),
+            patch("gamma.dashboard.service.ShanaApiClient.safe_get", return_value={"ok": False, "detail": "unreachable"}),
         ):
             payload = service.stream_ready_status()
 
@@ -606,7 +606,7 @@ class DashboardRoutesTest(unittest.TestCase):
             patch.object(settings, "twitch_client_id", "client"),
             patch.object(settings, "twitch_broadcaster_user_id", "broadcaster"),
             patch.object(settings, "twitch_dry_run", True),
-            patch.object(DashboardService, "_probe_json", return_value={"ok": True}),
+            patch.object(service._shana, "safe_get", return_value={"status": "ok"}),
             patch.object(service._process_manager, "module_status", return_value={"process": {"running": False}}),
         ):
             payload = service.stream_ready_status()
@@ -625,7 +625,7 @@ class DashboardRoutesTest(unittest.TestCase):
             patch.object(settings, "twitch_client_id", "client"),
             patch.object(settings, "twitch_broadcaster_user_id", "broadcaster"),
             patch.object(settings, "twitch_eventsub_enabled", True),
-            patch.object(DashboardService, "_probe_json", return_value={"ok": True}),
+            patch.object(service._shana, "safe_get", return_value={"status": "ok"}),
             patch.object(service._process_manager, "module_status", return_value={"process": {"running": True}}),
             patch("gamma.dashboard.service.read_twitch_worker_state", return_value={"connected": True, "updated_at": stale_at, "message_count": 2}),
             patch("gamma.dashboard.service.read_twitch_eventsub_state", return_value={"connected": True, "updated_at": stale_at, "notification_count": 1}),
@@ -649,7 +649,7 @@ class DashboardRoutesTest(unittest.TestCase):
             patch.object(settings, "twitch_eventsub_enabled", True),
             patch.object(settings, "twitch_voice_enabled", True),
             patch("gamma.dashboard.service.load_app_file_config", return_value={"twitch_voice_enabled": True}),
-            patch.object(DashboardService, "_probe_json", return_value={"ok": True}),
+            patch.object(service._shana, "safe_get", return_value={"status": "ok"}),
             patch.object(service._process_manager, "module_status", return_value={"process": {"running": True}}),
             patch(
                 "gamma.dashboard.service.read_twitch_worker_state",
@@ -968,7 +968,7 @@ class DashboardRoutesTest(unittest.TestCase):
     def test_tts_catalog_excludes_removed_local_and_stub_providers(self) -> None:
         service = DashboardService()
         with (
-            patch.object(service._system_status, "build_status", return_value={
+            patch.object(service, "_remote_system_status", return_value={
                 "app": {},
                 "providers": {
                     "llm": {"provider": "local"},
@@ -978,7 +978,6 @@ class DashboardRoutesTest(unittest.TestCase):
                 "recent_artifacts": [],
             }),
             patch.object(service, "build_runtime_status", return_value={"shana": {}, "machine": {}}),
-            patch.object(service, "_probe_json", return_value={"ok": True}),
             patch.object(service, "selected_tts_provider", return_value="qwen-tts"),
             patch.object(service, "selected_tts_profile", return_value=None),
             patch.object(service, "performer_output_status", return_value={}),
@@ -995,7 +994,7 @@ class DashboardRoutesTest(unittest.TestCase):
     def test_dashboard_status_uses_lightweight_presence_summary(self) -> None:
         service = DashboardService()
         with (
-            patch.object(service._system_status, "build_status", return_value={
+            patch.object(service, "_remote_system_status", return_value={
                 "app": {},
                 "providers": {
                     "llm": {"provider": "local"},
@@ -1005,7 +1004,6 @@ class DashboardRoutesTest(unittest.TestCase):
                 "recent_artifacts": [],
             }),
             patch.object(service, "build_runtime_status", return_value={"shana": {}, "machine": {}}),
-            patch.object(service, "_probe_json", return_value={"ok": True}),
             patch.object(service, "selected_tts_provider", return_value="qwen-tts"),
             patch.object(service, "selected_tts_profile", return_value=None),
             patch.object(service, "performer_output_status", return_value={}),
@@ -1023,7 +1021,7 @@ class DashboardRoutesTest(unittest.TestCase):
     def test_monitor_status_uses_lightweight_status_payload(self) -> None:
         service = DashboardService()
         with (
-            patch.object(service._system_status, "build_status", return_value={
+            patch.object(service, "_remote_system_status", return_value={
                 "providers": {
                     "llm": {"provider": "local"},
                     "stt": {"provider": "faster-whisper"},
@@ -1060,7 +1058,7 @@ class DashboardRoutesTest(unittest.TestCase):
         qwen_profiles = [profile for profile in list_voice_profiles() if profile.provider == "qwen-tts"]
         self.assertGreater(len(qwen_profiles), 1)
         with (
-            patch.object(service._system_status, "build_status", return_value={
+            patch.object(service, "_remote_system_status", return_value={
                 "app": {},
                 "providers": {
                     "llm": {"provider": "local"},
@@ -1070,7 +1068,6 @@ class DashboardRoutesTest(unittest.TestCase):
                 "recent_artifacts": [],
             }),
             patch.object(service, "build_runtime_status", return_value={"shana": {}, "machine": {}}),
-            patch.object(service, "_probe_json", return_value={"ok": True}),
             patch(
                 "gamma.dashboard.service.load_desired_tts_selection",
                 return_value={"tts_provider": "stub", "tts_profile": ""},
@@ -1180,17 +1177,21 @@ class DashboardRoutesTest(unittest.TestCase):
             audio_base64="dGVzdA==",
             timing_ms={"total_ms": 1.0},
         )
-        roundtrip_service = Mock()
-        roundtrip_service.run = AsyncMock(return_value=payload)
-        with patch.object(main, "get_voice_roundtrip_service", return_value=roundtrip_service):
-            response = anyio.run(
-                main.dashboard_voice_roundtrip,
-                _upload_file("clip.wav", b"RIFF....", "audio/wav"),
-                "abc",
-                True,
-            )
+        self.mock_service.run_remote_voice_roundtrip.return_value = payload
+        response = anyio.run(
+            main.dashboard_voice_roundtrip,
+            _upload_file("clip.wav", b"RIFF....", "audio/wav"),
+            "abc",
+            True,
+        )
         self.assertEqual(response.transcript, "hello")
-        self.assertEqual(roundtrip_service.run.await_count, 1)
+        self.mock_service.run_remote_voice_roundtrip.assert_called_once_with(
+            audio_bytes=b"RIFF....",
+            filename="clip.wav",
+            content_type="audio/wav",
+            session_id="abc",
+            synthesize_speech=True,
+        )
 
     def test_vision_routes(self) -> None:
         analysis = VisionAnalysis(summary="Image summary")

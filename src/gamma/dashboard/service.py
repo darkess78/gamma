@@ -8,7 +8,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import uuid
 import wave
 from collections import deque
 from datetime import datetime, timezone
@@ -22,20 +21,17 @@ from ..integrations.discord import DiscordRuntimeConfig, read_discord_worker_sta
 from ..integrations.twitch.client import GammaStreamClient
 from ..integrations.twitch.eventsub import TwitchEventSubConfig, read_twitch_eventsub_state
 from ..integrations.twitch.replay import replay_jsonl_text
-from ..integrations.twitch.trust import VALID_TRUST_LEVELS, ViewerTrustStore
 from ..integrations.twitch.worker import TwitchWorkerConfig, read_twitch_worker_state
-from ..llm.router_adapter import RouterLLMAdapter
-from ..memory.service import MemoryService
-from ..persona.emotion_service import EmotionMemoryService
 from ..presence import load_presence_state, presence_state_for_mode, save_presence_state
 from ..resources import MachineResourceMonitor
 from ..resources.allocations import recent_sidecar_allocation_entries
 from ..resources.runtime_registry import load_resource_routing_registry
 from ..schemas.response import AssistantResponse, VisionAnalysis
+from ..schemas.voice import VoiceRoundtripResponse
 from ..supervisor.manager import ProcessManager
 from ..system.cuda_env import prepend_cuda_library_path
-from ..system.status import SystemStatusService
 from ..voice.voice_profiles import get_voice_profile, list_voice_profiles, profile_template, save_voice_profile
+from .shana_client import ShanaApiClient, ShanaClientError
 
 
 class DashboardService:
@@ -62,11 +58,8 @@ class DashboardService:
     )
 
     def __init__(self) -> None:
-        self._memory = MemoryService()
-        self._emotion_memory = EmotionMemoryService()
-        self._viewer_trust = ViewerTrustStore()
+        self._shana = ShanaApiClient()
         self._process_manager = ProcessManager()
-        self._system_status = SystemStatusService()
         self._resource_monitor = MachineResourceMonitor(
             project_root=settings.project_root,
             enable_gpu=lambda: settings.dashboard_enable_gpu,
@@ -89,7 +82,7 @@ class DashboardService:
         self._stream_rehearsal_results: deque[dict[str, Any]] = deque(maxlen=25)
 
     def build_status(self) -> dict[str, Any]:
-        local_status = self._system_status.build_status()
+        local_status = self._remote_system_status()
         route_info = self._recent_llm_routes()
         selected_tts_provider = self.selected_tts_provider()
         selected_tts_profile = self.selected_tts_profile()
@@ -134,7 +127,9 @@ class DashboardService:
         local_status["providers"]["llm"]["router_failure_backoff_seconds"] = settings.llm_router_failure_backoff_seconds
         local_status["providers"]["llm"]["route_summary"] = route_info["summary"]
         local_status["providers"]["llm"]["last_route"] = route_info["entries"][-1] if route_info["entries"] else None
-        local_status["providers"]["llm"]["provider_backoff"] = RouterLLMAdapter.provider_backoff_state()
+        local_status["providers"]["llm"]["provider_backoff"] = local_status["providers"]["llm"].get(
+            "provider_backoff", {}
+        )
         local_status["providers"]["llm"]["provider_backoff_entries"] = self._format_router_backoff_entries(
             local_status["providers"]["llm"]["provider_backoff"]
         )
@@ -142,7 +137,12 @@ class DashboardService:
             local_status["providers"]["llm"]
         )
         runtime_status = self.build_runtime_status()
-        system_status = self._probe_json(settings.shana_internal_base_url + "/v1/system/status")
+        system_status = (
+            {"ok": True, "payload": local_status}
+            if local_status.get("app")
+            else {"ok": False, "detail": local_status.get("detail", "unavailable")}
+        )
+        memory_snapshot = self._shana.safe_get("/v1/memory", params={"limit": 100})
         return {
             "dashboard": {
                 "name": f"{settings.app_name} dashboard",
@@ -163,12 +163,12 @@ class DashboardService:
             },
             "machine": runtime_status["machine"],
             "memory_db": {
-                "stats": self._memory.stats(),
-                "known_people": self._memory.get_known_people(),
-                "recent_items": self._memory.recent_items(),
+                "stats": memory_snapshot.get("stats", {}),
+                "known_people": memory_snapshot.get("known_people", []),
+                "recent_items": memory_snapshot.get("recent_items", []),
             },
             "assistant": {
-                "emotion_memory": self._emotion_memory.dashboard_payload(),
+                "emotion_memory": local_status.get("assistant", {}).get("emotion_memory", {}),
                 "settings": self.assistant_runtime_settings(),
             },
             "twitch": {
@@ -189,7 +189,7 @@ class DashboardService:
         }
 
     def build_monitor_status(self) -> dict[str, Any]:
-        local_status = self._system_status.build_status()
+        local_status = self._remote_system_status()
         selected_tts_provider = self.selected_tts_provider()
         selected_tts_profile = self.selected_tts_profile()
         running_tts_provider = self._canonical_tts_provider(
@@ -220,7 +220,7 @@ class DashboardService:
         }
 
     def build_status_summary(self) -> dict[str, Any]:
-        local_status = self._system_status.build_status()
+        local_status = self._remote_system_status()
         runtime_status = self.build_runtime_status()
         return {
             "ok": True,
@@ -273,10 +273,11 @@ class DashboardService:
 
     def build_runtime_status(self) -> dict[str, Any]:
         shana_process = self._process_manager.find_process("shana")
-        api_probe = self._probe_json(settings.shana_internal_base_url + "/v1/system/status")
+        api_probe = self._shana.safe_get("/health")
+        api_ok = self._remote_probe_ok(api_probe)
         api_health = {
-            "ok": api_probe.get("ok", False),
-            "detail": "ok" if api_probe.get("ok", False) else api_probe.get("detail", "unreachable"),
+            "ok": api_ok,
+            "detail": "ok" if api_ok else api_probe.get("detail", "unreachable"),
         }
         return {
             "shana": {
@@ -286,6 +287,23 @@ class DashboardService:
             },
             "machine": self._machine_status(),
         }
+
+    def _remote_system_status(self) -> dict[str, Any]:
+        payload = self._shana.safe_get("/v1/system/status")
+        payload.setdefault("app", {})
+        providers = payload.setdefault("providers", {})
+        providers.setdefault("llm", {})
+        providers.setdefault("stt", {})
+        providers.setdefault("tts", {})
+        payload.setdefault("recent_artifacts", [])
+        payload.setdefault("assistant", {})
+        return payload
+
+    @staticmethod
+    def _remote_probe_ok(payload: dict[str, Any]) -> bool:
+        if payload.get("ok") is False:
+            return False
+        return payload.get("status") == "ok" or "app" in payload or "providers" in payload
 
     def presence_summary(self) -> dict[str, Any]:
         return {
@@ -567,13 +585,14 @@ class DashboardService:
         eventsub_state = read_twitch_eventsub_state()
         irc_runtime = self._worker_runtime_evidence(irc_process, irc_state, message_key="message_count")
         eventsub_runtime = self._worker_runtime_evidence(eventsub_process, eventsub_state, message_key="notification_count")
-        api_probe = self._probe_json(settings.shana_internal_base_url + "/v1/system/status")
+        api_probe = self._shana.safe_get("/v1/system/status")
+        api_ok = self._remote_probe_ok(api_probe)
         checks = [
             self._stream_ready_check(
                 "api",
                 "Shana API",
-                "ok" if api_probe.get("ok") else "block",
-                "API is reachable." if api_probe.get("ok") else f"API is not reachable: {api_probe.get('detail', 'unknown')}",
+                "ok" if api_ok else "block",
+                "API is reachable." if api_ok else f"API is not reachable: {api_probe.get('detail', 'unknown')}",
                 evidence={"url": settings.shana_base_url, "detail": api_probe.get("detail", "")},
             ),
             self._stream_ready_check(
@@ -921,32 +940,16 @@ class DashboardService:
         return path
 
     def twitch_viewer_trust(self, *, platform: str = "twitch", limit: int = 100) -> dict[str, Any]:
-        return {
-            "items": [self._viewer_trust_record_payload(record) for record in self._viewer_trust.list_records(platform=platform, limit=limit)],
-            "trust_levels": sorted(VALID_TRUST_LEVELS),
-        }
+        return self._shana.get(
+            "/v1/stream/viewer-trust",
+            params={"platform": platform, "limit": limit},
+        )
 
     def save_twitch_viewer_trust(self, payload: dict[str, Any]) -> dict[str, Any]:
+        result = self._shana.put("/v1/stream/viewer-trust", payload)
         platform = str(payload.get("platform") or "twitch").strip().lower()
-        platform_user_id = str(payload.get("platform_user_id") or "").strip()
-        if not platform_user_id:
-            raise ValueError("platform_user_id is required")
-        trust_level = str(payload.get("trust_level") or "normal").strip().lower()
-        if trust_level not in VALID_TRUST_LEVELS:
-            raise ValueError("unsupported trust_level")
-        record = self._viewer_trust.upsert(
-            platform=platform,
-            platform_user_id=platform_user_id,
-            display_name=self._optional_string(payload.get("display_name")),
-            trust_level=trust_level,  # type: ignore[arg-type]
-            notes=self._optional_string(payload.get("notes")),
-            pronunciation_alias=self._optional_string(payload.get("pronunciation_alias")),
-        )
-        return {
-            "ok": True,
-            "record": self._viewer_trust_record_payload(record),
-            "items": self.twitch_viewer_trust(platform=platform)["items"],
-        }
+        result["items"] = self.twitch_viewer_trust(platform=platform)["items"]
+        return result
 
     def run_twitch_replay(self, payload: dict[str, Any]) -> dict[str, Any]:
         text = str(payload.get("jsonl") or "").strip()
@@ -1008,24 +1011,8 @@ class DashboardService:
             "safety_categories": safety_categories,
         }
 
-    def _viewer_trust_record_payload(self, record) -> dict[str, Any]:
-        return {
-            "platform": record.platform,
-            "platform_user_id": record.platform_user_id,
-            "display_name": record.display_name,
-            "trust_level": record.trust_level,
-            "notes": record.notes,
-            "pronunciation_alias": record.pronunciation_alias,
-            "created_at": record.created_at,
-            "updated_at": record.updated_at,
-        }
-
-    def _optional_string(self, value: object) -> str | None:
-        text = str(value or "").strip()
-        return text or None
-
     def clear_memory(self) -> dict[str, Any]:
-        result = self._memory.clear_all()
+        result = self._shana.post("/v1/memory/clear", {"scope": "all"})
         self._latest_provider_action = {
             "action": "memory_clear",
             "status": "ok",
@@ -1033,10 +1020,10 @@ class DashboardService:
             "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             **result,
         }
-        return {"ok": True, "detail": "Memory cleared.", **result}
+        return result
 
     def clear_recent_memory(self, *, minutes: int = 10) -> dict[str, Any]:
-        result = self._memory.clear_recent(minutes=minutes)
+        result = self._shana.post("/v1/memory/clear", {"scope": "recent", "minutes": minutes})
         self._latest_provider_action = {
             "action": "memory_clear_recent",
             "status": "ok",
@@ -1044,10 +1031,10 @@ class DashboardService:
             "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             **result,
         }
-        return {"ok": True, "detail": "Recent memory cleared.", **result}
+        return result
 
     def clear_selected_memory(self, selections: list[dict[str, object]]) -> dict[str, Any]:
-        result = self._memory.clear_selected(selections)
+        result = self._shana.post("/v1/memory/clear", {"scope": "selected", "selections": selections})
         self._latest_provider_action = {
             "action": "memory_clear_selected",
             "status": "ok",
@@ -1055,28 +1042,24 @@ class DashboardService:
             "ran_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             **result,
         }
-        return {"ok": True, "detail": "Selected memory cleared.", **result}
+        return result
 
     def update_memory_item(self, payload: dict[str, object]) -> dict[str, Any]:
         kind = str(payload.get("kind") or "").strip()
         item_id = int(payload.get("id") or 0)
         if item_id <= 0:
             raise ValueError("valid memory id is required")
-        item = self._memory.update_item(kind, item_id, payload)
-        return {"ok": True, "detail": "Memory updated.", "item": item}
+        remote_payload = {key: value for key, value in payload.items() if key not in {"kind", "id"}}
+        return self._shana.patch(f"/v1/memory/items/{urllib.parse.quote(kind)}/{item_id}", remote_payload)
 
     def create_memory_item(self, payload: dict[str, object]) -> dict[str, Any]:
-        item = self._memory.create_item(payload)
-        return {"ok": True, "detail": "Memory created.", "item": item}
+        return self._shana.post("/v1/memory/items", dict(payload))
 
     def save_known_person(self, payload: dict[str, object]) -> dict[str, Any]:
-        person = self._memory.save_known_person(payload)
-        return {"ok": True, "detail": "Known person saved.", "person": person}
+        return self._shana.put("/v1/memory/people", dict(payload))
 
     def delete_known_person(self, person_id: int) -> dict[str, Any]:
-        if not self._memory.delete_known_person(person_id):
-            raise ValueError("known person not found")
-        return {"ok": True, "detail": "Known person deleted.", "id": person_id}
+        return self._shana.delete(f"/v1/memory/people/{person_id}")
 
     def start_tts(self) -> dict[str, Any]:
         provider = self.selected_tts_provider()
@@ -1560,6 +1543,30 @@ class DashboardService:
             turn_id=None,
         )
 
+    def run_remote_voice_roundtrip(
+        self,
+        *,
+        audio_bytes: bytes,
+        filename: str,
+        content_type: str,
+        session_id: str | None,
+        synthesize_speech: bool,
+    ) -> VoiceRoundtripResponse:
+        data: dict[str, Any] = {
+            "synthesize_speech": "true" if synthesize_speech else "false",
+        }
+        if session_id:
+            data["session_id"] = session_id
+        payload = self._shana.post_multipart(
+            "/v1/voice/roundtrip",
+            data=data,
+            field_name="audio_file",
+            filename=filename,
+            content=audio_bytes,
+            content_type=content_type,
+        )
+        return VoiceRoundtripResponse.model_validate(payload)
+
     def start_remote_live_job(
         self,
         *,
@@ -1589,52 +1596,31 @@ class DashboardService:
         )
 
     def get_remote_live_job(self, turn_id: str) -> dict[str, Any]:
-        return self._probe_json(settings.shana_internal_base_url + f"/v1/voice/live/{turn_id}", raw_payload=True)
+        return self._shana.get(f"/v1/voice/live/{turn_id}")
 
     def cancel_remote_live_job(self, turn_id: str, *, reason: str = "interrupted") -> dict[str, Any]:
-        boundary = f"gamma-cancel-{uuid.uuid4().hex}"
-        body = self._build_cancel_body(boundary=boundary, reason=reason)
-        headers = {
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-            **self._api_headers(),
-        }
-        request = urllib.request.Request(
-            settings.shana_internal_base_url + f"/v1/voice/live/{turn_id}/cancel",
-            data=body,
-            headers=headers,
-            method="POST",
+        return self._shana.request_json(
+            "POST",
+            f"/v1/voice/live/{turn_id}/cancel",
+            data={"reason": reason},
+            timeout=30,
         )
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"cancel live turn failed: http-{exc.code} {detail}") from exc
-        except Exception as exc:
-            raise RuntimeError(f"cancel live turn failed: {exc}") from exc
-        if not isinstance(payload, dict):
-            raise RuntimeError("cancel live turn returned a non-object payload")
-        return payload
 
     def remote_live_history(self, *, limit: int = 20) -> dict[str, Any]:
-        url = settings.shana_internal_base_url + f"/v1/voice/live/history?limit={max(1, min(limit, 100))}"
-        return self._probe_json(url, raw_payload=True)
+        return self._shana.get("/v1/voice/live/history", params={"limit": max(1, min(limit, 100))})
 
     def stream_recent_traces(self, *, limit: int = 50) -> dict[str, Any]:
-        url = settings.shana_internal_base_url + f"/v1/stream/traces/recent?limit={max(1, min(limit, 200))}"
-        return self._probe_json(url, raw_payload=True)
+        return self._shana.get("/v1/stream/traces/recent", params={"limit": max(1, min(limit, 200))})
 
     def stream_recent_eval(self, *, limit: int = 50) -> dict[str, Any]:
-        url = settings.shana_internal_base_url + f"/v1/stream/eval/recent?limit={max(1, min(limit, 200))}"
-        return self._probe_json(url, raw_payload=True)
+        return self._shana.get("/v1/stream/eval/recent", params={"limit": max(1, min(limit, 200))})
 
     def stream_recent_outputs(self, *, limit: int = 50) -> dict[str, Any]:
-        url = settings.shana_internal_base_url + f"/v1/stream/outputs/recent?limit={max(1, min(limit, 200))}"
-        return self._probe_json(url, raw_payload=True)
+        return self._shana.get("/v1/stream/outputs/recent", params={"limit": max(1, min(limit, 200))})
 
     def performer_output_status(self) -> dict[str, Any]:
         url = settings.shana_internal_base_url + "/v1/performer/status"
-        payload = self._probe_json(url, raw_payload=True)
+        payload = self._shana.safe_get("/v1/performer/status")
         if not payload.get("ok", True) and "stats" not in payload:
             return {
                 "ok": False,
@@ -1664,38 +1650,22 @@ class DashboardService:
         return self._post_remote_json(f"/v1/performer/targets/{safe_target}/clear?reason={urllib.parse.quote(reason)}", {})
 
     def stream_pending_queue(self) -> dict[str, Any]:
-        url = settings.shana_internal_base_url + "/v1/stream/queue"
-        return self._probe_json(url, raw_payload=True)
+        return self._shana.get("/v1/stream/queue")
 
     def stream_temp_memory(self, *, bucket: str | None = None, limit: int = 100) -> dict[str, Any]:
-        query = f"?limit={max(1, min(limit, 1000))}"
+        params: dict[str, Any] = {"limit": max(1, min(limit, 1000))}
         if bucket:
-            query += f"&bucket={urllib.parse.quote(bucket)}"
-        return self._probe_json(settings.shana_internal_base_url + "/v1/stream/temp-memory" + query, raw_payload=True)
+            params["bucket"] = bucket
+        return self._shana.get("/v1/stream/temp-memory", params=params)
 
     def clear_stream_temp_memory(self, *, bucket: str | None = None) -> dict[str, Any]:
-        path = "/v1/stream/temp-memory"
-        if bucket:
-            path += f"?bucket={urllib.parse.quote(bucket)}"
-        url = settings.shana_internal_base_url + path
-        request = urllib.request.Request(url, headers=self._api_headers(), method="DELETE")
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"clear stream temp memory failed: http-{exc.code} {detail}") from exc
-        except Exception as exc:
-            raise RuntimeError(f"clear stream temp memory failed: {exc}") from exc
-        if not isinstance(payload, dict):
-            raise RuntimeError("clear stream temp memory returned a non-object payload")
-        return payload
+        return self._shana.delete("/v1/stream/temp-memory", params={"bucket": bucket} if bucket else None)
 
     def stream_self_goals(self, *, status: str | None = None, limit: int = 100) -> dict[str, Any]:
-        query = f"?limit={max(1, min(limit, 1000))}"
+        params: dict[str, Any] = {"limit": max(1, min(limit, 1000))}
         if status:
-            query += f"&status={urllib.parse.quote(status)}"
-        return self._probe_json(settings.shana_internal_base_url + "/v1/stream/self-goals" + query, raw_payload=True)
+            params["status"] = status
+        return self._shana.get("/v1/stream/self-goals", params=params)
 
     def set_stream_self_goal_status(self, goal_id: int, *, status: str) -> dict[str, Any]:
         if status not in {"approve", "reject"}:
@@ -1891,37 +1861,23 @@ class DashboardService:
         response_mode: str | None,
         turn_id: str | None,
     ) -> dict[str, Any]:
-        wav_bytes = self._pcm_to_wav_bytes(pcm_bytes)
-        boundary = f"gamma-live-{uuid.uuid4().hex}"
-        body = self._build_multipart_body(
-            boundary=boundary,
-            audio_bytes=wav_bytes,
-            session_id=session_id,
-            synthesize_speech=synthesize_speech,
-            response_mode=response_mode,
-            turn_id=turn_id,
+        data: dict[str, Any] = {}
+        if session_id:
+            data["session_id"] = session_id
+        if synthesize_speech is not None:
+            data["synthesize_speech"] = "true" if synthesize_speech else "false"
+        if response_mode:
+            data["response_mode"] = response_mode
+        if turn_id:
+            data["turn_id"] = turn_id
+        return self._shana.post_multipart(
+            path,
+            data=data,
+            field_name="audio_file",
+            filename="live-browser.wav",
+            content=self._pcm_to_wav_bytes(pcm_bytes),
+            content_type="audio/wav",
         )
-        headers = {
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-            **self._api_headers(),
-        }
-        request = urllib.request.Request(
-            settings.shana_internal_base_url + path,
-            data=body,
-            headers=headers,
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=180) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"remote voice roundtrip failed: http-{exc.code} {detail}") from exc
-        except Exception as exc:
-            raise RuntimeError(f"remote voice roundtrip failed: {exc}") from exc
-        if not isinstance(payload, dict):
-            raise RuntimeError("remote voice roundtrip returned a non-object payload")
-        return payload
 
     def analyze_remote_image(
         self,
@@ -1997,55 +1953,6 @@ class DashboardService:
             handle.writeframes(pcm_bytes)
         return buffer.getvalue()
 
-    def _build_multipart_body(
-        self,
-        *,
-        boundary: str,
-        audio_bytes: bytes,
-        session_id: str | None,
-        synthesize_speech: bool | None,
-        response_mode: str | None,
-        turn_id: str | None,
-    ) -> bytes:
-        parts: list[bytes] = []
-
-        def add_field(name: str, value: str) -> None:
-            parts.append(
-                (
-                    f"--{boundary}\r\n"
-                    f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
-                    f"{value}\r\n"
-                ).encode("utf-8")
-            )
-
-        if session_id:
-            add_field("session_id", session_id)
-        if turn_id:
-            add_field("turn_id", turn_id)
-        if synthesize_speech is not None:
-            add_field("synthesize_speech", "true" if synthesize_speech else "false")
-        if response_mode:
-            add_field("response_mode", response_mode)
-        parts.append(
-            (
-                f"--{boundary}\r\n"
-                'Content-Disposition: form-data; name="audio_file"; filename="live-browser.wav"\r\n'
-                "Content-Type: audio/wav\r\n\r\n"
-            ).encode("utf-8")
-            + audio_bytes
-            + b"\r\n"
-        )
-        parts.append(f"--{boundary}--\r\n".encode("utf-8"))
-        return b"".join(parts)
-
-    def _build_cancel_body(self, *, boundary: str, reason: str) -> bytes:
-        return (
-            f"--{boundary}\r\n"
-            'Content-Disposition: form-data; name="reason"\r\n\r\n'
-            f"{reason}\r\n"
-            f"--{boundary}--\r\n"
-        ).encode("utf-8")
-
     def _post_remote_image(
         self,
         *,
@@ -2058,80 +1965,21 @@ class DashboardService:
         session_id: str | None,
         synthesize_speech: bool | None,
     ) -> dict[str, Any]:
-        boundary = f"gamma-image-{uuid.uuid4().hex}"
-        body = self._build_image_multipart_body(
-            boundary=boundary,
-            image_bytes=image_bytes,
-            filename=filename,
-            content_type=content_type,
-            user_text=user_text,
-            vision_mode=vision_mode,
-            session_id=session_id,
-            synthesize_speech=synthesize_speech,
-        )
-        headers = {
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-            **self._api_headers(),
-        }
-        request = urllib.request.Request(
-            settings.shana_internal_base_url + path,
-            data=body,
-            headers=headers,
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=180) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"remote image request failed: http-{exc.code} {detail}") from exc
-        except Exception as exc:
-            raise RuntimeError(f"remote image request failed: {exc}") from exc
-        if not isinstance(payload, dict):
-            raise RuntimeError("remote image request returned a non-object payload")
-        return payload
-
-    def _build_image_multipart_body(
-        self,
-        *,
-        boundary: str,
-        image_bytes: bytes,
-        filename: str,
-        content_type: str,
-        user_text: str,
-        vision_mode: str | None,
-        session_id: str | None,
-        synthesize_speech: bool | None,
-    ) -> bytes:
-        parts: list[bytes] = []
-
-        def add_field(name: str, value: str) -> None:
-            parts.append(
-                (
-                    f"--{boundary}\r\n"
-                    f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
-                    f"{value}\r\n"
-                ).encode("utf-8")
-            )
-
-        add_field("user_text", user_text)
+        data: dict[str, Any] = {"user_text": user_text}
         if vision_mode:
-            add_field("vision_mode", vision_mode)
+            data["vision_mode"] = vision_mode
         if session_id:
-            add_field("session_id", session_id)
+            data["session_id"] = session_id
         if synthesize_speech is not None:
-            add_field("synthesize_speech", "true" if synthesize_speech else "false")
-        parts.append(
-            (
-                f"--{boundary}\r\n"
-                f'Content-Disposition: form-data; name="image_file"; filename="{filename}"\r\n'
-                f"Content-Type: {content_type}\r\n\r\n"
-            ).encode("utf-8")
-            + image_bytes
-            + b"\r\n"
+            data["synthesize_speech"] = "true" if synthesize_speech else "false"
+        return self._shana.post_multipart(
+            path,
+            data=data,
+            field_name="image_file",
+            filename=filename,
+            content=image_bytes,
+            content_type=content_type,
         )
-        parts.append(f"--{boundary}--\r\n".encode("utf-8"))
-        return b"".join(parts)
 
     def _run_provider_action(
         self,
@@ -2307,39 +2155,8 @@ class DashboardService:
             return [self._process_manager.resolve_foreground_python(), str(script)]
         raise ValueError(f"no managed TTS sidecar for provider: {provider}")
 
-    def _probe_json(self, url: str, *, raw_payload: bool = False) -> dict[str, Any]:
-        try:
-            request = urllib.request.Request(url, headers=self._api_headers())
-            with urllib.request.urlopen(request, timeout=5) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-            if raw_payload:
-                return payload
-            return {"ok": True, "payload": payload}
-        except urllib.error.HTTPError as exc:
-            return {"ok": False, "detail": f"http-{exc.code}"}
-        except Exception as exc:
-            return {"ok": False, "detail": str(exc)}
-
     def _post_remote_json(self, path: str, payload: dict[str, Any], *, timeout: float = 10) -> dict[str, Any]:
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        headers = {"Content-Type": "application/json", **self._api_headers()}
-        request = urllib.request.Request(
-            settings.shana_internal_base_url + path,
-            data=body,
-            headers=headers,
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                response_payload = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"remote json post failed: http-{exc.code} {detail}") from exc
-        except Exception as exc:
-            raise RuntimeError(f"remote json post failed: {exc}") from exc
-        if not isinstance(response_payload, dict):
-            raise RuntimeError("remote json post returned a non-object payload")
-        return response_payload
+        return self._shana.post(path, payload, timeout=timeout)
 
     def _machine_status(self) -> dict[str, Any]:
         return self._resource_monitor.dashboard_payload()

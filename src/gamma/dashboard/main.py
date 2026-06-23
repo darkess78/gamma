@@ -145,6 +145,18 @@ def dashboard_status_page(request: Request = None) -> HTMLResponse:
     return _dashboard_page(INDEX_PAGE, dashboard_page="status", request=request)
 
 
+@app.get("/dashboard/presence")
+def dashboard_presence_page(request: Request = None) -> HTMLResponse:
+    """Return dashboard presence page."""
+    return _dashboard_page(INDEX_PAGE, dashboard_page="presence", request=request)
+
+
+@app.get("/presence")
+def presence_page_redirect() -> RedirectResponse:
+    """Redirect stale short Presence links to the dashboard route."""
+    return RedirectResponse(url="/dashboard/presence", status_code=307)
+
+
 @app.get("/dashboard/stream")
 def dashboard_stream_page(request: Request = None) -> HTMLResponse:
     """Return stream dashboard page.
@@ -446,6 +458,44 @@ def runtime_status() -> dict:
         dict: Runtime status including services and workers.
     """
     return get_dashboard_service().build_runtime_status()
+
+
+@app.get("/api/status/summary")
+def status_summary() -> dict:
+    """Return compact dashboard status for all-page polling."""
+    return get_dashboard_service().build_status_summary()
+
+
+@app.get("/api/presence")
+def presence_status() -> dict:
+    """Return Shana Presence runtime state."""
+    return get_dashboard_service().presence_status()
+
+
+@app.post("/api/presence/mode")
+async def presence_mode(request: Request) -> dict:
+    """Set Shana Presence mode."""
+    payload = await _json_object_payload(request)
+    mode = str(payload.get("mode") or "").strip()
+    try:
+        return get_dashboard_service().set_presence_mode(
+            mode,
+            confirm_public_output=bool(payload.get("confirm_public_output", False)),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/presence/break")
+def presence_break() -> dict:
+    """Set Shana Presence to Break."""
+    return get_dashboard_service().set_presence_mode("break")
+
+
+@app.post("/api/presence/sleep")
+def presence_sleep() -> dict:
+    """Set Shana Presence to Sleep."""
+    return get_dashboard_service().set_presence_mode("sleep")
 
 
 @app.get("/api/monitor/status")

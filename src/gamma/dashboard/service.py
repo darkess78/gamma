@@ -27,6 +27,7 @@ from ..integrations.twitch.worker import TwitchWorkerConfig, read_twitch_worker_
 from ..llm.router_adapter import RouterLLMAdapter
 from ..memory.service import MemoryService
 from ..persona.emotion_service import EmotionMemoryService
+from ..presence import load_presence_state, presence_state_for_mode, save_presence_state
 from ..resources import MachineResourceMonitor
 from ..resources.allocations import recent_sidecar_allocation_entries
 from ..resources.runtime_registry import load_resource_routing_registry
@@ -175,6 +176,7 @@ class DashboardService:
                 "eventsub": self.twitch_eventsub_status(),
                 "stream_ready": self.stream_ready_status(),
             },
+            "presence": self.presence_summary(),
             "discord": {
                 "text_worker": self.discord_text_worker_status(),
             },
@@ -214,6 +216,28 @@ class DashboardService:
                 "worker": self.twitch_worker_status(),
                 "eventsub": self.twitch_eventsub_status(),
             },
+            "performer": self.performer_output_status(),
+        }
+
+    def build_status_summary(self) -> dict[str, Any]:
+        local_status = self._system_status.build_status()
+        runtime_status = self.build_runtime_status()
+        return {
+            "ok": True,
+            "dashboard": {
+                "name": f"{settings.app_name} dashboard",
+                "url": settings.dashboard_base_url,
+            },
+            "app": local_status.get("app", {}),
+            "providers": local_status.get("providers", {}),
+            "shana": runtime_status["shana"],
+            "machine": runtime_status["machine"],
+            "twitch": {
+                "worker": self.twitch_worker_status(),
+                "eventsub": self.twitch_eventsub_status(),
+                "stream_ready": self.stream_ready_status(),
+            },
+            "presence": self.presence_summary(),
             "performer": self.performer_output_status(),
         }
 
@@ -262,6 +286,103 @@ class DashboardService:
             },
             "machine": self._machine_status(),
         }
+
+    def presence_summary(self) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "state": load_presence_state(downgrade_stale_live=False),
+        }
+
+    def presence_status(self) -> dict[str, Any]:
+        state = load_presence_state(downgrade_stale_live=False)
+        runtime_status = self.build_runtime_status()
+        performer = self.performer_output_status()
+        stream_ready = self.stream_ready_status()
+        activity = dict(state.get("activity") or {})
+        activity["stream_ready_mode"] = stream_ready.get("mode")
+        recent_by_target = performer.get("recent_by_target") if isinstance(performer.get("recent_by_target"), dict) else {}
+        current_output = recent_by_target.get("stream_public") or recent_by_target.get("dashboard_monitor") or performer.get("recent_event")
+        if isinstance(current_output, dict):
+            activity["current_turn_id"] = current_output.get("turn_id")
+            activity["last_output_target"] = current_output.get("target_policy")
+        state["activity"] = activity
+        return {
+            "ok": True,
+            "state": state,
+            "runtime": {
+                "shana": runtime_status.get("shana", {}),
+                "twitch": {
+                    "worker": self.twitch_worker_status(),
+                    "eventsub": self.twitch_eventsub_status(),
+                    "stream_ready": stream_ready,
+                },
+                "performer": performer,
+            },
+        }
+
+    def set_presence_mode(self, mode: str, *, confirm_public_output: bool = False, updated_by: str = "dashboard") -> dict[str, Any]:
+        normalized = str(mode or "").strip().lower().replace("-", "_")
+        previous = load_presence_state(downgrade_stale_live=False)
+        if normalized == "go_live" and not confirm_public_output:
+            raise ValueError("confirm_public_output is required for Go Live")
+        state = presence_state_for_mode(
+            normalized,
+            previous=previous,
+            updated_by=updated_by,
+            confirmed_live_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z") if normalized == "go_live" else None,
+        )
+        saved = save_presence_state(state)
+        actions = self._apply_presence_side_effects(saved)
+        return {
+            "ok": True,
+            "state": saved,
+            "actions": actions,
+            "detail": self._presence_detail(saved),
+        }
+
+    def _apply_presence_side_effects(self, state: dict[str, Any]) -> dict[str, Any]:
+        mode = str(state.get("mode") or "sleep")
+        actions: dict[str, Any] = {}
+        if mode in {"sleep", "break"}:
+            actions["stream_stop"] = self._safe_presence_action(lambda: self.stop_stream_speech(reason=f"presence_{mode}"))
+            actions["stream_public_clear"] = self._safe_presence_action(lambda: self.clear_performer_target("stream_public", reason=f"presence_{mode}"))
+            actions["stream_public_mute"] = self._safe_presence_action(
+                lambda: self.set_performer_target_mute("stream_public", muted=True, reason=f"presence_{mode}")
+            )
+        elif mode == "wake":
+            actions["stream_public_clear"] = self._safe_presence_action(lambda: self.clear_performer_target("stream_public", reason="presence_wake"))
+            actions["stream_public_mute"] = self._safe_presence_action(
+                lambda: self.set_performer_target_mute("stream_public", muted=True, reason="presence_wake")
+            )
+            actions["dashboard_monitor_unmute"] = self._safe_presence_action(
+                lambda: self.set_performer_target_mute("dashboard_monitor", muted=False, reason="presence_wake")
+            )
+        elif mode == "go_live":
+            actions["stream_public_unmute"] = self._safe_presence_action(
+                lambda: self.set_performer_target_mute("stream_public", muted=False, reason="presence_go_live")
+            )
+            actions["dashboard_monitor_unmute"] = self._safe_presence_action(
+                lambda: self.set_performer_target_mute("dashboard_monitor", muted=False, reason="presence_go_live")
+            )
+        return actions
+
+    @staticmethod
+    def _safe_presence_action(callback) -> dict[str, Any]:
+        try:
+            return callback()
+        except Exception as exc:
+            return {"ok": False, "detail": str(exc)}
+
+    @staticmethod
+    def _presence_detail(state: dict[str, Any]) -> str:
+        mode = str(state.get("mode") or "sleep")
+        if mode == "sleep":
+            return "Presence set to Sleep. Public and proactive output are suppressed."
+        if mode == "wake":
+            return "Presence set to Wake. Local monitor interaction is enabled; stream output remains muted."
+        if mode == "break":
+            return "Presence set to Break. Observation can continue while public output is muted."
+        return "Presence set to Go Live. Public stream output is enabled for this Shana backend session."
 
     def start_shana(self) -> dict[str, Any]:
         return self._process_manager.start("shana")

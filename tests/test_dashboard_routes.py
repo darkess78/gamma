@@ -101,6 +101,16 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(response, {"runtime": "ok"})
         runtime_status.assert_called_once_with()
 
+        with patch.object(self.mock_service, "build_status_summary", return_value={"summary": "ok"}) as status_summary:
+            response = main.status_summary()
+        self.assertEqual(response, {"summary": "ok"})
+        status_summary.assert_called_once_with()
+
+        with patch.object(self.mock_service, "presence_status", return_value={"presence": "ok"}) as presence_status:
+            response = main.presence_status()
+        self.assertEqual(response, {"presence": "ok"})
+        presence_status.assert_called_once_with()
+
         with patch.object(self.mock_service, "build_monitor_status", return_value={"monitor": "ok"}) as monitor_status:
             response = main.monitor_status()
         self.assertEqual(response, {"monitor": "ok"})
@@ -162,16 +172,17 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn("href=\"/dashboard\"", dashboard.body.decode("utf-8"))
         self.assertIn("href=\"/dashboard/live\"", dashboard.body.decode("utf-8"))
         self.assertIn("href=\"/dashboard/monitor\"", dashboard.body.decode("utf-8"))
+        self.assertIn("href=\"/dashboard/presence\"", dashboard.body.decode("utf-8"))
         self.assertIn("href=\"/dashboard/status\"", dashboard.body.decode("utf-8"))
         self.assertIn("href=\"/dashboard/stream\"", dashboard.body.decode("utf-8"))
         self.assertIn("href=\"/dashboard/memory\"", dashboard.body.decode("utf-8"))
         self.assertIn("href=\"/dashboard/settings\"", dashboard.body.decode("utf-8"))
         self.assertIn('rel="icon" href="/static/favicon.svg"', dashboard.body.decode("utf-8"))
         self.assertNotIn('src="/static/monitor.js', dashboard.body.decode("utf-8"))
-        self.assertIn('src="/static/nav.js?v=20260611e"', dashboard.body.decode("utf-8"))
+        self.assertIn('src="/static/nav.js?v=20260619"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/live.js?v=20260611e"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/memory.js?v=20260611e"', dashboard.body.decode("utf-8"))
-        self.assertIn('src="/static/status.js?v=20260611c"', dashboard.body.decode("utf-8"))
+        self.assertIn('src="/static/status.js?v=20260619b"', dashboard.body.decode("utf-8"))
         self.assertEqual(monitor_redirect.status_code, 307)
         self.assertEqual(monitor_redirect.headers["location"], "/dashboard/monitor")
         self.assertEqual(monitor.status_code, 200)
@@ -191,6 +202,8 @@ class DashboardRoutesTest(unittest.TestCase):
             "/dashboard",
             "/dashboard/live",
             "/dashboard/monitor",
+            "/dashboard/presence",
+            "/presence",
             "/dashboard/status",
             "/dashboard/stream",
             "/dashboard/memory",
@@ -204,6 +217,7 @@ class DashboardRoutesTest(unittest.TestCase):
             (main.dashboard, "dashboard"),
             (main.dashboard_live_page, "live"),
             (main.dashboard_monitor_page, "monitor"),
+            (main.dashboard_presence_page, "presence"),
             (main.dashboard_status_page, "status"),
             (main.dashboard_stream_page, "stream"),
             (main.dashboard_memory_page, "memory"),
@@ -320,7 +334,8 @@ class DashboardRoutesTest(unittest.TestCase):
     def test_status_module_loads_and_renders_api_status(self) -> None:
         status_script = (main.STATIC_DIR / "status.js").read_text(encoding="utf-8")
 
-        self.assertIn("fetch('/api/status?_='", status_script)
+        self.assertIn("statusPollEndpoint() + '?_='", status_script)
+        self.assertIn("return '/api/status/summary';", status_script)
         self.assertIn("renderStatus(await response.json());", status_script)
         self.assertIn("window.loadStatus = loadStatus;", status_script)
         self.assertIn("window.selectTtsProfile = selectTtsProfile;", status_script)
@@ -358,6 +373,18 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn("/api/providers/tts/start", body)
         self.assertIn("/api/providers/tts/stop", body)
         self.assertIn("/api/shana/restart", body)
+
+    def test_presence_short_path_redirects_to_dashboard_presence(self) -> None:
+        response = main.presence_page_redirect()
+
+        self.assertEqual(response.status_code, 307)
+        self.assertEqual(response.headers["location"], "/dashboard/presence")
+
+    def test_dashboard_nav_rewrites_short_routes_to_dashboard_paths(self) -> None:
+        script = (main.STATIC_DIR / "nav.js").read_text(encoding="utf-8")
+
+        self.assertIn("route = '/dashboard';", script)
+        self.assertIn("route = '/dashboard' + route;", script)
 
     def test_live_and_monitor_pages_share_live_voice_panel_partial(self) -> None:
         dashboard_body = main.dashboard_live_page().body.decode("utf-8")
@@ -816,6 +843,75 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(event["metadata"]["twitch_controls"]["ambient_chat_enabled"], True)
         self.assertEqual(event["metadata"]["twitch_controls"]["dry_run"], False)
 
+    def test_presence_routes(self) -> None:
+        status_payload = {"ok": True, "state": {"mode": "sleep"}}
+        wake_result = {"ok": True, "state": {"mode": "wake"}}
+        live_result = {"ok": True, "state": {"mode": "go_live"}}
+        break_result = {"ok": True, "state": {"mode": "break"}}
+        sleep_result = {"ok": True, "state": {"mode": "sleep"}}
+
+        with patch.object(self.mock_service, "presence_status", return_value=status_payload) as method:
+            response = main.presence_status()
+        self.assertEqual(response, status_payload)
+        method.assert_called_once_with()
+
+        with patch.object(self.mock_service, "set_presence_mode", return_value=wake_result) as method:
+            response = anyio.run(main.presence_mode, _JsonRequest({"mode": "wake"}))
+        self.assertEqual(response, wake_result)
+        method.assert_called_once_with("wake", confirm_public_output=False)
+
+        with patch.object(self.mock_service, "set_presence_mode", return_value=live_result) as method:
+            response = anyio.run(main.presence_mode, _JsonRequest({"mode": "go_live", "confirm_public_output": True}))
+        self.assertEqual(response, live_result)
+        method.assert_called_once_with("go_live", confirm_public_output=True)
+
+        self.mock_service.set_presence_mode.side_effect = ValueError("confirm_public_output is required for Go Live")
+        with self.assertRaises(Exception) as ctx:
+            anyio.run(main.presence_mode, _JsonRequest({"mode": "go_live"}))
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertEqual(ctx.exception.detail, "confirm_public_output is required for Go Live")
+
+        self.mock_service.set_presence_mode.side_effect = None
+        with patch.object(self.mock_service, "set_presence_mode", return_value=break_result) as method:
+            response = main.presence_break()
+        self.assertEqual(response, break_result)
+        method.assert_called_once_with("break")
+
+        with patch.object(self.mock_service, "set_presence_mode", return_value=sleep_result) as method:
+            response = main.presence_sleep()
+        self.assertEqual(response, sleep_result)
+        method.assert_called_once_with("sleep")
+
+    def test_presence_service_mode_side_effects(self) -> None:
+        service = DashboardService()
+        previous = {"mode": "sleep"}
+        with (
+            patch("gamma.dashboard.service.load_presence_state", return_value=previous),
+            patch("gamma.dashboard.service.save_presence_state", side_effect=lambda state: state),
+            patch.object(service, "clear_performer_target", return_value={"ok": True, "cleared": True}) as clear_target,
+            patch.object(service, "set_performer_target_mute", return_value={"ok": True, "muted": True}) as mute_target,
+        ):
+            wake = service.set_presence_mode("wake")
+
+        self.assertEqual(wake["state"]["mode"], "wake")
+        clear_target.assert_called_once_with("stream_public", reason="presence_wake")
+        mute_target.assert_any_call("stream_public", muted=True, reason="presence_wake")
+        mute_target.assert_any_call("dashboard_monitor", muted=False, reason="presence_wake")
+
+        with (
+            patch("gamma.dashboard.service.load_presence_state", return_value=previous),
+            patch("gamma.dashboard.service.save_presence_state", side_effect=lambda state: state),
+            patch.object(service, "set_performer_target_mute", return_value={"ok": True, "muted": False}) as mute_target,
+        ):
+            live = service.set_presence_mode("go_live", confirm_public_output=True)
+
+        self.assertEqual(live["state"]["mode"], "go_live")
+        self.assertFalse(live["state"]["safety"]["dry_run"])
+        mute_target.assert_any_call("stream_public", muted=False, reason="presence_go_live")
+
+        with self.assertRaises(ValueError):
+            service.set_presence_mode("go_live", confirm_public_output=False)
+
     def test_memory_clear_routes(self) -> None:
         with patch.object(self.mock_service, "clear_recent_memory", return_value={"ok": True, "cleared_total": 1}) as method:
             response = anyio.run(main.clear_recent_memory, _JsonRequest({"minutes": 10}))
@@ -895,6 +991,34 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(payload["providers"]["tts"]["available_providers"], ["qwen-tts", "piper", "openai"])
         self.assertNotIn("local", payload["providers"]["tts"]["available_providers"])
         self.assertNotIn("stub", payload["providers"]["tts"]["available_providers"])
+
+    def test_dashboard_status_uses_lightweight_presence_summary(self) -> None:
+        service = DashboardService()
+        with (
+            patch.object(service._system_status, "build_status", return_value={
+                "app": {},
+                "providers": {
+                    "llm": {"provider": "local"},
+                    "stt": {"provider": "faster-whisper"},
+                    "tts": {"provider": "qwen-tts", "profile_id": "", "health": {"ok": True}},
+                },
+                "recent_artifacts": [],
+            }),
+            patch.object(service, "build_runtime_status", return_value={"shana": {}, "machine": {}}),
+            patch.object(service, "_probe_json", return_value={"ok": True}),
+            patch.object(service, "selected_tts_provider", return_value="qwen-tts"),
+            patch.object(service, "selected_tts_profile", return_value=None),
+            patch.object(service, "performer_output_status", return_value={}),
+            patch.object(service, "twitch_worker_status", return_value={}),
+            patch.object(service, "twitch_eventsub_status", return_value={}),
+            patch.object(service, "stream_ready_status", return_value={}),
+            patch.object(service, "presence_summary", return_value={"ok": True, "state": {"mode": "wake"}}) as summary,
+            patch.object(service, "presence_status", side_effect=AssertionError("full presence status should not run")),
+        ):
+            payload = service.build_status()
+
+        self.assertEqual(payload["presence"]["state"]["mode"], "wake")
+        summary.assert_called_once_with()
 
     def test_monitor_status_uses_lightweight_status_payload(self) -> None:
         service = DashboardService()

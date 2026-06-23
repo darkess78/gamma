@@ -572,6 +572,14 @@ class StreamBrain:
         lowered = text.lower()
         input_safety = _input_safety(event)
         safety_category = str(input_safety.get("category") or "")
+        presence_mode = str(event.metadata.get("presence_mode") or "").strip().lower()
+
+        if event.metadata.get("presence_suppressed"):
+            return TurnDecision(
+                decision="ignore",
+                reason=f"presence_{presence_mode or 'unknown'}_suppressed_public_output",
+                metadata={"event_kind": event.kind, "presence_mode": presence_mode or None},
+            )
 
         if event.kind == "moderator_action":
             return TurnDecision(

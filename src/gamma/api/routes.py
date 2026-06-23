@@ -20,6 +20,7 @@ from ..stream.output import StreamOutputLogService
 from ..integrations.discord import DiscordRuntime
 from ..performer.bus import PerformerEventBus, get_performer_event_bus
 from ..performer.models import DEFAULT_TARGET_POLICY, KNOWN_TARGET_POLICIES
+from ..presence import apply_presence_to_stream_event, load_presence_state, save_presence_state
 from ..performer.vtube_studio import VTubeStudioAdapter, VTubeStudioRunner
 from ..observability import current_request_id
 from ..stream.replay import StreamEvalReport, StreamReplayService
@@ -235,10 +236,15 @@ def dashboard() -> RedirectResponse:
 def dashboard_page_redirect(page_name: str) -> RedirectResponse:
     if page_name == "twitch":
         page_name = "stream"
-    allowed = {"live", "monitor", "status", "stream", "memory", "settings"}
+    allowed = {"live", "monitor", "status", "presence", "stream", "memory", "settings"}
     if page_name not in allowed:
         raise HTTPException(status_code=404, detail="dashboard page not found")
     return RedirectResponse(url=f"{settings.dashboard_base_url}/dashboard/{page_name}", status_code=307)
+
+
+@router.get("/presence")
+def presence_page_redirect() -> RedirectResponse:
+    return RedirectResponse(url=f"{settings.dashboard_base_url}/dashboard/presence", status_code=307)
 
 
 @router.get("/performer")
@@ -308,6 +314,14 @@ def stream_event(event: StreamInputEvent, synthesize_speech: bool = False, fast_
         request_id = current_request_id()
         if request_id:
             event.metadata.setdefault("request_id", request_id)
+        presence = load_presence_state(downgrade_stale_live=True)
+        if presence.get("requires_confirmation"):
+            save_presence_state(presence)
+        event, synthesize_speech = apply_presence_to_stream_event(
+            event,
+            synthesize_speech=synthesize_speech,
+            state=presence,
+        )
         return get_stream_brain().handle_event(
             event,
             synthesize_speech=synthesize_speech,

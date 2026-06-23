@@ -210,6 +210,28 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual(conversation.calls, [])
         self.assertEqual(result.output_events, [])
 
+    def test_presence_suppressed_public_event_is_ignored_without_generation(self) -> None:
+        conversation = _FakeConversation()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            brain = StreamBrain(
+                conversation=conversation,  # type: ignore[arg-type]
+                trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
+            )
+            result = brain.handle_event(
+                StreamInputEvent(
+                    kind="chat_message",
+                    text="Shana hello",
+                    actor=StreamActor(source="twitch", platform_id="u1"),
+                    metadata={"presence_mode": "sleep", "presence_suppressed": True},
+                )
+            )
+
+        self.assertEqual(result.decision.decision, "ignore")
+        self.assertEqual(result.decision.reason, "presence_sleep_suppressed_public_output")
+        self.assertIsNone(result.assistant_response)
+        self.assertEqual(conversation.calls, [])
+        self.assertEqual(result.output_events, [])
+
     def test_moderator_action_escalates_without_generation(self) -> None:
         conversation = _FakeConversation()
         with tempfile.TemporaryDirectory() as temp_dir:

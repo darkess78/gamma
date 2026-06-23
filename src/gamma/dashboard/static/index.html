@@ -16,6 +16,7 @@
           <a class="nav-link" data-dashboard-route="/" data-dashboard-page-link="dashboard" href="/dashboard">Dashboard</a>
           <a class="nav-link" data-dashboard-route="/live" data-dashboard-page-link="live" href="/dashboard/live">Live</a>
           <a class="nav-link" data-output-view="monitor" data-dashboard-route="/monitor" data-dashboard-page-link="monitor" href="/dashboard/monitor">Monitor</a>
+          <a class="nav-link" data-dashboard-route="/presence" data-dashboard-page-link="presence" href="/dashboard/presence">Presence</a>
           <a class="nav-link" data-dashboard-route="/status" data-dashboard-page-link="status" href="/dashboard/status">Status</a>
           <a class="nav-link" data-dashboard-route="/stream" data-dashboard-page-link="stream" href="/dashboard/stream">Stream</a>
           <a class="nav-link" data-dashboard-route="/memory" data-dashboard-page-link="memory" href="/dashboard/memory">Memory</a>
@@ -61,6 +62,7 @@
         <div class="overview-card-grid">
           <a class="overview-link-card" data-dashboard-route="/live" href="/dashboard/live"><span>Live</span><strong id="overviewLiveStatus">Checking voice runtime</strong></a>
           <a class="overview-link-card" data-dashboard-route="/monitor" href="/dashboard/monitor"><span>Monitor</span><strong id="overviewOutputStatus">Checking output bus</strong></a>
+          <a class="overview-link-card" data-dashboard-route="/presence" href="/dashboard/presence"><span>Presence</span><strong id="overviewPresenceStatus">Checking presence</strong></a>
           <a class="overview-link-card" data-dashboard-route="/status" href="/dashboard/status"><span>Status</span><strong id="overviewShanaStatus">Checking Shana</strong></a>
           <a class="overview-link-card" data-dashboard-route="/stream" href="/dashboard/stream"><span>Stream Ops</span><strong id="overviewStreamStatus">Checking stream services</strong></a>
           <a class="overview-link-card" data-dashboard-route="/memory" href="/dashboard/memory"><span>Memory</span><strong id="overviewMemoryStatus">Reading memory database</strong></a>
@@ -70,6 +72,7 @@
         </div>
         <div class="overview-mini-grid">
           <div class="mini-card"><span>Shana</span><strong id="overviewShanaMini">Checking</strong></div>
+          <div class="mini-card"><span>Presence</span><strong id="overviewPresenceMini">Checking</strong></div>
           <div class="mini-card"><span>API</span><strong id="overviewApiMini">Checking</strong></div>
           <div class="mini-card"><span>Workers</span><strong id="overviewWorkerMini">Checking</strong></div>
           <div class="mini-card"><span>Current Output</span><strong id="overviewTurnMini">Waiting for output state</strong></div>
@@ -78,6 +81,35 @@
           <div class="mini-card"><span>Twitch</span><strong id="overviewTwitchMini">Checking</strong></div>
           <div class="mini-card"><span>Memory</span><strong id="overviewMemoryMini">Checking</strong></div>
           <div class="mini-card mini-card-wide"><span>Warnings</span><strong id="overviewWarningsMini">Waiting for health report</strong></div>
+        </div>
+      </section>
+      <section class="panel full-width" data-dashboard-tab="presence">
+        <div class="panel-head">
+          <h2>Shana Presence</h2>
+          <button class="secondary" onclick="loadPresence()">Refresh</button>
+        </div>
+        <div class="provider-actions">
+          <div class="action-group">
+            <div class="action-title">Mode</div>
+            <div class="action-buttons">
+              <button id="presenceSleepButton" class="ghost" onclick="setPresenceMode('sleep')" title="Suppress public output and stop Twitch observation.">Sleep</button>
+              <button id="presenceWakeButton" class="secondary" onclick="setPresenceMode('wake')" title="Enable local interaction while keeping stream output muted.">Wake</button>
+              <button id="presenceGoLiveButton" onclick="setPresenceMode('go_live')" title="Enable Twitch observation and public stream output.">Go Live</button>
+              <button id="presenceBreakButton" class="ghost danger-outline" onclick="setPresenceMode('break')" title="Keep observing Twitch while muting public output.">Break</button>
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">Current State</div>
+            <div class="render compact-render" id="presenceModeStatus">Presence has not loaded yet.</div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">Runtime</div>
+            <div class="render compact-render" id="presenceRuntimeStatus">Runtime state has not loaded yet.</div>
+          </div>
+          <div class="action-group">
+            <div class="action-title">Outputs</div>
+            <div class="render compact-render" id="presenceOutputStatus">Output state has not loaded yet.</div>
+          </div>
         </div>
       </section>
       <section class="panel" data-dashboard-tab="status">
@@ -701,13 +733,14 @@
   <script src="/static/init.js?v=20260529"></script>
   <script src="/static/providers.js?v=20260529"></script>
   <script src="/static/stream.js?v=20260618"></script>
-  <script src="/static/nav.js?v=20260611e"></script>
+  <script src="/static/presence.js?v=20260619b"></script>
+  <script src="/static/nav.js?v=20260619"></script>
   <script src="/static/memory.js?v=20260611e"></script>
   <script src="/static/api.js?v=20260618"></script>
   <script src="/static/live.js?v=20260611e"></script>
   <script src="/static/render.js?v=20260529"></script>
   <script src="/static/controls.js?v=20260611a"></script>
-  <script src="/static/status.js?v=20260611c"></script>
+  <script src="/static/status.js?v=20260619b"></script>
   <!-- Legacy script (commented out) -->
   <!-- <script src="/static/dashboard.js?v=20260528b"></script> -->
 </body>

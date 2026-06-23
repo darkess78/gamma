@@ -299,8 +299,11 @@
     var performer = data.performer || {};
     var current = performer.recent_event || {};
     var streamReady = twitch.stream_ready || {};
+    var presence = data.presence || {};
+    var presenceState = presence.state || {};
     setText('overviewLiveStatus', 'Voice ready');
     setText('overviewOutputStatus', current.type || 'idle');
+    setText('overviewPresenceStatus', presenceLabel(presenceState.mode || 'sleep'));
     setText('overviewShanaStatus', process.running ? 'Running' : 'Stopped');
     setText('overviewStreamStatus', streamReady.mode || 'not configured');
     setText('overviewMemoryStatus', (Number(memoryStats.profile_count || 0) + Number(memoryStats.episodic_count || 0)) + ' items');
@@ -308,6 +311,7 @@
       return providers[name] && providers[name].provider;
     }).length + '/3 configured');
     setText('overviewShanaMini', process.running ? 'ON' : 'OFF');
+    setText('overviewPresenceMini', presenceLabel(presenceState.mode || 'sleep'));
     setText('overviewApiMini', health.ok ? 'OK' : healthText(health));
     setText('overviewWorkerMini', Number(workerRunning) + Number(eventsubRunning) + ' active');
     setText('overviewTurnMini', current.type ? current.type + ' #' + (current.sequence || '?') : 'Idle');
@@ -320,6 +324,11 @@
     if (!((providers.tts || {}).health || {}).ok) warnings.push('TTS unavailable');
     if (!process.running) warnings.push('Shana stopped');
     setText('overviewWarningsMini', warnings.length ? warnings.join(' / ') : 'No current warnings');
+  }
+
+  function presenceLabel(mode) {
+    var value = String(mode || 'sleep').replace(/_/g, ' ');
+    return value.replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
   }
 
   function renderPlacementShadow(data) {
@@ -548,6 +557,9 @@
     formatMemory(data);
     renderAssistant(data);
     renderOverview(data);
+    if (typeof window.renderPresenceStatus === 'function' && data.presence && data.presence.runtime) {
+      window.renderPresenceStatus(data.presence || {});
+    }
     renderTwitch(data);
     renderPlacementShadow(data);
     renderStartupAdmission(data);
@@ -557,7 +569,7 @@
   async function loadStatus() {
     setText('stamp', 'Loading...');
     try {
-      var response = await fetch('/api/status?_=' + Date.now(), { cache: 'no-store' });
+      var response = await fetch(statusPollEndpoint() + '?_=' + Date.now(), { cache: 'no-store' });
       if (!response.ok) throw new Error('HTTP ' + response.status);
       renderStatus(await response.json());
     } catch (error) {
@@ -565,6 +577,14 @@
       setText('backendHealth', 'Dashboard status request failed.\n' + String(error));
       updateChip('stickyBackendStatus', 'API: unavailable', 'bad');
     }
+  }
+
+  function statusPollEndpoint() {
+    var page = String(window.GAMMA_DASHBOARD_PAGE || 'dashboard');
+    if (page === 'status' || page === 'settings' || page === 'memory') {
+      return '/api/status';
+    }
+    return '/api/status/summary';
   }
 
   async function action(path, options) {

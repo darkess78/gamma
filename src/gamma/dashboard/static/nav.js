@@ -5,6 +5,7 @@
   var dashboardPageTabs = {
     dashboard: ['dashboard-overview'],
     live: ['voice'],
+    presence: ['presence'],
     status: ['status', 'providers', 'logs'],
     stream: ['stream'],
     memory: ['memory'],
@@ -97,6 +98,11 @@
     var route = String(path || '/dashboard');
     if (route.charAt(0) !== '/') {
       route = '/' + route;
+    }
+    if (route === '/') {
+      route = '/dashboard';
+    } else if (route.indexOf('/dashboard') !== 0) {
+      route = '/dashboard' + route;
     }
     var dashboardBase = dashboardPublicBase();
     return dashboardBase ? dashboardBase + route : route;

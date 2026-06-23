@@ -16,6 +16,7 @@ from gamma.config import settings
 from gamma.dashboard import main
 from gamma.dashboard.service import DashboardService
 from gamma.resources.runtime_registry import ResourceRoutingPolicy, ResourceRoutingRegistry
+from gamma.schemas.conversation import ConversationRequest
 from gamma.schemas.response import AssistantResponse, VisionAnalysis
 from gamma.schemas.voice import VoiceRoundtripResponse
 from gamma.system.status import SystemStatusService
@@ -165,6 +166,7 @@ class DashboardRoutesTest(unittest.TestCase):
             patch.object(settings, "dashboard_public_scheme", "http"),
         ):
             dashboard = main.dashboard()
+            talk = main.dashboard_talk_page()
             monitor_redirect = main.monitor_page()
             monitor = main.dashboard_monitor_page()
             performer = main.performer_redirect()
@@ -176,6 +178,7 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('window.GAMMA_DASHBOARD_PAGE = "dashboard"', dashboard.body.decode("utf-8"))
         self.assertIn("href=\"/dashboard\"", dashboard.body.decode("utf-8"))
         self.assertIn("href=\"/dashboard/live\"", dashboard.body.decode("utf-8"))
+        self.assertIn("href=\"/dashboard/talk\"", dashboard.body.decode("utf-8"))
         self.assertIn("href=\"/dashboard/monitor\"", dashboard.body.decode("utf-8"))
         self.assertIn("href=\"/dashboard/presence\"", dashboard.body.decode("utf-8"))
         self.assertIn("href=\"/dashboard/status\"", dashboard.body.decode("utf-8"))
@@ -188,6 +191,10 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('src="/static/live.js?v=20260611e"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/memory.js?v=20260611e"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/status.js?v=20260619b"', dashboard.body.decode("utf-8"))
+        self.assertEqual(talk.status_code, 200)
+        self.assertIn('window.GAMMA_DASHBOARD_PAGE = "talk"', talk.body.decode("utf-8"))
+        self.assertIn('src="/static/talk.mjs?v=20260622"', talk.body.decode("utf-8"))
+        self.assertIn('id="liveVoiceButton"', talk.body.decode("utf-8"))
         self.assertEqual(monitor_redirect.status_code, 307)
         self.assertEqual(monitor_redirect.headers["location"], "/dashboard/monitor")
         self.assertEqual(monitor.status_code, 200)
@@ -205,6 +212,8 @@ class DashboardRoutesTest(unittest.TestCase):
         registered_paths = {getattr(route, "path", "") for route in main.app.routes}
         for path in [
             "/dashboard",
+            "/dashboard/talk",
+            "/talk",
             "/dashboard/live",
             "/dashboard/monitor",
             "/dashboard/presence",
@@ -220,6 +229,7 @@ class DashboardRoutesTest(unittest.TestCase):
     def test_dashboard_app_public_page_routes_return_html(self) -> None:
         page_paths = [
             (main.dashboard, "dashboard"),
+            (main.dashboard_talk_page, "talk"),
             (main.dashboard_live_page, "live"),
             (main.dashboard_monitor_page, "monitor"),
             (main.dashboard_presence_page, "presence"),
@@ -252,6 +262,7 @@ class DashboardRoutesTest(unittest.TestCase):
         # All navbar links should use relative same-origin paths
         self.assertIn('href="/dashboard"', body, "Dashboard link missing")
         self.assertIn('href="/dashboard/live"', body, "Live link missing")
+        self.assertIn('href="/dashboard/talk"', body, "Talk link missing")
         self.assertIn('href="/dashboard/status"', body, "Status link missing")
         self.assertIn('href="/dashboard/stream"', body, "Stream link missing")
         self.assertIn('href="/dashboard/memory"', body, "Memory link missing")
@@ -261,7 +272,7 @@ class DashboardRoutesTest(unittest.TestCase):
         # Should NOT contain absolute URLs for navbar routes
         # Note: overlay/subtitles is external and gets replaced with absolute URL
         import re
-        navbar_routes = ['dashboard', 'live', 'status', 'stream', 'memory', 'settings', 'monitor']
+        navbar_routes = ['dashboard', 'talk', 'live', 'status', 'stream', 'memory', 'settings', 'monitor']
         for route in navbar_routes:
             self.assertNotIn(f'href="http://127.0.0.1:8001/dashboard/{route}"', body)
         
@@ -294,6 +305,7 @@ class DashboardRoutesTest(unittest.TestCase):
         # Navbar links should be relative same-origin paths
         for path in [
             "/dashboard",
+            "/dashboard/talk",
             "/dashboard/live",
             "/dashboard/monitor",
             "/dashboard/status",
@@ -328,6 +340,22 @@ class DashboardRoutesTest(unittest.TestCase):
         twitch_redirect = main.dashboard_twitch_page()
         self.assertEqual(twitch_redirect.status_code, 307)
         self.assertEqual(twitch_redirect.headers["location"], "/dashboard/stream")
+
+    def test_talk_short_path_redirects_to_dashboard_talk(self) -> None:
+        response = main.talk_page_redirect()
+
+        self.assertEqual(response.status_code, 307)
+        self.assertEqual(response.headers["location"], "/dashboard/talk")
+
+    def test_talk_page_uses_one_session_for_text_and_live_voice(self) -> None:
+        body = main.dashboard_talk_page().body.decode("utf-8")
+        script = (main.STATIC_DIR / "talk.mjs").read_text(encoding="utf-8")
+
+        self.assertIn('id="talkForm"', body)
+        self.assertIn('id="voiceSessionId"', body)
+        self.assertIn("/api/conversation/respond", script)
+        self.assertIn("voiceSession.value = sessionId", script)
+        self.assertIn("HISTORY_LIMIT = 50", script)
 
     def test_dashboard_navigation_module_applies_page_visibility(self) -> None:
         nav_script = (main.STATIC_DIR / "nav.js").read_text(encoding="utf-8")
@@ -1222,6 +1250,37 @@ class DashboardRoutesTest(unittest.TestCase):
             content_type="audio/wav",
             session_id="abc",
             synthesize_speech=True,
+        )
+
+    def test_text_conversation_route_proxies_to_shana(self) -> None:
+        request = ConversationRequest(user_text="hello", session_id="talk-1", synthesize_speech=True)
+        assistant_response = AssistantResponse(spoken_text="Hello back.")
+        self.mock_service.respond_remote_text.return_value = assistant_response
+
+        response = main.conversation_respond(request)
+
+        self.assertEqual(response.spoken_text, "Hello back.")
+        self.mock_service.respond_remote_text.assert_called_once_with(request)
+
+    def test_text_conversation_service_forces_text_only_upstream(self) -> None:
+        service = DashboardService()
+        upstream = AssistantResponse(spoken_text="Hello back.").model_dump(mode="json")
+        with patch.object(service._shana, "post", return_value=upstream) as post:
+            response = service.respond_remote_text(
+                ConversationRequest(user_text="hello", session_id="talk-1", synthesize_speech=True)
+            )
+
+        self.assertEqual(response.spoken_text, "Hello back.")
+        post.assert_called_once_with(
+            "/v1/conversation/respond",
+            {
+                "user_text": "hello",
+                "session_id": "talk-1",
+                "synthesize_speech": False,
+                "speaker": None,
+                "fast_mode": False,
+            },
+            timeout=180,
         )
 
     def test_vision_routes(self) -> None:

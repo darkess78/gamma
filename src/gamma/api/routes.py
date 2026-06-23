@@ -262,7 +262,7 @@ def dashboard() -> RedirectResponse:
 def dashboard_page_redirect(page_name: str) -> RedirectResponse:
     if page_name == "twitch":
         page_name = "stream"
-    allowed = {"live", "monitor", "status", "presence", "stream", "memory", "settings"}
+    allowed = {"talk", "live", "monitor", "status", "presence", "stream", "memory", "settings"}
     if page_name not in allowed:
         raise HTTPException(status_code=404, detail="dashboard page not found")
     return RedirectResponse(url=f"{settings.dashboard_base_url}/dashboard/{page_name}", status_code=307)
@@ -271,6 +271,11 @@ def dashboard_page_redirect(page_name: str) -> RedirectResponse:
 @router.get("/presence")
 def presence_page_redirect() -> RedirectResponse:
     return RedirectResponse(url=f"{settings.dashboard_base_url}/dashboard/presence", status_code=307)
+
+
+@router.get("/talk")
+def talk_page_redirect() -> RedirectResponse:
+    return RedirectResponse(url=f"{settings.dashboard_base_url}/dashboard/talk", status_code=307)
 
 
 @router.get("/performer")

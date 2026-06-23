@@ -27,6 +27,7 @@ from ..resources import MachineResourceMonitor
 from ..resources.allocations import recent_sidecar_allocation_entries
 from ..resources.runtime_registry import load_resource_routing_registry
 from ..schemas.response import AssistantResponse, VisionAnalysis
+from ..schemas.conversation import ConversationRequest
 from ..schemas.voice import VoiceRoundtripResponse
 from ..supervisor.manager import ProcessManager
 from ..system.cuda_env import prepend_cuda_library_path
@@ -1614,6 +1615,13 @@ class DashboardService:
             content_type=content_type,
         )
         return VoiceRoundtripResponse.model_validate(payload)
+
+    def respond_remote_text(self, request: ConversationRequest) -> AssistantResponse:
+        """Send a text-only conversation turn to Shana."""
+        payload = request.model_dump(mode="json")
+        payload["synthesize_speech"] = False
+        response = self._shana.post("/v1/conversation/respond", payload, timeout=180)
+        return AssistantResponse.model_validate(response)
 
     def start_remote_live_job(
         self,

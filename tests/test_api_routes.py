@@ -124,6 +124,7 @@ class ApiRoutesTest(unittest.TestCase):
             dashboard = routes.dashboard()
             response = routes.dashboard_page_redirect("live")
             presence = routes.presence_page_redirect()
+            talk = routes.talk_page_redirect()
             twitch = routes.dashboard_page_redirect("twitch")
 
         self.assertEqual(dashboard.status_code, 307)
@@ -132,6 +133,7 @@ class ApiRoutesTest(unittest.TestCase):
         self.assertIn("/dashboard/live", response.headers["location"])
         self.assertEqual(presence.status_code, 307)
         self.assertIn("/dashboard/presence", presence.headers["location"])
+        self.assertIn("/dashboard/talk", talk.headers["location"])
         self.assertEqual(twitch.status_code, 307)
         self.assertIn("/dashboard/stream", twitch.headers["location"])
 
@@ -140,10 +142,12 @@ class ApiRoutesTest(unittest.TestCase):
         self.assertIn("/dashboard", registered_paths)
         self.assertIn("/dashboard/{page_name}", registered_paths)
         self.assertIn("/presence", registered_paths)
+        self.assertIn("/talk", registered_paths)
 
     def test_public_dashboard_routes_on_api_app_do_not_json_404(self) -> None:
         page_paths = [
             ("dashboard", routes.dashboard),
+            ("talk", routes.talk_page_redirect),
             ("live", lambda: routes.dashboard_page_redirect("live")),
             ("monitor", lambda: routes.dashboard_page_redirect("monitor")),
             ("presence", lambda: routes.dashboard_page_redirect("presence")),

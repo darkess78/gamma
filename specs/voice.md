@@ -30,7 +30,8 @@ for inference.
 
 - file roundtrip and smoke-test CLIs
 - turn-based and always-listening microphone controller modes
-- `/dashboard/talk` for text and live voice in one browser session
+- `/dashboard/monitor` for persistent local text and output playback
+- `/dashboard/live` for browser microphone and live-voice diagnostics
 - browser live voice described in `live_voice.md`
 
 Provider choice must remain isolated behind adapter/service interfaces. New

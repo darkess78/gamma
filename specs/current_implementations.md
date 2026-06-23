@@ -76,7 +76,8 @@ specs own detailed contracts; target documents own future work.
 
 ## Dashboard
 
-- Dedicated `/dashboard/talk` client for typed and live-voice conversation using one session ID.
+- Persistent `/dashboard/monitor` room for local text, performer replay, speech playback, and live-voice controls.
+- Legacy Talk routes redirect to Monitor.
 - Overview, Live, Monitor, Presence, Status, Stream, Memory, and Settings pages.
 - Dashboard-to-Shana requests use a centralized HTTP client; assistant domain services and state stores remain owned by Shana.
 - Lightweight header polling avoids full provider, memory, log, and machine-status work on interaction and operations pages.

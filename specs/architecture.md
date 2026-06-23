@@ -28,10 +28,11 @@ The dashboard must not construct Shana-owned services or open Shana-owned
 state stores directly. Shared Pydantic schemas and configuration types may be
 imported by both processes.
 
-`/dashboard/talk` is the primary interaction client. Typed turns pass through
-the dashboard's authenticated conversation proxy; live voice uses the
-dashboard WebSocket and Shana live-job endpoints. Both use the same
-conversation session identifier.
+`/dashboard/monitor` is the persistent interaction/output room and submits
+local text through the supported dashboard-to-Shana stream API boundary.
+`/dashboard/live` remains the microphone and live-voice diagnostic client.
+Monitor is expected to remain open in a dedicated tab/window because ordinary
+page navigation destroys browser audio and WebSocket state.
 
 ## Core Domains
 

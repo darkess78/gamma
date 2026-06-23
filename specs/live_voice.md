@@ -42,5 +42,5 @@ Shana owns transcription, generation, synthesis, job state, and cancellation.
 
 Live voice must fail without orphaning workers, replaying stale audio, or
 blocking the dashboard event loop. Network errors must be visible and safe to
-retry. The everyday Talk client hides advanced tuning while using the same
-protocol and defaults.
+retry. Monitor provides persistent output playback and links to the Live page,
+which owns microphone/live-voice tuning and diagnostics.

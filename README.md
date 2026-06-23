@@ -2,12 +2,8 @@
 
 Gamma is the runtime for **Shana**, a persistent assistant with text and live
 voice conversation, a stable persona, selective memory, and an optional
-streamer control plane.
-
-The current product priority is the everyday Shana experience: start her,
-open **Talk**, and continue a conversation without operating the rest of the
-dashboard. Twitch, performer outputs, and stream tooling are maintained
-extensions rather than the core interaction path.
+streamer control plane. The everyday interaction room is **Monitor**, which is
+designed to remain open in a dedicated tab or window for persistent output.
 
 ## Runtime shape
 
@@ -16,7 +12,7 @@ Gamma intentionally runs two applications:
 | Application | Default port | Owns |
 | --- | ---: | --- |
 | Shana API | 8000 | conversation, memory, voice inference, vision, stream decisions, performer state |
-| Dashboard | 8001 | browser authentication, Talk and operator clients, process controls, machine status, local configuration |
+| Dashboard | 8001 | browser authentication, Monitor and operator clients, process controls, machine status, local configuration |
 
 Browser clients call the dashboard, and the dashboard calls Shana through her
 HTTP API. The dashboard does not construct Shana's conversation, memory, or
@@ -104,7 +100,8 @@ Start the managed applications:
 
 Then open:
 
-- `http://127.0.0.1:8001/dashboard/talk` for text and live voice
+- `http://127.0.0.1:8001/dashboard/monitor` for persistent text and output playback
+- `http://127.0.0.1:8001/dashboard/live` for microphone/live-voice tuning
 - `http://127.0.0.1:8001/dashboard` for operations and configuration
 - `http://127.0.0.1:8000/health` for Shana health
 
@@ -121,11 +118,10 @@ addresses are separate settings; never use `0.0.0.0` as a public hostname.
 
 ## Interaction surfaces
 
-`/dashboard/talk` is the default owner-facing client. Typed turns and live
-voice share a conversation session. Text is sent to the dashboard's
-authenticated `/api/conversation/respond` endpoint and proxied to Shana's
-`/v1/conversation/respond`; live voice uses the dashboard WebSocket at
-`/api/voice/live` and Shana `/v1/voice/*` jobs.
+`/dashboard/monitor` is the persistent owner-facing room for performer output,
+speech playback, and local text input. Keep it open in a dedicated tab/window
+while using other dashboard pages. `/dashboard/live` remains the microphone
+and live-voice diagnostic surface. Legacy Talk URLs redirect to Monitor.
 
 The wider dashboard retains:
 

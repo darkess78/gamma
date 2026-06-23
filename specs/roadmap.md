@@ -10,7 +10,7 @@ Delivered in the current refactor:
 - enforced the Shana API/dashboard ownership boundary
 - removed dead dashboard initialization code and duplicate action/status loading
 - replaced expensive all-page status polling with a lightweight header contract
-- added a dedicated text and live-voice Talk client
+- established Monitor as the persistent text and output room
 - moved hosted, local-voice, desktop, Discord, and model-backed audio features behind explicit extras
 
 Remaining milestone gate:

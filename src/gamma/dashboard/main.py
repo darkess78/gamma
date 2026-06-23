@@ -12,7 +12,6 @@ from .service import DashboardService
 from .shana_client import ShanaClientError
 from ..config import settings as _app_settings
 from .auth import auth_config, dashboard_auth_ready, is_authenticated, session_cookie_value, verify_login, websocket_is_authenticated
-from ..schemas.conversation import ConversationRequest
 from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..schemas.voice import VoiceRoundtripResponse
 from ..observability import configure_logging, install_request_logging
@@ -25,7 +24,6 @@ live_voice_session = LazySingleton[LiveVoiceSession]()
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 INDEX_PAGE = STATIC_DIR / "index.html"
 MONITOR_PAGE = STATIC_DIR / "monitor.html"
-TALK_PAGE = STATIC_DIR / "talk.html"
 SUBTITLE_OVERLAY_PAGE = STATIC_DIR / "overlay.html"
 LIVE_VOICE_PANEL = STATIC_DIR / "live_voice_panel.html"
 
@@ -133,15 +131,15 @@ def dashboard_live_page(request: Request = None) -> HTMLResponse:
 
 
 @app.get("/dashboard/talk")
-def dashboard_talk_page(request: Request = None) -> HTMLResponse:
-    """Return the focused text and live-voice conversation page."""
-    return _dashboard_page(TALK_PAGE, dashboard_page="talk", request=request)
+def dashboard_talk_page() -> RedirectResponse:
+    """Redirect the retired Talk client to the persistent Monitor room."""
+    return RedirectResponse(url="/dashboard/monitor", status_code=307)
 
 
 @app.get("/talk")
 def talk_page_redirect() -> RedirectResponse:
-    """Redirect the short Talk URL to its dashboard-owned route."""
-    return RedirectResponse(url="/dashboard/talk", status_code=307)
+    """Redirect the retired short Talk URL to Monitor."""
+    return RedirectResponse(url="/dashboard/monitor", status_code=307)
 
 
 @app.get("/dashboard/status")
@@ -485,12 +483,6 @@ def status_header() -> dict:
 def status_diagnostics() -> dict:
     """Return the bounded payload used by the Status dashboard page."""
     return get_dashboard_service().build_diagnostics_status()
-
-
-@app.post("/api/conversation/respond", response_model=AssistantResponse)
-def conversation_respond(request: ConversationRequest) -> AssistantResponse:
-    """Proxy a typed conversation turn to the separately running Shana API."""
-    return get_dashboard_service().respond_remote_text(request)
 
 
 @app.get("/api/presence")

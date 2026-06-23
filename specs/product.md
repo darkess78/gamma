@@ -22,7 +22,7 @@ having to operate the streamer control plane.
 - provider-independent LLM, STT, and TTS boundaries
 - Presence modes for sleep, wake, break, and live operation
 - privacy and speech-safety enforcement
-- a dedicated everyday Talk client
+- a persistent Monitor room for local text and output playback
 
 Core work takes priority over new integrations.
 

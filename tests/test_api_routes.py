@@ -133,7 +133,7 @@ class ApiRoutesTest(unittest.TestCase):
         self.assertIn("/dashboard/live", response.headers["location"])
         self.assertEqual(presence.status_code, 307)
         self.assertIn("/dashboard/presence", presence.headers["location"])
-        self.assertIn("/dashboard/talk", talk.headers["location"])
+        self.assertIn("/dashboard/monitor", talk.headers["location"])
         self.assertEqual(twitch.status_code, 307)
         self.assertIn("/dashboard/stream", twitch.headers["location"])
 

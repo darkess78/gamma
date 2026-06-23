@@ -88,6 +88,7 @@ specs own detailed contracts; target documents own future work.
 - Presence UI exposes explicit audience selection, Wake history, Monitor listener readiness, working continuity, and bounded scheduler state.
 - Dashboard-to-Shana requests use a centralized HTTP client; assistant domain services and state stores remain owned by Shana.
 - Lightweight header polling avoids full provider, memory, log, and machine-status work on interaction and operations pages.
+- Status, Settings, and Memory use separate bounded status contracts rather than transferring the legacy full diagnostics payload.
 - Service lifecycle and provider smoke-test controls.
 - TTS profile selection/editor and generated-audio controls.
 - Memory and known-person management.

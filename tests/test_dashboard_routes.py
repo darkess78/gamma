@@ -116,6 +116,16 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(response, {"diagnostics": "ok"})
         diagnostics.assert_called_once_with()
 
+        with patch.object(self.mock_service, "build_settings_status", return_value={"settings": "ok"}) as settings_status:
+            response = main.status_settings()
+        self.assertEqual(response, {"settings": "ok"})
+        settings_status.assert_called_once_with()
+
+        with patch.object(self.mock_service, "build_memory_status", return_value={"memory": "ok"}) as memory_status:
+            response = main.status_memory()
+        self.assertEqual(response, {"memory": "ok"})
+        memory_status.assert_called_once_with()
+
         with patch.object(self.mock_service, "presence_status", return_value={"presence": "ok"}) as presence_status:
             response = main.presence_status()
         self.assertEqual(response, {"presence": "ok"})
@@ -195,7 +205,7 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('src="/static/live.js?v=20260611e"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/memory.js?v=20260611e"', dashboard.body.decode("utf-8"))
         self.assertIn('href="/static/dashboard.css?v=20260623a"', dashboard.body.decode("utf-8"))
-        self.assertIn('src="/static/status.js?v=20260623b"', dashboard.body.decode("utf-8"))
+        self.assertIn('src="/static/status.js?v=20260623c"', dashboard.body.decode("utf-8"))
         self.assertEqual(talk.status_code, 307)
         self.assertEqual(talk.headers["location"], "/dashboard/monitor")
         self.assertEqual(monitor_redirect.status_code, 307)
@@ -368,6 +378,9 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn("fetch('/api/status/header?_='", status_script)
         self.assertIn("renderNavbarStatus(await response.json());", status_script)
         self.assertIn("return '/api/status/diagnostics';", status_script)
+        self.assertIn("return '/api/status/settings';", status_script)
+        self.assertIn("return '/api/status/memory';", status_script)
+        self.assertNotIn("return '/api/status';", status_script)
         self.assertIn("'Shana: API down'", status_script)
         self.assertIn("'Twitch: stopped'", status_script)
         self.assertIn("window.loadStatus = loadStatus;", status_script)
@@ -1177,6 +1190,50 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(len(payload["llm_routing"]["placement_shadow"]["entries"]), 4)
         self.assertEqual(payload["timings"], {"summary": {"count": 1}})
         self.assertLess(len(json.dumps(payload)), 20_000)
+
+    def test_settings_status_retains_controls_without_large_histories(self) -> None:
+        service = DashboardService()
+        full_status = {
+            "providers": {"tts": {"editor_profile": {"id": "voice"}, "available_profiles": []}},
+            "shana": {
+                "system_status": {"ok": True, "payload": {"blob": "x" * 100_000}},
+                "logs": {"stdout_path": "out", "stderr_path": "err", "stdout_tail": "x" * 20_000},
+            },
+            "memory_db": {"recent_items": [{"blob": "x" * 20_000}]},
+            "assistant": {"settings": {"proactive_idle_enabled": False}},
+            "timings": {"entries": [{"blob": "x" * 20_000}], "summary": {"count": 1}},
+            "llm_routing": {"placement_shadow": {"entries": [{"blob": "x" * 20_000}]}},
+            "startup_admission": {"entries": [{"blob": "x" * 20_000}]},
+            "sidecar_allocations": {"entries": [{"blob": "x" * 20_000}]},
+            "recent_artifacts": [],
+            "twitch": {"worker": {}, "eventsub": {}, "stream_ready": {}},
+            "performer": {"ok": True, "stats": {}, "recent_by_target": {}},
+        }
+        with patch.object(service, "build_status", return_value=full_status):
+            payload = service.build_settings_status()
+
+        self.assertNotIn("payload", payload["shana"]["system_status"])
+        self.assertEqual(payload["shana"]["logs"]["stdout_tail"], "")
+        self.assertEqual(payload["assistant"]["settings"]["proactive_idle_enabled"], False)
+        self.assertEqual(payload["providers"]["tts"]["editor_profile"]["id"], "voice")
+        self.assertEqual(payload["memory_db"]["recent_items"], [])
+        self.assertLess(len(json.dumps(payload)), 20_000)
+
+    def test_memory_status_uses_header_contract_plus_bounded_memory_snapshot(self) -> None:
+        service = DashboardService()
+        with (
+            patch.object(service, "build_header_status", return_value={"ok": True, "memory_db": {}}),
+            patch.object(
+                service._shana,
+                "safe_get",
+                return_value={"stats": {"count": 1}, "known_people": [{"id": 1}], "recent_items": [{"id": 2}]},
+            ) as get,
+        ):
+            payload = service.build_memory_status()
+
+        self.assertEqual(payload["memory_db"]["known_people"], [{"id": 1}])
+        self.assertEqual(payload["memory_db"]["recent_items"], [{"id": 2}])
+        get.assert_called_once_with("/v1/memory", params={"limit": 100})
 
     def test_qwen_presets_are_discovered_and_returned_by_dashboard_status(self) -> None:
         service = DashboardService()

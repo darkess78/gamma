@@ -356,6 +356,64 @@ class DashboardService:
         }
         return payload
 
+    def build_settings_status(self) -> dict[str, Any]:
+        """Return Settings data without unbounded logs, memory, and domain histories."""
+        payload = self.build_status()
+        system_status = dict(payload.get("shana", {}).get("system_status") or {})
+        payload["shana"]["system_status"] = {
+            "ok": bool(system_status.get("ok")),
+            "detail": system_status.get("detail") or ("ok" if system_status.get("ok") else "unavailable"),
+        }
+        logs = dict(payload["shana"].get("logs") or {})
+        payload["shana"]["logs"] = {
+            "stdout_path": logs.get("stdout_path"),
+            "stderr_path": logs.get("stderr_path"),
+            "stdout_tail": "",
+            "stderr_tail": "",
+        }
+        payload["memory_db"] = {"stats": {}, "known_people": [], "recent_items": []}
+        payload["timings"] = {"summary": (payload.get("timings") or {}).get("summary", {})}
+        payload["llm_routing"] = {"placement_shadow": {"entries": [], "summary": {}}}
+        payload["startup_admission"] = {"entries": [], "summary": {}}
+        payload["sidecar_allocations"] = {"entries": [], "summary": {}}
+        payload["recent_artifacts"] = list(payload.get("recent_artifacts") or [])[-10:]
+
+        twitch = payload.get("twitch") or {}
+        worker = twitch.get("worker") or {}
+        eventsub = twitch.get("eventsub") or {}
+        payload["twitch"] = {
+            "worker": {
+                "process": worker.get("process", {}),
+                "configured": worker.get("configured"),
+            },
+            "eventsub": {
+                "process": eventsub.get("process", {}),
+                "configured": eventsub.get("configured"),
+                "enabled": eventsub.get("enabled"),
+            },
+            "stream_ready": {},
+        }
+        performer = payload.get("performer") or {}
+        payload["performer"] = {
+            "ok": performer.get("ok"),
+            "detail": performer.get("detail"),
+            "stats": performer.get("stats", {}),
+            "recent_event": performer.get("recent_event"),
+            "recent_by_target": performer.get("recent_by_target", {}),
+        }
+        return payload
+
+    def build_memory_status(self) -> dict[str, Any]:
+        """Return Memory-page data without loading the full diagnostics payload."""
+        payload = self.build_header_status()
+        snapshot = self._shana.safe_get("/v1/memory", params={"limit": 100})
+        payload["memory_db"] = {
+            "stats": snapshot.get("stats", {}),
+            "known_people": snapshot.get("known_people", []),
+            "recent_items": snapshot.get("recent_items", []),
+        }
+        return payload
+
     def _tts_test_control_state(self, provider: str, profile_id: str | None) -> dict[str, Any]:
         normalized = (provider or "").strip().lower()
         profile = get_voice_profile(profile_id)

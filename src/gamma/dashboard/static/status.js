@@ -633,9 +633,8 @@
     if (page === 'status') {
       return '/api/status/diagnostics';
     }
-    if (page === 'settings' || page === 'memory') {
-      return '/api/status';
-    }
+    if (page === 'settings') return '/api/status/settings';
+    if (page === 'memory') return '/api/status/memory';
     return '/api/status/header';
   }
 

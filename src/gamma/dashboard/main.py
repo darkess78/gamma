@@ -483,6 +483,18 @@ def status_diagnostics() -> dict:
     return get_dashboard_service().build_diagnostics_status()
 
 
+@app.get("/api/status/settings")
+def status_settings() -> dict:
+    """Return the bounded payload required by the Settings page."""
+    return get_dashboard_service().build_settings_status()
+
+
+@app.get("/api/status/memory")
+def status_memory() -> dict:
+    """Return the bounded payload required by the Memory page."""
+    return get_dashboard_service().build_memory_status()
+
+
 @app.get("/api/presence")
 def presence_status() -> dict:
     """Return Shana Presence runtime state."""

@@ -41,3 +41,13 @@ must be updated together when a public contract changes.
 
 Research documents are references, not claims about Neuro-sama's private
 implementation. Target documents must label future behavior explicitly.
+
+## Class Projects
+
+- `class-projects/README.md`
+- `class-projects/cs4700-memory-triage.md`
+- `class-projects/cs4710-osrs-screen-recognition.md`
+
+Class-project specifications record confirmed Gamma integration points,
+working project decisions, data/privacy rules, and phased offline work. They do
+not claim that experimental models or runtime integrations are implemented.

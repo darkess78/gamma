@@ -45,7 +45,31 @@ data/*
 # Large/private local assets
 helper_projects/GammaTTSDataPrep/build/
 helper_projects/imagegen/
-research/
+# Research is local/private by default. Track only the reviewed class-project
+# planning files and templates listed below; future screenshots, models, raw
+# exports, and other unlisted artifacts remain ignored.
+research/*
+!research/cs4700_memory_triage/
+research/cs4700_memory_triage/*
+!research/cs4700_memory_triage/README.md
+!research/cs4700_memory_triage/docs/
+!research/cs4700_memory_triage/docs/*.md
+!research/cs4700_memory_triage/data/
+research/cs4700_memory_triage/data/*
+!research/cs4700_memory_triage/data/README.md
+!research/cs4700_memory_triage/data/memory_triage_pilot.csv
+!research/cs4700_memory_triage/notebooks/
+research/cs4700_memory_triage/notebooks/*
+!research/cs4700_memory_triage/notebooks/CS4700_Gamma_Memory_Triage.ipynb
+!research/cs4710_osrs_screen_recognition/
+research/cs4710_osrs_screen_recognition/*
+!research/cs4710_osrs_screen_recognition/README.md
+!research/cs4710_osrs_screen_recognition/docs/
+!research/cs4710_osrs_screen_recognition/docs/*.md
+!research/cs4710_osrs_screen_recognition/data/
+research/cs4710_osrs_screen_recognition/data/*
+!research/cs4710_osrs_screen_recognition/data/README.md
+!research/cs4710_osrs_screen_recognition/data/osrs_screen_manifest_template.csv
 .claude/
 
 # OS/editor noise

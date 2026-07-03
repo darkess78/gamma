@@ -1,7 +1,7 @@
 # CS 4700: Gamma Memory Triage
 
-Status: Offline planning and provisional pilot v0.2 review
-Last verified: 2026-06-29
+Status: Primary v0.1 working dataset migrated; expansion and cleaning next
+Last verified: 2026-07-03
 
 Working title: **Gamma Memory Triage: Using Machine Learning to Decide What
 Gamma Should Remember**
@@ -100,14 +100,16 @@ not redesign Gamma's memory architecture or add a new assistant mode.
    prohibited.
 4. **Working decision:** Examples may reflect generic Gamma use cases only
    after being rewritten as standalone anonymized candidates.
-5. **Working decision:** Begin with an approximately 60-example pilot. Expand
-   to approximately 350-450 examples only after the labeling guide is reviewed.
+5. **Working decision:** Begin with an approximately 60-example pilot. After
+   guide validation and plan approval, expand to approximately 400
+   primary-eligible examples.
 6. **Working decision:** The full pilot may be roughly balanced for early
    review, but the primary-eligible subset can differ after policy exclusions.
    Neither balance estimates production prevalence.
-7. **Working decision:** The owner is the primary labeler. Quality checks must
-   include a delayed blinded self-relabel subset, label confidence, rationale
-   code, guide version, privacy review, and explicit marking of hard cases.
+7. **Working decision:** The owner approves material guide and adjudication
+   decisions. Quality checks include label confidence, rationale code, guide
+   version, privacy review, explicit hard-case marking, and accurate disclosure
+   of assistant involvement in label review.
 8. **Working decision:** The likely future advisory hook is immediately before
    existing upsert logic inside `MemoryService.persist_candidates()`.
 9. **Working decision:** Initial integration is advisory-only, disabled by
@@ -123,9 +125,9 @@ not redesign Gamma's memory architecture or add a new assistant mode.
 13. **Working decision:** The pilot's 30 `keep` / 30 `skip` balance is
     intentional for early experiments and does not estimate Gamma's production
     candidate prevalence.
-14. **Working decision:** After the revised pilot is complete and reviewed the
-    owner will blindly self-relabel 24 of the 60 pilot examples after a delay
-    of at least 48 hours.
+14. **Working decision:** Concealed-label or delayed spot checks may be used to
+    find ambiguity, but an assistant-assisted review is not independent
+    self-relabel reliability evidence.
 15. **Working decision:** A label that depends on whether equivalent memory is
     already stored requires existing-memory context and is not fully solvable
     by the text-only single-candidate task. Use
@@ -146,22 +148,59 @@ not redesign Gamma's memory architecture or add a new assistant mode.
 19. **Working decision:** Known near duplicates share an opaque
     `paraphrase_group_id`, with at most one primary-eligible representative in
     a highly similar group.
+20. **Working decision:** The 24-item pilot comparison is an assistant-assisted
+    label review. Its agreement result can locate guide ambiguity but is not
+    independent ground truth, model evaluation, reliability evidence, or proof
+    of objective label correctness.
+21. **Working decision:** An unscoped candidate may be `keep` only when it is a
+    clearly reusable user preference or broadly safe cross-project rule.
+    Project-specific architecture, tooling, reporting, and workflow rules must
+    name the relevant system or project to be primary-eligible `keep` examples.
 
 ## Dataset Contract
 
-The pilot schema is maintained at
-`research/cs4700_memory_triage/data/memory_triage_pilot.csv`. Required fields:
+The current canonical working primary-eligible dataset is
+`research/cs4700_memory_triage/data/memory_triage_primary_dataset.csv`. Its
+required fields are:
 
 ```text
-example_id,candidate_text,label,candidate_type,candidate_source,
+example_id,source_record_id,candidate_text,label,candidate_type,candidate_source,
 source_group_id,paraphrase_group_id,rationale_code,labeler_id,
-label_confidence,guide_version,privacy_checked,primary_eligible,notes,split
+label_confidence,guide_version,privacy_checked,primary_eligible,batch_id,
+dataset_release,notes,split
 ```
 
 Only `candidate_text` is the planned first-version model input. Other columns
 support provenance, quality review, analysis, and group-aware splitting.
 `primary_eligible=false` rows are policy-only and must be removed before
 constructing primary development or final-test data.
+
+Release `primary_v0_1` contains 107 primary-eligible rows: 55 `keep` and 52
+`skip`. Every split is `unassigned`. The unchanged pilot v0.3 CSV remains the
+guide-validation source, and Batch 01 drafts remain source-review provenance.
+No training, tuning, split assignment, or evaluation has occurred. Because 50
+rows are owner-reviewed assistant-assisted drafts, authoring-style bias remains
+a known limitation.
+
+## Pilot V0.3 Reconciliation And Freeze
+
+The 24-item assistant-assisted pilot-label review was reconciled on 2026-07-03.
+Exact agreement was 22/24 (91.7%). The two disagreements exposed missing guide
+language about project/tool subject and scope. Because the review was
+assistant-assisted, the result is useful for finding ambiguity but is not an
+independent blinded self-relabel reliability study or proof of label quality.
+
+The owner approved the subject-specificity rule in working decision 21. The
+prior wording of `mtp_0009` and `mtp_0013` would be `skip` under that rule; the
+two candidates were rewritten with explicit Gamma scope, retained as `keep`
+and `primary_eligible=true`, and kept their historical IDs. The pilot remains
+at 60 rows, 30 `keep` / 30 `skip`, 57 primary-eligible rows, and three
+policy-only rows.
+
+Pilot v0.3 is frozen as the labeling-guide validation milestone. It is not
+large enough for final model training or final performance claims. It may guide
+final-dataset expansion after the owner approves the practical plan in
+[`final_dataset_expansion_plan.md`](../../research/cs4700_memory_triage/docs/final_dataset_expansion_plan.md).
 
 ## Evaluation Contract
 
@@ -196,19 +235,22 @@ Required reporting:
 
 ## Phases
 
-1. **Current:** Review the labeling guide and provisional v0.2 60-example
-   pilot. The pilot has 30 `keep`, 30 `skip`, 57 primary-eligible rows, and
-   three policy-only rows.
-2. After the completed v0.2 review wait at least 48 hours and blindly
-   self-relabel 24 selected examples.
-3. Clean blanks, duplicates, paraphrases, label disagreements, and privacy
-   failures.
-4. Freeze grouped development and untouched test assignments.
-5. Implement exploration and non-ML baselines offline.
-6. Train and tune the planned classifiers offline.
-7. Evaluate once on the final test set and write the model/dataset reports.
-8. Review privacy, retention, and explicit-save policy before any Gamma hook.
-9. Add disabled advisory integration only in a separately approved runtime
+1. **Current:** Expand and clean the 107-row working dataset toward the
+   approximately 400-row primary-eligible target; approximately 145 additional
+   `keep` and 148 additional `skip` examples remain planned.
+2. **Completed 2026-07-03:** Reconciled the 24-item assistant-assisted review,
+   clarified the subject/scope rule, resolved both disagreements, and froze
+   pilot v0.3 as the guide-validation milestone.
+3. **Completed 2026-07-03:** Migrated the 57 primary-eligible pilot rows and 50
+   owner-approved Batch 01 rows into canonical working release `primary_v0_1`.
+4. Author and review the remaining expanded dataset in batches.
+5. Clean blanks, duplicates, paraphrases, and privacy failures, then freeze
+   grouped development and untouched test assignments.
+6. Implement exploration and non-ML baselines offline.
+7. Train and tune the planned classifiers offline.
+8. Evaluate once on the final test set and write the model/dataset reports.
+9. Review privacy, retention, and explicit-save policy before any Gamma hook.
+10. Add disabled advisory integration only in a separately approved runtime
    task.
 
 ## Non-Goals
@@ -241,6 +283,16 @@ Required reporting:
   balance.
 - 2026-06-29: Required at most one primary-eligible row per highly similar
   paraphrase group and moved the blinded 24-row check after v0.2 review.
+- 2026-07-03: Reconciled the 24-item assistant-assisted pilot-label review at
+  22/24 agreement; treated the result as ambiguity-finding evidence rather
+  than independent reliability evidence.
+- 2026-07-03: Added guide v0.3's owner-approved subject-specificity rule,
+  rewrote `mtp_0009` and `mtp_0013` with explicit Gamma scope, preserved their
+  historical IDs and `keep` labels, and froze the pilot as the guide-validation
+  milestone.
+- 2026-07-03: Owner approved Batch 01 migration; created canonical working
+  release `primary_v0_1` with 107 primary-eligible, unassigned rows while
+  retaining the pilot and draft sources as provenance.
 
 ## Open Questions
 

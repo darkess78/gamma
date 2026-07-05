@@ -83,6 +83,10 @@ research/cs4700_memory_triage/docs/*
 !research/cs4700_memory_triage/docs/batch_06_candidate_drafts.csv
 !research/cs4700_memory_triage/docs/batch_06_candidate_review.md
 !research/cs4700_memory_triage/docs/batch_06_migration_record.md
+!research/cs4700_memory_triage/docs/batch_07_authoring_spec.md
+!research/cs4700_memory_triage/docs/batch_07_candidate_drafts.csv
+!research/cs4700_memory_triage/docs/batch_07_candidate_review.md
+!research/cs4700_memory_triage/docs/batch_07_migration_record.md
 !research/cs4700_memory_triage/data/
 research/cs4700_memory_triage/data/*
 !research/cs4700_memory_triage/data/README.md

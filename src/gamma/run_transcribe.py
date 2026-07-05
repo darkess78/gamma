@@ -116,18 +116,6 @@ def _is_pure_audio(path: Path) -> bool:
     return path.suffix.lower() in {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".opus", ".mka"}
 
 
-def _needs_ffmpeg(path: Path) -> bool:
-    """Check if ffmpeg is needed.
-    
-    Args:
-        path: Path to check.
-    
-    Returns:
-        bool: True if ffmpeg is needed.
-    """
-    return path.suffix.lower() in MEDIA_EXTENSIONS and not _is_pure_audio(path)
-
-
 def transcribe_file(args: argparse.Namespace) -> list[dict]:
     """Return list of segment dicts with keys: start, end, text."""
     from faster_whisper import WhisperModel

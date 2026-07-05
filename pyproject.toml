@@ -29,10 +29,6 @@ local-voice = [
   "faster-whisper>=1.1.0",
   "sounddevice",
 ]
-desktop = [
-  "pillow>=10.4.0",
-  "pystray>=0.19.5",
-]
 audio-understanding = [
   "transformers>=4.48.0",
   "safetensors>=0.4.5",

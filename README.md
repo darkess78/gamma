@@ -39,7 +39,6 @@ optional capabilities used on the machine:
 | --- | --- | --- |
 | Hosted providers | `.venv/bin/python -m pip install -e '.[hosted]'` | OpenAI LLM, STT, and TTS adapter |
 | Local microphone/STT | `.venv/bin/python -m pip install -e '.[local-voice]'` | Faster-Whisper and `sounddevice` |
-| Desktop tray | `.venv/bin/python -m pip install -e '.[desktop]'` | Pillow and pystray |
 | Discord ingestion | `.venv/bin/python -m pip install -e '.[discord]'` | discord.py worker |
 | Audio understanding | `.venv/bin/python -m pip install -e '.[audio-understanding]'` | Hugging Face model support; see the domain spec for PyTorch setup |
 

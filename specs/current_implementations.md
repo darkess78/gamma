@@ -110,7 +110,7 @@ specs own detailed contracts; target documents own future work.
 ## Tooling And Platform
 
 - Linux-first runtime with Windows development/smoke-test compatibility.
-- Local proxy, Nginx templates, systemd templates, platform launchers, and tray tooling.
+- Local proxy, Nginx templates, systemd templates, platform launchers.
 - Standalone TTS dataset preparation GUI and CLI pipeline.
 - Pytest coverage for API, dashboard, conversation, memory, voice, stream, integrations, safety, routing, resources, and performer behavior.
 

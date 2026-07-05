@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 import logging
 import re
@@ -39,16 +38,6 @@ def normalize_transcript(text: str) -> str:
         flags=re.IGNORECASE,
     )
     return normalized
-
-
-@dataclass(slots=True)
-class STTResult:
-    """ASR transcript result.
-    
-    Attributes:
-        text: Transcribed text string.
-    """
-    text: str
 
 
 class STTBackend:

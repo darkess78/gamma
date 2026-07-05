@@ -22,8 +22,3 @@ class ConversationRequest(BaseModel):
     synthesize_speech: bool = False
     speaker: SpeakerContext | None = None
     fast_mode: bool = False
-
-
-class ConversationTurn(BaseModel):
-    role: str
-    text: str

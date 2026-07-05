@@ -20,7 +20,7 @@ from ..resources.allocations import latest_sidecar_allocations
 from ..resources.probe import collect_resource_snapshot
 from ..resources.runtime_registry import load_resource_routing_registry
 from ..system.cuda_env import prepend_cuda_library_path
-from ..system.python_runtime import python_candidates, resolve_python_executable
+from ..system.python_runtime import resolve_python_executable
 from ..voice.voice_profiles import resolve_tts_config
 
 
@@ -582,9 +582,6 @@ class ProcessManager:
             if candidate and candidate.exists():
                 return str(candidate)
         return self._resolve_background_python()
-
-    def _python_candidates(self) -> list[Path]:
-        return python_candidates(settings.project_root)
 
     def _start_shana_dependencies(self) -> list[dict[str, Any]]:
         return [

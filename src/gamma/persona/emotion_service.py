@@ -30,7 +30,6 @@ class EmotionMemoryService:
     Methods:
         __init__: Initialize service.
         load_bundle: Load bundle.
-        load_state: Load state.
         relevant_context: Get relevant context.
         update_from_turn: Update from turn.
         dashboard_payload: Get dashboard payload.
@@ -68,14 +67,6 @@ class EmotionMemoryService:
         episodes = [EmotionalEpisode(**item) for item in episodes_payload if isinstance(item, dict)]
         patterns = [EmotionalPattern(**item) for item in patterns_payload if isinstance(item, dict)]
         return {"state": state, "episodes": episodes, "patterns": patterns}
-
-    def load_state(self) -> AssistantEmotionState:
-        """Load state.
-        
-        Returns:
-            AssistantEmotionState: Loaded state.
-        """
-        return self.load_bundle()["state"]
 
     def relevant_context(self, *, user_text: str, limit: int = 3) -> dict[str, object]:
         """Get relevant context.

@@ -59,7 +59,6 @@ class SystemStatusService:
         _local_vision_model_name: Get local LLM vision model name.
         _check_qwen_tts_health: Check Qwen TTS endpoint.
         _check_stt_health: Check STT provider health.
-        _check_http_docs_health: Check HTTP docs endpoint.
         _check_http_health: Check HTTP health endpoint.
         _check_tts_health: Check TTS provider health.
         _check_piper_health: Check Piper TTS health.
@@ -233,23 +232,7 @@ class SystemStatusService:
             return {"ok": bool(settings.openai_api_key), "detail": "configured" if settings.openai_api_key else "missing-openai-api-key"}
         return {"ok": False, "detail": f"unsupported-provider: {provider}"}
 
-    def _check_http_docs_health(self, base_url: str) -> dict[str, Any]:
-        """Check HTTP docs health.
-        
-        Args:
-            base_url: HTTP base URL.
-        
-        Returns:
-            dict: {"ok": ...} with status.
-        """
-        try:
-            with urllib.request.urlopen(base_url + "/docs", timeout=5) as response:
-                ok = 200 <= response.status < 400
-            return {"ok": ok, "detail": "reachable" if ok else f"http-{response.status}"}
-        except urllib.error.HTTPError as exc:
-            return {"ok": False, "detail": f"http-{exc.code}"}
-        except Exception as exc:
-            return {"ok": False, "detail": str(exc)}
+
 
     def _check_http_health(self, url: str) -> dict[str, Any]:
         """Check HTTP health endpoint.

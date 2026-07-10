@@ -7,17 +7,21 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from .config import settings
-from .api.routes import get_proactive_scheduler, router
+from .api.routes import get_proactive_scheduler, reset_minecraft_coordinator, router, start_minecraft_coordinator
 from .observability import configure_logging, install_request_logging
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     scheduler = get_proactive_scheduler()
-    await scheduler.start()
+    coordinator = start_minecraft_coordinator()
     try:
+        await scheduler.start()
         yield
     finally:
-        await scheduler.stop()
+        try:
+            reset_minecraft_coordinator(coordinator)
+        finally:
+            await scheduler.stop()
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)

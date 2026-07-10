@@ -173,6 +173,83 @@ def _as_path(value: Any, *, default: Path) -> Path:
     return path.resolve()
 
 
+class SecretValue:
+    """Small redacted secret wrapper for the dataclass-based settings layer."""
+
+    __slots__ = ("_value",)
+
+    def __init__(self, value: str | None) -> None:
+        cleaned = "" if value is None else str(value).strip()
+        self._value = cleaned or None
+
+    def get_secret_value(self) -> str | None:
+        return self._value
+
+    def __bool__(self) -> bool:
+        return self._value is not None
+
+    def __repr__(self) -> str:
+        return "SecretValue('[redacted]')"
+
+    __str__ = __repr__
+
+
+def _minecraft_maximum_inbound_bytes(value: Any) -> int:
+    if type(value) is not int:
+        raise ValueError("minecraft maximum_inbound_bytes must be an integer")
+    if not 1 <= value <= 1_048_576:
+        raise ValueError("minecraft maximum_inbound_bytes must be between 1 and 1048576")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class MinecraftSettings:
+    enabled: bool = False
+    maximum_inbound_bytes: int = 65_536
+    control_token: SecretValue = field(default_factory=lambda: SecretValue(None), repr=False)
+
+    def __post_init__(self) -> None:
+        _minecraft_maximum_inbound_bytes(self.maximum_inbound_bytes)
+        if not isinstance(self.control_token, SecretValue):
+            raise TypeError("minecraft control_token must use SecretValue")
+
+    @property
+    def configured(self) -> bool:
+        return self.enabled and bool(self.control_token)
+
+    def safe_dict(self) -> dict[str, bool | int]:
+        """Return the status-safe, deliberately secret-free representation."""
+
+        return {
+            "enabled": self.enabled,
+            "maximum_inbound_bytes": self.maximum_inbound_bytes,
+            "configured": self.configured,
+        }
+
+
+def _load_minecraft_settings() -> MinecraftSettings:
+    enabled = _as_bool(
+        _setting("SHANA_MINECRAFT_ENABLED", _config_value(APP_CONFIG, "minecraft", "enabled", default=False)),
+        default=False,
+    )
+    raw_size = _setting(
+        "SHANA_MINECRAFT_MAXIMUM_INBOUND_BYTES",
+        _config_value(APP_CONFIG, "minecraft", "maximum_inbound_bytes", default=65_536),
+    )
+    if isinstance(raw_size, str):
+        try:
+            raw_size = int(raw_size)
+        except ValueError as exc:
+            raise ValueError("minecraft maximum_inbound_bytes must be an integer") from exc
+    maximum_inbound_bytes = _minecraft_maximum_inbound_bytes(raw_size)
+    token = SecretValue(_setting("SHANA_MINECRAFT_CONTROL_TOKEN"))
+    return MinecraftSettings(
+        enabled=enabled,
+        maximum_inbound_bytes=maximum_inbound_bytes,
+        control_token=token,
+    )
+
+
 @dataclass(slots=True)
 class Settings:
     app_name: str = str(_setting("SHANA_APP_NAME", _config_value(APP_CONFIG, "app_name", default="gamma")))
@@ -325,6 +402,7 @@ class Settings:
     api_bearer_token: str = str(
         _setting("SHANA_API_BEARER_TOKEN", _config_value(APP_CONFIG, "api_bearer_token", default=""))
     )
+    minecraft: MinecraftSettings = field(default_factory=_load_minecraft_settings)
 
     llm_provider: str = str(
         _setting(

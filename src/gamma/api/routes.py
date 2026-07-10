@@ -22,6 +22,8 @@ from ..stream.brain import StreamBrain
 from ..stream.models import StreamInputEvent, StreamTurnResult
 from ..stream.output import StreamOutputLogService
 from ..integrations.discord import DiscordRuntime
+from ..integrations.minecraft.coordinator import MinecraftCoordinator
+from ..integrations.minecraft.websocket import create_minecraft_control_router
 from ..performer.bus import PerformerEventBus, get_performer_event_bus
 from ..performer.models import DEFAULT_TARGET_POLICY, KNOWN_TARGET_POLICIES
 from ..presence import PresenceService, apply_presence_to_stream_event, load_presence_state, save_presence_state
@@ -58,6 +60,8 @@ performer_event_bus = LazySingleton[PerformerEventBus]()
 vtube_studio_adapter = LazySingleton[VTubeStudioAdapter]()
 vtube_studio_runner = LazySingleton[VTubeStudioRunner]()
 discord_runtime = LazySingleton[DiscordRuntime]()
+minecraft_coordinator = LazySingleton[MinecraftCoordinator]()
+_minecraft_lifespan_active = False
 _vtube_studio_runner_task: asyncio.Task[None] | None = None
 
 
@@ -187,6 +191,54 @@ def get_discord_runtime() -> DiscordRuntime:
         DiscordRuntime: Lazy singleton instance.
     """
     return discord_runtime.get(DiscordRuntime)
+
+
+def get_minecraft_coordinator() -> MinecraftCoordinator:
+    """Return the authoritative Shana-owned Minecraft coordinator."""
+
+    return minecraft_coordinator.get(
+        lambda: MinecraftCoordinator(enabled=settings.minecraft.configured)
+    )
+
+
+def start_minecraft_coordinator() -> MinecraftCoordinator:
+    """Claim the process-local coordinator for one Shana application lifespan."""
+
+    global _minecraft_lifespan_active
+    if _minecraft_lifespan_active:
+        raise RuntimeError("a Shana application lifespan is already active")
+    coordinator = get_minecraft_coordinator()
+    _minecraft_lifespan_active = True
+    return coordinator
+
+
+def get_active_minecraft_coordinator() -> MinecraftCoordinator | None:
+    """Return the coordinator only while its owning lifespan remains active."""
+
+    if not _minecraft_lifespan_active:
+        return None
+    return minecraft_coordinator._value
+
+
+def reset_minecraft_coordinator(coordinator: MinecraftCoordinator) -> None:
+    """Detach all authority and discard the process-local coordinator."""
+
+    global _minecraft_lifespan_active
+    if minecraft_coordinator._value is not coordinator:
+        return
+    _minecraft_lifespan_active = False
+    coordinator.detach_transport()
+    coordinator.reset()
+    minecraft_coordinator.set(None)
+
+
+router.include_router(
+    create_minecraft_control_router(
+        coordinator_provider=get_active_minecraft_coordinator,
+        control_token_provider=lambda: settings.minecraft.control_token.get_secret_value(),
+        maximum_inbound_bytes_provider=lambda: settings.minecraft.maximum_inbound_bytes,
+    )
+)
 
 
 def get_stream_temp_memory_store() -> StreamTempMemoryStore:

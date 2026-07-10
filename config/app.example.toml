@@ -166,6 +166,10 @@ log_max_bytes = 5242880
 log_backup_count = 5
 log_stderr_enabled = true
 
+[minecraft]
+enabled = false
+maximum_inbound_bytes = 65536
+
 [resource_routing.policy]
 shadow_mode = false
 active_llm_routing = false

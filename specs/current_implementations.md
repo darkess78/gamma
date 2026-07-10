@@ -15,6 +15,9 @@ specs own detailed contracts; target documents own future work.
 - Optional bearer authentication for Shana and session authentication for the dashboard.
 - Supervisor-managed Shana, dashboard, Qwen TTS, Twitch, Discord, and audio-understanding processes.
 - Structured rotating logs and request correlation.
+- Disabled-by-default Shana-owned Minecraft coordinator wiring and authenticated
+  loopback WebSocket control transport at `/v1/minecraft/control`; no sidecar or
+  Minecraft connectivity is started by Gamma.
 
 ## Persistent Shana Core
 

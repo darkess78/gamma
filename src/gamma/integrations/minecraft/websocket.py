@@ -1,7 +1,7 @@
 """Authenticated WebSocket transport for the Minecraft control protocol.
 
-This module intentionally exposes only an unmounted router factory.  Production
-application registration belongs to a later integration slice.
+The router accepts either fixed reviewed test values or narrow production
+providers that resolve Shana-owned state at connection time.
 """
 
 from __future__ import annotations
@@ -28,6 +28,9 @@ DEFAULT_MAXIMUM_INBOUND_BYTES = 65_536
 MAXIMUM_INBOUND_BYTES_LIMIT = 1_048_576
 
 PeerValidator = Callable[[str | None], bool]
+CoordinatorProvider = Callable[[], MinecraftCoordinator | None]
+ControlTokenProvider = Callable[[], str | None]
+MaximumInboundBytesProvider = Callable[[], int]
 
 _PROTOCOL_MESSAGE_TYPES = get_args(get_args(ProtocolMessage)[0])
 
@@ -75,18 +78,21 @@ def is_literal_loopback_peer(host: str | None) -> bool:
 
 def create_minecraft_control_router(
     *,
-    coordinator: MinecraftCoordinator,
-    control_token: str,
+    coordinator: MinecraftCoordinator | None = None,
+    control_token: str | None = None,
+    coordinator_provider: CoordinatorProvider | None = None,
+    control_token_provider: ControlTokenProvider | None = None,
+    maximum_inbound_bytes_provider: MaximumInboundBytesProvider | None = None,
     peer_validator: PeerValidator = is_literal_loopback_peer,
     maximum_inbound_bytes: int = DEFAULT_MAXIMUM_INBOUND_BYTES,
 ) -> APIRouter:
     """Build, but do not mount, the Shana-owned Minecraft control router."""
 
-    if (
-        not isinstance(control_token, str)
-        or not control_token
-        or any(character.isspace() for character in control_token)
-    ):
+    if (coordinator is None) == (coordinator_provider is None):
+        raise ValueError("provide exactly one coordinator or coordinator_provider")
+    if (control_token is None) == (control_token_provider is None):
+        raise ValueError("provide exactly one control_token or control_token_provider")
+    if control_token is not None and not _usable_control_token(control_token):
         raise ValueError("control_token must be non-empty")
     if not callable(peer_validator):
         raise TypeError("peer_validator must be callable")
@@ -104,10 +110,33 @@ def create_minecraft_control_router(
     async def minecraft_control(websocket: WebSocket) -> None:
         nonlocal active_transport
 
+        try:
+            resolved_coordinator = coordinator_provider() if coordinator_provider else coordinator
+            resolved_token = control_token_provider() if control_token_provider else control_token
+            resolved_maximum = (
+                maximum_inbound_bytes_provider()
+                if maximum_inbound_bytes_provider
+                else maximum_inbound_bytes
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            await _safe_close(websocket, code=1008, reason="connection not authorized")
+            return
+        if (
+            resolved_coordinator is None
+            or not resolved_coordinator.enabled
+            or not _usable_control_token(resolved_token)
+            or type(resolved_maximum) is not int
+            or not 1 <= resolved_maximum <= MAXIMUM_INBOUND_BYTES_LIMIT
+        ):
+            await _safe_close(websocket, code=1008, reason="connection not authorized")
+            return
+
         host = websocket.client.host if websocket.client is not None else None
         authorizations = websocket.headers.getlist("authorization")
         authenticated = len(authorizations) == 1 and _valid_bearer(
-            authorizations[0], control_token
+            authorizations[0], resolved_token
         )
         try:
             authorized_peer = peer_validator(host)
@@ -120,7 +149,7 @@ def create_minecraft_control_router(
         await websocket.accept()
         transport = MinecraftWebSocketTransport(websocket)
         active_transport = transport
-        coordinator.attach_transport(transport)
+        resolved_coordinator.attach_transport(transport)
 
         try:
             while True:
@@ -145,7 +174,7 @@ def create_minecraft_control_router(
                         websocket, code=1008, reason="invalid websocket frame"
                     )
                     break
-                if len(text.encode("utf-8")) > maximum_inbound_bytes:
+                if len(text.encode("utf-8")) > resolved_maximum:
                     await _safe_close(websocket, code=1009, reason="message too large")
                     break
                 try:
@@ -156,7 +185,7 @@ def create_minecraft_control_router(
                     )
                     break
 
-                result = await coordinator.receive(message)
+                result = await resolved_coordinator.receive(message)
                 if result.disposition == ReceiveDisposition.REJECTED:
                     await _safe_close(
                         websocket, code=1008, reason="protocol message rejected"
@@ -177,7 +206,7 @@ def create_minecraft_control_router(
         finally:
             if active_transport is transport:
                 active_transport = None
-            coordinator.detach_transport(transport)
+            resolved_coordinator.detach_transport(transport)
 
     return router
 
@@ -189,6 +218,12 @@ def _valid_bearer(authorization: str, expected_token: str) -> bool:
     if value != value.strip() or any(character.isspace() for character in value):
         return False
     return secrets.compare_digest(value, expected_token)
+
+
+def _usable_control_token(value: object) -> bool:
+    return isinstance(value, str) and bool(value) and not any(
+        character.isspace() for character in value
+    )
 
 
 def _reject_duplicate_keys(text: str) -> str:

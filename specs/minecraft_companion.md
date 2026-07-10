@@ -1,6 +1,6 @@
 # Minecraft Companion
 
-Status: Target contract; protocol models only
+Status: Target contract; protocol, coordinator, and Shana control transport implemented
 
 Last verified: 2026-07-10
 
@@ -12,12 +12,12 @@ eventually direct one bounded companion to join, leave, follow its configured
 owner, wait, come closer, look at its owner, report status, stop, or enter an
 emergency stop.
 
-Only the protocol models and shared contract fixtures exist in the repository
-at this stage. This document does not claim that a sidecar, control channel,
-Minecraft connection, command coordinator, authorization path, or user
-interface has been implemented.
+The protocol models, in-process coordinator, and disabled-by-default Shana
+control WebSocket wiring exist. No Mineflayer runtime, sidecar launcher,
+Minecraft connection, natural-language authorization path, or user interface
+has been implemented.
 
-The future feature will be disabled by default. Private offline-mode server
+The companion feature is disabled by default. Private offline-mode server
 testing comes before Microsoft authentication or any non-development use.
 
 ## Ownership Boundaries
@@ -26,7 +26,7 @@ testing comes before Microsoft authentication or any non-development use.
 
 - intent, authorization, policy, personality, memory, and dialogue decisions
 - command, trace, deadline, cancellation, and terminal-result coordination
-- the future control-channel server on Shana's existing application boundary
+- the authenticated local control-channel server on Shana's existing application boundary
 - decisions about speech, subtitles, Monitor output, or silence
 
 ### The future TypeScript sidecar owns
@@ -37,7 +37,7 @@ testing comes before Microsoft authentication or any non-development use.
 - authoritative observed Minecraft state
 - immediate clearing of goals and controls on control-channel loss
 
-The sidecar connects outbound to a future Shana-owned WebSocket. It does not
+The future sidecar connects outbound to the Shana-owned WebSocket. It does not
 open a third public port. It never receives arbitrary JavaScript, Mineflayer
 method names, raw pathfinder goals, arbitrary coordinates, generic actions, or
 LLM-generated code.
@@ -315,11 +315,11 @@ output is disabled for the initial implementation.
 
 ## Explicitly Deferred Work
 
-This protocol slice does not implement or authorize:
+The current groundwork does not implement or authorize:
 
-- a sidecar, Mineflayer, WebSocket route, coordinator, configuration, process
-  supervision, Dashboard UI, natural-language command handling, or server
-  connectivity
+- a sidecar, Mineflayer, process supervision, Dashboard UI, natural-language
+  command handling, or server connectivity; the implemented configuration,
+  coordinator, and WebSocket route do not start any of those behaviors
 - generic game/action/agent frameworks or arbitrary code execution
 - resource gathering, mining, farming, block breaking or placing, containers,
   inventories, crafting, building, or equipment optimization
@@ -328,4 +328,4 @@ This protocol slice does not implement or authorize:
 - automatic task restoration, multi-owner permissions, or viewer control
 
 Later runtime slices require their own implementation, safety evidence, and
-tests. This document remains a target contract until those slices exist.
+tests. This document remains a target contract for those deferred behaviors.

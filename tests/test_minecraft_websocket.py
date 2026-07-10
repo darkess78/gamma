@@ -295,7 +295,27 @@ def test_router_rejects_invalid_message_size(size: object) -> None:
         )
 
 
-def test_router_is_unmounted_until_explicitly_included_and_starts_nothing() -> None:
+@pytest.mark.parametrize("provider_name", ["coordinator", "token", "maximum"])
+def test_provider_exceptions_fail_closed_without_acceptance(provider_name: str) -> None:
+    coordinator = RecordingCoordinator()
+
+    def fail():
+        raise RuntimeError("distinctive-provider-detail")
+
+    providers = {
+        "coordinator_provider": fail if provider_name == "coordinator" else lambda: coordinator,
+        "control_token_provider": fail if provider_name == "token" else lambda: TOKEN,
+        "maximum_inbound_bytes_provider": fail if provider_name == "maximum" else lambda: 65_536,
+    }
+    router = create_minecraft_control_router(**providers)
+    socket = FakeRouteWebSocket(authorization=f"Bearer {TOKEN}")
+    run_router_endpoint(router, socket)
+    assert socket.accepted is False
+    assert socket.closes == [(1008, "connection not authorized")]
+    assert coordinator.attach_count == 0
+
+
+def test_router_factory_starts_nothing_and_production_mounts_once() -> None:
     coordinator = RecordingCoordinator()
     before = coordinator.status()
     router = create_minecraft_control_router(
@@ -307,7 +327,7 @@ def test_router_is_unmounted_until_explicitly_included_and_starts_nothing() -> N
     assert MINECRAFT_CONTROL_PATH == "/v1/minecraft/control"
     assert coordinator.status() == before
     assert coordinator.attach_count == 0
-    assert all(route.path != MINECRAFT_CONTROL_PATH for route in production_app.routes)
+    assert [route.path for route in production_app.routes].count(MINECRAFT_CONTROL_PATH) == 1
     temporary_app = make_app(RecordingCoordinator())
     assert any(route.path == MINECRAFT_CONTROL_PATH for route in temporary_app.routes)
 
@@ -951,7 +971,7 @@ def test_boundary_imports_and_production_registration_remain_isolated() -> None:
     for source in dashboard_root.rglob("*.py"):
         assert "gamma.integrations.minecraft" not in source.read_text(encoding="utf-8")
     assert "create_minecraft_control_router" not in (ROOT / "src" / "gamma" / "main.py").read_text(encoding="utf-8")
-    assert all(route.path != MINECRAFT_CONTROL_PATH for route in production_app.routes)
+    assert [route.path for route in production_app.routes].count(MINECRAFT_CONTROL_PATH) == 1
 
 
 def test_canonical_welcome_model_remains_json_compatible() -> None:

@@ -1,0 +1,17 @@
+{
+  "protocol": "gamma.minecraft",
+  "version": 1,
+  "type": "command_progress",
+  "message_id": "msg-command-progress-001",
+  "connection_id": "conn-dev-20260710-01",
+  "sent_at": "2026-07-10T18:01:05Z",
+  "sequence": 6,
+  "trace_id": "trace-follow-001",
+  "command_id": "cmd-follow-001",
+  "payload": {
+    "command_name": "follow_owner",
+    "phase": "moving",
+    "elapsed_ms": 5000,
+    "safe_detail": "Following within the active lease."
+  }
+}

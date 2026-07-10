@@ -1,0 +1,16 @@
+{
+  "protocol": "gamma.minecraft",
+  "version": 1,
+  "type": "command_ack",
+  "message_id": "msg-command-ack-001",
+  "connection_id": "conn-dev-20260710-01",
+  "sent_at": "2026-07-10T18:01:00.050000Z",
+  "sequence": 5,
+  "trace_id": "trace-follow-001",
+  "command_id": "cmd-follow-001",
+  "payload": {
+    "accepted": true,
+    "command_name": "follow_owner",
+    "failure": null
+  }
+}

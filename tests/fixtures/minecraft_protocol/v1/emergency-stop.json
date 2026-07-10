@@ -1,0 +1,14 @@
+{
+  "protocol": "gamma.minecraft",
+  "version": 1,
+  "type": "emergency_stop",
+  "message_id": "msg-emergency-stop-001",
+  "connection_id": "conn-dev-20260710-01",
+  "sent_at": "2026-07-10T18:02:01Z",
+  "sequence": 10,
+  "trace_id": "trace-emergency-001",
+  "command_id": "cmd-emergency-001",
+  "payload": {
+    "reason": "Operator emergency stop."
+  }
+}

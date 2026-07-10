@@ -1,0 +1,31 @@
+{
+  "protocol": "gamma.minecraft",
+  "version": 1,
+  "type": "state_snapshot",
+  "message_id": "msg-state-snapshot-001",
+  "connection_id": "conn-dev-20260710-01",
+  "sent_at": "2026-07-10T18:01:05.100000Z",
+  "sequence": 7,
+  "trace_id": "trace-follow-001",
+  "command_id": "cmd-follow-001",
+  "payload": {
+    "sidecar_connection_state": "connected",
+    "minecraft_connection_state": "connected",
+    "companion_state": "FOLLOWING",
+    "owner_present": true,
+    "owner_display_name": "Owner",
+    "owner_uuid": "123e4567-e89b-12d3-a456-426614174000",
+    "dimension": "minecraft:overworld",
+    "rounded_position": {
+      "x": 128,
+      "y": 64,
+      "z": -32
+    },
+    "health": 20.0,
+    "hunger": 18,
+    "active_command_id": "cmd-follow-001",
+    "active_command_name": "follow_owner",
+    "last_terminal_outcome": "completed",
+    "last_failure_code": "PATH_STALLED"
+  }
+}

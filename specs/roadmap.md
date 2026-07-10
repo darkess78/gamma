@@ -43,7 +43,10 @@ During the current milestone:
 2. AudioWorklet browser capture and longer live-voice soak testing.
 3. Layered Twitch moderation and operator review workflows.
 4. OBS/avatar integration through generic performer events.
-5. One constrained, turn-based game adapter with authoritative action windows.
+5. Minecraft Java Edition companion work, beginning with the canonical v1
+   protocol specification, Python models, and shared fixtures now underway.
+   Runtime integration remains future, disabled-by-default work.
+6. One constrained, turn-based game adapter with authoritative action windows.
 
 Later work requires an explicit product decision and updated acceptance
 criteria before implementation begins.

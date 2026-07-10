@@ -1,0 +1,14 @@
+{
+  "protocol": "gamma.minecraft",
+  "version": 1,
+  "type": "cancel_command",
+  "message_id": "msg-cancel-command-001",
+  "connection_id": "conn-dev-20260710-01",
+  "sent_at": "2026-07-10T18:02:00Z",
+  "sequence": 9,
+  "trace_id": "trace-follow-001",
+  "command_id": "cmd-follow-001",
+  "payload": {
+    "reason": "Owner requested a wait."
+  }
+}

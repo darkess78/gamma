@@ -1,0 +1,18 @@
+{
+  "protocol": "gamma.minecraft",
+  "version": 1,
+  "type": "hello",
+  "message_id": "msg-hello-001",
+  "sent_at": "2026-07-10T18:00:00Z",
+  "sequence": 0,
+  "payload": {
+    "supported_versions": [1],
+    "sidecar_instance_id": "sidecar-dev-01",
+    "sidecar_build": "0.1.0",
+    "capabilities": ["companion_v1"],
+    "node_version": "22.22.2",
+    "minecraft_library_version": "4.37.1",
+    "pathfinder_version": "2.4.5",
+    "companion_state": "DISCONNECTED"
+  }
+}

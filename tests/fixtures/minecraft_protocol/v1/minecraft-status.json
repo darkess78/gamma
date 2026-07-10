@@ -1,0 +1,15 @@
+{
+  "protocol": "gamma.minecraft",
+  "version": 1,
+  "type": "minecraft_status",
+  "message_id": "msg-minecraft-status-001",
+  "connection_id": "conn-dev-20260710-01",
+  "sent_at": "2026-07-10T18:00:07Z",
+  "sequence": 3,
+  "payload": {
+    "connection_state": "connected",
+    "companion_state": "IDLE",
+    "negotiated_version": "1.21.11",
+    "dimension": "minecraft:overworld"
+  }
+}

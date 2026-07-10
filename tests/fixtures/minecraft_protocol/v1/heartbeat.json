@@ -1,0 +1,13 @@
+{
+  "protocol": "gamma.minecraft",
+  "version": 1,
+  "type": "heartbeat",
+  "message_id": "msg-heartbeat-001",
+  "connection_id": "conn-dev-20260710-01",
+  "sent_at": "2026-07-10T18:00:05Z",
+  "sequence": 1,
+  "payload": {
+    "companion_state": "IDLE",
+    "last_received_sequence": 2
+  }
+}

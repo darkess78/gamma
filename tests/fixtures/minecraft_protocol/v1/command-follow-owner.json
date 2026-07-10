@@ -1,0 +1,19 @@
+{
+  "protocol": "gamma.minecraft",
+  "version": 1,
+  "type": "command",
+  "message_id": "msg-command-follow-001",
+  "connection_id": "conn-dev-20260710-01",
+  "sent_at": "2026-07-10T18:01:00Z",
+  "sequence": 4,
+  "trace_id": "trace-follow-001",
+  "command_id": "cmd-follow-001",
+  "payload": {
+    "name": "follow_owner",
+    "deadline_at": "2026-07-10T18:06:00Z",
+    "arguments": {
+      "follow_distance": 3.0,
+      "lease_duration_seconds": 300
+    }
+  }
+}

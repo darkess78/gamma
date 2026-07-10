@@ -1,0 +1,14 @@
+{
+  "protocol": "gamma.minecraft",
+  "version": 1,
+  "type": "shutdown",
+  "message_id": "msg-shutdown-001",
+  "connection_id": "conn-dev-20260710-01",
+  "sent_at": "2026-07-10T18:10:00Z",
+  "sequence": 11,
+  "trace_id": "trace-shutdown-001",
+  "payload": {
+    "reason": "Shana is shutting down gracefully.",
+    "leave_minecraft": true
+  }
+}

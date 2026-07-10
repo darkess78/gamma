@@ -1,0 +1,17 @@
+{
+  "protocol": "gamma.minecraft",
+  "version": 1,
+  "type": "protocol_error",
+  "message_id": "msg-protocol-error-001",
+  "connection_id": "conn-dev-20260710-01",
+  "sent_at": "2026-07-10T18:02:02Z",
+  "sequence": 12,
+  "trace_id": "trace-invalid-001",
+  "command_id": "cmd-invalid-001",
+  "payload": {
+    "code": "INVALID_COMMAND",
+    "safe_detail": "The command payload did not match protocol version 1.",
+    "retriable": false,
+    "offending_type": "command"
+  }
+}

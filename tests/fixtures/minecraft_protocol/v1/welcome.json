@@ -1,0 +1,18 @@
+{
+  "protocol": "gamma.minecraft",
+  "version": 1,
+  "type": "welcome",
+  "message_id": "msg-welcome-001",
+  "connection_id": "conn-dev-20260710-01",
+  "sent_at": "2026-07-10T18:00:00.100000Z",
+  "sequence": 0,
+  "payload": {
+    "selected_version": 1,
+    "heartbeat_interval_seconds": 5,
+    "liveness_timeout_seconds": 15,
+    "maximum_message_bytes": 65536,
+    "command_cache_ttl_seconds": 600,
+    "command_cache_capacity": 1000,
+    "minecraft_chat_output_enabled": false
+  }
+}

@@ -8,9 +8,11 @@
     "node": ">=22 <23"
   },
   "scripts": {
-    "build:test": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json",
+    "build:test": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build:test && node --test dist-test/test/*.test.js"
+    "test": "npm run build && node --test dist-test/test/*.test.js",
+    "start": "npm run build && node dist-test/src/index.js"
   },
   "dependencies": {
     "jsonc-parser": "3.3.1",

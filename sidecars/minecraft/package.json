@@ -2,7 +2,7 @@
   "name": "@gamma/minecraft-protocol",
   "version": "0.1.0",
   "private": true,
-  "description": "Protocol-only validation scaffold for Gamma Minecraft companion v1",
+  "description": "Strict protocol and outbound control client for Gamma Minecraft companion v1",
   "type": "module",
   "engines": {
     "node": ">=22 <23"
@@ -10,13 +10,16 @@
   "scripts": {
     "build:test": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build:test && node --test dist-test/test/protocol.test.js"
+    "test": "npm run build:test && node --test dist-test/test/*.test.js"
   },
   "dependencies": {
+    "jsonc-parser": "3.3.1",
+    "ws": "8.21.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
+    "@types/ws": "8.18.1",
     "typescript": "7.0.2"
   }
 }

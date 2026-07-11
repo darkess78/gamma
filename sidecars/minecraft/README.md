@@ -1,11 +1,15 @@
-# Minecraft Protocol Scaffold
+# Minecraft Control Client
 
-This package is only a TypeScript protocol-validation scaffold for Gamma's
-future Minecraft companion. It defines and tests protocol v1 data shapes. It
-does not connect to Gamma or Minecraft, open a WebSocket, execute commands, or
-implement companion behavior.
+This package defines Gamma's TypeScript Minecraft protocol v1 shapes and a
+reusable outbound WebSocket control client. The client connects only to an
+explicit literal-loopback Shana URL, authenticates with a bearer token supplied
+directly by its caller, validates every inbound frame, and performs the
+`hello`/`welcome` handshake. It has no automatic reconnect or background
+heartbeat timer and is not an executable sidecar entry point.
 
-Mineflayer is not installed. The canonical behavioral contract remains owned
+Mineflayer and mineflayer-pathfinder are not installed. A hello must report
+their versions as `not-installed` until later implementation phases add them.
+The canonical behavioral contract remains owned
 by `specs/minecraft_companion.md` and
 `src/gamma/integrations/minecraft/protocol.py`; tests load the shared fixtures
 directly from `tests/fixtures/minecraft_protocol/v1/`.
@@ -27,7 +31,7 @@ Run the strict no-emission type check:
 npm --prefix sidecars/minecraft run typecheck
 ```
 
-Run the protocol contract tests with Node's built-in test runner:
+Run the protocol and control-client tests with Node's built-in test runner:
 
 ```bash
 npm --prefix sidecars/minecraft test

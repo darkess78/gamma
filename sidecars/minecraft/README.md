@@ -8,14 +8,16 @@ authenticates with an environment-supplied bearer token, performs the
 heartbeats. It does not reconnect automatically or restore commands after a
 new control session.
 
-Mineflayer 4.37.1 is installed behind a narrow adapter. The runtime can join a
-literal-loopback Minecraft Java 1.21.11 server in offline development mode,
-but only after Shana sends an explicit canonical `join` command. It implements
-`join`, `leave`, `report_status`, `stop`, and `emergency_stop`; companion
-movement remains rejected until the pathfinder phase. No default test opens a
-Minecraft connection, and no real-server smoke test has been run. The runtime
-is inactive unless a person explicitly runs it; it is not wired into Gamma's
-supervisor or application startup.
+Mineflayer 4.37.1 is installed behind a narrow adapter. No pathfinder package
+is installed. The runtime can join a literal-loopback Minecraft Java 1.21.11
+server in offline development mode, but only after Shana sends an explicit
+canonical `join` command. In addition to join, leave, status, stop, and
+emergency-stop handling, it implements bounded `follow_owner`, `wait_here`,
+`come_here`, and `look_at_owner` commands through direct steering. Default
+tests use fake Minecraft adapters and do not open a Minecraft connection. No
+real-server movement smoke test has been run. The runtime is inactive unless a
+person explicitly runs it; it is not wired into Gamma's supervisor or
+application startup.
 The canonical behavioral contract remains owned
 by `specs/minecraft_companion.md` and
 `src/gamma/integrations/minecraft/protocol.py`; tests load the shared fixtures
@@ -60,6 +62,7 @@ SHANA_MINECRAFT_SERVER_PORT                    optional; integer 1-65535, defaul
 SHANA_MINECRAFT_VERSION                        optional; must be exactly 1.21.11
 SHANA_MINECRAFT_ACCOUNT_MODE                   optional; must be offline
 SHANA_MINECRAFT_BOT_USERNAME                   optional; 3-16 safe characters, default Shana
+SHANA_MINECRAFT_OWNER_USERNAME                 required for owner movement; 3-16 letters, digits, or underscores
 ```
 
 Start it explicitly from the repository root only after Shana's disabled-by-
@@ -78,10 +81,31 @@ Within a running sidecar process, control cleanup does not clear the emergency
 latch; recovery requires a completed leave followed by a fresh successful
 join.
 
-This phase is offline-development-only. It does not load Microsoft profiles,
-credentials, or authentication caches. Mineflayer pathfinding, following,
-coming, waiting, looking, digging, placing, combat, chat commands, containers,
-and dimension travel are not implemented.
+Owner authorization is deliberately limited to private offline development.
+Both the configured owner name and an observed player's name must match the
+Minecraft username format; comparison is an exact match after converting both
+names to lowercase. The owner remains absent unless exactly one observed
+player matches. This case-insensitive username check is not UUID-strength
+authorization and is unsuitable for an online or public deployment. Microsoft
+authentication and online owner UUID authorization remain deferred. Minecraft
+chat and other world text cannot configure the owner or issue commands.
+
+Movement is intentionally limited to clear, flat, loaded, direct Overworld
+terrain. On each Mineflayer physics tick, the adapter re-observes the owner and
+checks the short forward step before enabling forward walking. Unknown or
+unloaded blocks, obstacles, jumps, drops, liquids, hazards, portals, or a
+dimension mismatch clear movement and cause a bounded retry or terminal
+failure. The executor does not navigate around an obstruction. Jumping and
+sprinting are disabled. It does not break or place blocks, equip items,
+activate blocks, open doors or containers, attack, chat, intentionally swim,
+enter portals, or travel between dimensions. Movement listeners and controls
+are removed on every terminal, preemption, disconnect, death, and shutdown
+path.
+
+Dashboard controls and natural-language command integration are not part of
+this phase. No real-server companion movement smoke has passed; the automated
+end-to-end coverage uses a fake Gamma WebSocket server and fake Minecraft
+adapter.
 
 `node_modules/` and generated `dist-test/` output are ignored and must not be
 tracked. `package-lock.json` is tracked to preserve exact dependency

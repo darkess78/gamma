@@ -7,7 +7,10 @@ import type {
   SidecarStatusMessage,
   StateSnapshotMessage
 } from './protocol.js';
-import type { MinecraftAdapterState } from './minecraft-adapter.js';
+import type {
+  MinecraftAdapterState,
+  MinecraftOwnerState
+} from './minecraft-adapter.js';
 
 export type MinecraftSidecarLifecycle =
   | 'idle'
@@ -84,15 +87,17 @@ export function stateSnapshot(
   lastTerminal: Readonly<{
     outcome: TerminalOutcome;
     failureCode: FailureCode | null;
-  }> | null = null
+  }> | null = null,
+  owner: MinecraftOwnerState | null = null
 ): StateSnapshotMessage['payload'] {
+  const ownerPresent = owner !== null && owner.sameDimension;
   return Object.freeze({
     sidecar_connection_state: 'connected',
     minecraft_connection_state: state.connectionState,
     companion_state: companionState,
-    owner_present: false,
-    owner_display_name: null,
-    owner_uuid: null,
+    owner_present: ownerPresent,
+    owner_display_name: ownerPresent ? owner.username : null,
+    owner_uuid: ownerPresent ? owner.uuid : null,
     dimension: state.dimension,
     rounded_position: state.roundedPosition,
     health: state.health,

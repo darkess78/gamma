@@ -34,6 +34,7 @@ export type MinecraftServerConfig = Readonly<{
   minecraftVersion: typeof SUPPORTED_MINECRAFT_VERSION;
   minecraftAccountMode: 'offline';
   minecraftBotUsername: string;
+  minecraftOwnerUsername: string | null;
 }>;
 
 export type MinecraftSidecarRuntimeConfig = Readonly<
@@ -98,6 +99,9 @@ export function loadMinecraftSidecarRuntimeConfig(
     ),
     minecraftBotUsername: parseMinecraftBotUsername(
       environment.SHANA_MINECRAFT_BOT_USERNAME
+    ),
+    minecraftOwnerUsername: parseMinecraftOwnerUsername(
+      environment.SHANA_MINECRAFT_OWNER_USERNAME
     )
   });
 }
@@ -226,4 +230,14 @@ function parseMinecraftBotUsername(value: string | undefined): string {
     );
   }
   return username;
+}
+
+function parseMinecraftOwnerUsername(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  if (!MINECRAFT_USERNAME_PATTERN.test(value)) {
+    throw new MinecraftSidecarConfigurationError(
+      'Minecraft owner username must be 3 through 16 letters, digits, or underscores'
+    );
+  }
+  return value;
 }

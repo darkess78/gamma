@@ -16,11 +16,36 @@ export type MinecraftDisconnectCategory =
   | 'kicked'
   | 'error';
 
-export type MinecraftRoundedPosition = Readonly<{
+export type SafePosition = Readonly<{
   x: number;
   y: number;
   z: number;
 }>;
+
+export type MinecraftRoundedPosition = SafePosition;
+
+export type ObservedPlayer = Readonly<{
+  username: string;
+  position: SafePosition;
+  dimension: MinecraftDimension;
+}>;
+
+export type MinecraftOwnerState = Readonly<{
+  username: string;
+  uuid: null;
+  roundedPosition: MinecraftRoundedPosition;
+  distance: number;
+  sameDimension: boolean;
+}>;
+
+export type ForwardSafety =
+  | Readonly<{ kind: 'safe'; candidate: SafePosition }>
+  | Readonly<{ kind: 'blocked' }>
+  | Readonly<{ kind: 'unsupported_drop' }>
+  | Readonly<{ kind: 'hazard' }>
+  | Readonly<{ kind: 'liquid' }>
+  | Readonly<{ kind: 'unloaded' }>
+  | Readonly<{ kind: 'dimension_mismatch' }>;
 
 export type MinecraftAdapterState = Readonly<{
   connectionState: MinecraftConnectionState;
@@ -58,8 +83,8 @@ export type MinecraftAdapterConnectionConfig = Pick<
 >;
 
 /**
- * Narrow boundary around Minecraft. Callers cannot access a Mineflayer bot or
- * invoke arbitrary game operations through this interface.
+ * Narrow lifecycle boundary around Minecraft. Callers cannot access a
+ * Mineflayer bot or invoke arbitrary game operations through this interface.
  */
 export interface MinecraftAdapter {
   connect(
@@ -70,6 +95,38 @@ export interface MinecraftAdapter {
   stopAllControls(): void;
   state(): MinecraftAdapterState;
   setEventHandler(handler: MinecraftAdapterEventHandler | undefined): void;
+}
+
+/**
+ * The complete movement authority exposed to the companion executor. The
+ * implementation may observe Mineflayer, but raw Mineflayer objects never
+ * cross this boundary.
+ */
+export interface MinecraftMovementAdapter extends MinecraftAdapter {
+  getBotPosition(): SafePosition | undefined;
+  getDimension(): MinecraftDimension | undefined;
+  getPlayer(username: string): ObservedPlayer | undefined;
+  lookAt(position: SafePosition): Promise<void>;
+  setForward(active: boolean): void;
+  clearControls(): void;
+  inspectForwardStep(target: ObservedPlayer): ForwardSafety;
+  onMovementTick(handler: () => void): () => void;
+}
+
+export function isMinecraftMovementAdapter(
+  adapter: MinecraftAdapter
+): adapter is MinecraftMovementAdapter {
+  const candidate = adapter as Partial<MinecraftMovementAdapter>;
+  return (
+    typeof candidate.getBotPosition === 'function' &&
+    typeof candidate.getDimension === 'function' &&
+    typeof candidate.getPlayer === 'function' &&
+    typeof candidate.lookAt === 'function' &&
+    typeof candidate.setForward === 'function' &&
+    typeof candidate.clearControls === 'function' &&
+    typeof candidate.inspectForwardStep === 'function' &&
+    typeof candidate.onMovementTick === 'function'
+  );
 }
 
 export function disconnectedMinecraftAdapterState(

@@ -2,16 +2,29 @@ import { createRequire } from 'node:module';
 
 import {
   disconnectedMinecraftAdapterState,
-  type MinecraftAdapter,
+  type ForwardSafety,
   type MinecraftAdapterConnectionConfig,
   type MinecraftAdapterEvent,
   type MinecraftAdapterEventHandler,
   type MinecraftAdapterState,
   type MinecraftDimension,
-  type MinecraftDisconnectCategory
+  type MinecraftDisconnectCategory,
+  type MinecraftMovementAdapter,
+  type ObservedPlayer,
+  type SafePosition
 } from './minecraft-adapter.js';
+import {
+  classifyDirectSteeringSpace,
+  classifyDirectSteeringSupport,
+  type DirectSteeringBlock
+} from './safety.js';
 
 export const MINEFLAYER_LIBRARY_VERSION = '4.37.1' as const;
+
+const OVERWORLD: MinecraftDimension = 'minecraft:overworld';
+const DIRECT_STEP_DISTANCE = 0.45;
+const PLAYER_HALF_WIDTH = 0.31;
+const POSITION_EPSILON = 0.05;
 
 export type MinecraftAdapterFailureCategory =
   | 'invalid_state'
@@ -30,6 +43,7 @@ export class MinecraftAdapterError extends Error {
 
 export type MineflayerRuntimeDependencies = Readonly<{
   createBot?: (options: Readonly<Record<string, unknown>>) => unknown;
+  createVector?: (x: number, y: number, z: number) => unknown;
   setTimeout?: (
     callback: () => void,
     milliseconds: number
@@ -37,16 +51,24 @@ export type MineflayerRuntimeDependencies = Readonly<{
   clearTimeout?: (timer: Readonly<{ unref?: () => void }>) => void;
 }>;
 
+type MineflayerPosition = Readonly<{ x: number; y: number; z: number }>;
+
+type MineflayerBlock = DirectSteeringBlock;
+
+type MineflayerPlayer = Readonly<{
+  username?: unknown;
+  entity?: Readonly<{ position?: MineflayerPosition }>;
+}>;
+
 type MineflayerBot = {
   version?: unknown;
-  entity?: Readonly<{
-    position?: Readonly<{ x: number; y: number; z: number }>;
-  }>;
+  entity?: Readonly<{ position?: MineflayerPosition }>;
   game?: Readonly<{ dimension?: unknown }>;
   health?: unknown;
   food?: unknown;
   targetDigBlock?: unknown;
   usingHeldItem?: boolean;
+  players?: Readonly<Record<string, MineflayerPlayer | undefined>>;
   _client: Readonly<{
     socket?: Readonly<{ destroy: () => void }>;
   }>;
@@ -56,8 +78,11 @@ type MineflayerBot = {
   quit: () => void;
   end: () => void;
   clearControlStates: () => void;
+  setControlState?: (control: string, active: boolean) => void;
   stopDigging: () => void;
   deactivateItem: () => void;
+  lookAt?: (position: unknown, force?: boolean) => Promise<void>;
+  blockAt?: (position: unknown, extraInfo?: boolean) => MineflayerBlock | null;
 };
 
 type BotHandlers = Readonly<{
@@ -78,15 +103,25 @@ type ActiveBot = {
   settleConnection: (error?: MinecraftAdapterError) => void;
 };
 
-export class MineflayerMinecraftAdapter implements MinecraftAdapter {
+type MovementListener = {
+  bot: MineflayerBot;
+  wrapped: () => void;
+  active: boolean;
+};
+
+export class MineflayerMinecraftAdapter implements MinecraftMovementAdapter {
   readonly #configuredCreateBot:
     | ((options: Readonly<Record<string, unknown>>) => unknown)
+    | undefined;
+  readonly #createVector:
+    | ((x: number, y: number, z: number) => unknown)
     | undefined;
   readonly #setTimeout: (
     callback: () => void,
     milliseconds: number
   ) => Readonly<{ unref?: () => void }>;
   readonly #clearTimeout: (timer: Readonly<{ unref?: () => void }>) => void;
+  readonly #movementListeners = new Set<MovementListener>();
 
   #active: ActiveBot | undefined;
   #generation = 0;
@@ -96,6 +131,7 @@ export class MineflayerMinecraftAdapter implements MinecraftAdapter {
 
   constructor(dependencies: MineflayerRuntimeDependencies = {}) {
     this.#configuredCreateBot = dependencies.createBot;
+    this.#createVector = dependencies.createVector;
     this.#setTimeout =
       dependencies.setTimeout ??
       ((callback, milliseconds) => setTimeout(callback, milliseconds));
@@ -108,6 +144,7 @@ export class MineflayerMinecraftAdapter implements MinecraftAdapter {
     config: MinecraftAdapterConnectionConfig,
     signal: AbortSignal
   ): Promise<void> {
+    if (this.#pendingClose !== undefined) await this.#pendingClose;
     if (this.#active !== undefined || this.#state.connectionState !== 'disconnected') {
       throw new MinecraftAdapterError('invalid_state');
     }
@@ -166,6 +203,7 @@ export class MineflayerMinecraftAdapter implements MinecraftAdapter {
           return;
         }
         this.#stopBotControls(bot);
+        this.#detachMovementListeners(bot);
         const current = this.#active;
         this.#detach(current);
         this.#active = undefined;
@@ -206,6 +244,7 @@ export class MineflayerMinecraftAdapter implements MinecraftAdapter {
         death: () => {
           if (!this.#isCurrent(bot, generation)) return;
           this.#stopBotControls(bot);
+          this.#detachMovementListeners(bot);
           this.#state = this.#readBotState(bot, true, false);
           this.#emit({ type: 'death' });
         },
@@ -225,7 +264,13 @@ export class MineflayerMinecraftAdapter implements MinecraftAdapter {
         }
       };
       const errorSink = (): void => undefined;
-      this.#active = { bot, generation, handlers, errorSink, settleConnection };
+      this.#active = {
+        bot,
+        generation,
+        handlers,
+        errorSink,
+        settleConnection
+      };
       this.#attach(bot, handlers, errorSink);
       signal.addEventListener('abort', onAbort, { once: true });
       if (signal.aborted) onAbort();
@@ -240,6 +285,7 @@ export class MineflayerMinecraftAdapter implements MinecraftAdapter {
     }
     ++this.#generation;
     this.#stopBotControls(active.bot);
+    this.#detachMovementListeners(active.bot);
     this.#detach(active);
     this.#active = undefined;
     this.#state = disconnectedMinecraftAdapterState('requested');
@@ -253,6 +299,152 @@ export class MineflayerMinecraftAdapter implements MinecraftAdapter {
   stopAllControls(): void {
     const bot = this.#active?.bot;
     if (bot !== undefined) this.#stopBotControls(bot);
+  }
+
+  clearControls(): void {
+    const bot = this.#active?.bot;
+    if (bot === undefined) return;
+    this.#tryClearControls(bot);
+  }
+
+  setForward(active: boolean): void {
+    const bot = this.#active?.bot;
+    if (bot === undefined || typeof bot.setControlState !== 'function') return;
+    if (!this.#tryClearControls(bot)) return;
+    if (!active) return;
+    try {
+      bot.setControlState('forward', true);
+    } catch {
+      this.clearControls();
+    }
+  }
+
+  getBotPosition(): SafePosition | undefined {
+    return safePosition(this.#active?.bot.entity?.position);
+  }
+
+  getDimension(): MinecraftDimension | undefined {
+    return minecraftDimension(this.#active?.bot.game?.dimension) ?? undefined;
+  }
+
+  getPlayer(username: string): ObservedPlayer | undefined {
+    const active = this.#active;
+    const dimension = this.getDimension();
+    if (
+      active === undefined ||
+      this.#state.connectionState !== 'connected' ||
+      dimension === undefined
+    ) {
+      return undefined;
+    }
+    const player = findPlayer(active.bot, username);
+    const position = safePosition(player?.entity?.position);
+    if (player === undefined || position === undefined) return undefined;
+    return Object.freeze({
+      username: player.username as string,
+      position,
+      dimension
+    });
+  }
+
+  async lookAt(position: SafePosition): Promise<void> {
+    const active = this.#active;
+    if (
+      active === undefined ||
+      typeof active.bot.lookAt !== 'function' ||
+      !finitePosition(position)
+    ) {
+      throw new MinecraftAdapterError('invalid_state');
+    }
+    if (!this.#tryClearControls(active.bot)) {
+      throw new MinecraftAdapterError('invalid_state');
+    }
+    await active.bot.lookAt(
+      this.#vector(position.x, position.y, position.z),
+      false
+    );
+  }
+
+  inspectForwardStep(target: ObservedPlayer): ForwardSafety {
+    const bot = this.#active?.bot;
+    const botPosition = this.getBotPosition();
+    const dimension = this.getDimension();
+    if (
+      bot === undefined ||
+      botPosition === undefined ||
+      dimension === undefined ||
+      dimension !== OVERWORLD ||
+      target.dimension !== dimension
+    ) {
+      return Object.freeze({ kind: 'dimension_mismatch' });
+    }
+    if (!finitePosition(target.position)) {
+      return Object.freeze({ kind: 'unloaded' });
+    }
+    if (Math.abs(botPosition.y - Math.round(botPosition.y)) > POSITION_EPSILON) {
+      return Object.freeze({ kind: 'unsupported_drop' });
+    }
+    const dx = target.position.x - botPosition.x;
+    const dz = target.position.z - botPosition.z;
+    const horizontalDistance = Math.hypot(dx, dz);
+    if (!Number.isFinite(horizontalDistance) || horizontalDistance <= 0) {
+      return Object.freeze({ kind: 'blocked' });
+    }
+    const step = Math.min(DIRECT_STEP_DISTANCE, horizontalDistance);
+    const candidate = freezePosition({
+      x: botPosition.x + (dx / horizontalDistance) * step,
+      y: Math.round(botPosition.y),
+      z: botPosition.z + (dz / horizontalDistance) * step
+    });
+    if (!finitePosition(candidate) || typeof bot.blockAt !== 'function') {
+      return Object.freeze({ kind: 'unloaded' });
+    }
+
+    for (const sample of candidateSamples(candidate)) {
+      const feet = this.#blockAt(bot, sample.x, candidate.y, sample.z);
+      const head = this.#blockAt(bot, sample.x, candidate.y + 1, sample.z);
+      const support = this.#blockAt(bot, sample.x, candidate.y - 1, sample.z);
+      const feetResult = classifyDirectSteeringSpace(feet);
+      if (feetResult !== 'safe') return Object.freeze({ kind: feetResult });
+      const headResult = classifyDirectSteeringSpace(head);
+      if (headResult !== 'safe') return Object.freeze({ kind: headResult });
+      const supportResult = classifyDirectSteeringSupport(support);
+      if (supportResult !== 'safe') return Object.freeze({ kind: supportResult });
+    }
+    return Object.freeze({ kind: 'safe', candidate });
+  }
+
+  onMovementTick(handler: () => void): () => void {
+    const bot = this.#active?.bot;
+    if (bot === undefined) throw new MinecraftAdapterError('invalid_state');
+    if ([...this.#movementListeners].some((listener) => listener.bot === bot)) {
+      this.#tryClearControls(bot);
+      throw new MinecraftAdapterError('invalid_state');
+    }
+    const listener: MovementListener = {
+      bot,
+      active: true,
+      wrapped: () => {
+        if (!listener.active || this.#active?.bot !== bot) return;
+        try {
+          handler();
+        } catch {
+          this.clearControls();
+          listener.active = false;
+          listener.bot.off('physicsTick', listener.wrapped);
+          this.#movementListeners.delete(listener);
+          this.#emit({ type: 'error' });
+        }
+      }
+    };
+    this.#movementListeners.add(listener);
+    bot.on('physicsTick', listener.wrapped);
+    return () => {
+      if (!listener.active) return;
+      listener.active = false;
+      listener.bot.off('physicsTick', listener.wrapped);
+      this.#movementListeners.delete(listener);
+    };
   }
 
   state(): MinecraftAdapterState {
@@ -308,6 +500,15 @@ export class MineflayerMinecraftAdapter implements MinecraftAdapter {
     bot.off('health', handlers.health);
   }
 
+  #detachMovementListeners(bot: MineflayerBot): void {
+    for (const listener of [...this.#movementListeners]) {
+      if (listener.bot !== bot) continue;
+      listener.active = false;
+      listener.bot.off('physicsTick', listener.wrapped);
+      this.#movementListeners.delete(listener);
+    }
+  }
+
   #requestBotEnd(
     bot: MineflayerBot,
     errorSink: (() => void) | undefined
@@ -330,7 +531,7 @@ export class MineflayerMinecraftAdapter implements MinecraftAdapter {
         try {
           bot.end();
         } catch {
-          // The forced close below still bounds local transport cleanup.
+          // The fixed fallback still bounds local transport cleanup.
         }
       }
       if (settled) return;
@@ -354,24 +555,30 @@ export class MineflayerMinecraftAdapter implements MinecraftAdapter {
   }
 
   #stopBotControls(bot: MineflayerBot): void {
-    try {
-      bot.clearControlStates();
-    } catch {
-      // Clearing is best-effort at a failed or already-ended transport boundary.
-    }
+    this.#tryClearControls(bot);
     if (bot.targetDigBlock != null) {
       try {
         bot.stopDigging();
       } catch {
-        // Stop every active low-level action even when another stop failed.
+        // Stopping a pre-existing action is safe cleanup.
       }
     }
     if (bot.usingHeldItem) {
       try {
         bot.deactivateItem();
       } catch {
-        // Item use is never allowed to continue after a stop request.
+        // Stopping a pre-existing action is safe cleanup.
       }
+    }
+  }
+
+  #tryClearControls(bot: MineflayerBot): boolean {
+    try {
+      bot.clearControlStates();
+      return true;
+    } catch {
+      // Clearing is best-effort at a failed or already-ended transport boundary.
+      return false;
     }
   }
 
@@ -380,12 +587,9 @@ export class MineflayerMinecraftAdapter implements MinecraftAdapter {
     spawned: boolean,
     alive: boolean
   ): MinecraftAdapterState {
-    const position = bot.entity?.position;
+    const position = safePosition(bot.entity?.position);
     const roundedPosition =
-      position === undefined ||
-      !Number.isFinite(position.x) ||
-      !Number.isFinite(position.y) ||
-      !Number.isFinite(position.z)
+      position === undefined
         ? null
         : Object.freeze({
             x: boundedInteger(position.x, -30_000_000, 30_000_000),
@@ -410,6 +614,22 @@ export class MineflayerMinecraftAdapter implements MinecraftAdapter {
     });
   }
 
+  #blockAt(
+    bot: MineflayerBot,
+    x: number,
+    y: number,
+    z: number
+  ): MineflayerBlock | null {
+    try {
+      return bot.blockAt?.(
+        this.#vector(Math.floor(x), Math.floor(y), Math.floor(z)),
+        false
+      ) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   #emit(event: MinecraftAdapterEvent): void {
     try {
       this.#handler?.(Object.freeze(event));
@@ -427,6 +647,20 @@ export class MineflayerMinecraftAdapter implements MinecraftAdapter {
     return module.createBot;
   }
 
+  #loadVec3(): new (x: number, y: number, z: number) => unknown {
+    const require = createRequire(import.meta.url);
+    const module = require('vec3') as Readonly<{
+      Vec3: new (x: number, y: number, z: number) => unknown;
+    }>;
+    return module.Vec3;
+  }
+
+  #vector(x: number, y: number, z: number): unknown {
+    if (this.#createVector !== undefined) return this.#createVector(x, y, z);
+    const Vec3 = this.#loadVec3();
+    return new Vec3(x, y, z);
+  }
+
   #asBot(value: unknown): MineflayerBot {
     if (typeof value !== 'object' || value === null) {
       throw new MinecraftAdapterError('connection_failed');
@@ -436,9 +670,7 @@ export class MineflayerMinecraftAdapter implements MinecraftAdapter {
 }
 
 function minecraftDimension(value: unknown): MinecraftDimension | null {
-  if (value === 'overworld' || value === 'minecraft:overworld') {
-    return 'minecraft:overworld';
-  }
+  if (value === 'overworld' || value === OVERWORLD) return OVERWORLD;
   if (value === 'the_nether' || value === 'minecraft:the_nether') {
     return 'minecraft:the_nether';
   }
@@ -446,6 +678,65 @@ function minecraftDimension(value: unknown): MinecraftDimension | null {
     return 'minecraft:the_end';
   }
   return null;
+}
+
+function findPlayer(
+  bot: MineflayerBot,
+  username: string
+): MineflayerPlayer | undefined {
+  const normalized = normalizeUsername(username);
+  if (normalized === undefined) return undefined;
+  const matches = Object.values(bot.players ?? {}).filter((player) => {
+    return (
+      typeof player?.username === 'string' &&
+      normalizeUsername(player.username) === normalized
+    );
+  });
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function normalizeUsername(value: string): string | undefined {
+  if (!/^[A-Za-z0-9_]{3,16}$/u.test(value)) return undefined;
+  return value.toLowerCase();
+}
+
+function safePosition(value: MineflayerPosition | undefined): SafePosition | undefined {
+  if (value === undefined || !finitePosition(value)) return undefined;
+  return freezePosition(value);
+}
+
+function freezePosition(value: SafePosition): SafePosition {
+  return Object.freeze({ x: value.x, y: value.y, z: value.z });
+}
+
+function finitePosition(value: SafePosition): boolean {
+  return Number.isFinite(value.x) && Number.isFinite(value.y) && Number.isFinite(value.z);
+}
+
+function candidateSamples(candidate: SafePosition): readonly SafePosition[] {
+  return [
+    candidate,
+    freezePosition({
+      x: candidate.x - PLAYER_HALF_WIDTH,
+      y: candidate.y,
+      z: candidate.z - PLAYER_HALF_WIDTH
+    }),
+    freezePosition({
+      x: candidate.x - PLAYER_HALF_WIDTH,
+      y: candidate.y,
+      z: candidate.z + PLAYER_HALF_WIDTH
+    }),
+    freezePosition({
+      x: candidate.x + PLAYER_HALF_WIDTH,
+      y: candidate.y,
+      z: candidate.z - PLAYER_HALF_WIDTH
+    }),
+    freezePosition({
+      x: candidate.x + PLAYER_HALF_WIDTH,
+      y: candidate.y,
+      z: candidate.z + PLAYER_HALF_WIDTH
+    })
+  ];
 }
 
 function boundedInteger(value: number, minimum: number, maximum: number): number {

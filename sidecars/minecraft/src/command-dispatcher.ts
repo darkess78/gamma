@@ -4,6 +4,16 @@ import type {
   MinecraftAdapterEvent,
   MinecraftAdapterState
 } from './minecraft-adapter.js';
+import { isMinecraftMovementAdapter } from './minecraft-adapter.js';
+import {
+  CompanionExecutor,
+  type CompanionExecutionResult,
+  type CompanionProgress
+} from './companion-executor.js';
+import type {
+  CompanionOperationalState,
+  CompanionStateTransitionOptions
+} from './companion-state.js';
 import type {
   CancelCommandMessage,
   CommandMessage,
@@ -48,6 +58,7 @@ export type MinecraftCommandDispatcherDependencies = Readonly<{
   setTimeout?: (callback: () => void, milliseconds: number) => MinecraftDispatcherTimer;
   clearTimeout?: (timer: MinecraftDispatcherTimer) => void;
   onDeliveryFailure?: () => void;
+  ownerUsername?: string | null;
 }>;
 
 type ActiveCommand = {
@@ -94,6 +105,7 @@ export class MinecraftCommandDispatcher {
   ) => MinecraftDispatcherTimer;
   readonly #clearTimeout: (timer: MinecraftDispatcherTimer) => void;
   readonly #onDeliveryFailure: () => void;
+  readonly #executor: CompanionExecutor | undefined;
   readonly #commandCache = new Map<string, CachedCommand>();
 
   #active: ActiveCommand | undefined;
@@ -105,6 +117,7 @@ export class MinecraftCommandDispatcher {
   #lastTerminal: TerminalRecord | null = null;
   #acceptingEvents = true;
   #eventChain: Promise<void> = Promise.resolve();
+  #preemptiveCommandChain: Promise<void> = Promise.resolve();
 
   constructor(dependencies: MinecraftCommandDispatcherDependencies) {
     this.#minecraftConfig = Object.freeze({
@@ -126,6 +139,24 @@ export class MinecraftCommandDispatcher {
       dependencies.clearTimeout ??
       ((timer) => clearTimeout(timer as NodeJS.Timeout));
     this.#onDeliveryFailure = dependencies.onDeliveryFailure ?? (() => undefined);
+    this.#executor = isMinecraftMovementAdapter(this.#adapter)
+      ? new CompanionExecutor(
+          this.#adapter,
+          dependencies.ownerUsername ?? null,
+          {
+            now: this.#now,
+            monotonicNowMs: this.#monotonicNowMs,
+            setTimeout: this.#setTimeout,
+            clearTimeout: this.#clearTimeout,
+            onStateChange: (state) => {
+              this.#companionState = state;
+            },
+            onProgress: (progress) => {
+              void this.#sendCompanionProgress(progress);
+            }
+          }
+        )
+      : undefined;
     this.#adapter.setEventHandler((event) => this.#queueAdapterEvent(event));
   }
 
@@ -166,6 +197,18 @@ export class MinecraftCommandDispatcher {
   }
 
   async handleCommand(message: CommandMessage): Promise<void> {
+    if (isPreemptiveCommand(message.payload.name)) {
+      const work = this.#preemptiveCommandChain.then(() =>
+        this.#handleCommandSafely(message)
+      );
+      this.#preemptiveCommandChain = work.catch(() => undefined);
+      await work;
+      return;
+    }
+    await this.#handleCommandSafely(message);
+  }
+
+  async #handleCommandSafely(message: CommandMessage): Promise<void> {
     try {
       const duplicate = this.#cachedCommand(message.command_id);
       if (duplicate !== undefined) {
@@ -185,6 +228,7 @@ export class MinecraftCommandDispatcher {
     } catch {
       const active = this.#active;
       if (active?.message.command_id === message.command_id) {
+        this.#executor?.cancelActiveMovement();
         active.controller.abort();
         this.#adapter.stopAllControls();
         this.#active = undefined;
@@ -209,6 +253,7 @@ export class MinecraftCommandDispatcher {
     }
     try {
       active.controller.abort();
+      this.#executor?.cancelActiveMovement();
       this.#adapter.stopAllControls();
       if (active.message.payload.name === 'join') {
         await this.#safeDisconnect();
@@ -223,10 +268,12 @@ export class MinecraftCommandDispatcher {
   async emergencyStop(message: EmergencyStopMessage): Promise<void> {
     this.#emergencyStopActive = true;
     this.#emergencyLeaveCompleted = false;
-    this.#companionState = 'STOPPED';
+    this.#executor?.emergencyStop();
+    this.#setCompanionState('STOPPED');
     this.#adapter.stopAllControls();
     const active = this.#active;
     if (active !== undefined) active.controller.abort();
+    this.#executor?.cancelActiveMovement();
     try {
       if (active?.message.payload.name === 'join') await this.#safeDisconnect();
       if (active !== undefined) {
@@ -246,11 +293,21 @@ export class MinecraftCommandDispatcher {
     this.#acceptingEvents = false;
     this.#adapter.setEventHandler(undefined);
     const active = this.#active;
-    if (active !== undefined) active.controller.abort();
+    this.#executor?.cancelActiveMovement();
+    if (active !== undefined) {
+      active.terminalized = true;
+      active.controller.abort();
+      this.#lastTerminal = Object.freeze({
+        outcome: 'failed',
+        failureCode: 'SIDECAR_DISCONNECTED'
+      });
+    }
     this.#active = undefined;
     this.#adapter.stopAllControls();
     await this.#safeDisconnect();
-    this.#companionState = this.#emergencyStopActive ? 'STOPPED' : 'DISCONNECTED';
+    this.#setCompanionState(
+      this.#emergencyStopActive ? 'STOPPED' : 'DISCONNECTED'
+    );
   }
 
   async waitForEvents(): Promise<void> {
@@ -268,22 +325,41 @@ export class MinecraftCommandDispatcher {
     }
 
     const name = message.payload.name;
+    if (
+      this.#active !== undefined &&
+      isPreemptiveCommand(name) &&
+      isPreemptibleCompanionCommand(this.#active.message.payload.name)
+    ) {
+      await this.#preemptActiveCommand();
+    }
     if (isMovementCommand(name)) {
-      await this.#sendRejectedAck(
-        message,
-        this.#emergencyStopActive
-          ? 'EMERGENCY_STOP_ACTIVE'
-          : 'SAFETY_POLICY_BLOCKED',
-        this.#emergencyStopActive
-          ? 'Emergency stop is active.'
-          : 'Movement is unavailable until the pathfinder phase.'
-      );
-      return;
+      if (this.#emergencyStopActive || this.#executor === undefined) {
+        await this.#sendRejectedAck(
+          message,
+          this.#emergencyStopActive
+            ? 'EMERGENCY_STOP_ACTIVE'
+            : 'SAFETY_POLICY_BLOCKED',
+          this.#emergencyStopActive
+            ? 'Emergency stop is active.'
+            : 'Companion movement is unavailable.'
+        );
+        return;
+      }
+      const movementFailure = this.#executor.precondition(name);
+      if (movementFailure !== null) {
+        await this.#sendRejectedAck(
+          message,
+          movementFailure,
+          safeDetailFor(movementFailure)
+        );
+        return;
+      }
     }
     if (name === 'emergency_stop') {
       this.#emergencyStopActive = true;
       this.#emergencyLeaveCompleted = false;
-      this.#companionState = 'STOPPED';
+      this.#executor?.emergencyStop();
+      this.#setCompanionState('STOPPED');
       this.#adapter.stopAllControls();
       const interrupted = this.#active;
       if (interrupted !== undefined) {
@@ -341,9 +417,16 @@ export class MinecraftCommandDispatcher {
         await this.#executeEmergencyStop(active);
         return;
       case 'follow_owner':
+        await this.#executeMovement(active);
+        return;
       case 'wait_here':
+        await this.#executeMovement(active);
+        return;
       case 'come_here':
+        await this.#executeMovement(active);
+        return;
       case 'look_at_owner':
+        await this.#executeMovement(active);
         return;
     }
   }
@@ -368,11 +451,12 @@ export class MinecraftCommandDispatcher {
       case 'wait_here':
       case 'come_here':
       case 'look_at_owner':
-        return 'SAFETY_POLICY_BLOCKED';
+        return this.#executor === undefined ? 'SAFETY_POLICY_BLOCKED' : null;
     }
   }
 
   async #executeJoin(active: ActiveCommand): Promise<void> {
+    let emergencyRecoveryPending = false;
     const connection = this.#adapter.connect(
       this.#minecraftConfig,
       active.controller.signal
@@ -419,18 +503,32 @@ export class MinecraftCommandDispatcher {
         );
         return;
       }
-      if (this.#emergencyStopActive && this.#emergencyLeaveCompleted) {
+      emergencyRecoveryPending =
+        this.#emergencyStopActive && this.#emergencyLeaveCompleted;
+      this.#setCompanionState('IDLE', { emergencyRecovery: true });
+      await this.#publishCurrentStatus(this.#correlation(active));
+      await this.#finish(active, 'completed', 'Minecraft joined safely.', null);
+      if (emergencyRecoveryPending) {
         this.#emergencyStopActive = false;
         this.#emergencyLeaveCompleted = false;
       }
-      this.#companionState = 'IDLE';
-      await this.#publishCurrentStatus(this.#correlation(active));
-      await this.#finish(active, 'completed', 'Minecraft joined safely.', null);
     } catch {
+      if (
+        emergencyRecoveryPending &&
+        (active.terminalized || this.#active !== active)
+      ) {
+        this.#emergencyStopActive = true;
+        this.#adapter.stopAllControls();
+        await this.#safeDisconnect();
+        this.#setCompanionState('STOPPED');
+        return;
+      }
       if (active.terminalized || this.#active !== active) return;
       this.#adapter.stopAllControls();
       await this.#safeDisconnect();
-      this.#companionState = this.#emergencyStopActive ? 'STOPPED' : 'DISCONNECTED';
+      this.#setCompanionState(
+        this.#emergencyStopActive ? 'STOPPED' : 'DISCONNECTED'
+      );
       await this.#publishCurrentStatus(this.#correlation(active));
       if (active.timedOut) {
         await this.#finish(
@@ -465,7 +563,9 @@ export class MinecraftCommandDispatcher {
   ): Promise<void> {
     this.#adapter.stopAllControls();
     await this.#safeDisconnect();
-    this.#companionState = this.#emergencyStopActive ? 'STOPPED' : 'DISCONNECTED';
+    this.#setCompanionState(
+      this.#emergencyStopActive ? 'STOPPED' : 'DISCONNECTED'
+    );
     await this.#publishCurrentStatus(this.#correlation(active));
     await this.#finish(
       active,
@@ -478,14 +578,33 @@ export class MinecraftCommandDispatcher {
   async #executeLeave(active: ActiveCommand): Promise<void> {
     this.#adapter.stopAllControls();
     await this.#safeDisconnect();
-    if (this.#emergencyStopActive) {
-      this.#emergencyLeaveCompleted = true;
-      this.#companionState = 'STOPPED';
+    if (this.#adapter.state().connectionState !== 'disconnected') {
+      const state = this.#adapter.state();
+      if (this.#emergencyStopActive) this.#setCompanionState('STOPPED');
+      else if (!state.alive) this.#setCompanionState('DEAD');
+      else this.#setCompanionState('IDLE');
+      await this.#publishCurrentStatus(this.#correlation(active));
+      await this.#finish(
+        active,
+        'failed',
+        'Minecraft did not fully disconnect.',
+        failure(
+          'MINECRAFT_SERVER_DISCONNECTED',
+          'Minecraft did not fully disconnect.',
+          true
+        )
+      );
+      return;
+    }
+    const emergencyLeavePending = this.#emergencyStopActive;
+    if (emergencyLeavePending) {
+      this.#setCompanionState('STOPPED');
     } else {
-      this.#companionState = 'DISCONNECTED';
+      this.#setCompanionState('DISCONNECTED');
     }
     await this.#publishCurrentStatus(this.#correlation(active));
     await this.#finish(active, 'completed', 'Minecraft left safely.', null);
+    if (emergencyLeavePending) this.#emergencyLeaveCompleted = true;
   }
 
   async #executeReportStatus(active: ActiveCommand): Promise<void> {
@@ -494,12 +613,14 @@ export class MinecraftCommandDispatcher {
   }
 
   async #executeStop(active: ActiveCommand): Promise<void> {
+    this.#executor?.stop();
     this.#adapter.stopAllControls();
     const state = this.#adapter.state();
-    if (this.#emergencyStopActive) this.#companionState = 'STOPPED';
-    else if (state.connectionState === 'disconnected') this.#companionState = 'DISCONNECTED';
-    else if (!state.alive) this.#companionState = 'DEAD';
-    else this.#companionState = 'IDLE';
+    if (this.#emergencyStopActive) this.#setCompanionState('STOPPED');
+    else if (state.connectionState === 'disconnected') {
+      this.#setCompanionState('DISCONNECTED');
+    } else if (!state.alive) this.#setCompanionState('DEAD');
+    else this.#setCompanionState('IDLE');
     await this.#publishCurrentStatus(this.#correlation(active));
     await this.#finish(active, 'completed', 'Minecraft controls are stopped.', null);
   }
@@ -507,6 +628,97 @@ export class MinecraftCommandDispatcher {
   async #executeEmergencyStop(active: ActiveCommand): Promise<void> {
     await this.#publishCurrentStatus(this.#correlation(active));
     await this.#finish(active, 'completed', 'Local emergency stop is active.', null);
+  }
+
+  async #preemptActiveCommand(): Promise<void> {
+    const interrupted = this.#active;
+    if (interrupted === undefined) return;
+    this.#executor?.cancelActiveMovement();
+    this.#adapter.stopAllControls();
+    interrupted.controller.abort();
+    await this.#finish(
+      interrupted,
+      'cancelled',
+      'Command preempted by a safety command.',
+      null
+    );
+  }
+
+  async #executeMovement(active: ActiveCommand): Promise<void> {
+    const executor = this.#executor;
+    if (executor === undefined) return;
+    const payload = active.message.payload;
+    const deadlineAtMs = Date.parse(payload.deadline_at);
+    let execution: Promise<CompanionExecutionResult>;
+    switch (payload.name) {
+      case 'follow_owner':
+        execution = executor.followOwner(
+          payload.arguments.follow_distance,
+          payload.arguments.lease_duration_seconds,
+          deadlineAtMs,
+          active.controller.signal
+        );
+        break;
+      case 'wait_here':
+        execution = Promise.resolve(executor.waitHere());
+        break;
+      case 'come_here':
+        execution = executor.comeHere(
+          payload.arguments.arrival_distance,
+          deadlineAtMs,
+          active.controller.signal
+        );
+        break;
+      case 'look_at_owner':
+        execution = executor.lookAtOwner(
+          payload.arguments.duration_seconds,
+          deadlineAtMs,
+          active.controller.signal
+        );
+        break;
+      case 'join':
+      case 'leave':
+      case 'report_status':
+      case 'stop':
+      case 'emergency_stop':
+        return;
+    }
+    await this.#publishCurrentStatus(this.#correlation(active));
+    const result = await execution;
+    if (active.terminalized || this.#active !== active) return;
+    await this.#publishCurrentStatus(this.#correlation(active));
+    await this.#finish(
+      active,
+      result.outcome,
+      result.safeDetail,
+      result.failureCode === null
+        ? null
+        : failure(result.failureCode, result.safeDetail, result.retriable)
+    );
+  }
+
+  async #sendCompanionProgress(progress: CompanionProgress): Promise<void> {
+    const active = this.#active;
+    if (active === undefined || !isMovementCommand(active.message.payload.name)) {
+      return;
+    }
+    try {
+      await this.#send({
+        type: 'command_progress',
+        trace_id: active.message.trace_id,
+        command_id: active.message.command_id,
+        payload: {
+          command_name: active.message.payload.name,
+          phase: progress.phase,
+          elapsed_ms: this.#elapsedMs(active.startedAtMs),
+          safe_detail: progress.safeDetail
+        }
+      });
+    } catch {
+      active.controller.abort();
+      this.#executor?.cancelActiveMovement();
+      this.#onDeliveryFailure();
+    }
   }
 
   async #sendAcceptedAck(message: CommandMessage): Promise<void> {
@@ -583,11 +795,11 @@ export class MinecraftCommandDispatcher {
       });
       const cached = this.#commandCache.get(active.message.command_id);
       if (cached !== undefined) cached.terminal = terminal;
-      await this.#send(terminal);
       this.#lastTerminal = Object.freeze({
         outcome,
         failureCode: terminalFailure?.code ?? null
       });
+      await this.#send(terminal);
     } finally {
       if (this.#active === active) this.#active = undefined;
     }
@@ -622,7 +834,8 @@ export class MinecraftCommandDispatcher {
         state,
         this.#companionState,
         activeSummary,
-        this.#lastTerminal
+        this.#lastTerminal,
+        this.#executor?.owner() ?? null
       ),
       ...(correlation === null
         ? {}
@@ -664,8 +877,11 @@ export class MinecraftCommandDispatcher {
         this.#adapter.stopAllControls();
         return;
       case 'disconnected':
+        this.#executor?.cancelActiveMovement();
         this.#adapter.stopAllControls();
-        this.#companionState = this.#emergencyStopActive ? 'STOPPED' : 'DISCONNECTED';
+        this.#setCompanionState(
+          this.#emergencyStopActive ? 'STOPPED' : 'DISCONNECTED'
+        );
         if (
           event.category === 'requested' &&
           active !== undefined &&
@@ -673,40 +889,54 @@ export class MinecraftCommandDispatcher {
         ) {
           return;
         }
+        active?.controller.abort();
+        const disconnectTerminal =
+          active === undefined
+            ? undefined
+            : this.#finish(
+                active,
+                'failed',
+                'Minecraft server disconnected.',
+                failure(
+                  'MINECRAFT_SERVER_DISCONNECTED',
+                  'Minecraft server disconnected.',
+                  true
+                )
+              );
         await this.#publishCurrentStatus(null);
-        if (active !== undefined) {
-          await this.#finish(
-            active,
-            'failed',
-            'Minecraft server disconnected.',
-            failure(
-              'MINECRAFT_SERVER_DISCONNECTED',
-              'Minecraft server disconnected.',
-              true
-            )
-          );
-        }
+        await disconnectTerminal;
         return;
       case 'death':
+        active?.controller.abort();
+        this.#executor?.cancelActiveMovement();
         this.#adapter.stopAllControls();
-        this.#companionState = this.#emergencyStopActive ? 'STOPPED' : 'DEAD';
+        this.#setCompanionState(
+          this.#emergencyStopActive ? 'STOPPED' : 'DEAD'
+        );
+        const deathTerminal =
+          active === undefined
+            ? undefined
+            : this.#finish(
+                active,
+                'failed',
+                'Minecraft bot died.',
+                failure('BOT_DEAD', 'Minecraft bot died.', false)
+              );
         await this.#publishCurrentStatus(null);
-        if (active !== undefined) {
-          await this.#finish(
-            active,
-            'failed',
-            'Minecraft bot died.',
-            failure('BOT_DEAD', 'Minecraft bot died.', false)
-          );
-        }
+        await deathTerminal;
         return;
       case 'respawn':
         if (this.#adapter.state().dimension !== 'minecraft:overworld') {
           this.#adapter.stopAllControls();
           await this.#safeDisconnect();
-          this.#companionState = this.#emergencyStopActive ? 'STOPPED' : 'DISCONNECTED';
+          this.#setCompanionState(
+            this.#emergencyStopActive ? 'STOPPED' : 'DISCONNECTED'
+          );
         } else {
-          this.#companionState = this.#emergencyStopActive ? 'STOPPED' : 'IDLE';
+          this.#setCompanionState(
+            this.#emergencyStopActive ? 'STOPPED' : 'IDLE',
+            this.#emergencyStopActive ? {} : { respawnRecovery: true }
+          );
         }
         await this.#publishCurrentStatus(null);
         return;
@@ -725,6 +955,25 @@ export class MinecraftCommandDispatcher {
 
   #deadlineExpired(message: CommandMessage): boolean {
     return Date.parse(message.payload.deadline_at) <= this.#safeNow().getTime();
+  }
+
+  #setCompanionState(
+    state: CompanionOperationalState,
+    options: CompanionStateTransitionOptions = {}
+  ): void {
+    if (this.#executor !== undefined) {
+      try {
+        this.#executor.synchronizeState(state, options);
+      } catch {
+        this.#emergencyStopActive = true;
+        this.#emergencyLeaveCompleted = false;
+        this.#executor.emergencyStop();
+        this.#adapter.stopAllControls();
+        this.#companionState = 'STOPPED';
+        return;
+      }
+    }
+    this.#companionState = state;
   }
 
   #cachedCommand(commandId: string): CachedCommand | undefined {
@@ -798,6 +1047,14 @@ function isMovementCommand(name: CommandName): boolean {
   return ['follow_owner', 'wait_here', 'come_here', 'look_at_owner'].includes(name);
 }
 
+function isPreemptiveCommand(name: CommandName): boolean {
+  return ['leave', 'wait_here', 'stop'].includes(name);
+}
+
+function isPreemptibleCompanionCommand(name: CommandName): boolean {
+  return ['follow_owner', 'come_here', 'look_at_owner'].includes(name);
+}
+
 function failure(
   code: FailureCode,
   safeDetail: string,
@@ -814,7 +1071,13 @@ function safeDetailFor(code: FailureCode): string {
   const details: Partial<Record<FailureCode, string>> = {
     INVALID_COMMAND: 'Connection profiles are unavailable in local offline mode.',
     INVALID_STATE: 'Minecraft connection state does not allow this command.',
-    EMERGENCY_STOP_ACTIVE: 'A completed leave is required before a fresh join.'
+    EMERGENCY_STOP_ACTIVE: 'A completed leave is required before a fresh join.',
+    MINECRAFT_NOT_CONNECTED: 'Minecraft is not connected.',
+    OWNER_NOT_CONFIGURED: 'Minecraft owner is not configured.',
+    OWNER_NOT_PRESENT: 'Configured Minecraft owner is not present.',
+    OWNER_TOO_FAR_AWAY: 'Configured Minecraft owner is too far away.',
+    BOT_DEAD: 'Minecraft bot is dead.',
+    UNSUPPORTED_DIMENSION: 'Minecraft movement is restricted to the Overworld.'
   };
   return details[code] ?? 'Command cannot be executed in the current state.';
 }

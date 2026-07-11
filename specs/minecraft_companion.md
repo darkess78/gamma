@@ -1,21 +1,22 @@
 # Minecraft Companion
 
-Status: Target contract; protocol, coordinator, and Shana control transport implemented
+Status: Current protocol and bounded offline companion contract
 
-Last verified: 2026-07-10
+Last verified: 2026-07-11
 
 ## Purpose And Scope
 
-This specification is the canonical contract for a future Minecraft Java
-Edition companion integration. Version 1 is companion-first: Shana may
-eventually direct one bounded companion to join, leave, follow its configured
-owner, wait, come closer, look at its owner, report status, stop, or enter an
-emergency stop.
+This specification is the canonical contract for Gamma's Minecraft Java
+Edition companion integration. Version 1 is companion-first: Shana can direct
+one bounded companion to join, leave, follow its configured owner, wait, come
+closer, look at its owner, report status, stop, or enter an emergency stop.
 
-The protocol models, in-process coordinator, and disabled-by-default Shana
-control WebSocket wiring exist. No Mineflayer runtime, sidecar launcher,
-Minecraft connection, natural-language authorization path, or user interface
-has been implemented.
+The protocol models, in-process coordinator, disabled-by-default Shana control
+WebSocket, independently started TypeScript sidecar, narrow Mineflayer adapter,
+offline-development join/leave runtime, and bounded direct-steering executor
+exist. Dashboard controls, process supervision, natural-language command
+routing, Microsoft authentication, and online owner UUID authorization have
+not been implemented.
 
 The companion feature is disabled by default. Private offline-mode server
 testing comes before Microsoft authentication or any non-development use.
@@ -29,18 +30,19 @@ testing comes before Microsoft authentication or any non-development use.
 - the authenticated local control-channel server on Shana's existing application boundary
 - decisions about speech, subtitles, Monitor output, or silence
 
-### The future TypeScript sidecar owns
+### The TypeScript sidecar owns
 
 - Minecraft protocol and authentication behavior
-- Mineflayer and pathfinding details
+- the narrow Mineflayer adapter and bounded direct-steering details
 - movement and the immediate safety state machine
 - authoritative observed Minecraft state
-- immediate clearing of goals and controls on control-channel loss
+- immediate clearing of direct targets, physics-tick listeners, and controls on
+  control-channel loss
 
-The future sidecar connects outbound to the Shana-owned WebSocket. It does not
+The sidecar connects outbound to the Shana-owned WebSocket. It does not
 open a third public port. It never receives arbitrary JavaScript, Mineflayer
-method names, raw pathfinder goals, arbitrary coordinates, generic actions, or
-LLM-generated code.
+method names, raw movement primitives, arbitrary coordinates, generic actions,
+or LLM-generated code.
 
 ### Dashboard owns
 
@@ -125,16 +127,16 @@ an optional stable failure. Minecraft status reports only Minecraft connection
 state, companion state, negotiated version, and current known dimension.
 
 Liveness timeout or unexpected control-channel loss requires the sidecar to
-clear the pathfinder goal and every movement control immediately. Active work
-is terminalized with `SIDECAR_DISCONNECTED`. Reconnection never resumes it.
+clear the direct movement target, remove its physics-tick listener, and clear
+every movement control immediately. Active work is terminalized with
+`SIDECAR_DISCONNECTED`. Reconnection never resumes it.
 
 ## Commands
 
 A `command` carries a deadline later than `sent_at` and no more than 900
 seconds after it. An equal, earlier, or farther deadline is invalid. The
-eventual coordinator may impose tighter command-specific and wall-clock
-staleness limits before dispatch. Only these command names and arguments exist
-in v1:
+coordinator may impose tighter command-specific and wall-clock staleness limits
+before dispatch. Only these command names and arguments exist in v1:
 
 | Name | Bounded arguments |
 | --- | --- |
@@ -148,7 +150,9 @@ in v1:
 | `stop` | Optional safe `reason`. |
 | `emergency_stop` | Optional safe `reason`. |
 
-Follow is a renewable bounded lease, never permanent unbounded movement.
+Follow is a renewable bounded lease, never permanent unbounded movement. The
+sidecar does not renew it automatically; renewal requires a new Gamma-owned
+command.
 Coordinates, entity lists, JavaScript, server commands, method names, and
 generic action payloads are invalid command arguments.
 
@@ -176,8 +180,8 @@ timed_out
 ```
 
 `failed`, `rejected`, and `timed_out` require a stable failure object.
-`completed` and `cancelled` must not contain one. The eventual session state
-machine must ignore or flag any second terminal result for the same accepted
+`completed` and `cancelled` must not contain one. The session state machine
+must ignore or flag any second terminal result for the same accepted
 command rather than publishing it as another outcome.
 
 ## Cancellation
@@ -192,20 +196,23 @@ cached correlation result and never re-executes the command.
 
 `emergency_stop` is a distinct highest-priority envelope as well as an allowed
 bounded command name. It requires connection, trace, and command correlation
-and accepts only an optional safe reason. It must eventually bypass an
-ordinary command queue, synchronously clear pathfinding and all movement
-controls before acknowledgment, terminalize interrupted work once, and latch
-the companion in `STOPPED`.
+and accepts only an optional safe reason. It must bypass an ordinary command
+queue, synchronously latch locally, clear the direct target, remove the
+movement listener, and clear all movement controls before acknowledgment. It
+terminalizes interrupted work once and latches the companion in `STOPPED`.
 
-During the MVP, recovery from the latch requires leave and a fresh join. There
-is no `clear_emergency_stop` message. Repeating emergency stop is valid and
+During the MVP, recovery from the latch requires a successfully completed
+leave that fully disconnects Minecraft, followed by a fresh successfully
+completed join. A Gamma reconnect, control-session replacement, runtime reset,
+new hello, ordinary stop, or ordinary command does not clear it. There is no
+`clear_emergency_stop` message. Repeating emergency stop is valid and
 idempotent; unknown fields or action data remain invalid.
 
 ## Shutdown
 
 On graceful Shana shutdown, Shana will send `shutdown` with trace correlation.
 The v1 payload requires `leave_minecraft: true` and permits only an optional
-safe reason. The future sidecar must clear movement first, leave Minecraft,
+safe reason. The sidecar must clear movement first, leave Minecraft,
 and close cleanly. An absent shutdown message is treated as control-channel
 loss and therefore still clears movement immediately.
 
@@ -215,7 +222,7 @@ Reconnection starts a new hello/welcome handshake and a new `connection_id`.
 It sends a fresh snapshot and does not replay or restore any command.
 
 Within one connection, a duplicate `command_id` must not execute again. The
-future sidecar returns its cached acknowledgment and, when available, cached
+sidecar returns its cached acknowledgment and, when available, cached
 terminal result. The cache is bounded by welcome's capacity and TTL.
 
 A command is stale when its deadline is not later than its send time, its
@@ -235,7 +242,8 @@ The snapshot may contain only:
 - sidecar and Minecraft connection states
 - companion state
 - owner presence
-- bounded owner display name and configured UUID
+- bounded owner display name and optional configured UUID; the current offline
+  username-only runtime does not populate online UUID authorization
 - fixed known dimension
 - integer-rounded position
 - health from 0 through 20 and hunger from 0 through 20
@@ -252,18 +260,61 @@ Mineflayer objects, or per-tick telemetry.
 | State | Meaning |
 | --- | --- |
 | `DISCONNECTED` | No active Minecraft session; no movement. |
-| `IDLE` | Connected and alive without a movement goal. |
+| `IDLE` | Connected and alive without an active movement target. |
 | `FOLLOWING` | Executing a bounded renewable owner-follow lease. |
 | `WAITING` | Holding a safe position with movement cleared. |
 | `RETURNING` | Executing bounded `come_here` movement. |
-| `FLEEING` | A short sidecar-owned immediate safety reflex, not a user command. |
 | `DEAD` | Bot death observed; movement impossible and prior work terminal. |
 | `STOPPED` | Emergency-stop latch active; movement commands rejected. |
 
-On sidecar restart, state begins non-moving as `DISCONNECTED` or `IDLE` based
-only on the current Minecraft connection. Movement goals, active commands,
-wait anchors, and command restoration are prohibited. Death/respawn also
-returns to non-moving `IDLE`; it does not resume pre-death work.
+These seven states are the complete implemented sidecar operational state set;
+there is no eating, defending, or user-commanded fleeing state. A runtime or
+control-session reset
+never restores movement and does not clear an emergency latch. Direct targets,
+active commands, wait anchors, and command restoration are prohibited after a
+restart. Death enters `DEAD`; respawn returns to non-moving `IDLE` and never
+resumes pre-death work.
+
+## Implemented Direct-Steering Safety Envelope
+
+No pathfinder dependency is installed, and the sidecar does not implement a
+general-purpose pathfinder. The companion executor receives only a narrow
+movement adapter, never the raw Mineflayer bot or `bot.entity`. Position values
+exposed by the adapter are immutable copies. Direct movement is driven only by
+Mineflayer physics ticks; listener registration has explicit idempotent cleanup
+and there is at most one active movement listener.
+
+The only permitted movement operations are looking toward the observed owner,
+walking forward, stopping, and clearing all controls. Before each forward
+activation, the adapter conservatively checks a short candidate step. The bot
+and owner must be in the Overworld, the candidate must be finite and loaded,
+feet and head space must be passable, and support below must be solid at the
+same walkable level. The step must not require jumping or stepping into a drop.
+Water, lava, fire, soul fire, cactus, campfires, magma blocks, powder snow,
+portals, end gateways, sweet berry bushes, cobwebs, unknown blocks, and any
+other terrain that cannot be confidently classified are unsafe.
+
+This first movement implementation therefore supports clear, flat, loaded,
+direct Overworld terrain only. An obstacle, unsupported drop, liquid, hazard,
+portal, unloaded or unknown terrain, or dimension mismatch clears controls and
+causes a bounded retry or stable terminal failure. The companion never jumps,
+sprints, navigates around an obstacle, digs, places blocks, activates blocks,
+opens doors or containers, equips items, attacks, chats, intentionally swims,
+enters portals, teleports, assigns entity position or velocity, or changes
+dimensions.
+
+`follow_owner` re-observes the owner on every movement tick. A missing owner
+clears controls and the current target on the first missing-owner tick and
+keeps the companion stationary during the ten-second grace period. A returning
+owner is revalidated before movement resumes. `wait_here` and `stop` preempt
+ordinary movement by clearing controls before removing the listener and
+terminalizing the interrupted command exactly once. `come_here` applies the
+same direct-step checks and is limited to an owner initially within 32 blocks.
+`look_at_owner` never enables movement controls.
+
+No real-server movement smoke test has passed. Automated end-to-end coverage
+uses a fake Gamma WebSocket server, the real control/runtime/dispatcher and
+executor layers, and a fake Minecraft adapter.
 
 ## Stable Failure And Rejection Codes
 
@@ -313,19 +364,38 @@ methods, or cause a command. Future user-facing language receives bounded
 facts selected by Gamma, never raw in-world instructions. Minecraft chat
 output is disabled for the initial implementation.
 
+## Offline Owner Authorization
+
+`SHANA_MINECRAFT_OWNER_USERNAME` is required before any owner movement command
+is accepted. The configured value and observed player names must each match the
+bounded Minecraft username form of 3 through 16 ASCII letters, digits, or
+underscores. The single normalization rule is conversion to lowercase, then an
+exact comparison; presence remains false unless exactly one currently observed
+player matches. No arbitrary player is authorized, and chat or other world text
+cannot configure or replace the owner.
+
+This username comparison is an offline-development-only authorization aid. It
+does not prove a Microsoft account or provide UUID-strength identity and is
+unsuitable for online or public deployment. Microsoft authentication and
+online owner UUID authorization are deferred.
+
 ## Explicitly Deferred Work
 
-The current groundwork does not implement or authorize:
+The current implementation does not implement or authorize:
 
-- a sidecar, Mineflayer, process supervision, Dashboard UI, natural-language
-  command handling, or server connectivity; the implemented configuration,
-  coordinator, and WebSocket route do not start any of those behaviors
+- Microsoft authentication, online owner UUID authorization, process
+  supervision, Dashboard UI, natural-language command handling, or Minecraft
+  chat command parsing; the sidecar remains independently and explicitly
+  started
 - generic game/action/agent frameworks or arbitrary code execution
 - resource gathering, mining, farming, block breaking or placing, containers,
   inventories, crafting, building, or equipment optimization
 - PvP, advanced combat, user-directed combat, or dimension travel
 - visual gameplay, Prismarine Viewer, OBS-specific work, or public servers
 - automatic task restoration, multi-owner permissions, or viewer control
+- movement beyond clear, flat, loaded, direct terrain or a claim of a passed
+  real-server movement smoke test
 
 Later runtime slices require their own implementation, safety evidence, and
-tests. This document remains a target contract for those deferred behaviors.
+tests. This document remains the canonical contract for those deferred
+behaviors.

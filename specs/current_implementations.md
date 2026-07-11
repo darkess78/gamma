@@ -1,7 +1,7 @@
 # Current Implementations
 
 Status: Current
-Last verified: 2026-06-22
+Last verified: 2026-07-11
 
 This is a concise inventory of behavior present in the repository. Domain
 specs own detailed contracts; target documents own future work.
@@ -16,8 +16,20 @@ specs own detailed contracts; target documents own future work.
 - Supervisor-managed Shana, dashboard, Qwen TTS, Twitch, Discord, and audio-understanding processes.
 - Structured rotating logs and request correlation.
 - Disabled-by-default Shana-owned Minecraft coordinator wiring and authenticated
-  loopback WebSocket control transport at `/v1/minecraft/control`; no sidecar or
-  Minecraft connectivity is started by Gamma.
+  loopback WebSocket control transport at `/v1/minecraft/control`.
+- Independently started Node sidecar with a narrow Mineflayer 4.37.1 adapter for
+  explicit offline-development join and leave; Gamma, Dashboard, and the
+  supervisor do not start it automatically.
+- Bounded Minecraft companion follow, wait, come, look, stop, and emergency-stop
+  execution uses direct steering without a pathfinder dependency. Movement is
+  limited to clear, flat, loaded, direct Overworld terrain and fails closed on
+  unknown terrain, obstacles, jumps, drops, liquids, hazards, portals, or a
+  dimension mismatch. No real-server movement smoke test has passed.
+- Minecraft companion owner authorization is an exact case-insensitive match of
+  one configured and observed offline username. It is development-only and is
+  not online UUID-strength authorization. Dashboard controls, natural-language
+  commands, Microsoft authentication, and online owner UUID authorization remain
+  unimplemented.
 
 ## Persistent Shana Core
 

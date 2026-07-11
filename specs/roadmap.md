@@ -1,7 +1,7 @@
 # Gamma Roadmap
 
 Status: Target
-Last verified: 2026-06-22
+Last verified: 2026-07-11
 
 ## Current Milestone: Persistent Shana
 
@@ -43,9 +43,14 @@ During the current milestone:
 2. AudioWorklet browser capture and longer live-voice soak testing.
 3. Layered Twitch moderation and operator review workflows.
 4. OBS/avatar integration through generic performer events.
-5. Minecraft Java Edition companion work, beginning with the canonical v1
-   protocol specification, Python models, and shared fixtures now underway.
-   Runtime integration remains future, disabled-by-default work.
+5. Continue the disabled-by-default Minecraft Java Edition companion after its
+   delivered v1 protocol, Python coordinator/control transport, independently
+   started offline Mineflayer runtime, and bounded direct-steering movement
+   slice. The current executor has no pathfinder dependency and supports only
+   clear, flat, loaded, direct Overworld terrain; unsafe or unknown terrain
+   stops safely. A real-server movement smoke, Microsoft authentication and
+   online owner UUID authorization, natural-language commands, Dashboard
+   controls, and supervised process lifecycle remain future gates.
 6. One constrained, turn-based game adapter with authoritative action windows.
 
 Later work requires an explicit product decision and updated acceptance

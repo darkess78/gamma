@@ -134,7 +134,8 @@ export class MinecraftSidecarRuntime {
         now: this.#now,
         monotonicNowMs: this.#monotonicNowMs,
         uptimeSeconds: () => this.#uptimeSeconds(),
-        onDeliveryFailure: () => this.#requestStop('control_delivery_failed')
+        onDeliveryFailure: () => this.#requestStop('control_delivery_failed'),
+        ownerUsername: config.minecraftOwnerUsername
       });
     }
   }
@@ -508,6 +509,7 @@ function isRuntimeConfig(
     'minecraftServerPort' in config &&
     'minecraftVersion' in config &&
     'minecraftAccountMode' in config &&
-    'minecraftBotUsername' in config
+    'minecraftBotUsername' in config &&
+    'minecraftOwnerUsername' in config
   );
 }

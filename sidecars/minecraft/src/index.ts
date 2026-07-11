@@ -2,9 +2,9 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
-  loadMinecraftSidecarConfig,
-  type MinecraftSidecarConfig,
-  type MinecraftSidecarEnvironment
+  loadMinecraftSidecarRuntimeConfig,
+  type MinecraftSidecarEnvironment,
+  type MinecraftSidecarRuntimeConfig
 } from './config.js';
 import {
   MinecraftSidecarRuntime,
@@ -21,7 +21,7 @@ export type MinecraftSidecarMainRuntime = Readonly<{
 
 export type MinecraftSidecarMainDependencies = Readonly<{
   environment?: MinecraftSidecarEnvironment;
-  createRuntime?: (config: MinecraftSidecarConfig) => MinecraftSidecarMainRuntime;
+  createRuntime?: (config: MinecraftSidecarRuntimeConfig) => MinecraftSidecarMainRuntime;
   signalTarget?: MinecraftSignalTarget;
   log?: (message: string) => void;
 }>;
@@ -52,10 +52,12 @@ export async function runMinecraftSidecarMain(
   dependencies: MinecraftSidecarMainDependencies = {}
 ): Promise<number> {
   const log = dependencies.log ?? ((message: string) => console.log(message));
-  let config: MinecraftSidecarConfig;
+  let config: MinecraftSidecarRuntimeConfig;
   let runtime: MinecraftSidecarMainRuntime;
   try {
-    config = loadMinecraftSidecarConfig(dependencies.environment ?? process.env);
+    config = loadMinecraftSidecarRuntimeConfig(
+      dependencies.environment ?? process.env
+    );
     runtime = (dependencies.createRuntime ?? ((value) => new MinecraftSidecarRuntime(value)))(
       config
     );

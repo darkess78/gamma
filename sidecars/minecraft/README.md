@@ -1,17 +1,21 @@
-# Minecraft Sidecar Runtime Shell
+# Minecraft Sidecar Runtime
 
 This package defines Gamma's TypeScript Minecraft protocol v1 shapes, reusable
 outbound WebSocket control client, and explicitly started sidecar runtime
 shell. The runtime connects only to an exact literal-loopback Shana URL,
 authenticates with an environment-supplied bearer token, performs the
-`hello`/`welcome` handshake, reports honest disconnected state, and sends
-periodic heartbeats. It does not reconnect automatically or replay commands.
+`hello`/`welcome` handshake, reports bounded state, and sends periodic
+heartbeats. It does not reconnect automatically or restore commands after a
+new control session.
 
-Mineflayer and mineflayer-pathfinder are not installed. The runtime cannot
-connect to Minecraft or execute movement, and its hello reports both library
-versions as `not-installed`. Unsupported commands are rejected rather than
-claimed as executed. The runtime is inactive unless a person explicitly runs
-it; it is not wired into Gamma's supervisor or application startup.
+Mineflayer 4.37.1 is installed behind a narrow adapter. The runtime can join a
+literal-loopback Minecraft Java 1.21.11 server in offline development mode,
+but only after Shana sends an explicit canonical `join` command. It implements
+`join`, `leave`, `report_status`, `stop`, and `emergency_stop`; companion
+movement remains rejected until the pathfinder phase. No default test opens a
+Minecraft connection, and no real-server smoke test has been run. The runtime
+is inactive unless a person explicitly runs it; it is not wired into Gamma's
+supervisor or application startup.
 The canonical behavioral contract remains owned
 by `specs/minecraft_companion.md` and
 `src/gamma/integrations/minecraft/protocol.py`; tests load the shared fixtures
@@ -51,6 +55,11 @@ SHANA_MINECRAFT_CONTROL_TOKEN                 required
 SHANA_MINECRAFT_CONTROL_WEBSOCKET_URL         optional; defaults to ws://127.0.0.1:8000/v1/minecraft/control
 SHANA_MINECRAFT_SIDECAR_INSTANCE_ID           optional; generated when omitted
 SHANA_MINECRAFT_HEARTBEAT_SECONDS              optional; integer 1-60, default 5
+SHANA_MINECRAFT_SERVER_HOST                    optional; literal loopback, default 127.0.0.1
+SHANA_MINECRAFT_SERVER_PORT                    optional; integer 1-65535, default 25565
+SHANA_MINECRAFT_VERSION                        optional; must be exactly 1.21.11
+SHANA_MINECRAFT_ACCOUNT_MODE                   optional; must be offline
+SHANA_MINECRAFT_BOT_USERNAME                   optional; 3-16 safe characters, default Shana
 ```
 
 Start it explicitly from the repository root only after Shana's disabled-by-
@@ -60,8 +69,19 @@ default Minecraft control feature has been locally configured and enabled:
 npm --prefix sidecars/minecraft start
 ```
 
-SIGINT, SIGTERM, Gamma shutdown, and control-channel loss all clear the
-heartbeat timer and close the client. No Minecraft server connection is made.
+Startup connects only to Shana and never joins Minecraft automatically. A
+successful `join` must spawn in the Overworld with the exact configured
+version. Failed or cancelled joins clear controls and disconnect without
+retrying. `leave` is idempotent, and control-channel loss, SIGINT, SIGTERM, or
+Gamma shutdown clears all controls and disconnects Minecraft before cleanup.
+Within a running sidecar process, control cleanup does not clear the emergency
+latch; recovery requires a completed leave followed by a fresh successful
+join.
+
+This phase is offline-development-only. It does not load Microsoft profiles,
+credentials, or authentication caches. Mineflayer pathfinding, following,
+coming, waiting, looking, digging, placing, combat, chat commands, containers,
+and dimension travel are not implemented.
 
 `node_modules/` and generated `dist-test/` output are ignored and must not be
 tracked. `package-lock.json` is tracked to preserve exact dependency

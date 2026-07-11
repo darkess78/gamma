@@ -7,7 +7,16 @@ import {
   type MinecraftControlClientStatus,
   type SidecarOutboundMessage
 } from './control-client.js';
-import type { MinecraftSidecarConfig } from './config.js';
+import type {
+  MinecraftSidecarConfig,
+  MinecraftSidecarRuntimeConfig
+} from './config.js';
+import { MinecraftCommandDispatcher } from './command-dispatcher.js';
+import type { MinecraftAdapter } from './minecraft-adapter.js';
+import {
+  MINEFLAYER_LIBRARY_VERSION,
+  MineflayerMinecraftAdapter
+} from './mineflayer-runtime.js';
 import type {
   CommandMessage,
   CompanionState,
@@ -47,6 +56,7 @@ export type MinecraftSidecarRuntimeDependencies = Readonly<{
   monotonicNowMs?: () => number;
   setInterval?: (callback: () => void, milliseconds: number) => MinecraftRuntimeTimer;
   clearInterval?: (timer: MinecraftRuntimeTimer) => void;
+  createMinecraftAdapter?: () => MinecraftAdapter;
 }>;
 
 type StopDeferred = {
@@ -63,6 +73,7 @@ export class MinecraftSidecarRuntime {
   readonly #setInterval: (callback: () => void, milliseconds: number) => MinecraftRuntimeTimer;
   readonly #clearInterval: (timer: MinecraftRuntimeTimer) => void;
   readonly #stopDeferred = stopDeferred();
+  readonly #dispatcher: MinecraftCommandDispatcher | undefined;
 
   #runPromise: Promise<MinecraftSidecarRuntimeExit> | undefined;
   #lifecycle: MinecraftSidecarLifecycle = 'idle';
@@ -76,7 +87,7 @@ export class MinecraftSidecarRuntime {
   #startedAtMs = 0;
 
   constructor(
-    config: MinecraftSidecarConfig,
+    config: MinecraftSidecarConfig | MinecraftSidecarRuntimeConfig,
     dependencies: MinecraftSidecarRuntimeDependencies = {}
   ) {
     this.#config = config;
@@ -91,6 +102,7 @@ export class MinecraftSidecarRuntime {
     const createClient =
       dependencies.createControlClient ??
       ((options: MinecraftControlClientOptions) => new MinecraftControlClient(options));
+    const minecraftEnabled = isRuntimeConfig(config);
     this.#client = createClient({
       url: config.controlWebSocketUrl,
       controlToken: config.controlToken,
@@ -98,11 +110,33 @@ export class MinecraftSidecarRuntime {
         sidecarInstanceId: config.sidecarInstanceId,
         sidecarBuild: '0.1.0',
         nodeVersion: process.versions.node,
-        minecraftLibraryVersion: 'not-installed',
+        minecraftLibraryVersion: minecraftEnabled
+          ? MINEFLAYER_LIBRARY_VERSION
+          : 'not-installed',
         pathfinderVersion: 'not-installed'
       },
       now: this.#now
     });
+    this.#dispatcher = undefined;
+    if (minecraftEnabled) {
+      const adapter =
+        dependencies.createMinecraftAdapter?.() ?? new MineflayerMinecraftAdapter();
+      this.#dispatcher = new MinecraftCommandDispatcher({
+        config: Object.freeze({
+          minecraftServerHost: config.minecraftServerHost,
+          minecraftServerPort: config.minecraftServerPort,
+          minecraftVersion: config.minecraftVersion,
+          minecraftAccountMode: config.minecraftAccountMode,
+          minecraftBotUsername: config.minecraftBotUsername
+        }),
+        adapter,
+        send: (message) => this.#client.sendSidecarMessage(message),
+        now: this.#now,
+        monotonicNowMs: this.#monotonicNowMs,
+        uptimeSeconds: () => this.#uptimeSeconds(),
+        onDeliveryFailure: () => this.#requestStop('control_delivery_failed')
+      });
+    }
   }
 
   run(): Promise<MinecraftSidecarRuntimeExit> {
@@ -113,6 +147,7 @@ export class MinecraftSidecarRuntime {
   async shutdown(reason: 'signal' | 'requested' = 'requested'): Promise<void> {
     this.#requestStop(reason);
     if (this.#runPromise !== undefined) {
+      await this.#dispatcher?.controlDisconnected();
       try {
         await this.#client.close();
       } catch {
@@ -123,13 +158,16 @@ export class MinecraftSidecarRuntime {
   }
 
   status(): MinecraftSidecarRuntimeStatus {
+    const dispatcherStatus = this.#dispatcher?.status();
     return runtimeStatus({
       lifecycle: this.#lifecycle,
       controlReady: this.#controlReady,
-      companionState: this.#companionState,
-      minecraftConnectionState: 'disconnected',
+      companionState: dispatcherStatus?.companionState ?? this.#companionState,
+      minecraftConnectionState:
+        dispatcherStatus?.minecraft.connectionState ?? 'disconnected',
       heartbeatActive: this.#heartbeatTimer !== undefined,
-      emergencyStopActive: this.#emergencyStopActive,
+      emergencyStopActive:
+        dispatcherStatus?.emergencyStopActive ?? this.#emergencyStopActive,
       exitCategory: this.#exitCategory
     });
   }
@@ -146,11 +184,19 @@ export class MinecraftSidecarRuntime {
         const welcome = await this.#client.connect();
         this.#controlReady = true;
         this.#lifecycle = 'running';
-        await this.#sendCurrentStatus();
-        await this.#client.sendSidecarMessage({
-          type: 'state_snapshot',
-          payload: disconnectedStateSnapshot(this.#companionState)
-        });
+        this.#dispatcher?.beginSession(
+          welcome.payload.command_cache_capacity,
+          welcome.payload.command_cache_ttl_seconds
+        );
+        if (this.#dispatcher === undefined) {
+          await this.#sendCurrentStatus();
+          await this.#client.sendSidecarMessage({
+            type: 'state_snapshot',
+            payload: disconnectedStateSnapshot(this.#companionState)
+          });
+        } else {
+          await this.#dispatcher.publishCurrentStatus();
+        }
         this.#startHeartbeat(
           Math.min(this.#config.heartbeatSeconds, welcome.payload.heartbeat_interval_seconds)
         );
@@ -162,6 +208,7 @@ export class MinecraftSidecarRuntime {
       this.#lifecycle = 'stopping';
       this.#clearHeartbeat();
       this.#client.setMessageHandler(undefined);
+      await this.#dispatcher?.controlDisconnected();
       try {
         await this.#client.close();
       } catch {
@@ -191,6 +238,26 @@ export class MinecraftSidecarRuntime {
   }
 
   async #handleGammaMessage(message: GammaControlMessage): Promise<void> {
+    const dispatcher = this.#dispatcher;
+    if (dispatcher !== undefined) {
+      switch (message.type) {
+        case 'command':
+          void dispatcher.handleCommand(message);
+          return;
+        case 'cancel_command':
+          void dispatcher.cancelCommand(message);
+          return;
+        case 'emergency_stop':
+          void dispatcher.emergencyStop(message);
+          return;
+        case 'shutdown':
+          this.#requestStop('gamma_shutdown');
+          return;
+        case 'protocol_error':
+          this.#requestStop('protocol_error');
+          return;
+      }
+    }
     switch (message.type) {
       case 'command':
         await this.#handleCommand(message);
@@ -363,7 +430,9 @@ export class MinecraftSidecarRuntime {
     if (this.#heartbeatInFlight || this.#lifecycle !== 'running') return;
     this.#heartbeatInFlight = true;
     try {
-      await this.#client.sendHeartbeat(this.#companionState);
+      await this.#client.sendHeartbeat(
+        this.#dispatcher?.status().companionState ?? this.#companionState
+      );
     } catch {
       this.#requestStop('control_delivery_failed');
     } finally {
@@ -429,4 +498,16 @@ function stopDeferred(): StopDeferred {
     resolvePromise = resolve;
   });
   return { promise, resolve: resolvePromise, settled: false };
+}
+
+function isRuntimeConfig(
+  config: MinecraftSidecarConfig | MinecraftSidecarRuntimeConfig
+): config is MinecraftSidecarRuntimeConfig {
+  return (
+    'minecraftServerHost' in config &&
+    'minecraftServerPort' in config &&
+    'minecraftVersion' in config &&
+    'minecraftAccountMode' in config &&
+    'minecraftBotUsername' in config
+  );
 }

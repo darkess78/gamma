@@ -12,6 +12,7 @@
     "build:test": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test dist-test/test/*.test.js",
+    "smoke:local": "npm run build && node dist-test/src/local-smoke.js",
     "start": "npm run build && node dist-test/src/index.js"
   },
   "dependencies": {

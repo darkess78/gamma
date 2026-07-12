@@ -46,11 +46,16 @@ During the current milestone:
 5. Continue the disabled-by-default Minecraft Java Edition companion after its
    delivered v1 protocol, Python coordinator/control transport, independently
    started offline Mineflayer runtime, and bounded direct-steering movement
-   slice. The current executor has no pathfinder dependency and supports only
-   clear, flat, loaded, direct Overworld terrain; unsafe or unknown terrain
-   stops safely. A real-server movement smoke, Microsoft authentication and
-   online owner UUID authorization, natural-language commands, Dashboard
-   controls, and supervised process lifecycle remain future gates.
+   slice and explicitly opted-in local real-server smoke harness. The current
+   executor has no pathfinder dependency and supports only clear, flat, loaded,
+   direct Overworld terrain; unsafe or unknown terrain stops safely. The
+   harness uses a temporary fake Gamma controller and requires an already-
+   running private loopback Java 1.21.11 offline server. It does not use active
+   Shana or install, start, configure, or accept an EULA for a server. A
+   successful real-server movement smoke has not yet been recorded and remains
+   a future gate alongside Microsoft authentication and online owner UUID
+   authorization, natural-language commands, Dashboard controls, and
+   supervised process lifecycle.
 6. One constrained, turn-based game adapter with authoritative action windows.
 
 Later work requires an explicit product decision and updated acceptance

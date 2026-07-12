@@ -25,6 +25,11 @@ specs own detailed contracts; target documents own future work.
   limited to clear, flat, loaded, direct Overworld terrain and fails closed on
   unknown terrain, obstacles, jumps, drops, liquids, hazards, portals, or a
   dimension mismatch. No real-server movement smoke test has passed.
+- An explicitly opted-in manual smoke harness can exercise the real sidecar and
+  Mineflayer adapter against an already-running private loopback Java 1.21.11
+  offline server through a temporary fake Gamma controller. It does not use
+  active Shana, is excluded from default start and test paths, and has not yet
+  produced a successful real-server movement result.
 - Minecraft companion owner authorization is an exact case-insensitive match of
   one configured and observed offline username. It is development-only and is
   not online UUID-strength authorization. Dashboard controls, natural-language

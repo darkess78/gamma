@@ -316,6 +316,59 @@ No real-server movement smoke test has passed. Automated end-to-end coverage
 uses a fake Gamma WebSocket server, the real control/runtime/dispatcher and
 executor layers, and a fake Minecraft adapter.
 
+## Manual Local Real-Server Smoke Harness
+
+The repository includes an explicitly opted-in interactive smoke harness for
+the real Mineflayer boundary. It creates a temporary fake Gamma WebSocket
+controller on an ephemeral literal-loopback port and drives the real control
+client, sidecar runtime, command dispatcher, companion executor, and
+Mineflayer adapter. It does not depend on active Shana, does not connect to
+ports 8000 or 8001, and is never invoked by default tests, normal sidecar
+startup, or package installation.
+
+The harness may run only when
+`SHANA_MINECRAFT_RUN_LOCAL_SMOKE=1` is explicitly present and all of
+`SHANA_MINECRAFT_SERVER_HOST`, `SHANA_MINECRAFT_SERVER_PORT`,
+`SHANA_MINECRAFT_VERSION`, `SHANA_MINECRAFT_ACCOUNT_MODE`,
+`SHANA_MINECRAFT_BOT_USERNAME`, and `SHANA_MINECRAFT_OWNER_USERNAME` are
+present and valid. The Minecraft endpoint must be an already-listening literal
+loopback address, the version must be exactly `1.21.11`, account mode must be
+exactly `offline`, and the bot and owner must be distinct valid Minecraft
+usernames. `localhost`, URLs, query strings, remote addresses, Microsoft
+credentials, and user-supplied control tokens are not read or used. The
+temporary control token is random, remains in memory, and is neither printed
+nor written.
+
+An open-port check does not claim or infer a server version and performs no
+world operation. Before Mineflayer is created or connected, one explicit
+terminal confirmation must cover the private disposable server, intentional
+Java 1.21.11 offline configuration, logged-in human owner, shared Overworld,
+safe flat clear loaded hazard-free terrain, and consent to bounded forward
+walking. Server download, startup, configuration, file modification, and EULA
+acceptance are outside the harness. The harness is unsuitable for public,
+LAN, remote, or online-mode servers.
+
+The guided commands are join, bounded follow, wait, bounded come, look,
+follow-plus-stop preemption, follow-plus-emergency-stop preemption and latch
+rejection, leave, fresh join for emergency recovery, final leave, and Gamma
+shutdown. It verifies controller-visible connection state, observed forward
+movement, arrival distance, stationarity after movement stops, and no
+displacement during the look. Each movement-producing segment requires Enter
+at a safe checkpoint; `abort`, unexpected input, SIGINT, or SIGTERM invokes
+emergency cleanup. Follow and come are each capped at 20 seconds, the entire
+smoke is capped at five minutes, and there is no automatic whole-smoke retry or
+reconnect. The harness does not relax the clear, flat, loaded, direct Overworld
+envelope or authorize jumping, sprinting, chat, combat, inventory or block
+interaction, portals, or dimension travel.
+
+The in-memory evidence summary is bounded to command acknowledgments and
+terminal outcomes, stable failure codes, maximum observed owner distance,
+emergency-stop confirmation, clean leave, and clean shutdown, plus non-secret
+run metadata. It excludes the control token, raw server content, chat, MOTD,
+entity and socket objects, continuous coordinates, and stack traces, and it
+writes no log by default. The harness's existence does not establish runtime
+success; no real-server companion movement smoke has passed yet.
+
 ## Stable Failure And Rejection Codes
 
 Every failure object contains a stable code, `retriable` boolean, and optional

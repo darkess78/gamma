@@ -37,6 +37,24 @@ const RAW_SENTINEL = 'raw-minecraft-error-secret-7L';
 
 type ConnectMode = 'pending' | 'fail';
 
+type Deferred<T> = Readonly<{
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+}>;
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return Object.freeze({ promise, resolve });
+}
+
+type DisconnectBarrier = Readonly<{
+  entered: Promise<void>;
+  release: () => void;
+}>;
+
 class FakeMinecraftAdapter implements MinecraftAdapter {
   connectMode: ConnectMode = 'pending';
   connectCalls = 0;
@@ -52,6 +70,13 @@ class FakeMinecraftAdapter implements MinecraftAdapter {
         signal: AbortSignal;
         onAbort: () => void;
       }
+    | undefined;
+  #disconnectBarrier:
+    | Readonly<{
+        entered: Deferred<void>;
+        released: Deferred<void>;
+        stateBeforeWait: boolean;
+      }>
     | undefined;
 
   async connect(
@@ -97,7 +122,30 @@ class FakeMinecraftAdapter implements MinecraftAdapter {
       pending.signal.removeEventListener('abort', pending.onAbort);
       pending.reject();
     }
-    this.stateValue = disconnectedMinecraftAdapterState('requested');
+    const barrier = this.#disconnectBarrier;
+    this.#disconnectBarrier = undefined;
+    if (barrier?.stateBeforeWait === true) {
+      this.stateValue = disconnectedMinecraftAdapterState('requested');
+    }
+    barrier?.entered.resolve(undefined);
+    if (barrier !== undefined) await barrier.released.promise;
+    if (barrier?.stateBeforeWait !== true) {
+      this.stateValue = disconnectedMinecraftAdapterState('requested');
+    }
+  }
+
+  blockNextDisconnect(stateBeforeWait = false): DisconnectBarrier {
+    const entered = deferred<void>();
+    const released = deferred<void>();
+    this.#disconnectBarrier = Object.freeze({
+      entered,
+      released,
+      stateBeforeWait
+    });
+    return Object.freeze({
+      entered: entered.promise,
+      release: () => released.resolve(undefined)
+    });
   }
 
   stopAllControls(): void {
@@ -154,7 +202,12 @@ function runtimeConfig(overrides: Record<string, string | undefined> = {}) {
   });
 }
 
-function setup(adapter = new FakeMinecraftAdapter()) {
+function setup(
+  adapter = new FakeMinecraftAdapter(),
+  options: Readonly<{
+    afterSend?: (message: SidecarOutboundMessage) => void | Promise<void>;
+  }> = {}
+) {
   const messages: SidecarOutboundMessage[] = [];
   let monotonic = 1_000;
   let deliveryFailures = 0;
@@ -164,6 +217,7 @@ function setup(adapter = new FakeMinecraftAdapter()) {
     adapter,
     send: async (message) => {
       messages.push(message);
+      await options.afterSend?.(message);
     },
     now: () => new Date(NOW),
     monotonicNowMs: () => monotonic,
@@ -647,6 +701,370 @@ test('emergency stop latches first and clears only after leave plus fresh succes
   await joined;
   assert.equal(value.dispatcher.status().emergencyStopActive, false);
   assert.equal(value.dispatcher.status().companionState, 'IDLE');
+});
+
+test('cancelled leave cannot qualify an emergency recovery join', async () => {
+  const value = setup();
+  const initialJoin = value.dispatcher.handleCommand(
+    command('join-before-cancelled-leave', 'join', {})
+  );
+  await turn();
+  value.adapter.spawn();
+  await initialJoin;
+  await value.dispatcher.emergencyStop(emergency('cancelled-leave-latch'));
+
+  const barrier = value.adapter.blockNextDisconnect();
+  const leave = value.dispatcher.handleCommand(
+    command('cancelled-recovery-leave', 'leave', {}, { sequence: 2 })
+  );
+  await barrier.entered;
+  await value.dispatcher.cancelCommand(cancel('cancelled-recovery-leave'));
+  barrier.release();
+  await leave;
+
+  const leaveResult = messagesOfType(value.messages, 'terminal_result').filter(
+    (message) => message.command_id === 'cancelled-recovery-leave'
+  );
+  assert.equal(leaveResult.length, 1);
+  assert.equal(leaveResult[0]?.payload.outcome, 'cancelled');
+  assert.equal(value.dispatcher.status().companionState, 'STOPPED');
+  assert.equal(value.dispatcher.status().emergencyStopActive, true);
+
+  await value.dispatcher.handleCommand(
+    command('join-after-cancelled-leave', 'join', {}, { sequence: 3 })
+  );
+  const recoveryAck = messagesOfType(value.messages, 'command_ack').find(
+    (message) => message.command_id === 'join-after-cancelled-leave'
+  );
+  assert.equal(recoveryAck?.payload.accepted, false);
+  assert.equal(recoveryAck?.payload.failure?.code, 'EMERGENCY_STOP_ACTIVE');
+});
+
+test('cancelled recovery join stays latched and reflects its physical disconnect', async () => {
+  let blockRecoveryStatus = false;
+  const statusEntered = deferred<void>();
+  const releaseStatus = deferred<void>();
+  const value = setup(new FakeMinecraftAdapter(), {
+    afterSend: async (message) => {
+      if (
+        blockRecoveryStatus &&
+        message.type === 'sidecar_status' &&
+        message.payload.companion_state === 'IDLE'
+      ) {
+        blockRecoveryStatus = false;
+        statusEntered.resolve(undefined);
+        await releaseStatus.promise;
+      }
+    }
+  });
+  const initialJoin = value.dispatcher.handleCommand(
+    command('join-before-recovery-cancel', 'join', {})
+  );
+  await turn();
+  value.adapter.spawn();
+  await initialJoin;
+  await value.dispatcher.emergencyStop(emergency('recovery-cancel-latch'));
+  await value.dispatcher.handleCommand(
+    command('completed-recovery-leave', 'leave', {}, { sequence: 2 })
+  );
+
+  blockRecoveryStatus = true;
+  const recoveryJoin = value.dispatcher.handleCommand(
+    command('cancelled-recovery-join', 'join', {}, { sequence: 3 })
+  );
+  await turn();
+  value.adapter.spawn();
+  await statusEntered.promise;
+  await value.dispatcher.cancelCommand(cancel('cancelled-recovery-join'));
+  releaseStatus.resolve(undefined);
+  await recoveryJoin;
+
+  const results = messagesOfType(value.messages, 'terminal_result').filter(
+    (message) => message.command_id === 'cancelled-recovery-join'
+  );
+  assert.equal(results.length, 1);
+  assert.equal(results[0]?.payload.outcome, 'cancelled');
+  assert.equal(value.dispatcher.status().emergencyStopActive, true);
+  assert.equal(value.dispatcher.status().companionState, 'STOPPED');
+  assert.equal(value.dispatcher.status().minecraft.connectionState, 'disconnected');
+});
+
+test('late cancellation cannot undo a committed recovery-join terminal', async () => {
+  let blockTerminal = false;
+  const terminalEntered = deferred<void>();
+  const releaseTerminal = deferred<void>();
+  const value = setup(new FakeMinecraftAdapter(), {
+    afterSend: async (message) => {
+      if (
+        blockTerminal &&
+        message.type === 'terminal_result' &&
+        message.command_id === 'committed-recovery-join'
+      ) {
+        blockTerminal = false;
+        terminalEntered.resolve(undefined);
+        await releaseTerminal.promise;
+      }
+    }
+  });
+  const initialJoin = value.dispatcher.handleCommand(
+    command('join-before-committed-recovery', 'join', {})
+  );
+  await turn();
+  value.adapter.spawn();
+  await initialJoin;
+  await value.dispatcher.emergencyStop(emergency('committed-recovery-latch'));
+  await value.dispatcher.handleCommand(
+    command('leave-before-committed-recovery', 'leave', {}, { sequence: 2 })
+  );
+
+  blockTerminal = true;
+  const recoveryJoin = value.dispatcher.handleCommand(
+    command('committed-recovery-join', 'join', {}, { sequence: 3 })
+  );
+  await turn();
+  value.adapter.spawn();
+  await terminalEntered.promise;
+  const disconnectsBeforeCancel = value.adapter.disconnectCalls;
+  await value.dispatcher.cancelCommand(cancel('committed-recovery-join'));
+  assert.equal(value.adapter.disconnectCalls, disconnectsBeforeCancel);
+  releaseTerminal.resolve(undefined);
+  await recoveryJoin;
+
+  const results = messagesOfType(value.messages, 'terminal_result').filter(
+    (message) => message.command_id === 'committed-recovery-join'
+  );
+  assert.equal(results.length, 2);
+  assert.equal(results.every((message) => message.payload.outcome === 'completed'), true);
+  assert.equal(value.dispatcher.status().emergencyStopActive, false);
+  assert.equal(value.dispatcher.status().companionState, 'IDLE');
+  assert.equal(value.dispatcher.status().minecraft.connectionState, 'connected');
+});
+
+test('cancelled leave completion cannot overwrite a newer join', async () => {
+  const value = setup();
+  const initialJoin = value.dispatcher.handleCommand(
+    command('join-before-old-leave', 'join', {})
+  );
+  await turn();
+  value.adapter.spawn();
+  await initialJoin;
+  value.messages.length = 0;
+
+  const barrier = value.adapter.blockNextDisconnect(true);
+  const oldLeave = value.dispatcher.handleCommand(
+    command('old-cancelled-leave', 'leave', {}, { sequence: 2 })
+  );
+  await barrier.entered;
+  await value.dispatcher.cancelCommand(cancel('old-cancelled-leave'));
+  const replacementJoin = value.dispatcher.handleCommand(
+    command('replacement-join', 'join', {}, { sequence: 3 })
+  );
+  await turn();
+  barrier.release();
+  await oldLeave;
+  value.adapter.spawn();
+  await replacementJoin;
+
+  assert.equal(value.dispatcher.status().companionState, 'IDLE');
+  assert.equal(value.dispatcher.status().minecraft.connectionState, 'connected');
+  assert.equal(
+    messagesOfType(value.messages, 'state_snapshot').filter(
+      (message) => message.command_id === 'old-cancelled-leave'
+    ).length,
+    0
+  );
+  assert.equal(
+    messagesOfType(value.messages, 'terminal_result').filter(
+      (message) => message.command_id === 'replacement-join'
+    )[0]?.payload.outcome,
+    'completed'
+  );
+});
+
+test('queued disconnect from an older lifecycle cannot overwrite a replacement join', async () => {
+  let blockEventStatus = false;
+  const eventStatusEntered = deferred<void>();
+  const releaseEventStatus = deferred<void>();
+  const value = setup(new FakeMinecraftAdapter(), {
+    afterSend: async (message) => {
+      if (blockEventStatus && message.type === 'sidecar_status') {
+        blockEventStatus = false;
+        eventStatusEntered.resolve(undefined);
+        await releaseEventStatus.promise;
+      }
+    }
+  });
+  const initialJoin = value.dispatcher.handleCommand(
+    command('join-before-stale-event', 'join', {})
+  );
+  await turn();
+  value.adapter.spawn();
+  await initialJoin;
+
+  blockEventStatus = true;
+  value.adapter.emit({ type: 'health' });
+  await eventStatusEntered.promise;
+  value.adapter.stateValue = disconnectedMinecraftAdapterState('requested');
+  value.adapter.emit({ type: 'disconnected', category: 'requested' });
+
+  const replacementJoin = value.dispatcher.handleCommand(
+    command('join-after-stale-event', 'join', {}, { sequence: 2 })
+  );
+  await turn();
+  value.adapter.spawn();
+  await replacementJoin;
+  releaseEventStatus.resolve(undefined);
+  await value.dispatcher.waitForEvents();
+
+  assert.equal(value.dispatcher.status().companionState, 'IDLE');
+  assert.equal(value.dispatcher.status().minecraft.connectionState, 'connected');
+});
+
+test('concurrent identical emergency commands replay one cached logical result', async () => {
+  const value = setup();
+  const report = value.dispatcher.handleCommand(
+    command('report-before-emergency-duplicate', 'report_status', {
+      detail_level: 'basic'
+    })
+  );
+  const first = command('duplicate-emergency', 'emergency_stop', {}, {
+    sequence: 2
+  });
+  const duplicate = command('duplicate-emergency', 'emergency_stop', {}, {
+    sequence: 3
+  });
+  await Promise.all([
+    report,
+    value.dispatcher.handleCommand(first),
+    value.dispatcher.handleCommand(duplicate)
+  ]);
+
+  const acknowledgments = messagesOfType(value.messages, 'command_ack').filter(
+    (message) => message.command_id === 'duplicate-emergency'
+  );
+  const results = messagesOfType(value.messages, 'terminal_result').filter(
+    (message) => message.command_id === 'duplicate-emergency'
+  );
+  assert.equal(acknowledgments.length, 2);
+  assert.equal(acknowledgments.every((message) => message.payload.accepted), true);
+  assert.deepEqual(acknowledgments[1], acknowledgments[0]);
+  assert.equal(results.length, 2);
+  assert.deepEqual(results[1], results[0]);
+  assert.equal(results[0]?.payload.outcome, 'completed');
+  assert.equal(
+    messagesOfType(value.messages, 'terminal_result').filter(
+      (message) => message.command_id === 'report-before-emergency-duplicate'
+    )[0]?.payload.outcome,
+    'cancelled'
+  );
+});
+
+test('concurrent distinct emergency commands both complete after one interrupted terminal', async () => {
+  const interruptedEntered = deferred<void>();
+  const releaseInterrupted = deferred<void>();
+  let blockInterrupted = true;
+  const value = setup(new FakeMinecraftAdapter(), {
+    afterSend: async (message) => {
+      if (
+        blockInterrupted &&
+        message.type === 'terminal_result' &&
+        message.command_id === 'report-before-distinct-emergencies'
+      ) {
+        blockInterrupted = false;
+        interruptedEntered.resolve(undefined);
+        await releaseInterrupted.promise;
+      }
+    }
+  });
+  const report = value.dispatcher.handleCommand(
+    command('report-before-distinct-emergencies', 'report_status', {
+      detail_level: 'basic'
+    })
+  );
+  const first = value.dispatcher.handleCommand(
+    command('first-distinct-emergency', 'emergency_stop', {}, { sequence: 2 })
+  );
+  const second = value.dispatcher.handleCommand(
+    command('second-distinct-emergency', 'emergency_stop', {}, { sequence: 3 })
+  );
+  await interruptedEntered.promise;
+  releaseInterrupted.resolve(undefined);
+  await Promise.all([report, first, second]);
+
+  const interrupted = messagesOfType(value.messages, 'terminal_result').filter(
+    (message) => message.command_id === 'report-before-distinct-emergencies'
+  );
+  assert.equal(interrupted.length, 1);
+  assert.equal(interrupted[0]?.payload.outcome, 'cancelled');
+  for (const commandId of [
+    'first-distinct-emergency',
+    'second-distinct-emergency'
+  ]) {
+    const acknowledgments = messagesOfType(value.messages, 'command_ack').filter(
+      (message) => message.command_id === commandId
+    );
+    const results = messagesOfType(value.messages, 'terminal_result').filter(
+      (message) => message.command_id === commandId
+    );
+    assert.equal(acknowledgments.length, 1);
+    assert.equal(acknowledgments[0]?.payload.accepted, true);
+    assert.equal(results.length, 1);
+    assert.equal(results[0]?.payload.outcome, 'completed');
+  }
+  assert.equal(value.dispatcher.status().emergencyStopActive, true);
+  assert.equal(value.dispatcher.status().companionState, 'STOPPED');
+});
+
+test('emergency envelope and command share cleanup without rejecting the command', async () => {
+  const interruptedEntered = deferred<void>();
+  const releaseInterrupted = deferred<void>();
+  let blockInterrupted = true;
+  const value = setup(new FakeMinecraftAdapter(), {
+    afterSend: async (message) => {
+      if (
+        blockInterrupted &&
+        message.type === 'terminal_result' &&
+        message.command_id === 'report-before-envelope-command'
+      ) {
+        blockInterrupted = false;
+        interruptedEntered.resolve(undefined);
+        await releaseInterrupted.promise;
+      }
+    }
+  });
+  const report = value.dispatcher.handleCommand(
+    command('report-before-envelope-command', 'report_status', {
+      detail_level: 'basic'
+    })
+  );
+  const envelope = value.dispatcher.emergencyStop(
+    emergency('concurrent-emergency-envelope')
+  );
+  const ordinary = value.dispatcher.handleCommand(
+    command('emergency-after-envelope', 'emergency_stop', {}, { sequence: 2 })
+  );
+  await interruptedEntered.promise;
+  releaseInterrupted.resolve(undefined);
+  await Promise.all([report, envelope, ordinary]);
+
+  assert.equal(
+    messagesOfType(value.messages, 'terminal_result').filter(
+      (message) => message.command_id === 'report-before-envelope-command'
+    ).length,
+    1
+  );
+  const acknowledgments = messagesOfType(value.messages, 'command_ack').filter(
+    (message) => message.command_id === 'emergency-after-envelope'
+  );
+  const results = messagesOfType(value.messages, 'terminal_result').filter(
+    (message) => message.command_id === 'emergency-after-envelope'
+  );
+  assert.equal(acknowledgments.length, 1);
+  assert.equal(acknowledgments[0]?.payload.accepted, true);
+  assert.equal(results.length, 1);
+  assert.equal(results[0]?.payload.outcome, 'completed');
+  assert.equal(value.dispatcher.status().emergencyStopActive, true);
+  assert.equal(value.dispatcher.status().companionState, 'STOPPED');
 });
 
 test('emergency command clears before ack; movement and expired commands never execute', async () => {

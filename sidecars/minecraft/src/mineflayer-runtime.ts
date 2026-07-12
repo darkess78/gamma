@@ -25,6 +25,8 @@ const OVERWORLD: MinecraftDimension = 'minecraft:overworld';
 const DIRECT_STEP_DISTANCE = 0.45;
 const PLAYER_HALF_WIDTH = 0.31;
 const POSITION_EPSILON = 0.05;
+const HORIZONTAL_POSITION_LIMIT = 30_000_000;
+const VERTICAL_POSITION_LIMIT = 2_048;
 
 export type MinecraftAdapterFailureCategory =
   | 'invalid_state'
@@ -250,6 +252,8 @@ export class MineflayerMinecraftAdapter implements MinecraftMovementAdapter {
         },
         respawn: () => {
           if (!this.#isCurrent(bot, generation)) return;
+          this.#stopBotControls(bot);
+          this.#detachMovementListeners(bot);
           respawnPending = true;
           this.#state = this.#readBotState(bot, true, false);
         },
@@ -370,13 +374,14 @@ export class MineflayerMinecraftAdapter implements MinecraftMovementAdapter {
     const botPosition = this.getBotPosition();
     const dimension = this.getDimension();
     if (
-      bot === undefined ||
-      botPosition === undefined ||
       dimension === undefined ||
       dimension !== OVERWORLD ||
       target.dimension !== dimension
     ) {
       return Object.freeze({ kind: 'dimension_mismatch' });
+    }
+    if (bot === undefined || botPosition === undefined) {
+      return Object.freeze({ kind: 'unloaded' });
     }
     if (!finitePosition(target.position)) {
       return Object.freeze({ kind: 'unloaded' });
@@ -400,7 +405,7 @@ export class MineflayerMinecraftAdapter implements MinecraftMovementAdapter {
       return Object.freeze({ kind: 'unloaded' });
     }
 
-    for (const sample of candidateSamples(candidate)) {
+    for (const sample of sweptFootprintSamples(botPosition, candidate)) {
       const feet = this.#blockAt(bot, sample.x, candidate.y, sample.z);
       const head = this.#blockAt(bot, sample.x, candidate.y + 1, sample.z);
       const support = this.#blockAt(bot, sample.x, candidate.y - 1, sample.z);
@@ -710,33 +715,42 @@ function freezePosition(value: SafePosition): SafePosition {
 }
 
 function finitePosition(value: SafePosition): boolean {
-  return Number.isFinite(value.x) && Number.isFinite(value.y) && Number.isFinite(value.z);
+  return (
+    Number.isFinite(value.x) &&
+    Number.isFinite(value.y) &&
+    Number.isFinite(value.z) &&
+    Math.abs(value.x) <= HORIZONTAL_POSITION_LIMIT &&
+    Math.abs(value.y) <= VERTICAL_POSITION_LIMIT &&
+    Math.abs(value.z) <= HORIZONTAL_POSITION_LIMIT
+  );
 }
 
-function candidateSamples(candidate: SafePosition): readonly SafePosition[] {
-  return [
-    candidate,
-    freezePosition({
-      x: candidate.x - PLAYER_HALF_WIDTH,
-      y: candidate.y,
-      z: candidate.z - PLAYER_HALF_WIDTH
-    }),
-    freezePosition({
-      x: candidate.x - PLAYER_HALF_WIDTH,
-      y: candidate.y,
-      z: candidate.z + PLAYER_HALF_WIDTH
-    }),
-    freezePosition({
-      x: candidate.x + PLAYER_HALF_WIDTH,
-      y: candidate.y,
-      z: candidate.z - PLAYER_HALF_WIDTH
-    }),
-    freezePosition({
-      x: candidate.x + PLAYER_HALF_WIDTH,
-      y: candidate.y,
-      z: candidate.z + PLAYER_HALF_WIDTH
-    })
-  ];
+function sweptFootprintSamples(
+  current: SafePosition,
+  candidate: SafePosition
+): readonly SafePosition[] {
+  // The bounding rectangle is intentionally conservative: it includes cells
+  // touched only transiently by a diagonal body sweep, preferring a safe
+  // false negative over clipping an obstacle corner.
+  const minimumX = Math.floor(
+    Math.min(current.x, candidate.x) - PLAYER_HALF_WIDTH
+  );
+  const maximumX = Math.floor(
+    Math.max(current.x, candidate.x) + PLAYER_HALF_WIDTH
+  );
+  const minimumZ = Math.floor(
+    Math.min(current.z, candidate.z) - PLAYER_HALF_WIDTH
+  );
+  const maximumZ = Math.floor(
+    Math.max(current.z, candidate.z) + PLAYER_HALF_WIDTH
+  );
+  const samples: SafePosition[] = [];
+  for (let x = minimumX; x <= maximumX; x += 1) {
+    for (let z = minimumZ; z <= maximumZ; z += 1) {
+      samples.push(freezePosition({ x, y: candidate.y, z }));
+    }
+  }
+  return Object.freeze(samples);
 }
 
 function boundedInteger(value: number, minimum: number, maximum: number): number {

@@ -49,6 +49,21 @@ test('direct-steering classifiers accept literal air over loaded full-cube suppo
     'safe'
   );
   assert.equal(classifyDirectSteeringSupport(STONE), 'safe');
+  for (const name of [
+    'cobbled_deepslate',
+    'cobblestone',
+    'coarse_dirt',
+    'deepslate',
+    'dirt',
+    'grass_block',
+    'podzol'
+  ]) {
+    assert.equal(
+      classifyDirectSteeringSupport(block(name, 'block', FULL_CUBE)),
+      'safe',
+      `${name} is a deliberately supported inert full cube`
+    );
+  }
 });
 
 test('direct-steering classifiers reject every required hazard and liquid', () => {
@@ -134,6 +149,27 @@ test('direct-steering classifiers fail closed on unloaded, blocked, dropped, par
     classifyDirectSteeringSupport(block('stone', 'empty', FULL_CUBE)),
     'unsupported_drop'
   );
+  assert.equal(
+    classifyDirectSteeringSupport(
+      block('unknown_modded_full_cube', 'block', FULL_CUBE)
+    ),
+    'unsupported_drop'
+  );
+  for (const name of [
+    'stone_slab',
+    'oak_stairs',
+    'oak_fence',
+    'cobblestone_wall',
+    'oak_trapdoor',
+    'snow',
+    'white_carpet'
+  ]) {
+    assert.equal(
+      classifyDirectSteeringSupport(block(name, 'block', FULL_CUBE)),
+      'unsupported_drop',
+      `${name} is not a deliberately supported full-cube surface`
+    );
+  }
 });
 
 test('owner configuration is optional for join and strictly bounded for movement', () => {
@@ -289,6 +325,127 @@ test('0.31 player footprint catches adjacent hazard and collision cells that 0.2
     assert.equal(harness.adapter.inspectForwardStep(owner).kind, 'blocked');
   } finally {
     await harness.close();
+  }
+});
+
+test('diagonal inspection checks every transient cell in the swept player footprint', async () => {
+  const cases = [
+    ['swept_corner_blocked', 'blocked'],
+    ['swept_corner_head_blocked', 'blocked'],
+    ['swept_corner_hazard', 'hazard'],
+    ['swept_corner_drop', 'unsupported_drop']
+  ] as const;
+  for (const [terrain, expected] of cases) {
+    const harness = await productionHarness({
+      botX: 0.64,
+      botZ: 1.16,
+      ownerX: 8.64,
+      ownerZ: 9.16
+    });
+    try {
+      const owner = harness.adapter.getPlayer('neety');
+      assert.notEqual(owner, undefined);
+      if (owner === undefined) continue;
+      harness.bot.terrain = terrain;
+      assert.equal(
+        harness.adapter.inspectForwardStep(owner).kind,
+        expected,
+        `${terrain} must fail closed in the transient diagonal corner cell`
+      );
+      assert.equal(
+        harness.bot.blockQueries.some(
+          (query) => query.x === 1 && query.z === 0
+        ),
+        true,
+        'the swept-only corner cell must be inspected'
+      );
+    } finally {
+      await harness.close();
+    }
+  }
+});
+
+test('forward inspection and look reject non-finite, zero, overflowed, and non-level coordinates', async () => {
+  const harness = await productionHarness();
+  try {
+    const dimension = 'minecraft:overworld' as const;
+    for (const coordinate of ['x', 'y', 'z'] as const) {
+      for (const invalid of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+        const position = { x: 8, y: 64, z: 0 };
+        position[coordinate] = invalid;
+        assert.equal(
+          harness.adapter.inspectForwardStep(
+            Object.freeze({
+              username: 'Neety',
+              position: Object.freeze(position),
+              dimension
+            })
+          ).kind,
+          'unloaded'
+        );
+        await assert.rejects(
+          harness.adapter.lookAt(Object.freeze(position)),
+          MinecraftAdapterError
+        );
+      }
+    }
+
+    assert.equal(
+      harness.adapter.inspectForwardStep(
+        Object.freeze({
+          username: 'Neety',
+          position: Object.freeze({ x: 0, y: 64, z: 0 }),
+          dimension
+        })
+      ).kind,
+      'blocked'
+    );
+    assert.equal(
+      harness.adapter.inspectForwardStep(
+        Object.freeze({
+          username: 'Neety',
+          position: Object.freeze({
+            x: Number.MAX_VALUE,
+            y: 64,
+            z: Number.MAX_VALUE
+          }),
+          dimension
+        })
+      ).kind,
+      'unloaded'
+    );
+  } finally {
+    await harness.close();
+  }
+
+  const nonLevel = await productionHarness({ botY: 64.1 });
+  try {
+    const owner = nonLevel.adapter.getPlayer('neety');
+    assert.notEqual(owner, undefined);
+    if (owner !== undefined) {
+      assert.equal(
+        nonLevel.adapter.inspectForwardStep(owner).kind,
+        'unsupported_drop'
+      );
+    }
+  } finally {
+    await nonLevel.close();
+  }
+
+  const outOfBoundsBot = await productionHarness({
+    botX: Number.MAX_VALUE
+  });
+  try {
+    const owner = outOfBoundsBot.adapter.getPlayer('neety');
+    assert.notEqual(owner, undefined);
+    if (owner !== undefined) {
+      assert.equal(
+        outOfBoundsBot.adapter.inspectForwardStep(owner).kind,
+        'unloaded'
+      );
+    }
+  } finally {
+    await outOfBoundsBot.close();
   }
 });
 
@@ -590,7 +747,11 @@ type TerrainMode =
   | 'unloaded'
   | 'unknown'
   | 'edge_hazard'
-  | 'edge_blocked';
+  | 'edge_blocked'
+  | 'swept_corner_blocked'
+  | 'swept_corner_head_blocked'
+  | 'swept_corner_hazard'
+  | 'swept_corner_drop';
 
 class SafetyTrapBot extends EventEmitter {
   readonly version = '1.21.11';
@@ -614,20 +775,31 @@ class SafetyTrapBot extends EventEmitter {
   forwardActivations = 0;
   forwardEnabled = false;
   lookTargets: unknown[] = [];
+  blockQueries: Array<Readonly<{ x: number; y: number; z: number }>> = [];
   throwOnClear = false;
   autoEndOnQuit = true;
 
-  #ownerX = 8;
+  #ownerX: number;
+  #ownerY: number;
   #ownerZ: number;
   #ownerPresent = true;
   #duplicateOwner = false;
 
-  constructor(botZ = 0) {
+  constructor(
+    botX = 0,
+    botY = 64,
+    botZ = 0,
+    ownerX = 8,
+    ownerY = 64,
+    ownerZ = botZ
+  ) {
     super();
-    this.#ownerZ = botZ;
+    this.#ownerX = ownerX;
+    this.#ownerY = ownerY;
+    this.#ownerZ = ownerZ;
     this.entity = Object.freeze({
       position: trappedVector(
-        { x: 0, y: 64, z: botZ },
+        { x: botX, y: botY, z: botZ },
         () => {
           this.mutationAttempts += 1;
         }
@@ -696,19 +868,45 @@ class SafetyTrapBot extends EventEmitter {
   }
 
   blockAt(position: unknown): DirectSteeringBlock | null {
-    const candidate = position as Readonly<{ y?: unknown; z?: unknown }>;
+    const candidate = position as Readonly<{
+      x?: unknown;
+      y?: unknown;
+      z?: unknown;
+    }>;
+    const x = candidate.x;
     const y = candidate.y;
-    if (typeof y !== 'number' || this.terrain === 'unloaded') return null;
+    const z = candidate.z;
+    if (
+      typeof x !== 'number' ||
+      typeof y !== 'number' ||
+      typeof z !== 'number'
+    ) {
+      return null;
+    }
+    this.blockQueries.push(Object.freeze({ x, y, z }));
+    if (this.terrain === 'unloaded') return null;
+    const sweptCorner = x === 1 && z === 0;
     if (y === 63) {
-      if (this.terrain === 'drop') return AIR;
+      if (
+        this.terrain === 'drop' ||
+        (this.terrain === 'swept_corner_drop' && sweptCorner)
+      ) {
+        return AIR;
+      }
       if (this.terrain === 'partial') {
         return block('stone_slab', 'block', [[0, 0, 0, 1, 0.5, 1]]);
       }
       return STONE;
     }
     if (y === 64) {
+      if (sweptCorner) {
+        if (this.terrain === 'swept_corner_blocked') return STONE;
+        if (this.terrain === 'swept_corner_hazard') {
+          return block('cactus', 'block', FULL_CUBE);
+        }
+      }
       if (
-        candidate.z === -1 &&
+        z === -1 &&
         (this.terrain === 'edge_hazard' || this.terrain === 'edge_blocked')
       ) {
         return this.terrain === 'edge_hazard'
@@ -721,6 +919,13 @@ class SafetyTrapBot extends EventEmitter {
       if (this.terrain === 'unknown') {
         return block('unknown_modded_plant', 'empty', []);
       }
+    }
+    if (
+      y === 65 &&
+      sweptCorner &&
+      this.terrain === 'swept_corner_head_blocked'
+    ) {
+      return STONE;
     }
     return AIR;
   }
@@ -773,7 +978,7 @@ class SafetyTrapBot extends EventEmitter {
   #refreshPlayers(): void {
     const ownerPosition = Object.freeze({
       x: this.#ownerX,
-      y: 64,
+      y: this.#ownerY,
       z: this.#ownerZ
     });
     this.players = {
@@ -817,13 +1022,25 @@ type ProductionHarness = Readonly<{
 }>;
 
 type ProductionHarnessOptions = Readonly<{
+  botX?: number;
+  botY?: number;
   botZ?: number;
+  ownerX?: number;
+  ownerY?: number;
+  ownerZ?: number;
 }>;
 
 async function productionHarness(
   options: ProductionHarnessOptions = {}
 ): Promise<ProductionHarness> {
-  const bot = new SafetyTrapBot(options.botZ);
+  const bot = new SafetyTrapBot(
+    options.botX,
+    options.botY,
+    options.botZ,
+    options.ownerX,
+    options.ownerY,
+    options.ownerZ
+  );
   const adapter = new MineflayerMinecraftAdapter({
     createBot: () => bot,
     createVector: (x, y, z) => Object.freeze({ x, y, z })

@@ -16,6 +16,16 @@ const HAZARDOUS_BLOCKS = new Set([
   'cobweb'
 ]);
 const LIQUID_BLOCKS = new Set(['water', 'lava', 'bubble_column']);
+const SAFE_FULL_CUBE_SUPPORT_BLOCKS = new Set([
+  'cobbled_deepslate',
+  'cobblestone',
+  'coarse_dirt',
+  'deepslate',
+  'dirt',
+  'grass_block',
+  'podzol',
+  'stone'
+]);
 
 export type DirectSteeringBlock = Readonly<{
   name?: unknown;
@@ -45,9 +55,10 @@ export function classifyDirectSteeringSpace(
 }
 
 /**
- * Initial direct steering supports only a loaded, exact full-cube support
- * block at the current feet height. Partial blocks and unknown shapes are
- * treated as unsupported terrain, never as a step or drop.
+ * Initial direct steering supports only a loaded, deliberately allowlisted,
+ * exact full-cube block at the current feet height. Partial block families,
+ * unknown blocks, and unknown shapes are treated as unsupported terrain,
+ * never as a step or drop.
  */
 export function classifyDirectSteeringSupport(
   block: DirectSteeringBlock | null
@@ -57,6 +68,7 @@ export function classifyDirectSteeringSupport(
   const name = block?.name;
   if (typeof name !== 'string') return 'unloaded';
   if (PASSABLE_BLOCKS.has(name)) return 'unsupported_drop';
+  if (!SAFE_FULL_CUBE_SUPPORT_BLOCKS.has(name)) return 'unsupported_drop';
   if (block?.boundingBox !== 'block' || !hasFullCubeShape(block.shapes)) {
     return 'unsupported_drop';
   }

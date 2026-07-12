@@ -265,3 +265,39 @@ test('death, raw respawn, later spawn, health, dimensions, and stale events are 
   assert.equal(callbacks.length, 0);
   await adapter.disconnect();
 });
+
+test('raw respawn immediately clears controls and removes movement listeners', async () => {
+  const bot = new FakeBot();
+  bot.emitEndOnQuit = true;
+  const adapter = new MineflayerMinecraftAdapter({
+    createBot: () => bot,
+    setTimeout: () => ({ unref: () => undefined })
+  });
+  const connected = adapter.connect(config(), new AbortController().signal);
+  bot.emit('spawn');
+  await connected;
+
+  let ticks = 0;
+  const cleanup = adapter.onMovementTick(() => {
+    ticks += 1;
+  });
+  bot.emit('physicsTick');
+  assert.equal(ticks, 1);
+  assert.equal(bot.listenerCount('physicsTick'), 1);
+  const clearsBefore = bot.clearCount;
+
+  bot.emit('respawn');
+
+  assert.equal(bot.clearCount > clearsBefore, true);
+  assert.equal(bot.listenerCount('physicsTick'), 0);
+  assert.equal(adapter.state().alive, false);
+  bot.emit('physicsTick');
+  assert.equal(ticks, 1);
+  cleanup();
+  cleanup();
+
+  bot.emit('spawn');
+  assert.equal(adapter.state().alive, true);
+  assert.equal(bot.listenerCount('physicsTick'), 0);
+  await adapter.disconnect();
+});

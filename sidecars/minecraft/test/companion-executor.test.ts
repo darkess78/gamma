@@ -1620,6 +1620,35 @@ for (const lifecycle of ['disconnected', 'death'] as const) {
   });
 }
 
+test('dispatcher respawn event terminalizes active movement without resumption', async () => {
+  const value = await dispatcherHarness();
+  const commandId = 'follow-respawn';
+  const { work } = await beginDispatcherMovement(
+    value,
+    commandId,
+    'follow_owner',
+    1
+  );
+  assert.equal(value.adapter.forward, true);
+  assert.equal(value.adapter.listenerCount(), 1);
+
+  value.adapter.emit({ type: 'respawn' });
+  await value.dispatcher.waitForEvents();
+  await work;
+
+  const result = terminals(value.messages, commandId);
+  assert.equal(result.length, 1);
+  assert.equal(result[0]?.payload.outcome, 'failed');
+  assert.equal(result[0]?.payload.failure?.code, 'BOT_DEAD');
+  assert.equal(value.dispatcher.status().companionState, 'IDLE');
+  assert.equal(value.adapter.forward, false);
+  assert.equal(value.adapter.listenerCount(), 0);
+  value.adapter.tick();
+  await flushMicrotasks();
+  assert.equal(terminals(value.messages, commandId).length, 1);
+  assert.equal(value.adapter.forward, false);
+});
+
 test('Gamma control disconnect synchronously removes movement authority and does not reconnect', async () => {
   const value = await dispatcherHarness();
   const { work } = await beginDispatcherMovement(

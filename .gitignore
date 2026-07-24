@@ -109,6 +109,25 @@ research/cs4710_osrs_screen_recognition/docs/*
 research/cs4710_osrs_screen_recognition/data/*
 !research/cs4710_osrs_screen_recognition/data/README.md
 !research/cs4710_osrs_screen_recognition/data/osrs_screen_manifest_template.csv
+!research/cs4710_osrs_screen_recognition/src/
+research/cs4710_osrs_screen_recognition/src/*
+!research/cs4710_osrs_screen_recognition/src/crop_v1.py
+!research/cs4710_osrs_screen_recognition/src/intake_session_v1.py
+!research/cs4710_osrs_screen_recognition/src/build_accepted_manifest_v1.py
+!research/cs4710_osrs_screen_recognition/src/intake_balanced_archive_v1.py
+!research/cs4710_osrs_screen_recognition/src/assign_grouped_split_v1.py
+!research/cs4710_osrs_screen_recognition/src/model_baseline_v1.py
+!research/cs4710_osrs_screen_recognition/tests/
+research/cs4710_osrs_screen_recognition/tests/*
+!research/cs4710_osrs_screen_recognition/tests/test_crop_v1.py
+!research/cs4710_osrs_screen_recognition/tests/test_intake_session_v1.py
+!research/cs4710_osrs_screen_recognition/tests/test_build_accepted_manifest_v1.py
+!research/cs4710_osrs_screen_recognition/tests/test_intake_balanced_archive_v1.py
+!research/cs4710_osrs_screen_recognition/tests/test_assign_grouped_split_v1.py
+!research/cs4710_osrs_screen_recognition/tests/test_model_baseline_v1.py
+!research/cs4710_osrs_screen_recognition/notebooks/
+research/cs4710_osrs_screen_recognition/notebooks/*
+!research/cs4710_osrs_screen_recognition/notebooks/01_dataset_audit.ipynb
 .claude/
 
 # OS/editor noise

@@ -144,7 +144,8 @@ specs own detailed contracts; target documents own future work.
   state-isolated evaluation requests, sanitized fixture artifacts, local-only-by-
   default multi-model proposal analysis, observer-bound evidence, deterministic
   proposal screening and consensus, pinned source hash/symbol/call/line
-  grounding, bounded verified source excerpts for local grounding-only plans,
+  grounding, bounded verified source excerpts plus metric-adjacent same-file
+  callee bodies for local grounding-only plans,
   proposal-only experiment manifests, scope validation, disabled-by-default
   detached worktrees, hash- and citation-bound local-model candidate edits,
   atomic isolated application receipts, and fixed safety/full regression

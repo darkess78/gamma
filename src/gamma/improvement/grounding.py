@@ -52,6 +52,7 @@ class SymbolFact(BaseModel):
     line_start: int = Field(ge=1)
     line_end: int = Field(ge=1)
     calls: tuple[str, ...] = ()
+    call_lines: dict[str, tuple[int, ...]] = Field(default_factory=dict)
     timing_keys: tuple[str, ...] = ()
 
 
@@ -176,14 +177,14 @@ class _SymbolVisitor(ast.NodeVisitor):
             kind = "async_method" if asynchronous else "method"
         else:
             kind = "async_function" if asynchronous else "function"
-        calls = sorted(
-            {
-                call_name
-                for item in ast.walk(node)
-                if isinstance(item, ast.Call)
-                and (call_name := _call_name(item.func)) is not None
-            }
-        )
+        call_lines: dict[str, list[int]] = {}
+        for item in ast.walk(node):
+            if not isinstance(item, ast.Call):
+                continue
+            call_name = _call_name(item.func)
+            if call_name is None:
+                continue
+            call_lines.setdefault(call_name, []).append(item.lineno)
         timing_keys = sorted(
             {
                 item.value
@@ -200,7 +201,11 @@ class _SymbolVisitor(ast.NodeVisitor):
                 kind=kind,
                 line_start=node.lineno,
                 line_end=node.end_lineno or node.lineno,
-                calls=tuple(calls[:100]),
+                calls=tuple(sorted(call_lines)[:100]),
+                call_lines={
+                    call_name: tuple(sorted(set(line_numbers))[:20])
+                    for call_name, line_numbers in sorted(call_lines.items())[:100]
+                },
                 timing_keys=tuple(timing_keys[:100]),
             )
         )

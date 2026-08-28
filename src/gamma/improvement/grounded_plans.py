@@ -257,19 +257,68 @@ def _relevant_source_facts(
                 for symbol in fact.symbols
                 if symbol.kind in {"function", "method", "async_function", "async_method"}
             ][:8]
+        direct_callees = _direct_callee_symbols(
+            relevant_symbols=symbols,
+            all_symbols=fact.symbols,
+            metric_lines=lines,
+        )
         relevant.append(
             {
                 "path": relative,
                 "sha256": fact.sha256,
                 "metric_reference_lines": fact.metric_reference_lines,
                 "symbols": [symbol.model_dump(mode="json") for symbol in symbols[:12]],
+                "directly_called_symbols": [
+                    symbol.model_dump(mode="json") for symbol in direct_callees
+                ],
                 "verified_source_excerpts": _verified_source_excerpts(
                     source_path,
                     fact.metric_reference_lines,
                 ),
+                "verified_callee_excerpts": _verified_symbol_excerpts(
+                    source_path,
+                    direct_callees,
+                ),
             }
         )
     return relevant
+
+
+def _direct_callee_symbols(
+    *,
+    relevant_symbols: list[Any],
+    all_symbols: tuple[Any, ...],
+    metric_lines: set[int],
+    context_lines: int = 35,
+    maximum_symbols: int = 6,
+) -> list[Any]:
+    """Select same-scope callees invoked near a metric reference."""
+    candidates: dict[str, tuple[int, Any]] = {}
+    all_by_name = {symbol.qualified_name: symbol for symbol in all_symbols}
+    for caller in relevant_symbols:
+        scope = caller.qualified_name.rsplit(".", 1)[0] if "." in caller.qualified_name else ""
+        for call_name, line_numbers in caller.call_lines.items():
+            distances = [
+                abs(line_number - metric_line)
+                for line_number in line_numbers
+                for metric_line in metric_lines
+            ]
+            if not distances or min(distances) > context_lines:
+                continue
+            leaf = call_name.rsplit(".", 1)[-1]
+            qualified_name = f"{scope}.{leaf}" if scope else leaf
+            callee = all_by_name.get(qualified_name)
+            if callee is None or callee.qualified_name == caller.qualified_name:
+                continue
+            previous = candidates.get(callee.qualified_name)
+            candidate = (min(distances), callee)
+            if previous is None or candidate[0] < previous[0]:
+                candidates[callee.qualified_name] = candidate
+    ranked = sorted(
+        candidates.values(),
+        key=lambda item: (item[0], item[1].line_start, item[1].qualified_name),
+    )
+    return [symbol for _, symbol in ranked[:maximum_symbols]]
 
 
 def _verified_source_excerpts(
@@ -315,6 +364,42 @@ def _verified_source_excerpts(
     return excerpts
 
 
+def _verified_symbol_excerpts(
+    path: Path,
+    symbols: list[Any],
+    *,
+    maximum_symbols: int = 6,
+    maximum_lines_per_symbol: int = 120,
+    maximum_total_lines: int = 300,
+) -> list[dict[str, Any]]:
+    lines = path.read_text(encoding="utf-8", errors="strict").splitlines()
+    excerpts: list[dict[str, Any]] = []
+    remaining = maximum_total_lines
+    for symbol in symbols[:maximum_symbols]:
+        if remaining <= 0:
+            break
+        line_start = symbol.line_start
+        line_end = min(
+            symbol.line_end,
+            line_start + maximum_lines_per_symbol - 1,
+            line_start + remaining - 1,
+        )
+        excerpts.append(
+            {
+                "symbol": symbol.qualified_name,
+                "line_start": line_start,
+                "line_end": line_end,
+                "truncated": line_end < symbol.line_end,
+                "text": "\n".join(
+                    f"{line_number}: {lines[line_number - 1]}"
+                    for line_number in range(line_start, line_end + 1)
+                ),
+            }
+        )
+        remaining -= line_end - line_start + 1
+    return excerpts
+
+
 def _grounding_sha256(grounding: SourceGroundingReport) -> str:
     payload = grounding.model_dump(mode="json", exclude={"generated_at"})
     return hashlib.sha256(
@@ -326,7 +411,8 @@ def _system_prompt() -> str:
     return (
         "You are Gamma's source-grounding analyst. You have no tools and may not edit anything. "
         "Use only the supplied source hashes, symbols, call names, timing keys, line ranges, and "
-        "verified bounded source excerpts. The excerpts came from the pinned file hash and are not "
+        "verified bounded source excerpts, including bounded same-file callee bodies selected near "
+        "metric timers. The excerpts came from the pinned file hash and are not "
         "permission to request other files. "
         "Never propose caching generated draft or response text; conversational output depends on "
         "persona, memory, tools, state, and model nondeterminism. "

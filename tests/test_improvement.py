@@ -31,6 +31,7 @@ from gamma.improvement.grounded_plans import (
     GroundedPlanGenerator,
     SourceCitation,
     _grounding_sha256,
+    _relevant_source_facts,
     validate_grounded_plan,
     validate_grounding_current,
 )
@@ -1013,6 +1014,30 @@ class ImprovementEvaluatorTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "generated_response_cache"):
             validate_grounded_plan(cached, grounding, project_root=ROOT)
+
+    def test_grounding_includes_bounded_same_file_callees_near_metric_timer(self) -> None:
+        grounding = build_source_grounding(
+            paths=("src/gamma/conversation/service.py",),
+            target_metrics=("conversation.metadata_ms",),
+            project_root=ROOT,
+        )
+        source = grounding.files[0]
+        respond = next(
+            item for item in source.symbols if item.qualified_name == "ConversationService._respond"
+        )
+
+        self.assertIn("self._extract_turn_metadata", respond.call_lines)
+        facts = _relevant_source_facts(grounding, project_root=ROOT)[0]
+        callee_names = [item["qualified_name"] for item in facts["directly_called_symbols"]]
+        callee_text = "\n".join(item["text"] for item in facts["verified_callee_excerpts"])
+        callee_line_count = sum(
+            item["line_end"] - item["line_start"] + 1
+            for item in facts["verified_callee_excerpts"]
+        )
+
+        self.assertIn("ConversationService._extract_turn_metadata", callee_names)
+        self.assertIn("strict JSON metadata extractor", callee_text)
+        self.assertLessEqual(callee_line_count, 300)
 
 
 def _write_snapshot(runtime_dir: Path, *, total_ms: float, route_status: str, count: int) -> None:

@@ -378,6 +378,11 @@ become candidate-edit paths: proposal, manifest, exact-edit, and changed-path
 validation continue to reject the protected control plane. Grounding paths are
 normalized, confined to the repository, and re-resolved before every hash or
 excerpt read so a crafted artifact or symlink cannot escape the source tree.
+For same-file calls located near a target metric timer, grounding records the
+exact call lines and may include a bounded, hash-pinned callee body. This lets
+analysts verify data dependencies and exception behavior without granting
+broader source access; the callee count, per-symbol lines, and total lines are
+hard limited.
 
 Candidate validation also rejects target-metric manipulation. A latency
 candidate cannot remove a monotonic/performance timer or replace newly measured
@@ -415,6 +420,7 @@ comparison, an initial fictional conversation catalog, state-isolated
 evaluation requests, sanitized run artifacts, fixture guardrails, local
 multi-model proposal analysis, deterministic evidence binding and screening,
 independent-model consensus, pinned source grounding, local source-cited plans,
+metric-adjacent same-file call-site and callee-body evidence,
 proposal manifests, scope validation, explicitly authorized detached candidate
 authoring, exact-edit application receipts, sandboxed fixed regression profiles,
 and a fresh-worktree bounded retry coordinator. Next stages are:

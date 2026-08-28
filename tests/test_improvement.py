@@ -13,6 +13,7 @@ from gamma.improvement.cli import run
 from gamma.improvement.candidates import (
     CandidateDraft,
     CandidateDraftGenerator,
+    _validate_candidate_metric_integrity,
     apply_candidate_draft,
     validate_candidate_draft,
 )
@@ -664,11 +665,11 @@ class ImprovementEvaluatorTest(unittest.TestCase):
                 worktree_root=worktree_root,
             )
 
-            self.assertEqual(result.status, "candidate_validated")
+            self.assertEqual(result.status, "fixed_tests_passed")
             self.assertEqual(result.successful_experiment_id, "latency-series-001-a02")
             self.assertEqual([item.outcome for item in result.attempts], [
                 "validation_failed",
-                "candidate_validated",
+                "fixed_tests_passed",
             ])
             self.assertEqual(llm.models, ["model-a", "model-b"])
             self.assertEqual(llm.contexts[0]["prior_attempt_feedback"], [])
@@ -695,6 +696,26 @@ class ImprovementEvaluatorTest(unittest.TestCase):
                     result.successful_experiment_id,
                     "promoted",
                 )
+
+            metric_gaming = CandidateDraft(
+                status="candidate",
+                manifest_id="metric-gaming-001",
+                baseline_commit=baseline,
+                plan_sha256="c" * 64,
+                grounding_sha256=plan.grounding_sha256,
+                edits=(
+                    {
+                        "path": "src/gamma/example.py",
+                        "file_sha256": fact.sha256,
+                        "old_text": (
+                            "duration_ms = round((time.perf_counter() - started_at) * 1000, 1)"
+                        ),
+                        "new_text": "duration_ms = 0.0",
+                    },
+                ),
+            )
+            with self.assertRaisesRegex(ValueError, "metric integrity violation"):
+                _validate_candidate_metric_integrity(metric_gaming, plan)
 
     @unittest.skipUnless(
         os.environ.get("GAMMA_RUN_CANDIDATE_SANDBOX_SMOKE")

@@ -260,7 +260,7 @@ def run(argv: list[str] | None = None) -> int:
             )
             + "\n"
         )
-        return 0 if result.status == "candidate_validated" else 2
+        return 0 if result.status == "fixed_tests_passed" else 2
 
     if args.command in {
         "plan-experiment",

@@ -45,7 +45,7 @@ class ExperimentAttemptRecord(BaseModel):
         "draft_rejected",
         "needs_more_source",
         "validation_failed",
-        "candidate_validated",
+        "fixed_tests_passed",
         "deadline_exhausted",
         "infrastructure_error",
     ]
@@ -105,7 +105,7 @@ class ExperimentSeriesManifest(BaseModel):
     status: Literal[
         "planned",
         "running",
-        "candidate_validated",
+        "fixed_tests_passed",
         "exhausted",
         "failed",
         "abandoned",
@@ -142,17 +142,17 @@ class ExperimentSeriesManifest(BaseModel):
             for item in self.attempts
         ):
             raise ValueError("series attempt id does not match its series and ordinal")
-        if self.status == "candidate_validated" and not self.successful_experiment_id:
-            raise ValueError("candidate_validated series requires a successful experiment id")
+        if self.status == "fixed_tests_passed" and not self.successful_experiment_id:
+            raise ValueError("fixed_tests_passed series requires a successful experiment id")
         if self.successful_experiment_id and not any(
             item.experiment_id == self.successful_experiment_id
-            and item.outcome == "candidate_validated"
+            and item.outcome == "fixed_tests_passed"
             for item in self.attempts
         ):
             raise ValueError("successful experiment id is not a validated series attempt")
         if self.status == "running" and not self.started_at:
             raise ValueError("running series requires started_at")
-        if self.status in {"candidate_validated", "exhausted", "failed", "abandoned"}:
+        if self.status in {"fixed_tests_passed", "exhausted", "failed", "abandoned"}:
             if not self.started_at or not self.completed_at or not self.terminal_reason:
                 raise ValueError("terminal series requires start, completion, and reason fields")
         return self
@@ -224,14 +224,14 @@ class ExperimentSeriesStore:
         self,
         series_id: str,
         *,
-        status: Literal["candidate_validated", "exhausted", "failed", "abandoned"],
+        status: Literal["fixed_tests_passed", "exhausted", "failed", "abandoned"],
         reason: str,
         successful_experiment_id: str | None = None,
     ) -> ExperimentSeriesManifest:
         manifest = self.read(series_id)
         if manifest.status != "running":
             raise ValueError("only a running series may be finished")
-        if status == "candidate_validated" and not successful_experiment_id:
+        if status == "fixed_tests_passed" and not successful_experiment_id:
             raise ValueError("successful experiment id is required")
         manifest.status = status
         manifest.terminal_reason = reason
@@ -461,8 +461,8 @@ class BoundedExperimentCoordinator:
                         maximum_duration_seconds=remaining,
                     )
                     _write_json(validation_path, validation.model_dump(mode="json"), exclusive=True)
-                    outcome: Literal["validation_failed", "candidate_validated"] = (
-                        "candidate_validated" if validation.passed else "validation_failed"
+                    outcome: Literal["validation_failed", "fixed_tests_passed"] = (
+                        "fixed_tests_passed" if validation.passed else "validation_failed"
                     )
                     if not validation.passed:
                         attempt_store.transition(experiment_id, "rejected")
@@ -484,7 +484,7 @@ class BoundedExperimentCoordinator:
                     if validation.passed:
                         return store.finish(
                             series.id,
-                            status="candidate_validated",
+                            status="fixed_tests_passed",
                             reason="fixed_validation_profiles_passed",
                             successful_experiment_id=experiment_id,
                         )

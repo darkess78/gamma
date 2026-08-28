@@ -63,7 +63,7 @@ local models, stops at the manifest attempt or wall-clock limit, records every
 structured draft, receipt, validation report, digest, transition, and terminal
 reason, and gives a later attempt only the last three bounded validation
 feedback records. Test output in feedback is marked as untrusted data. A
-passing attempt stops at `candidate_validated`; it does not satisfy holdout,
+passing attempt stops at `fixed_tests_passed`; it does not satisfy holdout,
 performance, review, health, soak, rollback, or approval gates. Recurring runs
 are controlled by a separate policy flag and remain disabled.
 
@@ -335,6 +335,13 @@ retain the configured local transport timeout, and fixed validation profiles
 receive only the remaining series time. Concurrent runs are rejected by an
 exclusive series lock. A stale lock after an interrupted process requires
 operator inspection rather than automatic lock stealing.
+
+Candidate validation also rejects target-metric manipulation. A latency
+candidate cannot remove a monotonic/performance timer or replace newly measured
+time with a literal zero, and a failure-rate candidate cannot suppress route
+events or relabel existing status/error telemetry. Fixed-test success is named
+`fixed_tests_passed` deliberately: it is regression evidence, not proof that the
+hypothesis improved its objective.
 
 ## Isolated Experiment Manifests
 

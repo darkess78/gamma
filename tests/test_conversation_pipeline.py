@@ -235,6 +235,40 @@ class ConversationPipelineTest(unittest.TestCase):
         self.assertEqual(fake_llm.calls, [])
         self.assertEqual(response.timing_ms["tts_ms"], 0.0)
 
+    def test_evaluation_mode_does_not_persist_or_execute_tools(self) -> None:
+        service = ConversationService()
+        service._llm = _FakeLLMAdapter(["A short evaluation reply."])
+        service._continuity.begin_exchange = Mock()
+        service._continuity.complete_exchange = Mock()
+        service._remember_assistant_state = Mock()
+        service._append_timing_log = Mock()
+        service._background_memory_save = Mock()
+        service._infer_tool_calls = Mock(return_value=[])
+
+        with patch("gamma.conversation.service.build_system_prompt", return_value="prompt"):
+            response = service.respond(
+                user_text="evaluate this turn",
+                session_id="evaluation-session",
+                fast_mode=True,
+                evaluation_mode=True,
+            )
+
+        service._continuity.begin_exchange.assert_not_called()
+        service._continuity.complete_exchange.assert_not_called()
+        service._remember_assistant_state.assert_not_called()
+        service._append_timing_log.assert_not_called()
+        service._background_memory_save.assert_not_called()
+        service._infer_tool_calls.assert_not_called()
+        self.assertEqual(response.memory_candidates, [])
+        self.assertEqual(response.tool_calls, [])
+        self.assertIn("evaluation_route_events", response.tts_metadata)
+        self.assertIn("prompt_context_ms", response.timing_ms)
+        self.assertIn("draft_request_build_ms", response.timing_ms)
+        self.assertIn("draft_llm_ms", response.timing_ms)
+        self.assertGreaterEqual(response.timing_ms["draft_reply_ms"], response.timing_ms["draft_llm_ms"])
+        call_context = service._llm.calls[0]["kwargs"]["call_context"]
+        self.assertEqual(call_context.interaction_mode, "evaluation")
+
     def test_memory_candidate_builder_extracts_other_person_and_project_state(self) -> None:
         service = ConversationService()
         candidates = service._build_memory_candidates(

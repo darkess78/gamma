@@ -480,6 +480,7 @@ def conversation_respond(request: ConversationRequest) -> AssistantResponse:
             synthesize_speech=request.synthesize_speech,
             speaker_ctx=request.speaker,
             fast_mode=request.fast_mode,
+            evaluation_mode=request.evaluation_mode,
         )
     except ConversationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

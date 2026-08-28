@@ -20,8 +20,14 @@ Delivered in the current refactor:
 
 Remaining operational gate:
 
-1. Define and run repeatable everyday conversation reliability and latency checks.
-2. Run owner-facing Wake/restart/continuity soak sessions and use those results
+1. Calibrate and expand the delivered fictional evaluation catalog, then run
+   controlled cold/warm everyday conversation reliability and latency baselines
+   and set owner-facing acceptance thresholds.
+2. Collect the new prompt, request-building, routed-draft, live-conversation,
+   TTS, and first-audio timings under controlled cohorts; use model consensus
+   to prioritize the delivered source-grounding and disabled isolated-candidate
+   stages.
+3. Run owner-facing Wake/restart/continuity soak sessions and use those results
    for focused tuning rather than another structural rewrite.
 
 Completion means Shana can run independently of the dashboard, the dashboard

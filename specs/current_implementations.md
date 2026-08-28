@@ -47,6 +47,9 @@ specs own detailed contracts; target documents own future work.
 - Privacy guard and layered speech-safety filtering before public or synthesized output.
 - Mock, OpenAI, and Ollama-compatible LLM adapters.
 - Deterministic LLM routing, fallback/backoff state, and route traces.
+- Route failures/skips include a stable non-content error class for aggregate triage.
+- Non-content conversation timings distinguish prompt-context assembly,
+  draft-request assembly, the routed draft LLM call, and the complete draft stage.
 - Explicit primary-quality `presence_wake` routing with candidate capability checks and prompt rebuilding.
 - Model-aware full-prompt budgets, priority compaction, and overflow-specific retry without provider backoff.
 - Image analysis and image-aware conversation.
@@ -132,6 +135,17 @@ specs own detailed contracts; target documents own future work.
 - Linux-first runtime with Windows development/smoke-test compatibility.
 - Local proxy, Nginx templates, systemd templates, platform launchers.
 - Standalone TTS dataset preparation GUI and CLI pipeline.
+- Versioned improvement contract, bounded aggregate observer, isolated
+  baseline-versus-candidate evaluator, fictional conversation fixture catalog,
+  state-isolated evaluation requests, sanitized fixture artifacts, local-only-by-
+  default multi-model proposal analysis, observer-bound evidence, deterministic
+  proposal screening and consensus, pinned source hash/symbol/call/line
+  grounding, bounded verified source excerpts for local grounding-only plans,
+  proposal-only experiment manifests, scope validation, disabled-by-default
+  detached worktrees, hash- and citation-bound local-model candidate edits,
+  atomic isolated application receipts, and fixed safety/full regression
+  profiles inside a no-network, read-only-source Linux sandbox. It cannot edit
+  the live checkout, promote changes, or operate services.
 - Pytest coverage for API, dashboard, conversation, memory, voice, stream, integrations, safety, routing, resources, and performer behavior.
 
 ## Current Architectural Debt
@@ -139,4 +153,5 @@ specs own detailed contracts; target documents own future work.
 - `DashboardService` still combines several dashboard-owned concerns: supervisor controls, machine status, local provider configuration, and integration operations.
 - Existing operator pages retain compatibility-oriented classic scripts and global handlers; new focused clients use native modules.
 - Browser live capture still uses deprecated `ScriptProcessorNode` rather than `AudioWorkletNode`.
-- Conversation reliability and latency do not yet have a repeatable owner-facing soak/evaluation gate.
+- Conversation reliability and latency have an aggregate comparison foundation,
+  but representative fixtures and an owner-facing soak/evaluation gate remain incomplete.

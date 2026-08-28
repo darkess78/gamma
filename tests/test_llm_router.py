@@ -259,6 +259,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
         self.assertEqual(reply.text, "local:hello")
         self.assertEqual(budgets[:2], [16384, 12288])
         self.assertEqual(events[-2]["status"], "context_overflow")
+        self.assertEqual(events[-2]["error_class"], "context_overflow")
         self.assertEqual(events[-1]["status"], "ok")
         self.assertEqual(events[-1]["overflow_retry_budget"], 12288)
         self.assertEqual(RouterLLMAdapter.provider_backoff_state(), {})
@@ -399,6 +400,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
         events = take_route_trace()
         self.assertEqual(reply.text, "openai:tell me a quick joke")
         self.assertEqual(events[0]["status"], "skipped")
+        self.assertEqual(events[0]["error_class"], "provider_unavailable")
         self.assertEqual(events[-1]["provider"], "openai")
         self.assertEqual(events[-1]["status"], "ok")
 
@@ -410,12 +412,15 @@ class RouterLLMAdapterTest(unittest.TestCase):
             raise RuntimeError("local-fail")
 
         router.fake_adapters["local"].generate_reply = fail_local  # type: ignore[method-assign]
+        begin_route_trace()
         reply = router.generate_reply(
             system_prompt="conversation prompt",
             user_text="tell me a quick joke",
             call_context=LLMCallContext(purpose="conversation_draft", fast_mode=True),
         )
         self.assertEqual(reply.text, "openai:tell me a quick joke")
+        events = take_route_trace()
+        self.assertEqual(events[0]["error_class"], "provider_error")
         backoff = router.provider_backoff_state()
         self.assertIn("local:chat_light", backoff)
 
@@ -450,6 +455,7 @@ class RouterLLMAdapterTest(unittest.TestCase):
         self.assertTrue(events)
         self.assertEqual(events[-1]["provider"], "local")
         self.assertEqual(events[-1]["status"], "ok")
+        self.assertIsNone(events[-1]["error_class"])
         self.assertEqual(events[-1]["route_family"], "metadata")
         log_path = settings.data_dir / "runtime" / "llm.routes.jsonl"
         self.assertTrue(log_path.exists())

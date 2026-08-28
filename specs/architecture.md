@@ -51,6 +51,7 @@ page navigation destroys browser audio and WebSocket state.
 - `integrations`: Twitch, Discord, and future bounded external adapters
 - `dashboard`: authenticated operator and interaction clients
 - `supervisor`: local process lifecycle
+- `improvement`: read-only measurement, local proposal analysis, deterministic review, and isolated candidate boundaries
 
 ## Preserved Interfaces
 

@@ -24,6 +24,7 @@ must be updated together when a public contract changes.
 - `audio_understanding.md`
 - `llm_router.md`
 - `resource_routing.md`
+- `improvement.md`
 - `integrations.md`
 - `minecraft_companion.md`
 - `shana_presence.md`

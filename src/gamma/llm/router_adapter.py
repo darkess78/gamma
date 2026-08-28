@@ -6,6 +6,7 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Literal
 
 from ..config import settings
 from ..errors import ConfigurationError, ContextBudgetError, ContextOverflowError
@@ -16,6 +17,13 @@ from .base import LLMAdapter, LLMCallContext, LLMImageInput, LLMReply
 from .capabilities import estimate_text_tokens, model_capability
 
 _ROUTE_TRACE = threading.local()
+RouteErrorClass = Literal[
+    "context_budget",
+    "capability_mismatch",
+    "provider_unavailable",
+    "context_overflow",
+    "provider_error",
+]
 
 
 @dataclass(slots=True)
@@ -174,6 +182,7 @@ class RouterLLMAdapter(LLMAdapter):
                         status="skipped",
                         duration_ms=0.0,
                         detail=str(exc),
+                        error_class="context_budget",
                         fallback_index=index,
                         prompt_metrics=prompt_metrics,
                     )
@@ -200,6 +209,7 @@ class RouterLLMAdapter(LLMAdapter):
                     status="skipped",
                     duration_ms=0.0,
                     detail=capability_error,
+                    error_class="capability_mismatch",
                     fallback_index=index,
                     prompt_metrics=prompt_metrics,
                 )
@@ -222,6 +232,7 @@ class RouterLLMAdapter(LLMAdapter):
                     status="skipped",
                     duration_ms=0.0,
                     detail=str(availability.get("detail", "unavailable")),
+                    error_class="provider_unavailable",
                     fallback_index=index,
                     placement_shadow=placement_shadow,
                     prompt_metrics=prompt_metrics,
@@ -283,6 +294,7 @@ class RouterLLMAdapter(LLMAdapter):
                     status="context_overflow",
                     duration_ms=duration_ms,
                     detail=str(exc),
+                    error_class="context_overflow",
                     fallback_index=index,
                     placement_shadow=placement_shadow,
                     prompt_metrics=overflow_metrics,
@@ -338,6 +350,7 @@ class RouterLLMAdapter(LLMAdapter):
                                 status="context_overflow",
                                 duration_ms=0.0,
                                 detail=f"compacted retry failed: {retry_exc}",
+                                error_class="context_overflow",
                                 fallback_index=index,
                                 placement_shadow=placement_shadow,
                                 prompt_metrics={**overflow_metrics, "overflow_retry_budget": retry_budget},
@@ -357,6 +370,7 @@ class RouterLLMAdapter(LLMAdapter):
                                 status="error",
                                 duration_ms=0.0,
                                 detail=f"compacted retry provider failure: {retry_exc}",
+                                error_class="provider_error",
                                 fallback_index=index,
                                 placement_shadow=placement_shadow,
                                 prompt_metrics={**overflow_metrics, "overflow_retry_budget": retry_budget},
@@ -377,6 +391,7 @@ class RouterLLMAdapter(LLMAdapter):
                     status="error",
                     duration_ms=duration_ms,
                     detail=str(exc),
+                    error_class="provider_error",
                     fallback_index=index,
                     placement_shadow=placement_shadow,
                     prompt_metrics=prompt_metrics,
@@ -849,6 +864,7 @@ class RouterLLMAdapter(LLMAdapter):
         duration_ms: float,
         detail: str,
         fallback_index: int,
+        error_class: RouteErrorClass | None = None,
         placement_shadow: dict[str, object] | None = None,
         prompt_metrics: dict[str, object] | None = None,
     ) -> dict[str, object]:
@@ -863,6 +879,7 @@ class RouterLLMAdapter(LLMAdapter):
             duration_ms: Execution duration.
             detail: Event detail (truncated).
             fallback_index: Fallback index or 0.
+            error_class: Stable non-content failure taxonomy, or None for success.
             
         Returns:
             dict[str, object]: Logged event data.
@@ -878,6 +895,7 @@ class RouterLLMAdapter(LLMAdapter):
             "reason": decision.reason,
             "profile": self._profile(),
             "status": status,
+            "error_class": error_class,
             "detail": detail[:240],
             "duration_ms": duration_ms,
             "input_words": len((user_text or "").split()),

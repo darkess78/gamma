@@ -50,7 +50,10 @@ a smaller candidate budget and then selects only a compatible fallback.
 
 Every routed call records provider, model, purpose, fallback attempts, timing,
 prompt estimate, context limit/reserves, compaction, failure/backoff state, and
-optional placement metadata.
+optional placement metadata. Failed and skipped candidates also carry a stable,
+non-content `error_class` (`context_budget`, `capability_mismatch`,
+`provider_unavailable`, `context_overflow`, or `provider_error`) so aggregate
+analysis does not have to parse free-form detail strings.
 
 ## Product Rules
 

@@ -62,6 +62,7 @@ class ConversationService:
         micro_mode: bool = False,
         defer_llm_safety_review: bool = False,
         background_context: str | None = None,
+        evaluation_mode: bool = False,
     ) -> AssistantResponse:
         """Respond to a user text message.
         
@@ -75,6 +76,7 @@ class ConversationService:
             micro_mode: Micro-reply mode.
             defer_llm_safety_review: Defer LLM safety review.
             background_context: Optional trusted background note for the system prompt.
+            evaluation_mode: Run without durable state, tools, or production timing logs.
             
         Returns:
             AssistantResponse with spoken text and timing.
@@ -82,7 +84,7 @@ class ConversationService:
         speaker = self._identity.resolve(speaker_ctx)
         exchange_id = None
         privacy_scope = "local_private" if speaker.memory_read_allowed else "local_generic"
-        if session_id:
+        if session_id and not evaluation_mode:
             exchange_id = self._continuity.begin_exchange(
                 session_id=session_id,
                 text=user_text,
@@ -101,12 +103,14 @@ class ConversationService:
                 micro_mode=micro_mode,
                 defer_llm_safety_review=defer_llm_safety_review,
                 background_context=background_context,
+                persist_state=not evaluation_mode,
+                interaction_mode="evaluation" if evaluation_mode else "chat",
             )
         except Exception:
             if exchange_id:
                 self._continuity.fail_exchange(exchange_id)
             raise
-        if exchange_id and session_id:
+        if exchange_id and session_id and not evaluation_mode:
             response.route_trace_id = exchange_id
             self._continuity.complete_exchange(
                 exchange_id=exchange_id,
@@ -356,6 +360,8 @@ class ConversationService:
         vision_analysis: VisionAnalysis | None = None,
         defer_llm_safety_review: bool = False,
         background_context: str | None = None,
+        persist_state: bool = True,
+        interaction_mode: str = "chat",
     ) -> AssistantResponse:
         stripped = user_text.strip()
         if not stripped:
@@ -394,32 +400,37 @@ class ConversationService:
                 else:
                     timing["tts_ms"] = 0.0
                 response.timing_ms = timing
-                self._append_timing_log(
-                    user_text=stripped,
-                    session_id=session_id,
-                    response=response,
-                    saved_count=0,
-                    timing=timing,
-                    route_events=[
-                        {
-                            "provider": "privacy_guard",
-                            "status": "blocked",
-                            "matched_rules": privacy_decision.matched_rules,
-                        }
-                    ],
-                )
+                privacy_events = [
+                    {
+                        "provider": "privacy_guard",
+                        "status": "blocked",
+                        "matched_rules": privacy_decision.matched_rules,
+                    }
+                ]
+                if persist_state:
+                    self._append_timing_log(
+                        user_text=stripped,
+                        session_id=session_id,
+                        response=response,
+                        saved_count=0,
+                        timing=timing,
+                        route_events=privacy_events,
+                    )
+                else:
+                    response.tts_metadata["evaluation_route_events"] = privacy_events
                 return response
 
             begin_route_trace()
             started_at = time.perf_counter()
             timing: dict[str, float] = {}
+            prompt_context_started = time.perf_counter()
             system_prompt = build_system_prompt(
                 memory_service=self._memory,
                 user_text=stripped,
                 session_id=session_id,
                 speaker=speaker,
             )
-            if session_id:
+            if session_id and persist_state:
                 continuity_context = self._continuity.prompt_context(
                     session_id,
                     privacy_scopes=self._privacy_scopes_for_speaker(speaker),
@@ -452,9 +463,14 @@ class ConversationService:
                     "For live speech, avoid numbered lists, bullet lists, section labels, and essay formatting. "
                     "Prefer natural spoken prose with short clauses and clear sentence boundaries."
                 )
-            tools_ok = speaker is None or speaker.tools_allowed
+            timing["prompt_context_ms"] = round(
+                (time.perf_counter() - prompt_context_started) * 1000,
+                1,
+            )
+            tools_ok = persist_state and (speaker is None or speaker.tools_allowed)
             inferred_tool_calls = self._infer_tool_calls(stripped, speaker=speaker) if tools_ok else []
-            llm_started = time.perf_counter()
+            draft_started = time.perf_counter()
+            draft_request_started = time.perf_counter()
             draft_user_text = self._build_user_input_text(
                 user_text=stripped,
                 image=image,
@@ -479,6 +495,11 @@ class ConversationService:
                     },
                 )
 
+            timing["draft_request_build_ms"] = round(
+                (time.perf_counter() - draft_request_started) * 1000,
+                1,
+            )
+            draft_llm_started = time.perf_counter()
             draft_reply = self._llm_adapter().generate_reply(
                 system_prompt=system_prompt,
                 user_text=draft_user_text,
@@ -490,15 +511,22 @@ class ConversationService:
                     micro_mode=micro_mode,
                     reasoning_depth="heavy" if self._looks_like_heavy_reasoning_turn(stripped) else "normal",
                     persona_sensitive=not bool(inferred_tool_calls),
-                    interaction_mode="chat",
+                    interaction_mode=interaction_mode,
                     cost_sensitive=bool(fast_mode or brief_mode or micro_mode),
                     minimum_context_tokens=4096,
                     prompt_builder=build_conversation_prompt,
                 ),
             )
-            timing["draft_reply_ms"] = round((time.perf_counter() - llm_started) * 1000, 1)
+            timing["draft_llm_ms"] = round(
+                (time.perf_counter() - draft_llm_started) * 1000,
+                1,
+            )
+            timing["draft_reply_ms"] = round(
+                (time.perf_counter() - draft_started) * 1000,
+                1,
+            )
 
-            memory_write_ok = speaker is None or speaker.memory_write_allowed
+            memory_write_ok = persist_state and (speaker is None or speaker.memory_write_allowed)
 
             # Inferred tool calls always run synchronously — they can change spoken text.
             tool_started = time.perf_counter()
@@ -579,14 +607,17 @@ class ConversationService:
                 timing["total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
                 response.timing_ms = dict(timing)
                 route_events = take_route_trace()
-                self._append_timing_log(
-                    user_text=stripped,
-                    session_id=session_id,
-                    response=response,
-                    saved_count=0,
-                    timing=timing,
-                    route_events=route_events,
-                )
+                if persist_state:
+                    self._append_timing_log(
+                        user_text=stripped,
+                        session_id=session_id,
+                        response=response,
+                        saved_count=0,
+                        timing=timing,
+                        route_events=route_events,
+                    )
+                else:
+                    response.tts_metadata["evaluation_route_events"] = route_events
 
                 if memory_write_ok:
                     threading.Thread(
@@ -595,7 +626,8 @@ class ConversationService:
                         daemon=True,
                     ).start()
 
-                self._remember_assistant_state(user_text=stripped, reply_text=response.spoken_text, emotion=response.emotion, session_id=session_id)
+                if persist_state:
+                    self._remember_assistant_state(user_text=stripped, reply_text=response.spoken_text, emotion=response.emotion, session_id=session_id)
                 return response
 
             # Standard path: full metadata extraction + synchronous memory save.
@@ -687,15 +719,18 @@ class ConversationService:
             timing["total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
             response.timing_ms = dict(timing)
             route_events = take_route_trace()
-            self._append_timing_log(
-                user_text=stripped,
-                session_id=session_id,
-                response=response,
-                saved_count=saved_count,
-                timing=timing,
-                route_events=route_events,
-            )
-            self._remember_assistant_state(user_text=stripped, reply_text=response.spoken_text, emotion=response.emotion, session_id=session_id)
+            if persist_state:
+                self._append_timing_log(
+                    user_text=stripped,
+                    session_id=session_id,
+                    response=response,
+                    saved_count=saved_count,
+                    timing=timing,
+                    route_events=route_events,
+                )
+                self._remember_assistant_state(user_text=stripped, reply_text=response.spoken_text, emotion=response.emotion, session_id=session_id)
+            else:
+                response.tts_metadata["evaluation_route_events"] = route_events
             return response
         except GammaError:
             raise

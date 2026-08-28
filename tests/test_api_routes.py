@@ -66,6 +66,7 @@ class ApiRoutesTest(unittest.TestCase):
                     session_id="sess-1",
                     synthesize_speech=True,
                     fast_mode=True,
+                    evaluation_mode=True,
                     speaker=SpeakerContext(source="discord", platform_id="12345"),
                 )
             )
@@ -82,6 +83,7 @@ class ApiRoutesTest(unittest.TestCase):
         self.assertEqual(call["session_id"], "sess-1")
         self.assertEqual(call["synthesize_speech"], True)
         self.assertEqual(call["fast_mode"], True)
+        self.assertEqual(call["evaluation_mode"], True)
         self.assertEqual(call["speaker_ctx"].source, "discord")
         self.assertEqual(call["speaker_ctx"].platform_id, "12345")
 

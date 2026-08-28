@@ -1,0 +1,276 @@
+version = 1
+
+[policy]
+maximum_records_per_source = 5000
+dominant_stage_share_percent = 25.0
+first_audio_warning_ms = 5000.0
+isolated_experiments_enabled = false
+experiment_worktree_root = "./data/improvement/worktrees"
+
+[policy.required_gates]
+runtime_adaptation = ["automated_tests", "health_checks", "rollback_ready"]
+tracked_configuration = ["automated_tests", "health_checks", "rollback_ready", "soak_check"]
+behavior_or_code = ["automated_tests", "diff_review", "safety_privacy", "holdout_evaluation", "health_checks", "rollback_ready", "human_approval"]
+restricted_operation = ["automated_tests", "diff_review", "safety_privacy", "health_checks", "rollback_ready", "human_approval", "manual_operation"]
+
+[[metrics]]
+id = "conversation.total_ms"
+source = "conversation"
+path = "timing_ms.total_ms"
+role = "objective"
+direction = "lower"
+statistic = "p95"
+unit = "ms"
+minimum_samples = 20
+minimum_practical_change_percent = 5.0
+maximum_regression_percent = 3.0
+
+[[metrics]]
+id = "conversation.draft_reply_ms"
+source = "conversation"
+path = "timing_ms.draft_reply_ms"
+role = "diagnostic"
+direction = "lower"
+statistic = "p95"
+unit = "ms"
+minimum_samples = 20
+minimum_practical_change_percent = 5.0
+maximum_regression_percent = 5.0
+
+[[metrics]]
+id = "conversation.prompt_context_ms"
+source = "conversation"
+path = "timing_ms.prompt_context_ms"
+role = "diagnostic"
+direction = "lower"
+statistic = "p95"
+unit = "ms"
+minimum_samples = 20
+minimum_practical_change_percent = 5.0
+maximum_regression_percent = 5.0
+
+[[metrics]]
+id = "conversation.draft_request_build_ms"
+source = "conversation"
+path = "timing_ms.draft_request_build_ms"
+role = "diagnostic"
+direction = "lower"
+statistic = "p95"
+unit = "ms"
+minimum_samples = 20
+minimum_practical_change_percent = 5.0
+maximum_regression_percent = 5.0
+
+[[metrics]]
+id = "conversation.draft_llm_ms"
+source = "conversation"
+path = "timing_ms.draft_llm_ms"
+role = "diagnostic"
+direction = "lower"
+statistic = "p95"
+unit = "ms"
+minimum_samples = 20
+minimum_practical_change_percent = 5.0
+maximum_regression_percent = 5.0
+
+[[metrics]]
+id = "conversation.metadata_ms"
+source = "conversation"
+path = "timing_ms.metadata_ms"
+role = "diagnostic"
+direction = "lower"
+statistic = "p95"
+unit = "ms"
+minimum_samples = 20
+minimum_practical_change_percent = 5.0
+maximum_regression_percent = 5.0
+
+[[metrics]]
+id = "conversation.memory_persist_ms"
+source = "conversation"
+path = "timing_ms.memory_persist_ms"
+role = "diagnostic"
+direction = "lower"
+statistic = "p95"
+unit = "ms"
+minimum_samples = 20
+minimum_practical_change_percent = 5.0
+maximum_regression_percent = 5.0
+
+[[metrics]]
+id = "conversation.tool_exec_ms"
+source = "conversation"
+path = "timing_ms.tool_exec_ms"
+role = "diagnostic"
+direction = "lower"
+statistic = "p95"
+unit = "ms"
+minimum_samples = 10
+minimum_practical_change_percent = 5.0
+maximum_regression_percent = 5.0
+
+[[metrics]]
+id = "conversation.finalizer_ms"
+source = "conversation"
+path = "timing_ms.finalizer_ms"
+role = "diagnostic"
+direction = "lower"
+statistic = "p95"
+unit = "ms"
+minimum_samples = 10
+minimum_practical_change_percent = 5.0
+maximum_regression_percent = 5.0
+
+[[metrics]]
+id = "conversation.tts_ms"
+source = "conversation"
+path = "timing_ms.tts_ms"
+role = "diagnostic"
+direction = "lower"
+statistic = "p95"
+unit = "ms"
+minimum_samples = 10
+minimum_practical_change_percent = 5.0
+maximum_regression_percent = 5.0
+
+[[metrics]]
+id = "llm_routes.duration_ms"
+source = "llm_routes"
+path = "duration_ms"
+role = "diagnostic"
+direction = "lower"
+statistic = "p95"
+unit = "ms"
+minimum_samples = 20
+minimum_practical_change_percent = 5.0
+maximum_regression_percent = 5.0
+
+[[metrics]]
+id = "llm_routes.failure_rate"
+source = "llm_routes"
+path = "status"
+aggregation = "rate"
+match_values = ["error", "context_overflow"]
+role = "guardrail"
+direction = "lower"
+statistic = "mean"
+unit = "percent"
+minimum_samples = 20
+minimum_practical_change_percent = 10.0
+maximum_regression_percent = 1.0
+
+[[metrics]]
+id = "fixtures.pass_rate"
+source = "fixtures"
+path = "status"
+aggregation = "rate"
+match_values = ["passed"]
+role = "guardrail"
+direction = "higher"
+statistic = "mean"
+unit = "percent"
+minimum_samples = 6
+minimum_practical_change_percent = 1.0
+maximum_regression_percent = 0.1
+
+[[metrics]]
+id = "fixtures.safety_failure_rate"
+source = "fixtures"
+path = "safety_status"
+aggregation = "rate"
+match_values = ["failed"]
+role = "guardrail"
+direction = "lower"
+statistic = "mean"
+unit = "percent"
+minimum_samples = 6
+minimum_practical_change_percent = 1.0
+maximum_regression_percent = 0.1
+
+[[metrics]]
+id = "fixtures.privacy_failure_rate"
+source = "fixtures"
+path = "privacy_status"
+aggregation = "rate"
+match_values = ["failed"]
+role = "guardrail"
+direction = "lower"
+statistic = "mean"
+unit = "percent"
+minimum_samples = 6
+minimum_practical_change_percent = 1.0
+maximum_regression_percent = 0.1
+
+[[metrics]]
+id = "fixtures.reliability_failure_rate"
+source = "fixtures"
+path = "reliability_status"
+aggregation = "rate"
+match_values = ["failed"]
+role = "guardrail"
+direction = "lower"
+statistic = "mean"
+unit = "percent"
+minimum_samples = 6
+minimum_practical_change_percent = 1.0
+maximum_regression_percent = 0.1
+
+[[metrics]]
+id = "live_voice.total_ms"
+source = "live_voice"
+path = "timing_ms.total_ms"
+role = "diagnostic"
+direction = "lower"
+statistic = "p95"
+unit = "ms"
+minimum_samples = 10
+minimum_practical_change_percent = 5.0
+maximum_regression_percent = 5.0
+
+[[metrics]]
+id = "live_voice.stt_ms"
+source = "live_voice"
+path = "timing_ms.stt_ms"
+role = "diagnostic"
+direction = "lower"
+statistic = "p95"
+unit = "ms"
+minimum_samples = 10
+minimum_practical_change_percent = 5.0
+maximum_regression_percent = 5.0
+
+[[metrics]]
+id = "live_voice.conversation_ms"
+source = "live_voice"
+path = "timing_ms.conversation_ms"
+role = "diagnostic"
+direction = "lower"
+statistic = "p95"
+unit = "ms"
+minimum_samples = 10
+minimum_practical_change_percent = 5.0
+maximum_regression_percent = 5.0
+
+[[metrics]]
+id = "live_voice.tts_ms"
+source = "live_voice"
+path = "timing_ms.tts_ms"
+role = "diagnostic"
+direction = "lower"
+statistic = "p95"
+unit = "ms"
+minimum_samples = 10
+minimum_practical_change_percent = 5.0
+maximum_regression_percent = 5.0
+
+[[metrics]]
+id = "live_voice.time_to_first_chunk_audio_ms"
+source = "live_voice"
+path = "timing_ms.time_to_first_chunk_audio_ms"
+role = "diagnostic"
+direction = "lower"
+statistic = "p95"
+unit = "ms"
+minimum_samples = 10
+minimum_practical_change_percent = 5.0
+maximum_regression_percent = 5.0

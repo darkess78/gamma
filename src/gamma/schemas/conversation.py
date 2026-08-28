@@ -22,3 +22,4 @@ class ConversationRequest(BaseModel):
     synthesize_speech: bool = False
     speaker: SpeakerContext | None = None
     fast_mode: bool = False
+    evaluation_mode: bool = False

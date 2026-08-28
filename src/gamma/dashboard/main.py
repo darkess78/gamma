@@ -192,6 +192,12 @@ def dashboard_memory_page(request: Request = None) -> HTMLResponse:
     return _dashboard_page(INDEX_PAGE, dashboard_page="memory", request=request)
 
 
+@app.get("/dashboard/improvement")
+def dashboard_improvement_page(request: Request = None) -> HTMLResponse:
+    """Return the read-only self-improvement activity page."""
+    return _dashboard_page(INDEX_PAGE, dashboard_page="improvement", request=request)
+
+
 @app.get("/dashboard/settings")
 def dashboard_settings_page(request: Request = None) -> HTMLResponse:
     """Return settings dashboard page.
@@ -493,6 +499,12 @@ def status_settings() -> dict:
 def status_memory() -> dict:
     """Return the bounded payload required by the Memory page."""
     return get_dashboard_service().build_memory_status()
+
+
+@app.get("/api/improvement/status")
+def improvement_status() -> dict:
+    """Return bounded, sanitized improvement activity and safety state."""
+    return get_dashboard_service().build_improvement_status()
 
 
 @app.get("/api/presence")

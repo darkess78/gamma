@@ -9,6 +9,7 @@
     status: ['status', 'providers', 'logs'],
     stream: ['stream'],
     memory: ['memory'],
+    improvement: ['improvement'],
     settings: ['providers', 'settings']
   };
   var dashboardActiveTab = dashboardPageTabs[dashboardPage]

@@ -1,7 +1,7 @@
 # Gamma Improvement System
 
 Status: Current evaluation and bounded isolated-experiment coordinator
-Last verified: 2026-08-27
+Last verified: 2026-08-28
 
 ## Purpose
 
@@ -81,6 +81,27 @@ Evaluation and improvement-model routes remain available as in-memory trace
 evidence but are excluded from the production route log used as a baseline.
 The observer also filters any historical records bearing those interaction
 modes, so older evaluation traffic cannot consume the bounded production sample.
+
+## Owner Visibility
+
+The authenticated dashboard route `/dashboard/improvement` and read-only API
+route `/api/improvement/status` expose what the bounded framework is currently
+testing and what it most recently learned. The status reader scans only a
+bounded number of ignored artifacts beneath `data/improvement`, skips detached
+worktrees and symlinks, rejects oversized or invalid records, and returns an
+allowlisted view of:
+
+- current and recent series state, hypothesis, domain, models, and attempt counts
+- recent attempt outcomes and bounded rejection codes
+- latest aggregate metric snapshots and improvement opportunities
+- isolated/recurring policy flags and non-promotion safety boundaries
+- interrupted or stale-lock states that require operator attention
+
+The response omits absolute runtime and artifact paths, full evidence hashes,
+candidate edits, prompts, validation output, and raw model replies. The browser
+client renders returned values as text and offers only refresh/polling; it has
+no start, approval, deployment, or promotion action. Dashboard visibility is
+therefore observability, not additional authority.
 
 ## Improvement Contract
 

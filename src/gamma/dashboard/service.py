@@ -31,6 +31,7 @@ from ..schemas.voice import VoiceRoundtripResponse
 from ..supervisor.manager import ProcessManager
 from ..system.cuda_env import prepend_cuda_library_path
 from ..voice.voice_profiles import get_voice_profile, list_voice_profiles, profile_template, save_voice_profile
+from .improvement_status import ImprovementStatusReader
 from .shana_client import ShanaApiClient, ShanaClientError
 
 
@@ -60,6 +61,7 @@ class DashboardService:
     def __init__(self) -> None:
         self._shana = ShanaApiClient()
         self._process_manager = ProcessManager()
+        self._improvement_status = ImprovementStatusReader(project_root=settings.project_root)
         self._resource_monitor = MachineResourceMonitor(
             project_root=settings.project_root,
             enable_gpu=lambda: settings.dashboard_enable_gpu,
@@ -80,6 +82,10 @@ class DashboardService:
         }
         self._stream_rehearsal_events: deque[dict[str, Any]] = deque(maxlen=25)
         self._stream_rehearsal_results: deque[dict[str, Any]] = deque(maxlen=25)
+
+    def build_improvement_status(self) -> dict[str, Any]:
+        """Return the sanitized, read-only self-improvement activity view."""
+        return self._improvement_status.build()
 
     def build_status(self) -> dict[str, Any]:
         local_status = self._remote_system_status()

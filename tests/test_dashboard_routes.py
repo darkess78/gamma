@@ -126,6 +126,11 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(response, {"memory": "ok"})
         memory_status.assert_called_once_with()
 
+        with patch.object(self.mock_service, "build_improvement_status", return_value={"improvement": "ok"}) as improvement_status:
+            response = main.improvement_status()
+        self.assertEqual(response, {"improvement": "ok"})
+        improvement_status.assert_called_once_with()
+
         with patch.object(self.mock_service, "presence_status", return_value={"presence": "ok"}) as presence_status:
             response = main.presence_status()
         self.assertEqual(response, {"presence": "ok"})
@@ -198,14 +203,16 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn("href=\"/dashboard/status\"", dashboard.body.decode("utf-8"))
         self.assertIn("href=\"/dashboard/stream\"", dashboard.body.decode("utf-8"))
         self.assertIn("href=\"/dashboard/memory\"", dashboard.body.decode("utf-8"))
+        self.assertIn("href=\"/dashboard/improvement\"", dashboard.body.decode("utf-8"))
         self.assertIn("href=\"/dashboard/settings\"", dashboard.body.decode("utf-8"))
         self.assertIn('rel="icon" href="/static/favicon.svg"', dashboard.body.decode("utf-8"))
         self.assertNotIn('src="/static/monitor.js', dashboard.body.decode("utf-8"))
-        self.assertIn('src="/static/nav.js?v=20260619"', dashboard.body.decode("utf-8"))
+        self.assertIn('src="/static/nav.js?v=20260828"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/live.js?v=20260611e"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/memory.js?v=20260611e"', dashboard.body.decode("utf-8"))
-        self.assertIn('href="/static/dashboard.css?v=20260623a"', dashboard.body.decode("utf-8"))
+        self.assertIn('href="/static/dashboard.css?v=20260828"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/status.js?v=20260623c"', dashboard.body.decode("utf-8"))
+        self.assertIn('src="/static/improvement.mjs?v=20260828"', dashboard.body.decode("utf-8"))
         self.assertEqual(talk.status_code, 307)
         self.assertEqual(talk.headers["location"], "/dashboard/monitor")
         self.assertEqual(monitor_redirect.status_code, 307)
@@ -234,6 +241,7 @@ class DashboardRoutesTest(unittest.TestCase):
             "/dashboard/status",
             "/dashboard/stream",
             "/dashboard/memory",
+            "/dashboard/improvement",
             "/dashboard/settings",
         ]:
             with self.subTest(path=path):
@@ -248,6 +256,7 @@ class DashboardRoutesTest(unittest.TestCase):
             (main.dashboard_status_page, "status"),
             (main.dashboard_stream_page, "stream"),
             (main.dashboard_memory_page, "memory"),
+            (main.dashboard_improvement_page, "improvement"),
             (main.dashboard_settings_page, "settings"),
         ]
         with (
@@ -278,13 +287,14 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('href="/dashboard/status"', body, "Status link missing")
         self.assertIn('href="/dashboard/stream"', body, "Stream link missing")
         self.assertIn('href="/dashboard/memory"', body, "Memory link missing")
+        self.assertIn('href="/dashboard/improvement"', body, "Improvement link missing")
         self.assertIn('href="/dashboard/settings"', body, "Settings link missing")
         self.assertIn('href="/dashboard/monitor"', body, "Monitor link missing")
         
         # Should NOT contain absolute URLs for navbar routes
         # Note: overlay/subtitles is external and gets replaced with absolute URL
         import re
-        navbar_routes = ['dashboard', 'live', 'status', 'stream', 'memory', 'settings', 'monitor']
+        navbar_routes = ['dashboard', 'live', 'status', 'stream', 'memory', 'improvement', 'settings', 'monitor']
         for route in navbar_routes:
             self.assertNotIn(f'href="http://127.0.0.1:8001/dashboard/{route}"', body)
         
@@ -322,6 +332,7 @@ class DashboardRoutesTest(unittest.TestCase):
             "/dashboard/status",
             "/dashboard/stream",
             "/dashboard/memory",
+            "/dashboard/improvement",
             "/dashboard/settings",
         ]:
             with self.subTest(path=path):
@@ -337,6 +348,7 @@ class DashboardRoutesTest(unittest.TestCase):
             "dashboard_status_page": "status",
             "dashboard_stream_page": "stream",
             "dashboard_memory_page": "memory",
+            "dashboard_improvement_page": "improvement",
             "dashboard_settings_page": "settings",
         }
         for route_name, page_name in page_routes.items():
@@ -368,6 +380,20 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn("applyDashboardTabVisibility();", nav_script)
         self.assertIn("window.toggleNavMenu = toggleNavMenu;", nav_script)
         self.assertIn("window.toggleSection = toggleSection;", nav_script)
+        self.assertIn("improvement: ['improvement']", nav_script)
+
+    def test_improvement_page_uses_read_only_native_status_client(self) -> None:
+        dashboard_html = (main.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        improvement_script = (main.STATIC_DIR / "improvement.mjs").read_text(encoding="utf-8")
+
+        self.assertIn('data-dashboard-tab="improvement"', dashboard_html)
+        self.assertIn('id="improvementCurrentWork"', dashboard_html)
+        self.assertIn('id="improvementSafeguards"', dashboard_html)
+        self.assertIn("fetch('/api/improvement/status?_='", improvement_script)
+        self.assertIn("target.replaceChildren();", improvement_script)
+        self.assertIn("target.textContent", improvement_script)
+        self.assertNotIn("innerHTML", improvement_script)
+        self.assertNotIn("method: 'POST'", improvement_script)
 
     def test_status_module_loads_and_renders_api_status(self) -> None:
         status_script = (main.STATIC_DIR / "status.js").read_text(encoding="utf-8")

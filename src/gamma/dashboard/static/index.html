@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shana Control</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/dashboard.css?v=20260623a">
+  <link rel="stylesheet" href="/static/dashboard.css?v=20260828">
 </head>
 <body>
   <div class="wrap">
@@ -20,6 +20,7 @@
           <a class="nav-link" data-dashboard-route="/status" data-dashboard-page-link="status" href="/dashboard/status">Status</a>
           <a class="nav-link" data-dashboard-route="/stream" data-dashboard-page-link="stream" href="/dashboard/stream">Stream</a>
           <a class="nav-link" data-dashboard-route="/memory" data-dashboard-page-link="memory" href="/dashboard/memory">Memory</a>
+          <a class="nav-link" data-dashboard-route="/improvement" data-dashboard-page-link="improvement" href="/dashboard/improvement">Improvement</a>
           <a class="nav-link" data-dashboard-route="/settings" data-dashboard-page-link="settings" href="/dashboard/settings">Settings</a>
         </nav>
         <nav class="output-nav" aria-label="Output views">
@@ -66,6 +67,7 @@
           <a class="overview-link-card" data-dashboard-route="/status" href="/dashboard/status"><span>Status</span><strong id="overviewShanaStatus">Checking Shana</strong></a>
           <a class="overview-link-card" data-dashboard-route="/stream" href="/dashboard/stream"><span>Stream Ops</span><strong id="overviewStreamStatus">Checking stream services</strong></a>
           <a class="overview-link-card" data-dashboard-route="/memory" href="/dashboard/memory"><span>Memory</span><strong id="overviewMemoryStatus">Reading memory database</strong></a>
+          <a class="overview-link-card" data-dashboard-route="/improvement" href="/dashboard/improvement"><span>Improvement</span><strong>Inspect isolated work and evidence</strong></a>
           <a class="overview-link-card" data-dashboard-route="/settings" href="/dashboard/settings"><span>Settings</span><strong id="overviewProviderStatus">Checking providers</strong></a>
           <a class="overview-link-card output-link-card" data-output-view="performer" href="/performer" target="_blank" rel="noopener"><span>Performer</span><strong>OBS view</strong></a>
           <a class="overview-link-card output-link-card" data-output-view="subtitles" href="/overlay/subtitles" target="_blank" rel="noopener"><span>Subtitles</span><strong>Overlay</strong></a>
@@ -82,6 +84,57 @@
           <div class="mini-card"><span>Memory</span><strong id="overviewMemoryMini">Checking</strong></div>
           <div class="mini-card mini-card-wide"><span>Warnings</span><strong id="overviewWarningsMini">Waiting for health report</strong></div>
         </div>
+      </section>
+      <section class="panel full-width improvement-hero" data-dashboard-tab="improvement">
+        <div class="panel-head">
+          <div>
+            <div class="improvement-eyebrow">Bounded self-improvement</div>
+            <h2>What Gamma Is Working On</h2>
+          </div>
+          <button class="secondary" type="button" id="improvementRefreshButton">Refresh</button>
+        </div>
+        <div class="improvement-state-row">
+          <span class="improvement-state-chip" id="improvementStateLabel" data-state="loading">Loading</span>
+          <p id="improvementStateDetail">Reading isolated experiment manifests and aggregate observations.</p>
+        </div>
+        <div class="metrics improvement-summary-metrics">
+          <div class="metric"><div class="label">Current domain</div><div class="value" id="improvementCurrentDomain">Checking</div></div>
+          <div class="metric"><div class="label">Attempts</div><div class="value" id="improvementAttemptSummary">Checking</div></div>
+          <div class="metric"><div class="label">Recorded series</div><div class="value" id="improvementSeriesCount">Checking</div></div>
+          <div class="metric"><div class="label">Latest evidence</div><div class="value" id="improvementEvidenceTime">Checking</div></div>
+        </div>
+        <div class="improvement-refresh-note" id="improvementUpdatedAt">Not refreshed yet.</div>
+      </section>
+      <section class="panel wide panel-fill" data-dashboard-tab="improvement">
+        <div class="panel-head"><h2>Current Work</h2></div>
+        <div class="improvement-list" id="improvementCurrentWork">No current work loaded.</div>
+      </section>
+      <section class="panel panel-fill" data-dashboard-tab="improvement">
+        <div class="panel-head"><h2>Control Policy</h2></div>
+        <div class="improvement-list" id="improvementPolicy">Policy has not loaded.</div>
+      </section>
+      <section class="panel wide panel-fill" data-dashboard-tab="improvement">
+        <div class="panel-head"><h2>Latest Measured Evidence</h2></div>
+        <div class="improvement-list" id="improvementMetrics">No observation loaded.</div>
+      </section>
+      <section class="panel panel-fill" data-dashboard-tab="improvement">
+        <div class="panel-head"><h2>Next Opportunities</h2></div>
+        <div class="improvement-list" id="improvementOpportunities">No opportunities loaded.</div>
+      </section>
+      <section class="panel wide panel-fill" data-dashboard-tab="improvement">
+        <div class="panel-head"><h2>Recent Iterations</h2></div>
+        <div class="improvement-list" id="improvementRecentSeries">No series loaded.</div>
+      </section>
+      <section class="panel panel-fill" data-dashboard-tab="improvement">
+        <div class="panel-head"><h2>Recent Attempts</h2></div>
+        <div class="improvement-list" id="improvementRecentAttempts">No attempts loaded.</div>
+      </section>
+      <section class="panel full-width panel-fill" data-dashboard-tab="improvement">
+        <div class="panel-head">
+          <h2>Safety Boundaries</h2>
+          <span class="improvement-read-only">Read only</span>
+        </div>
+        <div class="improvement-safeguard-grid" id="improvementSafeguards">Safeguards have not loaded.</div>
       </section>
       <section class="panel full-width" data-dashboard-tab="presence">
         <div class="panel-head">
@@ -761,12 +814,13 @@
   <script src="/static/providers.js?v=20260529"></script>
   <script src="/static/stream.js?v=20260618"></script>
   <script type="module" src="/static/presence.mjs?v=20260623"></script>
-  <script src="/static/nav.js?v=20260619"></script>
+  <script src="/static/nav.js?v=20260828"></script>
   <script src="/static/memory.js?v=20260611e"></script>
   <script src="/static/api.js?v=20260618"></script>
   <script src="/static/live.js?v=20260611e"></script>
   <script src="/static/render.js?v=20260529"></script>
   <script src="/static/controls.js?v=20260611a"></script>
   <script src="/static/status.js?v=20260623c"></script>
+  <script type="module" src="/static/improvement.mjs?v=20260828"></script>
 </body>
 </html>

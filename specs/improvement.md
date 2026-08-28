@@ -18,7 +18,7 @@ configuration. The fixture runner calls Shana's explicit evaluation mode and
 writes sanitized artifacts to a new operator-selected runtime directory.
 Evaluation mode preserves the owner/persona prompt context while disabling
 continuity writes, memory writes, tool execution, assistant-emotion updates,
-Presence activity updates, and production timing-log writes.
+Presence activity updates, and production conversation/route-log writes.
 
 The optional proposal analyst sends only aggregate metrics, cohorts,
 opportunities, and warnings to an LLM. It has no tools. Proposal analysis is
@@ -57,6 +57,8 @@ are writable. The host home, local configuration, network, GPU devices, and
 ambient environment are absent. Passing these profiles proves only the
 `automated_tests` and `safety_privacy` gates; it does not imply diff approval,
 holdout success, health/soak success, rollback readiness, or owner approval.
+Evaluation and improvement-model routes remain available as in-memory trace
+evidence but are excluded from the production route log used as a baseline.
 
 ## Improvement Contract
 

@@ -46,9 +46,10 @@ class RouteDecision:
     resource_reservation_id: str | None = None
 
 
-def begin_route_trace() -> None:
-    """Initialize a new route trace for logging decisions."""
+def begin_route_trace(*, persist: bool = True) -> None:
+    """Initialize a route trace and choose whether its events reach production logs."""
     _ROUTE_TRACE.events = []
+    _ROUTE_TRACE.persist = bool(persist)
 
 
 def take_route_trace() -> list[dict[str, object]]:
@@ -59,6 +60,7 @@ def take_route_trace() -> list[dict[str, object]]:
     """
     events = list(getattr(_ROUTE_TRACE, "events", []))
     _ROUTE_TRACE.events = []
+    _ROUTE_TRACE.persist = True
     return events
 
 
@@ -922,11 +924,16 @@ class RouterLLMAdapter(LLMAdapter):
         current = list(getattr(_ROUTE_TRACE, "events", []))
         current.append(event)
         _ROUTE_TRACE.events = current
-        log_dir = settings.data_dir / "runtime"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / "llm.routes.jsonl"
-        with log_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+        persist_event = bool(getattr(_ROUTE_TRACE, "persist", True)) and call_context.interaction_mode not in {
+            "evaluation",
+            "improvement",
+        }
+        if persist_event:
+            log_dir = settings.data_dir / "runtime"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = log_dir / "llm.routes.jsonl"
+            with log_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(event, ensure_ascii=False) + "\n")
         return event
 
     def _placement_shadow_comparison(

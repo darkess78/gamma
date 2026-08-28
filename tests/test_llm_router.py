@@ -460,6 +460,41 @@ class RouterLLMAdapterTest(unittest.TestCase):
         log_path = settings.data_dir / "runtime" / "llm.routes.jsonl"
         self.assertTrue(log_path.exists())
 
+    def test_non_persisting_route_trace_returns_events_without_production_log(self) -> None:
+        router = _TestRouter()
+        begin_route_trace(persist=False)
+
+        reply = router.generate_reply(
+            system_prompt="evaluation prompt",
+            user_text="hello",
+            call_context=LLMCallContext(
+                purpose="conversation",
+                interaction_mode="evaluation",
+            ),
+        )
+        events = take_route_trace()
+
+        self.assertEqual(reply.text, "local:hello")
+        self.assertTrue(events)
+        self.assertFalse((settings.data_dir / "runtime" / "llm.routes.jsonl").exists())
+
+    def test_improvement_call_never_contaminates_production_route_log(self) -> None:
+        router = _TestRouter()
+        begin_route_trace()
+
+        router.generate_reply(
+            system_prompt="aggregate-only improvement prompt",
+            user_text="aggregate evidence",
+            call_context=LLMCallContext(
+                purpose="improvement_proposal",
+                interaction_mode="improvement",
+            ),
+        )
+        events = take_route_trace()
+
+        self.assertTrue(events)
+        self.assertFalse((settings.data_dir / "runtime" / "llm.routes.jsonl").exists())
+
     def test_shadow_placement_metadata_does_not_change_route(self) -> None:
         router = _TestRouter()
         shadow_payload = {

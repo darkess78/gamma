@@ -420,7 +420,7 @@ class ConversationService:
                     response.tts_metadata["evaluation_route_events"] = privacy_events
                 return response
 
-            begin_route_trace()
+            begin_route_trace(persist=persist_state)
             started_at = time.perf_counter()
             timing: dict[str, float] = {}
             prompt_context_started = time.perf_counter()

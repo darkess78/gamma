@@ -245,7 +245,10 @@ class ConversationPipelineTest(unittest.TestCase):
         service._background_memory_save = Mock()
         service._infer_tool_calls = Mock(return_value=[])
 
-        with patch("gamma.conversation.service.build_system_prompt", return_value="prompt"):
+        with (
+            patch("gamma.conversation.service.build_system_prompt", return_value="prompt"),
+            patch("gamma.conversation.service.begin_route_trace") as begin_trace,
+        ):
             response = service.respond(
                 user_text="evaluate this turn",
                 session_id="evaluation-session",
@@ -253,6 +256,7 @@ class ConversationPipelineTest(unittest.TestCase):
                 evaluation_mode=True,
             )
 
+        begin_trace.assert_called_once_with(persist=False)
         service._continuity.begin_exchange.assert_not_called()
         service._continuity.complete_exchange.assert_not_called()
         service._remember_assistant_state.assert_not_called()

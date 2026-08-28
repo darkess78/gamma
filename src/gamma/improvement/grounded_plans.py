@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from ..config import PROJECT_ROOT
 from ..llm.base import LLMAdapter, LLMCallContext
-from .grounding import SourceGroundingReport
+from .grounding import SourceGroundingReport, resolve_grounding_path
 from .models import ObservationReport
 from .proposals import ImprovementProposal, _proposal_observation
 
@@ -178,13 +178,12 @@ def validate_grounding_current(
     *,
     project_root: Path = PROJECT_ROOT,
 ) -> None:
-    root = project_root.resolve()
     for fact in grounding.files:
-        path = root / fact.path
+        relative, path = resolve_grounding_path(fact.path, project_root=project_root)
         if not path.exists() or not path.is_file():
-            raise ValueError(f"grounding_source_missing:{fact.path}")
+            raise ValueError(f"grounding_source_missing:{relative}")
         if hashlib.sha256(path.read_bytes()).hexdigest() != fact.sha256:
-            raise ValueError(f"grounding_source_stale:{fact.path}")
+            raise ValueError(f"grounding_source_stale:{relative}")
 
 
 def validate_grounded_plan(
@@ -236,8 +235,11 @@ def _relevant_source_facts(
     project_root: Path,
 ) -> list[dict[str, Any]]:
     relevant: list[dict[str, Any]] = []
-    root = project_root.resolve()
     for fact in grounding.files:
+        relative, source_path = resolve_grounding_path(
+            fact.path,
+            project_root=project_root,
+        )
         lines = {
             line
             for values in fact.metric_reference_lines.values()
@@ -257,12 +259,12 @@ def _relevant_source_facts(
             ][:8]
         relevant.append(
             {
-                "path": fact.path,
+                "path": relative,
                 "sha256": fact.sha256,
                 "metric_reference_lines": fact.metric_reference_lines,
                 "symbols": [symbol.model_dump(mode="json") for symbol in symbols[:12]],
                 "verified_source_excerpts": _verified_source_excerpts(
-                    root / fact.path,
+                    source_path,
                     fact.metric_reference_lines,
                 ),
             }

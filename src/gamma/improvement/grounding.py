@@ -6,10 +6,44 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ..config import PROJECT_ROOT
-from .experiments import normalize_experiment_path
+
+
+_GROUNDING_ROOT = "src/gamma/"
+_FORBIDDEN_GROUNDING_PARTS = {".git", ".venv", "node_modules", "__pycache__"}
+
+
+def normalize_grounding_path(value: str) -> str:
+    """Normalize an immutable source-evidence path, not a candidate edit path."""
+    raw = str(value or "").replace("\\", "/").strip()
+    path = Path(raw)
+    if (
+        not raw
+        or path.is_absolute()
+        or ".." in path.parts
+        or raw in {".", "./"}
+    ):
+        raise ValueError(f"unsafe_grounding_path:{raw or '<empty>'}")
+    normalized = path.as_posix().removeprefix("./")
+    lowered = normalized.lower()
+    if not lowered.startswith(_GROUNDING_ROOT):
+        raise ValueError(f"non_source_grounding_path:{normalized}")
+    if any(part.lower() in _FORBIDDEN_GROUNDING_PARTS for part in path.parts):
+        raise ValueError(f"forbidden_grounding_path:{normalized}")
+    if lowered.endswith((".pyc", ".pfx", ".p12", ".pem", ".key")):
+        raise ValueError(f"credential_or_generated_grounding_path:{normalized}")
+    return normalized
+
+
+def resolve_grounding_path(value: str, *, project_root: Path = PROJECT_ROOT) -> tuple[str, Path]:
+    relative = normalize_grounding_path(value)
+    root = project_root.resolve()
+    path = (root / relative).resolve()
+    if root not in path.parents:
+        raise ValueError(f"grounding_path_outside_project:{relative}")
+    return relative, path
 
 
 class SymbolFact(BaseModel):
@@ -28,6 +62,14 @@ class SourceFileFact(BaseModel):
     line_count: int
     symbols: tuple[SymbolFact, ...]
     metric_reference_lines: dict[str, tuple[int, ...]]
+
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, value: str) -> str:
+        normalized = normalize_grounding_path(value)
+        if not normalized.lower().endswith(".py"):
+            raise ValueError(f"unsupported_source_type:{normalized}")
+        return normalized
 
 
 class SourceGroundingReport(BaseModel):
@@ -55,12 +97,10 @@ def build_source_grounding(
         raise ValueError("source grounding requires at least one target metric")
     if len(paths) > maximum_files:
         raise ValueError(f"source grounding file limit exceeded:{len(paths)}>{maximum_files}")
-    root = project_root.resolve()
     files: list[SourceFileFact] = []
     unavailable: list[str] = []
     for value in paths:
-        relative = normalize_experiment_path(value)
-        path = root / relative
+        relative, path = resolve_grounding_path(value, project_root=project_root)
         if not path.exists() or not path.is_file():
             unavailable.append(f"missing:{relative}")
             continue

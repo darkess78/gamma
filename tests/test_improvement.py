@@ -889,12 +889,28 @@ class ImprovementEvaluatorTest(unittest.TestCase):
         self.assertTrue(
             any(symbol.qualified_name == "RouterLLMAdapter.generate_reply" for symbol in router.symbols)
         )
-        with self.assertRaisesRegex(ValueError, "protected_experiment_path"):
+        evaluator_report = build_source_grounding(
+            paths=("src/gamma/improvement/evaluator.py",),
+            target_metrics=("llm_routes.failure_rate",),
+            project_root=ROOT,
+        )
+        self.assertEqual(
+            evaluator_report.files[0].path,
+            "src/gamma/improvement/evaluator.py",
+        )
+        self.assertTrue(
+            evaluator_report.files[0].metric_reference_lines["llm_routes.failure_rate"]
+        )
+        with self.assertRaisesRegex(ValueError, "non_source_grounding_path"):
             build_source_grounding(
-                paths=("src/gamma/improvement/evaluator.py",),
+                paths=("config/app.local.toml",),
                 target_metrics=("conversation.total_ms",),
                 project_root=ROOT,
             )
+        unsafe = report.model_copy(deep=True)
+        unsafe.files[0].path = "../../.env"
+        with self.assertRaisesRegex(ValueError, "unsafe_grounding_path"):
+            validate_grounding_current(unsafe, project_root=ROOT)
         stale = report.model_copy(deep=True)
         stale.files[0].sha256 = "0" * 64
         with self.assertRaisesRegex(ValueError, "grounding_source_stale"):

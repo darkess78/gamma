@@ -346,6 +346,15 @@ receive only the remaining series time. Concurrent runs are rejected by an
 exclusive series lock. A stale lock after an interrupted process requires
 operator inspection rather than automatic lock stealing.
 
+Read-only grounding and writable candidate scope are separate authorities.
+Grounding may hash and quote bounded excerpts from Python modules under
+`src/gamma/`, including evaluator and improvement control-plane modules, when
+they are needed to prove a metric's causal chain. Those evidence paths do not
+become candidate-edit paths: proposal, manifest, exact-edit, and changed-path
+validation continue to reject the protected control plane. Grounding paths are
+normalized, confined to the repository, and re-resolved before every hash or
+excerpt read so a crafted artifact or symlink cannot escape the source tree.
+
 Candidate validation also rejects target-metric manipulation. A latency
 candidate cannot remove a monotonic/performance timer or replace newly measured
 time with a literal zero, and a failure-rate candidate cannot suppress route

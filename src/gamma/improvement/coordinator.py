@@ -723,7 +723,9 @@ def build_series_manifest(
     project_root: Path = PROJECT_ROOT,
 ) -> ExperimentSeriesManifest:
     if plan.status != "grounded_plan":
-        raise ValueError("experiment series requires a grounded_plan; needs_more_source is not actionable")
+        raise ValueError(
+            f"experiment series requires a grounded_plan; {plan.status} is not actionable"
+        )
     if plan.grounding_sha256 != _grounding_sha256(grounding):
         raise ValueError("experiment series plan and source grounding digests differ")
     validate_grounded_plan(plan, grounding, project_root=project_root)

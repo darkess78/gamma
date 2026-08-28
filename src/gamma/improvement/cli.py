@@ -527,8 +527,23 @@ def run(argv: list[str] | None = None) -> int:
             encoding="utf-8",
         )
         accepted = sum(len(batch.plans) for batch in batches)
+        status_counts = {
+            status: sum(
+                plan.status == status
+                for batch in batches
+                for plan in batch.plans
+            )
+            for status in ("grounded_plan", "refuted", "needs_more_source")
+        }
         sys.stdout.write(
-            json.dumps({"output": str(args.output), "accepted_grounded_plans": accepted}, indent=2)
+            json.dumps(
+                {
+                    "output": str(args.output),
+                    "accepted_grounded_plans": accepted,
+                    **status_counts,
+                },
+                indent=2,
+            )
             + "\n"
         )
         return 0 if accepted else 2

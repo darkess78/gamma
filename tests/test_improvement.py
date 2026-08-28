@@ -671,6 +671,31 @@ class ImprovementEvaluatorTest(unittest.TestCase):
                     fixture_catalog_path=fixture_path,
                     project_root=project_root,
                 )
+            refuted = GroundedPlan(
+                status="refuted",
+                mechanism_hypothesis="The pinned source contradicts the proposal's causal premise.",
+                source_evidence=plan.source_evidence,
+                target_metrics=plan.target_metrics,
+                allowed_paths=plan.allowed_paths,
+                proposal_sha256=plan.proposal_sha256,
+                grounding_sha256=plan.grounding_sha256,
+                observation_sha256=plan.observation_sha256,
+            )
+            with self.assertRaisesRegex(ValueError, "refuted is not actionable"):
+                build_series_manifest(
+                    series_id="latency-series-refuted",
+                    hypothesis="Never schedule a source-refuted causal mechanism.",
+                    domain="conversation",
+                    change_class=ChangeClass.BEHAVIOR_OR_CODE,
+                    baseline_commit=baseline,
+                    plan=refuted,
+                    grounding=grounding,
+                    models=("model-a",),
+                    maximum_wall_clock_minutes=5,
+                    contract_path=contract_path,
+                    fixture_catalog_path=fixture_path,
+                    project_root=project_root,
+                )
             with self.assertRaisesRegex(RuntimeError, "git cat-file -e failed"):
                 build_series_manifest(
                     series_id="latency-series-bad-commit",
@@ -983,6 +1008,12 @@ class ImprovementEvaluatorTest(unittest.TestCase):
                 observation=observation,
                 project_root=ROOT,
             )
+            refuted_batch = GroundedPlanGenerator(_RefutedGroundedPlanLLM(source, symbol)).generate(
+                proposal=proposal,
+                grounding=grounding,
+                observation=observation,
+                project_root=ROOT,
+            )
 
         self.assertEqual(len(batch.plans), 1)
         self.assertEqual(batch.plans[0].authority, "grounding_only")
@@ -990,6 +1021,8 @@ class ImprovementEvaluatorTest(unittest.TestCase):
         self.assertEqual(batch.plans[0].source_evidence[0].file_sha256, source.sha256)
         self.assertIn("verified_source_excerpts", llm.user_text)
         self.assertIn("generate_reply", llm.user_text)
+        self.assertEqual(refuted_batch.plans[0].status, "refuted")
+        self.assertIn("contradicts", refuted_batch.plans[0].mechanism_hypothesis)
 
         cached = GroundedPlan(
             status="grounded_plan",
@@ -1455,6 +1488,35 @@ class _GroundedPlanLLM:
                 }
             ),
             metadata={"route": {"provider": "local", "model": "grounding-fixture"}},
+        )
+
+
+class _RefutedGroundedPlanLLM:
+    def __init__(self, source, symbol) -> None:
+        self.source = source
+        self.symbol = symbol
+
+    def generate_reply(self, system_prompt: str, user_text: str, **kwargs) -> LLMReply:
+        return LLMReply(
+            text=json.dumps(
+                {
+                    "status": "refuted",
+                    "mechanism_hypothesis": (
+                        "The pinned source contradicts the proposal's required causal premise."
+                    ),
+                    "source_evidence": [
+                        {
+                            "path": self.source.path,
+                            "file_sha256": self.source.sha256,
+                            "symbol": self.symbol.qualified_name,
+                            "line_start": self.symbol.line_start,
+                            "line_end": self.symbol.line_end,
+                        }
+                    ],
+                    "confidence": 0.8,
+                }
+            ),
+            metadata={"route": {"provider": "local", "model": "refutation-fixture"}},
         )
 
 

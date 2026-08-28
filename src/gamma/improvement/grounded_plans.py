@@ -24,7 +24,7 @@ class SourceCitation(BaseModel):
 
 
 class GroundedPlan(BaseModel):
-    status: Literal["grounded_plan", "needs_more_source"]
+    status: Literal["grounded_plan", "needs_more_source", "refuted"]
     mechanism_hypothesis: str = Field(default="", max_length=3000)
     source_evidence: tuple[SourceCitation, ...] = ()
     target_metrics: tuple[str, ...]
@@ -41,11 +41,12 @@ class GroundedPlan(BaseModel):
 
     @model_validator(mode="after")
     def validate_status(self) -> "GroundedPlan":
-        if self.status == "grounded_plan":
+        if self.status in {"grounded_plan", "refuted"}:
             if len(self.mechanism_hypothesis.strip()) < 12:
-                raise ValueError("grounded plan requires a mechanism hypothesis")
+                raise ValueError(f"{self.status} requires a mechanism hypothesis")
             if not self.source_evidence:
-                raise ValueError("grounded plan requires source evidence")
+                raise ValueError(f"{self.status} requires source evidence")
+        if self.status == "grounded_plan":
             if not self.validation_plan:
                 raise ValueError("grounded plan requires a validation plan")
             if not self.risk_notes:
@@ -195,17 +196,18 @@ def validate_grounded_plan(
     validate_grounding_current(grounding, project_root=project_root)
     if plan.status == "needs_more_source":
         return
-    mechanism_text = " ".join(
-        [plan.mechanism_hypothesis, *plan.validation_plan]
-    ).lower()
-    if (
-        "cache" in mechanism_text
-        and any(
-            marker in mechanism_text
-            for marker in ("draft_reply", "draft reply", "response text", "stored reply")
-        )
-    ):
-        raise ValueError("unsafe_grounded_mechanism:generated_response_cache")
+    if plan.status == "grounded_plan":
+        mechanism_text = " ".join(
+            [plan.mechanism_hypothesis, *plan.validation_plan]
+        ).lower()
+        if (
+            "cache" in mechanism_text
+            and any(
+                marker in mechanism_text
+                for marker in ("draft_reply", "draft reply", "response text", "stored reply")
+            )
+        ):
+            raise ValueError("unsafe_grounded_mechanism:generated_response_cache")
     file_by_path = {fact.path: fact for fact in grounding.files}
     if not set(plan.allowed_paths).issubset(file_by_path):
         raise ValueError("grounded_plan_path_not_in_grounding")
@@ -225,7 +227,7 @@ def validate_grounded_plan(
         ):
             raise ValueError(f"grounded_citation_line_range_mismatch:{citation.symbol}")
         cited_paths.add(citation.path)
-    if not set(plan.allowed_paths).issubset(cited_paths):
+    if plan.status == "grounded_plan" and not set(plan.allowed_paths).issubset(cited_paths):
         raise ValueError("grounded_plan_missing_path_citation")
 
 
@@ -416,8 +418,11 @@ def _system_prompt() -> str:
         "permission to request other files. "
         "Never propose caching generated draft or response text; conversational output depends on "
         "persona, memory, tools, state, and model nondeterminism. "
-        "If those structural facts are insufficient to support a mechanism, return status "
-        "needs_more_source. Otherwise return one JSON object with status grounded_plan, "
+        "If verified facts contradict a required causal premise, return status refuted with "
+        "mechanism_hypothesis explaining the contradiction and source_evidence proving it. "
+        "If facts are insufficient, return status needs_more_source. Only return status "
+        "grounded_plan for an actionable mechanism supported by the verified facts. Return "
+        "one JSON object with status, "
         "mechanism_hypothesis, source_evidence, validation_plan, risk_notes, and confidence. "
         "Every source_evidence item must copy path, file_sha256, symbol, line_start, and line_end "
         "from the supplied facts. Do not claim a function body behavior that is not established by "
@@ -430,6 +435,8 @@ def _normalize_plan(raw: dict[str, Any]) -> dict[str, Any]:
     status = str(raw.get("status") or "").strip().lower().replace("-", "_")
     if status in {"needs_more_context", "insufficient_source", "needs_source"}:
         status = "needs_more_source"
+    if status in {"hypothesis_refuted", "source_refuted", "disproved"}:
+        status = "refuted"
     normalized["status"] = status
     normalized["mechanism_hypothesis"] = str(
         raw.get("mechanism_hypothesis") or raw.get("mechanism") or raw.get("hypothesis") or ""

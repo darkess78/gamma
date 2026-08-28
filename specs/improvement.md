@@ -383,6 +383,11 @@ exact call lines and may include a bounded, hash-pinned callee body. This lets
 analysts verify data dependencies and exception behavior without granting
 broader source access; the callee count, per-symbol lines, and total lines are
 hard limited.
+Grounded analysis has three explicit outcomes: `grounded_plan` for an actionable
+source-supported mechanism, `needs_more_source` when the bounded facts cannot
+decide it, and `refuted` when cited source contradicts a required causal premise.
+Only `grounded_plan` may enter an experiment series; the coordinator and
+candidate generator mechanically reject the other two states.
 
 Candidate validation also rejects target-metric manipulation. A latency
 candidate cannot remove a monotonic/performance timer or replace newly measured
@@ -421,6 +426,7 @@ evaluation requests, sanitized run artifacts, fixture guardrails, local
 multi-model proposal analysis, deterministic evidence binding and screening,
 independent-model consensus, pinned source grounding, local source-cited plans,
 metric-adjacent same-file call-site and callee-body evidence,
+explicit source-refuted hypothesis outcomes,
 proposal manifests, scope validation, explicitly authorized detached candidate
 authoring, exact-edit application receipts, sandboxed fixed regression profiles,
 and a fresh-worktree bounded retry coordinator. Next stages are:

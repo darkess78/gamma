@@ -4,7 +4,7 @@ import json
 import math
 from collections import deque
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from .contract import ImprovementContract, MetricContract
 from .models import (
@@ -135,6 +135,7 @@ class ImprovementEvaluator:
             source: _read_jsonl(
                 runtime_dir / filename,
                 maximum_records=self.contract.policy.maximum_records_per_source,
+                record_filter=_production_route_record if source == "llm_routes" else None,
             )
             for source, filename in _SOURCE_FILES.items()
         }
@@ -534,7 +535,12 @@ def _conversation_cohorts(records: Iterable[dict[str, Any]]) -> list[CohortSumma
     return sorted(cohorts, key=lambda item: (-item.record_count, sorted(item.dimensions.items())))[:50]
 
 
-def _read_jsonl(path: Path, *, maximum_records: int) -> list[dict[str, Any]]:
+def _read_jsonl(
+    path: Path,
+    *,
+    maximum_records: int,
+    record_filter: Callable[[dict[str, Any]], bool] | None = None,
+) -> list[dict[str, Any]]:
     if not path.exists() or not path.is_file():
         return []
     records: deque[dict[str, Any]] = deque(maxlen=maximum_records)
@@ -544,9 +550,16 @@ def _read_jsonl(path: Path, *, maximum_records: int) -> list[dict[str, Any]]:
                 payload = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if isinstance(payload, dict):
+            if isinstance(payload, dict) and (record_filter is None or record_filter(payload)):
                 records.append(payload)
     return list(records)
+
+
+def _production_route_record(record: dict[str, Any]) -> bool:
+    return str(record.get("interaction_mode") or "").strip().lower() not in {
+        "evaluation",
+        "improvement",
+    }
 
 
 def _metric_values(metric: MetricContract, records: Iterable[dict[str, Any]]) -> list[float]:

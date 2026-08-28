@@ -59,6 +59,8 @@ ambient environment are absent. Passing these profiles proves only the
 holdout success, health/soak success, rollback readiness, or owner approval.
 Evaluation and improvement-model routes remain available as in-memory trace
 evidence but are excluded from the production route log used as a baseline.
+The observer also filters any historical records bearing those interaction
+modes, so older evaluation traffic cannot consume the bounded production sample.
 
 ## Improvement Contract
 

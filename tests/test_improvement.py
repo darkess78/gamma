@@ -70,6 +70,21 @@ class ImprovementEvaluatorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_dir = Path(temp_dir)
             _write_snapshot(runtime_dir, total_ms=1000.0, route_status="error", count=25)
+            with (runtime_dir / "llm.routes.jsonl").open("a", encoding="utf-8") as handle:
+                for interaction_mode in ("evaluation", "improvement"):
+                    handle.write(
+                        json.dumps(
+                            {
+                                "provider": "local",
+                                "model": "analysis-model",
+                                "route_family": "chat_light",
+                                "status": "ok",
+                                "duration_ms": 1.0,
+                                "interaction_mode": interaction_mode,
+                            }
+                        )
+                        + "\n"
+                    )
 
             report = self.evaluator.observe(runtime_dir)
             rendered = report.model_dump_json()

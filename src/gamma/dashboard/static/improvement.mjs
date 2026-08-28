@@ -209,6 +209,75 @@ if (dashboardPage === 'improvement') {
     replace('improvementSafeguards', items, 'Safety status is unavailable.');
   }
 
+  async function controlWork(requestId, action) {
+    const message = byId('improvementWorkMessage');
+    if (message) message.textContent = action.charAt(0).toUpperCase() + action.slice(1) + ' requested…';
+    try {
+      const response = await fetch('/api/improvement/work/' + encodeURIComponent(requestId) + '/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || 'HTTP ' + response.status);
+      if (message) message.textContent = 'Work request ' + action + ' accepted.';
+      await loadImprovementStatus();
+    } catch (error) {
+      if (message) message.textContent = 'Control failed: ' + String(error);
+    }
+  }
+
+  function workButton(label, className, requestId, action) {
+    const button = node('button', className, label);
+    button.type = 'button';
+    button.addEventListener('click', () => controlWork(requestId, action));
+    return button;
+  }
+
+  function renderWorkQueue(payload) {
+    const queue = payload.work_queue || {};
+    const requests = Array.isArray(queue.requests) ? queue.requests : [];
+    setText(
+      'improvementWorkerState',
+      queue.worker_running
+        ? 'Worker running · PID ' + (queue.worker_pid || 'unknown')
+        : 'Worker idle'
+    );
+    const items = requests.map((request) => {
+      const card = node('article', 'improvement-item');
+      const heading = node('div', 'improvement-item-head');
+      heading.appendChild(node('strong', '', request.goal));
+      heading.appendChild(statusPill(request.status, request.status));
+      card.appendChild(heading);
+      const details = node('div', 'improvement-detail-grid');
+      details.appendChild(detailRow('Mode', request.selection_mode));
+      details.appendChild(detailRow('Stage', request.stage));
+      details.appendChild(detailRow('Budget', request.budget_minutes + ' minutes'));
+      details.appendChild(detailRow('Cycles', request.cycle_count + ' of ' + request.maximum_cycles));
+      details.appendChild(detailRow('Models', (request.models || []).join(', ')));
+      details.appendChild(detailRow('Started', displayTime(request.started_at)));
+      card.appendChild(details);
+      if (request.result_summary) card.appendChild(node('p', 'improvement-next-step', request.result_summary));
+      const events = Array.isArray(request.events) ? request.events : [];
+      if (events.length) {
+        const latest = events[events.length - 1];
+        card.appendChild(node('p', 'improvement-item-meta', displayTime(latest.at) + ' · ' + latest.message));
+      }
+      if (!['review_ready', 'exhausted', 'failed', 'stopped'].includes(request.status)) {
+        const controls = node('div', 'improvement-control-row');
+        if (request.status === 'paused') {
+          controls.appendChild(workButton('Resume', 'secondary', request.id, 'resume'));
+        } else {
+          controls.appendChild(workButton('Pause safely', 'ghost', request.id, 'pause'));
+        }
+        controls.appendChild(workButton('Stop safely', 'ghost danger-outline', request.id, 'stop'));
+        card.appendChild(controls);
+      }
+      return card;
+    });
+    replace('improvementWorkQueue', items, 'No bounded work requests have been queued.');
+  }
+
   function render(payload) {
     renderSummary(payload);
     renderCurrentWork(payload);
@@ -218,6 +287,7 @@ if (dashboardPage === 'improvement') {
     renderSeries(payload);
     renderAttempts(payload);
     renderSafeguards(payload);
+    renderWorkQueue(payload);
   }
 
   function renderFailure(error) {
@@ -253,6 +323,52 @@ if (dashboardPage === 'improvement') {
 
   const refreshButton = byId('improvementRefreshButton');
   if (refreshButton) refreshButton.addEventListener('click', loadImprovementStatus);
+  const workForm = byId('improvementWorkForm');
+  if (workForm) workForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const startButton = byId('improvementStartButton');
+    const message = byId('improvementWorkMessage');
+    const selectionMode = String(byId('improvementSelectionMode').value || 'directed');
+    let goal = String(byId('improvementGoal').value || '').trim();
+    if (!goal && selectionMode === 'automatic') {
+      goal = 'Choose the highest-priority measurable Gamma improvement and develop an isolated validated candidate.';
+    }
+    if (goal.length < 12) {
+      if (message) message.textContent = 'Describe the improvement goal in at least 12 characters.';
+      return;
+    }
+    const models = String(byId('improvementModels').value || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const focus = String(byId('improvementFocusDomain').value || '').trim();
+    const payload = {
+      goal,
+      selection_mode: selectionMode,
+      focus_domains: focus ? [focus] : [],
+      models,
+      budget_minutes: Number(byId('improvementBudget').value),
+      maximum_cycles: Number(byId('improvementMaximumCycles').value),
+      maximum_attempts_per_series: Number(byId('improvementMaximumAttempts').value)
+    };
+    if (startButton) startButton.disabled = true;
+    if (message) message.textContent = 'Queuing bounded autonomous work…';
+    try {
+      const response = await fetch('/api/improvement/work', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || 'HTTP ' + response.status);
+      if (message) message.textContent = 'Queued ' + result.request.id + '. Gamma is starting safely.';
+      await loadImprovementStatus();
+    } catch (error) {
+      if (message) message.textContent = 'Could not queue work: ' + String(error);
+    } finally {
+      if (startButton) startButton.disabled = false;
+    }
+  });
   loadImprovementStatus();
   pollTimer = window.setInterval(loadImprovementStatus, 10000);
   window.addEventListener('beforeunload', () => {

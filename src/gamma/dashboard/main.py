@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 from .service import DashboardService
 from .shana_client import ShanaClientError
@@ -26,6 +27,20 @@ INDEX_PAGE = STATIC_DIR / "index.html"
 MONITOR_PAGE = STATIC_DIR / "monitor.html"
 SUBTITLE_OVERLAY_PAGE = STATIC_DIR / "overlay.html"
 LIVE_VOICE_PANEL = STATIC_DIR / "live_voice_panel.html"
+
+
+class ImprovementWorkCreateRequest(BaseModel):
+    goal: str = Field(min_length=12, max_length=1200)
+    selection_mode: str = Field(default="directed", pattern=r"^(directed|automatic)$")
+    focus_domains: tuple[str, ...] = ()
+    models: tuple[str, ...] = ("qwen3.8:27b", "gpt-oss:20b", "devstral:24b")
+    budget_minutes: int = Field(default=480, ge=15, le=720)
+    maximum_cycles: int = Field(default=3, ge=1, le=5)
+    maximum_attempts_per_series: int = Field(default=6, ge=1, le=10)
+
+
+class ImprovementWorkControlRequest(BaseModel):
+    action: str = Field(pattern=r"^(pause|resume|stop)$")
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="dashboard-static")
 
@@ -503,8 +518,36 @@ def status_memory() -> dict:
 
 @app.get("/api/improvement/status")
 def improvement_status() -> dict:
-    """Return bounded, sanitized improvement activity and safety state."""
+    """Return bounded, sanitized improvement activity, queue, and safety state."""
     return get_dashboard_service().build_improvement_status()
+
+
+@app.post("/api/improvement/work")
+def create_improvement_work(payload: ImprovementWorkCreateRequest) -> dict:
+    """Queue one owner-authorized, bounded autonomous improvement request."""
+    try:
+        return get_dashboard_service().create_improvement_work(
+            goal=payload.goal,
+            selection_mode=payload.selection_mode,
+            focus_domains=payload.focus_domains,
+            models=payload.models,
+            budget_minutes=payload.budget_minutes,
+            maximum_cycles=payload.maximum_cycles,
+            maximum_attempts_per_series=payload.maximum_attempts_per_series,
+        )
+    except (OSError, TimeoutError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/improvement/work/{request_id}/control")
+def control_improvement_work(request_id: str, payload: ImprovementWorkControlRequest) -> dict:
+    """Pause, resume, or cooperatively stop one bounded work request."""
+    try:
+        return get_dashboard_service().control_improvement_work(request_id, payload.action)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="improvement work request not found") from exc
+    except (OSError, TimeoutError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/presence")

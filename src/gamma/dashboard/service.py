@@ -22,6 +22,7 @@ from ..integrations.twitch.client import GammaStreamClient
 from ..integrations.twitch.eventsub import TwitchEventSubConfig, read_twitch_eventsub_state
 from ..integrations.twitch.replay import replay_jsonl_text
 from ..integrations.twitch.worker import TwitchWorkerConfig, read_twitch_worker_state
+from ..improvement.work_queue import ImprovementWorkStore
 from ..presence import load_presence_state
 from ..resources import MachineResourceMonitor
 from ..resources.allocations import recent_sidecar_allocation_entries
@@ -36,6 +37,8 @@ from .shana_client import ShanaApiClient, ShanaClientError
 
 
 class DashboardService:
+    IMPROVEMENT_WORKER_SERVICE = "improvement_worker"
+    IMPROVEMENT_WORKER_MODULE = "gamma.improvement.worker"
     TWITCH_WORKER_SERVICE = "twitch_worker"
     TWITCH_WORKER_MODULE = "gamma.integrations.twitch.worker"
     TWITCH_EVENTSUB_SERVICE = "twitch_eventsub"
@@ -62,6 +65,7 @@ class DashboardService:
         self._shana = ShanaApiClient()
         self._process_manager = ProcessManager()
         self._improvement_status = ImprovementStatusReader(project_root=settings.project_root)
+        self._improvement_work = ImprovementWorkStore(settings.data_dir / "improvement" / "control")
         self._resource_monitor = MachineResourceMonitor(
             project_root=settings.project_root,
             enable_gpu=lambda: settings.dashboard_enable_gpu,
@@ -84,8 +88,116 @@ class DashboardService:
         self._stream_rehearsal_results: deque[dict[str, Any]] = deque(maxlen=25)
 
     def build_improvement_status(self) -> dict[str, Any]:
-        """Return the sanitized, read-only self-improvement activity view."""
-        return self._improvement_status.build()
+        """Return sanitized improvement activity, queue, and worker state."""
+        payload = self._improvement_status.build()
+        requests = self._improvement_work.list(limit=20)
+        worker = self._process_manager.module_status(
+            self.IMPROVEMENT_WORKER_SERVICE,
+            self.IMPROVEMENT_WORKER_MODULE,
+        )
+        payload["work_queue"] = {
+            "requests": [request.public_summary() for request in requests],
+            "queued_count": sum(request.status == "queued" for request in requests),
+            "running_count": sum(request.status == "running" for request in requests),
+            "worker_running": bool(worker.get("process", {}).get("running")),
+            "worker_pid": worker.get("process", {}).get("pid"),
+            "defaults": {
+                "models": ["qwen3.8:27b", "gpt-oss:20b", "devstral:24b"],
+                "budget_minutes": 480,
+                "maximum_cycles": 3,
+                "maximum_attempts_per_series": 6,
+            },
+            "limits": {
+                "minimum_budget_minutes": 15,
+                "maximum_budget_minutes": 720,
+                "maximum_cycles": 5,
+                "maximum_attempts_per_series": 10,
+            },
+        }
+        active_request = next(
+            (request for request in requests if request.status in {"running", "queued", "paused"}),
+            None,
+        )
+        if active_request is not None and payload.get("current_series") is None:
+            state_code = "running" if active_request.status == "running" else active_request.status
+            payload["state"] = {
+                "code": state_code,
+                "label": {
+                    "running": "Autonomous work running",
+                    "queued": "Work queued",
+                    "paused": "Work paused",
+                }[active_request.status],
+                "detail": f"{active_request.goal} Current stage: {active_request.stage}.",
+            }
+        for safeguard in payload.get("safeguards", []):
+            if safeguard.get("id") == "read_only_dashboard":
+                safeguard.update(
+                    {
+                        "id": "bounded_operator_controls",
+                        "label": "Bounded operator controls",
+                        "enforced": True,
+                        "detail": "The dashboard may queue, pause, resume, or stop bounded isolated work, but cannot approve, promote, deploy, or edit the live checkout.",
+                    }
+                )
+        return payload
+
+    def create_improvement_work(
+        self,
+        *,
+        goal: str,
+        selection_mode: str,
+        focus_domains: tuple[str, ...],
+        models: tuple[str, ...],
+        budget_minutes: int,
+        maximum_cycles: int,
+        maximum_attempts_per_series: int,
+    ) -> dict[str, Any]:
+        request = self._improvement_work.create(
+            goal=goal,
+            selection_mode=selection_mode,  # type: ignore[arg-type]
+            focus_domains=focus_domains,
+            models=models,
+            budget_minutes=budget_minutes,
+            maximum_cycles=maximum_cycles,
+            maximum_attempts_per_series=maximum_attempts_per_series,
+        )
+        worker = self._process_manager.start_module(
+            self.IMPROVEMENT_WORKER_SERVICE,
+            self.IMPROVEMENT_WORKER_MODULE,
+            ["--idle-timeout-seconds", "300"],
+        )
+        return {
+            "ok": True,
+            "request": request.public_summary(),
+            "worker": {
+                "running": bool(worker.get("process", {}).get("running")),
+                "pid": worker.get("process", {}).get("pid"),
+                "detail": worker.get("detail"),
+            },
+        }
+
+    def control_improvement_work(self, request_id: str, action: str) -> dict[str, Any]:
+        request = self._improvement_work.control(request_id, action)  # type: ignore[arg-type]
+        worker: dict[str, Any] | None = None
+        if action == "resume":
+            worker = self._process_manager.start_module(
+                self.IMPROVEMENT_WORKER_SERVICE,
+                self.IMPROVEMENT_WORKER_MODULE,
+                ["--idle-timeout-seconds", "300"],
+            )
+        return {
+            "ok": True,
+            "request": request.public_summary(),
+            "worker": (
+                {
+                    "running": bool(worker.get("process", {}).get("running")),
+                    "pid": worker.get("process", {}).get("pid"),
+                    "detail": worker.get("detail"),
+                }
+                if worker is not None
+                else None
+            ),
+        }
 
     def build_status(self) -> dict[str, Any]:
         local_status = self._remote_system_status()

@@ -1879,6 +1879,63 @@ audio {
   line-height: 1.5;
 }
 
+.improvement-work-form {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(3, minmax(140px, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+
+.improvement-work-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.improvement-work-form input,
+.improvement-work-form textarea,
+.improvement-work-form select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.improvement-work-form textarea {
+  resize: vertical;
+  min-height: 104px;
+}
+
+.improvement-goal-field {
+  grid-column: span 2;
+  grid-row: span 2;
+}
+
+.improvement-model-field {
+  grid-column: span 2;
+}
+
+.improvement-work-submit {
+  grid-column: span 2;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.improvement-work-submit button {
+  flex: 0 0 auto;
+}
+
+.improvement-control-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.improvement-control-row button {
+  padding: 8px 12px;
+}
+
 @media (max-width: 980px) {
   .panel,
   .wide,
@@ -2019,5 +2076,13 @@ audio {
   .improvement-state-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .improvement-work-form {
+    grid-template-columns: 1fr;
+  }
+  .improvement-goal-field,
+  .improvement-model-field,
+  .improvement-work-submit {
+    grid-column: auto;
   }
 }

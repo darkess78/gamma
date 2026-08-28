@@ -8,6 +8,11 @@ import webbrowser
 from .manager import ProcessManager
 
 
+IMPROVEMENT_WORKER_SERVICE = "improvement-worker"
+IMPROVEMENT_WORKER_PROCESS_NAME = "improvement_worker"
+IMPROVEMENT_WORKER_MODULE = "gamma.improvement.worker"
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build argument parser.
     
@@ -16,7 +21,10 @@ def build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(description="Manage Gamma background services.")
     parser.add_argument("command", choices=["start", "stop", "restart", "status"])
-    parser.add_argument("service", choices=["dashboard", "shana", "audio-understanding", "all"])
+    parser.add_argument(
+        "service",
+        choices=["dashboard", "shana", "audio-understanding", IMPROVEMENT_WORKER_SERVICE, "all"],
+    )
     parser.add_argument("--open-browser", action="store_true", dest="open_browser")
     return parser
 
@@ -33,10 +41,39 @@ def run(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     manager = ProcessManager()
-    services = ["dashboard", "shana"] if args.service == "all" else [args.service]
+    services = ["dashboard", "shana", IMPROVEMENT_WORKER_SERVICE] if args.service == "all" else [args.service]
 
     results: dict[str, object] = {}
     for name in services:
+        if name == IMPROVEMENT_WORKER_SERVICE:
+            if args.command == "start":
+                results[name] = manager.start_module(
+                    IMPROVEMENT_WORKER_PROCESS_NAME,
+                    IMPROVEMENT_WORKER_MODULE,
+                    ["--idle-timeout-seconds", "300"],
+                )
+            elif args.command == "stop":
+                results[name] = manager.stop_module(
+                    IMPROVEMENT_WORKER_PROCESS_NAME,
+                    IMPROVEMENT_WORKER_MODULE,
+                )
+            elif args.command == "restart":
+                stopped = manager.stop_module(
+                    IMPROVEMENT_WORKER_PROCESS_NAME,
+                    IMPROVEMENT_WORKER_MODULE,
+                )
+                started = manager.start_module(
+                    IMPROVEMENT_WORKER_PROCESS_NAME,
+                    IMPROVEMENT_WORKER_MODULE,
+                    ["--idle-timeout-seconds", "300"],
+                )
+                results[name] = {"ok": True, "detail": "restarted", "stop": stopped, "start": started}
+            else:
+                results[name] = manager.module_status(
+                    IMPROVEMENT_WORKER_PROCESS_NAME,
+                    IMPROVEMENT_WORKER_MODULE,
+                )
+            continue
         if args.command == "start":
             results[name] = manager.start(name)
         elif args.command == "stop":

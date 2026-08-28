@@ -7,7 +7,7 @@ import re
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
-from typing import Iterator, Literal
+from typing import Callable, Iterator, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -334,6 +334,7 @@ class BoundedExperimentCoordinator:
         current_fixture_catalog_sha256: str,
         project_root: Path = PROJECT_ROOT,
         worktree_root: Path,
+        control_check: Callable[[], Literal["continue", "pause", "stop"]] | None = None,
     ) -> ExperimentSeriesManifest:
         if not contract.policy.isolated_experiments_enabled:
             raise PermissionError("isolated candidate work is disabled by the improvement contract")
@@ -358,6 +359,13 @@ class BoundedExperimentCoordinator:
             )
 
             for attempt_number in range(len(series.attempts) + 1, series.maximum_attempts + 1):
+                control_action = control_check() if control_check is not None else "continue"
+                if control_action in {"pause", "stop"}:
+                    return store.finish(
+                        series.id,
+                        status="abandoned",
+                        reason=f"owner_{control_action}",
+                    )
                 if _remaining_seconds(deadline) <= 1.0:
                     return store.finish(series.id, status="exhausted", reason="wall_clock_limit")
                 requested_model = series.models[(attempt_number - 1) % len(series.models)]

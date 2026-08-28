@@ -133,6 +133,8 @@ The wider dashboard retains:
 - Twitch, EventSub, Discord, stream replay, traces, and safety views
 - performer monitor and subtitle output views
 - local configuration, logs, timings, and resource status
+- bounded self-improvement work requests with owner goals or automatic measured
+  opportunity selection, overnight budgets, and cooperative pause/resume/stop
 
 The raw Shana API can use optional bearer authentication. The dashboard has
 separate session authentication and should be authenticated before network

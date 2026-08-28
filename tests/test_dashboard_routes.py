@@ -141,6 +141,44 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(response, {"monitor": "ok"})
         monitor_status.assert_called_once_with()
 
+    def test_improvement_work_control_routes_delegate_bounded_payloads(self) -> None:
+        created = {"ok": True, "request": {"id": "work-20260828-000000-12345678"}}
+        controlled = {"ok": True, "request": {"status": "paused"}}
+        self.mock_service.create_improvement_work.return_value = created
+        self.mock_service.control_improvement_work.return_value = controlled
+
+        response = main.create_improvement_work(
+            main.ImprovementWorkCreateRequest(
+                goal="Improve measured conversation latency without quality regressions.",
+                selection_mode="directed",
+                focus_domains=("conversation",),
+                models=("model-a", "model-b"),
+                budget_minutes=480,
+                maximum_cycles=3,
+                maximum_attempts_per_series=6,
+            )
+        )
+        control = main.control_improvement_work(
+            "work-20260828-000000-12345678",
+            main.ImprovementWorkControlRequest(action="pause"),
+        )
+
+        self.assertEqual(response, created)
+        self.assertEqual(control, controlled)
+        self.mock_service.create_improvement_work.assert_called_once_with(
+            goal="Improve measured conversation latency without quality regressions.",
+            selection_mode="directed",
+            focus_domains=("conversation",),
+            models=("model-a", "model-b"),
+            budget_minutes=480,
+            maximum_cycles=3,
+            maximum_attempts_per_series=6,
+        )
+        self.mock_service.control_improvement_work.assert_called_once_with(
+            "work-20260828-000000-12345678",
+            "pause",
+        )
+
     def test_internal_shana_url_uses_loopback_for_wildcard_bind(self) -> None:
         with (
             patch.object(settings, "shana_bind_host", "0.0.0.0"),
@@ -210,9 +248,9 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('src="/static/nav.js?v=20260828"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/live.js?v=20260611e"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/memory.js?v=20260611e"', dashboard.body.decode("utf-8"))
-        self.assertIn('href="/static/dashboard.css?v=20260828"', dashboard.body.decode("utf-8"))
+        self.assertIn('href="/static/dashboard.css?v=20260828b"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/status.js?v=20260623c"', dashboard.body.decode("utf-8"))
-        self.assertIn('src="/static/improvement.mjs?v=20260828"', dashboard.body.decode("utf-8"))
+        self.assertIn('src="/static/improvement.mjs?v=20260828b"', dashboard.body.decode("utf-8"))
         self.assertEqual(talk.status_code, 307)
         self.assertEqual(talk.headers["location"], "/dashboard/monitor")
         self.assertEqual(monitor_redirect.status_code, 307)
@@ -382,18 +420,22 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn("window.toggleSection = toggleSection;", nav_script)
         self.assertIn("improvement: ['improvement']", nav_script)
 
-    def test_improvement_page_uses_read_only_native_status_client(self) -> None:
+    def test_improvement_page_uses_bounded_native_work_controls(self) -> None:
         dashboard_html = (main.STATIC_DIR / "index.html").read_text(encoding="utf-8")
         improvement_script = (main.STATIC_DIR / "improvement.mjs").read_text(encoding="utf-8")
 
         self.assertIn('data-dashboard-tab="improvement"', dashboard_html)
         self.assertIn('id="improvementCurrentWork"', dashboard_html)
         self.assertIn('id="improvementSafeguards"', dashboard_html)
+        self.assertIn('id="improvementWorkForm"', dashboard_html)
+        self.assertIn('id="improvementWorkQueue"', dashboard_html)
         self.assertIn("fetch('/api/improvement/status?_='", improvement_script)
+        self.assertIn("fetch('/api/improvement/work'", improvement_script)
+        self.assertIn("'/control'", improvement_script)
         self.assertIn("target.replaceChildren();", improvement_script)
         self.assertIn("target.textContent", improvement_script)
         self.assertNotIn("innerHTML", improvement_script)
-        self.assertNotIn("method: 'POST'", improvement_script)
+        self.assertIn("method: 'POST'", improvement_script)
 
     def test_status_module_loads_and_renders_api_status(self) -> None:
         status_script = (main.STATIC_DIR / "status.js").read_text(encoding="utf-8")

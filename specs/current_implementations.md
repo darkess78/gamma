@@ -1,7 +1,7 @@
 # Current Implementations
 
 Status: Current
-Last verified: 2026-07-11
+Last verified: 2026-08-28
 
 This is a concise inventory of behavior present in the repository. Domain
 specs own detailed contracts; target documents own future work.
@@ -117,10 +117,11 @@ specs own detailed contracts; target documents own future work.
 - Memory and known-person management.
 - Twitch/EventSub/Discord worker controls and stream operations.
 - Stream trace, output, queue, temporary-memory, self-goal, and rehearsal views.
-- Read-only self-improvement visibility for active/planned isolated series,
-  recent attempts, aggregate observations, measured opportunities, contract
-  policy, and enforced safety boundaries. The page cannot start, approve,
-  promote, deploy, or otherwise mutate improvement work.
+- Self-improvement visibility plus authenticated owner controls for durable,
+  bounded directed or evidence-selected work requests. Owners can choose a
+  goal, focus, local models, wall-clock budget, discovery cycles, and isolated
+  attempts, then queue, cooperatively pause, resume, or stop the worker. The
+  page cannot approve, promote, deploy, or mutate the live checkout.
 - Machine/provider/process health, logs, timings, and routing status.
 - Vision analysis and image-aware replies.
 
@@ -154,6 +155,10 @@ specs own detailed contracts; target documents own future work.
   the live checkout, promote changes, or operate services. A bounded sanitized
   dashboard reader exposes its ignored series and observation artifacts without
   returning raw prompts, candidate patches, model transcripts, or artifact paths.
+  A durable separate worker can translate explicit bounded owner requests into
+  observation, local multi-model proposal, deterministic review, pinned source
+  grounding, and isolated candidate series. It stops successful work at
+  review-ready and provides no live promotion authority.
 - Pytest coverage for API, dashboard, conversation, memory, voice, stream, integrations, safety, routing, resources, and performer behavior.
 
 ## Current Architectural Debt

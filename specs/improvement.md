@@ -82,10 +82,10 @@ evidence but are excluded from the production route log used as a baseline.
 The observer also filters any historical records bearing those interaction
 modes, so older evaluation traffic cannot consume the bounded production sample.
 
-## Owner Visibility
+## Owner Visibility And Bounded Control
 
-The authenticated dashboard route `/dashboard/improvement` and read-only API
-route `/api/improvement/status` expose what the bounded framework is currently
+The authenticated dashboard route `/dashboard/improvement` and API route
+`/api/improvement/status` expose what the bounded framework is currently
 testing and what it most recently learned. The status reader scans only a
 bounded number of ignored artifacts beneath `data/improvement`, skips detached
 worktrees and symlinks, rejects oversized or invalid records, and returns an
@@ -99,9 +99,28 @@ allowlisted view of:
 
 The response omits absolute runtime and artifact paths, full evidence hashes,
 candidate edits, prompts, validation output, and raw model replies. The browser
-client renders returned values as text and offers only refresh/polling; it has
-no start, approval, deployment, or promotion action. Dashboard visibility is
-therefore observability, not additional authority.
+client renders returned values as text. Authenticated owners may create one
+bounded work request through `POST /api/improvement/work` and pause, resume, or
+cooperatively stop it through `POST /api/improvement/work/{id}/control`.
+Requests persist under ignored improvement state and specify an owner goal or
+automatic evidence-based selection, optional focus areas, two or three local
+models, a 15-to-720-minute total budget, one to five discovery cycles, and one
+to ten attempts per isolated series. The dashboard starts a separate worker
+module; request handlers never perform model inference or candidate validation.
+
+The worker observes current aggregate telemetry, asks the selected local models
+for goal-relevant evidence-bound proposals, screens them deterministically,
+pins source grounding, rejects unsupported mechanisms, and runs an actionable
+plan through the existing detached-worktree coordinator. Automatic selection
+means choosing among measurable opportunities under this pipeline. It does not
+grant general tool use, arbitrary source scope, recurring authority, or live
+mutation. Pause and stop take effect at safe stage or attempt boundaries so an
+isolated validation subprocess is not torn down into ambiguous state.
+
+No dashboard action can approve, promote, commit, restart, deploy, or mutate the
+live checkout. A fixed-test or semantic-review success stops as `review_ready`;
+all remaining holdout, performance, health, rollback, diff-review, and owner
+approval gates retain their existing authority.
 
 ## Improvement Contract
 
@@ -437,7 +456,8 @@ and a fresh-worktree bounded retry coordinator. Next stages are:
 3. Add deterministic candidate performance/holdout, soak, health, and rollback
    capture to the coordinator after the fixed profiles pass.
 4. Add owner-facing review and explicit promotion/rollback controls.
-5. Consider recurring proposal and experiment runs only after resource budgets,
+5. Validate the bounded owner work queue under overnight resource load, then
+   consider recurring self-selected runs only after thermal/resource budgets,
    stale-lock recovery, and alerting are validated.
 6. Consider automatic promotion only for narrow reversible runtime adaptations
    after repeated shadow and canary evidence.

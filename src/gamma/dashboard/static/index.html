@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shana Control</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/dashboard.css?v=20260828">
+  <link rel="stylesheet" href="/static/dashboard.css?v=20260828b">
 </head>
 <body>
   <div class="wrap">
@@ -105,6 +105,61 @@
         </div>
         <div class="improvement-refresh-note" id="improvementUpdatedAt">Not refreshed yet.</div>
       </section>
+      <section class="panel full-width panel-fill" data-dashboard-tab="improvement">
+        <div class="panel-head">
+          <div>
+            <h2>Give Gamma Work</h2>
+            <p class="improvement-item-meta">Gamma may investigate, edit detached candidates, and test them. It cannot promote or deploy them.</p>
+          </div>
+          <span class="improvement-read-only">Owner bounded</span>
+        </div>
+        <form id="improvementWorkForm" class="improvement-work-form">
+          <label class="improvement-goal-field">Goal
+            <textarea id="improvementGoal" rows="4" maxlength="1200" placeholder="Example: Improve conversation response latency overnight without reducing safety, privacy, or answer quality."></textarea>
+          </label>
+          <label>How to choose
+            <select id="improvementSelectionMode" class="select">
+              <option value="directed">Follow my goal</option>
+              <option value="automatic">Gamma chooses from measured opportunities</option>
+            </select>
+          </label>
+          <label>Focus area
+            <select id="improvementFocusDomain" class="select">
+              <option value="">Automatic</option>
+              <option value="conversation">Conversation / brain</option>
+              <option value="memory">Memory</option>
+              <option value="live_voice">Live voice</option>
+              <option value="llm_routes">Model routing</option>
+              <option value="skills">Skills and tools</option>
+            </select>
+          </label>
+          <label>Time budget
+            <select id="improvementBudget" class="select">
+              <option value="60">1 hour</option>
+              <option value="240">4 hours</option>
+              <option value="480" selected>Overnight · 8 hours</option>
+              <option value="720">12 hours</option>
+            </select>
+          </label>
+          <label>Discovery cycles
+            <input id="improvementMaximumCycles" type="number" min="1" max="5" value="3">
+          </label>
+          <label>Attempts per idea
+            <input id="improvementMaximumAttempts" type="number" min="1" max="10" value="6">
+          </label>
+          <label class="improvement-model-field">Local models
+            <input id="improvementModels" type="text" maxlength="500" value="qwen3.8:27b, gpt-oss:20b, devstral:24b">
+          </label>
+          <div class="improvement-work-submit">
+            <button type="submit" id="improvementStartButton">Start bounded work</button>
+            <span id="improvementWorkMessage" class="improvement-item-meta">Nothing will be applied to the live checkout.</span>
+          </div>
+        </form>
+      </section>
+      <section class="panel full-width panel-fill" data-dashboard-tab="improvement">
+        <div class="panel-head"><h2>Work Queue</h2><span id="improvementWorkerState" class="improvement-item-meta">Worker status loading</span></div>
+        <div class="improvement-list" id="improvementWorkQueue">No queued work loaded.</div>
+      </section>
       <section class="panel wide panel-fill" data-dashboard-tab="improvement">
         <div class="panel-head"><h2>Current Work</h2></div>
         <div class="improvement-list" id="improvementCurrentWork">No current work loaded.</div>
@@ -132,7 +187,7 @@
       <section class="panel full-width panel-fill" data-dashboard-tab="improvement">
         <div class="panel-head">
           <h2>Safety Boundaries</h2>
-          <span class="improvement-read-only">Read only</span>
+          <span class="improvement-read-only">No automatic promotion</span>
         </div>
         <div class="improvement-safeguard-grid" id="improvementSafeguards">Safeguards have not loaded.</div>
       </section>
@@ -821,6 +876,6 @@
   <script src="/static/render.js?v=20260529"></script>
   <script src="/static/controls.js?v=20260611a"></script>
   <script src="/static/status.js?v=20260623c"></script>
-  <script type="module" src="/static/improvement.mjs?v=20260828"></script>
+  <script type="module" src="/static/improvement.mjs?v=20260828b"></script>
 </body>
 </html>

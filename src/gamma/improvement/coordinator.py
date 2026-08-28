@@ -6,7 +6,7 @@ import os
 import re
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Iterator, Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -37,9 +37,9 @@ _SERIES_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{5,74}$")
 class ExperimentAttemptRecord(BaseModel):
     attempt_number: int = Field(ge=1, le=10)
     experiment_id: str
-    requested_model: str
-    actual_provider: str | None = None
-    actual_model: str | None = None
+    requested_model: str = Field(min_length=1, max_length=200)
+    actual_provider: str | None = Field(default=None, max_length=80)
+    actual_model: str | None = Field(default=None, max_length=200)
     outcome: Literal[
         "draft_rejected",
         "needs_more_source",
@@ -57,6 +57,32 @@ class ExperimentAttemptRecord(BaseModel):
     validation_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     started_at: str
     completed_at: str
+
+    @model_validator(mode="after")
+    def validate_record(self) -> "ExperimentAttemptRecord":
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{5,79}", self.experiment_id):
+            raise ValueError("invalid attempt experiment id")
+        if len(self.rejection_codes) > 12 or any(
+            not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,79}", code)
+            for code in self.rejection_codes
+        ):
+            raise ValueError("invalid or excessive attempt rejection codes")
+        for path_field, digest_field in (
+            ("candidate_artifact", "candidate_sha256"),
+            ("receipt_artifact", "receipt_sha256"),
+            ("validation_artifact", "validation_sha256"),
+        ):
+            artifact = getattr(self, path_field)
+            digest = getattr(self, digest_field)
+            if (artifact is None) != (digest is None):
+                raise ValueError(f"{path_field} and {digest_field} must appear together")
+            if artifact is None:
+                continue
+            path = PurePosixPath(artifact)
+            expected_prefix = PurePosixPath("attempts") / self.experiment_id
+            if path.is_absolute() or ".." in path.parts or path.parent != expected_prefix:
+                raise ValueError("attempt artifact path escaped its experiment directory")
+        return self
 
 
 class ExperimentSeriesManifest(BaseModel):
@@ -85,7 +111,7 @@ class ExperimentSeriesManifest(BaseModel):
     ] = "planned"
     attempts: tuple[ExperimentAttemptRecord, ...] = ()
     successful_experiment_id: str | None = None
-    terminal_reason: str | None = None
+    terminal_reason: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_-]{0,119}$")
     created_at: str = Field(default_factory=lambda: _utc_now())
     started_at: str | None = None
     completed_at: str | None = None
@@ -110,8 +136,24 @@ class ExperimentSeriesManifest(BaseModel):
         expected = tuple(range(1, len(self.attempts) + 1))
         if tuple(item.attempt_number for item in self.attempts) != expected:
             raise ValueError("series attempt records must be contiguous and ordered")
+        if any(
+            item.experiment_id != f"{self.id}-a{item.attempt_number:02d}"
+            for item in self.attempts
+        ):
+            raise ValueError("series attempt id does not match its series and ordinal")
         if self.status == "candidate_validated" and not self.successful_experiment_id:
             raise ValueError("candidate_validated series requires a successful experiment id")
+        if self.successful_experiment_id and not any(
+            item.experiment_id == self.successful_experiment_id
+            and item.outcome == "candidate_validated"
+            for item in self.attempts
+        ):
+            raise ValueError("successful experiment id is not a validated series attempt")
+        if self.status == "running" and not self.started_at:
+            raise ValueError("running series requires started_at")
+        if self.status in {"candidate_validated", "exhausted", "failed", "abandoned"}:
+            if not self.started_at or not self.completed_at or not self.terminal_reason:
+                raise ValueError("terminal series requires start, completion, and reason fields")
         return self
 
 
@@ -558,7 +600,13 @@ def build_series_manifest(
     maximum_wall_clock_minutes: int = 60,
     contract_path: Path | None = None,
     fixture_catalog_path: Path | None = None,
+    project_root: Path = PROJECT_ROOT,
 ) -> ExperimentSeriesManifest:
+    if plan.status != "grounded_plan":
+        raise ValueError("experiment series requires a grounded_plan; needs_more_source is not actionable")
+    if plan.grounding_sha256 != _grounding_sha256(grounding):
+        raise ValueError("experiment series plan and source grounding digests differ")
+    validate_grounded_plan(plan, grounding, project_root=project_root)
     contract_path = contract_path or PROJECT_ROOT / "config" / "improvement.toml"
     fixture_catalog_path = fixture_catalog_path or PROJECT_ROOT / "evaluations" / "improvement" / "conversation.toml"
     return ExperimentSeriesManifest(

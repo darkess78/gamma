@@ -603,7 +603,31 @@ class ImprovementEvaluatorTest(unittest.TestCase):
                 maximum_wall_clock_minutes=5,
                 contract_path=contract_path,
                 fixture_catalog_path=fixture_path,
+                project_root=project_root,
             )
+            needs_source = GroundedPlan(
+                status="needs_more_source",
+                target_metrics=plan.target_metrics,
+                allowed_paths=plan.allowed_paths,
+                proposal_sha256=plan.proposal_sha256,
+                grounding_sha256=plan.grounding_sha256,
+                observation_sha256=plan.observation_sha256,
+            )
+            with self.assertRaisesRegex(ValueError, "needs_more_source is not actionable"):
+                build_series_manifest(
+                    series_id="latency-series-rejected",
+                    hypothesis="Reject a non-actionable source request before creating any worktree.",
+                    domain="conversation",
+                    change_class=ChangeClass.BEHAVIOR_OR_CODE,
+                    baseline_commit=baseline,
+                    plan=needs_source,
+                    grounding=grounding,
+                    models=("model-a",),
+                    maximum_wall_clock_minutes=5,
+                    contract_path=contract_path,
+                    fixture_catalog_path=fixture_path,
+                    project_root=project_root,
+                )
             store = ExperimentSeriesStore(state_root)
             store.create(series)
             llm = _RetryCandidateLLM(fact.sha256)

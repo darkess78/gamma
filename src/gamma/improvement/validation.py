@@ -72,6 +72,7 @@ class CandidateValidator:
         receipt: CandidateApplicationReceipt,
         workspace: Path,
         required_gates: tuple[str, ...],
+        maximum_duration_seconds: float | None = None,
     ) -> CandidateValidationReport:
         if manifest.status != "candidate_ready":
             raise ValueError("candidate validation requires a candidate_ready experiment")
@@ -109,7 +110,10 @@ class CandidateValidator:
             if relative.endswith(".py"):
                 ast.parse((root / relative).read_text(encoding="utf-8", errors="strict"), filename=relative)
 
-        deadline = time.monotonic() + min(float(manifest.maximum_wall_clock_minutes * 60), 3600.0)
+        duration_limit = min(float(manifest.maximum_wall_clock_minutes * 60), 3600.0)
+        if maximum_duration_seconds is not None:
+            duration_limit = min(duration_limit, max(0.0, maximum_duration_seconds))
+        deadline = time.monotonic() + duration_limit
         results: list[SandboxedTestResult] = []
         for profile in ("safety_privacy", "full_suite"):
             remaining = deadline - time.monotonic()

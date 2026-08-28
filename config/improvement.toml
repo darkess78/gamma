@@ -4,7 +4,8 @@ version = 1
 maximum_records_per_source = 5000
 dominant_stage_share_percent = 25.0
 first_audio_warning_ms = 5000.0
-isolated_experiments_enabled = false
+isolated_experiments_enabled = true
+recurring_experiments_enabled = false
 experiment_worktree_root = "./data/improvement/worktrees"
 
 [policy.required_gates]

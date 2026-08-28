@@ -17,6 +17,11 @@ from gamma.improvement.candidates import (
     validate_candidate_draft,
 )
 from gamma.improvement.contract import load_improvement_contract
+from gamma.improvement.coordinator import (
+    BoundedExperimentCoordinator,
+    ExperimentSeriesStore,
+    build_series_manifest,
+)
 from gamma.improvement.evaluator import ImprovementEvaluator, summarize
 from gamma.improvement.fixtures import FixtureRunner, load_fixture_catalog
 from gamma.improvement.grounding import build_source_grounding
@@ -499,11 +504,20 @@ class ImprovementEvaluatorTest(unittest.TestCase):
             self.assertIn("human_approval", validation.remaining_required_gates)
             self.assertNotIn("automated_tests", validation.remaining_required_gates)
 
-    def test_candidate_commands_remain_disabled_by_default(self) -> None:
+    def test_candidate_commands_require_explicit_enabled_policy(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
+            contract_path = Path(temp_dir) / "improvement.toml"
+            contract_path.write_text(
+                (ROOT / "config" / "improvement.toml")
+                .read_text(encoding="utf-8")
+                .replace("isolated_experiments_enabled = true", "isolated_experiments_enabled = false"),
+                encoding="utf-8",
+            )
             with self.assertRaisesRegex(PermissionError, "disabled"):
                 run(
                     [
+                        "--contract",
+                        str(contract_path),
                         "draft-candidate",
                         "--id",
                         "candidate-001",
@@ -516,6 +530,131 @@ class ImprovementEvaluatorTest(unittest.TestCase):
                         "--output",
                         str(Path(temp_dir) / "candidate.json"),
                     ]
+                )
+
+    def test_coordinator_retries_from_same_baseline_with_bounded_feedback(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            project_root = temp_root / "repo"
+            worktree_root = temp_root / "worktrees"
+            state_root = temp_root / "state"
+            source_path = project_root / "src" / "gamma" / "example.py"
+            contract_path = project_root / "config" / "improvement.toml"
+            fixture_path = project_root / "evaluations" / "improvement" / "conversation.toml"
+            source_path.parent.mkdir(parents=True)
+            contract_path.parent.mkdir(parents=True)
+            fixture_path.parent.mkdir(parents=True)
+            source_path.write_text("def total(value):\n    return value + 1\n", encoding="utf-8")
+            contract_path.write_text(
+                (ROOT / "config" / "improvement.toml").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            fixture_path.write_text("version = 1\n", encoding="utf-8")
+            _git(project_root, "init", "-q")
+            _git(project_root, "add", ".")
+            _git(
+                project_root,
+                "-c",
+                "user.name=Gamma Test",
+                "-c",
+                "user.email=gamma-test@example.invalid",
+                "commit",
+                "-qm",
+                "baseline",
+            )
+            baseline = _git(project_root, "rev-parse", "HEAD")
+            grounding = build_source_grounding(
+                paths=("src/gamma/example.py",),
+                target_metrics=("conversation.total_ms",),
+                project_root=project_root,
+            )
+            fact = grounding.files[0]
+            plan = GroundedPlan(
+                status="grounded_plan",
+                mechanism_hypothesis="Remove an unnecessary arithmetic operation from the grounded function.",
+                source_evidence=(
+                    SourceCitation(
+                        path=fact.path,
+                        file_sha256=fact.sha256,
+                        symbol="total",
+                        line_start=1,
+                        line_end=2,
+                    ),
+                ),
+                target_metrics=("conversation.total_ms",),
+                allowed_paths=("src/gamma/example.py",),
+                validation_plan=("Run fixed safety and full regression profiles.",),
+                risk_notes=("The return value changes and requires later behavior review.",),
+                confidence=0.7,
+                proposal_sha256="a" * 64,
+                grounding_sha256=_grounding_sha256(grounding),
+                observation_sha256="b" * 64,
+            )
+            series = build_series_manifest(
+                series_id="latency-series-001",
+                hypothesis="Remove a grounded unnecessary operation without regressing fixed tests.",
+                domain="conversation",
+                change_class=ChangeClass.BEHAVIOR_OR_CODE,
+                baseline_commit=baseline,
+                plan=plan,
+                grounding=grounding,
+                models=("model-a", "model-b"),
+                maximum_attempts=3,
+                maximum_wall_clock_minutes=5,
+                contract_path=contract_path,
+                fixture_catalog_path=fixture_path,
+            )
+            store = ExperimentSeriesStore(state_root)
+            store.create(series)
+            llm = _RetryCandidateLLM(fact.sha256)
+            contract = self.contract.model_copy(deep=True)
+            contract.policy.isolated_experiments_enabled = True
+
+            result = BoundedExperimentCoordinator(
+                candidate_generator=CandidateDraftGenerator(llm),
+                candidate_validator=CandidateValidator(_FailFirstSandboxRunner()),
+            ).run(
+                store=store,
+                series_id=series.id,
+                plan=plan,
+                grounding=grounding,
+                contract=contract,
+                current_contract_sha256=hashlib.sha256(contract_path.read_bytes()).hexdigest(),
+                current_fixture_catalog_sha256=hashlib.sha256(fixture_path.read_bytes()).hexdigest(),
+                project_root=project_root,
+                worktree_root=worktree_root,
+            )
+
+            self.assertEqual(result.status, "candidate_validated")
+            self.assertEqual(result.successful_experiment_id, "latency-series-001-a02")
+            self.assertEqual([item.outcome for item in result.attempts], [
+                "validation_failed",
+                "candidate_validated",
+            ])
+            self.assertEqual(llm.models, ["model-a", "model-b"])
+            self.assertEqual(llm.contexts[0]["prior_attempt_feedback"], [])
+            self.assertEqual(
+                llm.contexts[1]["prior_attempt_feedback"][0]["outcome"],
+                "validation_failed",
+            )
+            self.assertIn(
+                "first attempt failed",
+                llm.contexts[1]["prior_attempt_feedback"][0]["tests"][0]["output_tail"],
+            )
+            self.assertTrue((worktree_root / "latency-series-001-a01").is_dir())
+            self.assertTrue((worktree_root / "latency-series-001-a02").is_dir())
+            self.assertEqual(
+                _git(worktree_root / "latency-series-001-a01", "rev-parse", "HEAD"),
+                baseline,
+            )
+            self.assertEqual(
+                _git(worktree_root / "latency-series-001-a02", "rev-parse", "HEAD"),
+                baseline,
+            )
+            with self.assertRaisesRegex(PermissionError, "promotion is not implemented"):
+                ExperimentStore(state_root / series.id / "attempts").transition(
+                    result.successful_experiment_id,
+                    "promoted",
                 )
 
     @unittest.skipUnless(
@@ -896,6 +1035,57 @@ class _CandidateLLM:
                 }
             ),
             metadata={"route": {"provider": "local", "model": "candidate-fixture"}},
+        )
+
+
+class _RetryCandidateLLM:
+    def __init__(self, file_sha256: str) -> None:
+        self.file_sha256 = file_sha256
+        self.contexts: list[dict] = []
+        self.models: list[str | None] = []
+
+    def generate_reply(self, system_prompt: str, user_text: str, **kwargs) -> LLMReply:
+        self.contexts.append(json.loads(user_text))
+        self.models.append(kwargs.get("model_override"))
+        return LLMReply(
+            text=json.dumps(
+                {
+                    "status": "candidate",
+                    "rationale": "Use a fresh exact replacement informed by bounded test feedback.",
+                    "edits": [
+                        {
+                            "path": "src/gamma/example.py",
+                            "file_sha256": self.file_sha256,
+                            "old_text": "    return value + 1",
+                            "new_text": "    return value",
+                        }
+                    ],
+                }
+            ),
+            metadata={
+                "route": {
+                    "provider": "local",
+                    "model": kwargs.get("model_override"),
+                }
+            },
+        )
+
+
+class _FailFirstSandboxRunner:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, root: Path, profile: str, timeout_seconds: float) -> SandboxedTestResult:
+        self.calls += 1
+        passed = self.calls > 1
+        output = "passed" if passed else "first attempt failed"
+        return SandboxedTestResult(
+            profile=profile,
+            passed=passed,
+            return_code=0 if passed else 1,
+            duration_ms=1.0,
+            output_sha256=hashlib.sha256(output.encode("utf-8")).hexdigest(),
+            output_tail=output,
         )
 
 

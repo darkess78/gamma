@@ -1,6 +1,6 @@
 # Gamma Improvement System
 
-Status: Current evaluation and isolated-experiment foundation
+Status: Current evaluation and bounded isolated-experiment coordinator
 Last verified: 2026-08-27
 
 ## Purpose
@@ -40,8 +40,8 @@ edit. The current implementation does not:
 - read or emit conversation preview text
 
 Reports are written only when the operator supplies an explicit output path.
-Detached experiment worktree preparation exists but is disabled by the
-contract by default. When that policy is explicitly enabled, a candidate model
+Detached experiment worktree preparation is enabled by the tracked contract
+following explicit owner authorization. When that policy is enabled, a candidate model
 can return bounded exact-text replacements only for source included in a
 grounded plan. Deterministic code binds every replacement to the experiment,
 baseline commit, plan hash, source hash, cited line span, allowed path set, file
@@ -49,7 +49,7 @@ limit, edit limit, and wall-clock limit before applying it to the detached
 worktree. Ambiguous, overlapping, stale, out-of-scope, and syntax-invalid edits
 are rejected. Raw model replies are not persisted.
 
-Candidate tests also remain behind the disabled experiment policy. Fixed
+Candidate tests remain behind the explicit experiment policy. Fixed
 safety/privacy and full Pytest profiles run without a shell inside Bubblewrap,
 a transient user cgroup, and process resource limits. The candidate checkout is
 read-only during execution; only an ephemeral in-memory `data/` tree and `/tmp`
@@ -57,6 +57,16 @@ are writable. The host home, local configuration, network, GPU devices, and
 ambient environment are absent. Passing these profiles proves only the
 `automated_tests` and `safety_privacy` gates; it does not imply diff approval,
 holdout success, health/soak success, rollback readiness, or owner approval.
+The bounded coordinator creates a new detached worktree from the same pinned
+baseline for every attempt. It cycles through one to three explicitly named
+local models, stops at the manifest attempt or wall-clock limit, records every
+structured draft, receipt, validation report, digest, transition, and terminal
+reason, and gives a later attempt only the last three bounded validation
+feedback records. Test output in feedback is marked as untrusted data. A
+passing attempt stops at `candidate_validated`; it does not satisfy holdout,
+performance, review, health, soak, rollback, or approval gates. Recurring runs
+are controlled by a separate policy flag and remain disabled.
+
 Evaluation and improvement-model routes remain available as in-memory trace
 evidence but are excluded from the production route log used as a baseline.
 The observer also filters any historical records bearing those interaction
@@ -246,11 +256,10 @@ response caching is rejected because it can replay stale persona, memory,
 tool, or nondeterministic output. Grounded plans still have `grounding_only`
 authority and cannot create a worktree or edit a file.
 
-## Disabled Candidate Workflow
+## Isolated Candidate Workflow
 
-Candidate authoring is available only after an operator changes the tracked
-`isolated_experiments_enabled` policy and creates a pinned detached worktree.
-The normal sequence is:
+Candidate authoring is available because the owner authorized the tracked
+`isolated_experiments_enabled` policy. The manual single-attempt sequence is:
 
 ```bash
 .venv/bin/python -m gamma.improvement.cli plan-experiment \
@@ -293,6 +302,40 @@ The normal sequence is:
 drafts. `apply-candidate` applies one selected draft, produces a hash-only
 receipt, and advances the manifest only to `candidate_ready`.
 
+For bounded revision attempts, pin a series to one grounded plan and explicit
+local models, then run it:
+
+```bash
+.venv/bin/python -m gamma.improvement.cli plan-series \
+  --id conversation-latency-series-001 \
+  --hypothesis "Reduce grounded conversation latency without safety regressions." \
+  --domain conversation \
+  --change-class behavior_or_code \
+  --baseline-commit <full-commit> \
+  --grounding data/improvement/grounding/conversation.json \
+  --grounded-plans data/improvement/grounding/conversation.plans.json \
+  --model gpt-oss:20b --model qwen3.8:27b \
+  --maximum-attempts 3 \
+  --maximum-wall-clock-minutes 60 \
+  --state-root data/improvement/series
+
+.venv/bin/python -m gamma.improvement.cli run-series \
+  --id conversation-latency-series-001 \
+  --state-root data/improvement/series \
+  --grounding data/improvement/grounding/conversation.json \
+  --grounded-plans data/improvement/grounding/conversation.plans.json
+```
+
+The series ID, baseline commit, contract and fixture hashes, grounded-plan and
+source-grounding hashes, path scope, models, attempt count, changed-file count,
+and total wall-clock budget are immutable inputs. Every attempt gets a unique
+experiment manifest and fresh worktree. A failed fixed test profile is feedback
+for the next attempt, never permission to edit tests or controls. Provider calls
+retain the configured local transport timeout, and fixed validation profiles
+receive only the remaining series time. Concurrent runs are rejected by an
+exclusive series lock. A stale lock after an interrupted process requires
+operator inspection rather than automatic lock stealing.
+
 ## Isolated Experiment Manifests
 
 Experiment manifests are proposal-only. They normalize and constrain allowed
@@ -316,17 +359,18 @@ comparison, an initial fictional conversation catalog, state-isolated
 evaluation requests, sanitized run artifacts, fixture guardrails, local
 multi-model proposal analysis, deterministic evidence binding and screening,
 independent-model consensus, pinned source grounding, local source-cited plans,
-proposal manifests, scope validation, disabled-by-default detached candidate
-authoring, exact-edit application receipts, and sandboxed fixed regression
-profiles. Next stages are:
+proposal manifests, scope validation, explicitly authorized detached candidate
+authoring, exact-edit application receipts, sandboxed fixed regression profiles,
+and a fresh-worktree bounded retry coordinator. Next stages are:
 
 1. Calibrate and expand representative everyday conversation and voice fixtures.
 2. Extend instrumentation and scorecards to memory, skills, brain,
    safety, resources, and cold/warm latency.
-3. Add deterministic holdout, soak, health, and rollback evidence capture.
-4. Add a bounded coordinator that can create a fresh experiment for a revised
-   attempt while preserving attempt limits and every prior artifact.
-5. Add owner-facing review and explicit promotion/rollback controls.
+3. Add deterministic candidate performance/holdout, soak, health, and rollback
+   capture to the coordinator after the fixed profiles pass.
+4. Add owner-facing review and explicit promotion/rollback controls.
+5. Consider recurring proposal and experiment runs only after resource budgets,
+   stale-lock recovery, and alerting are validated.
 6. Consider automatic promotion only for narrow reversible runtime adaptations
    after repeated shadow and canary evidence.
 

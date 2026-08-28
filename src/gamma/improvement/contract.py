@@ -36,6 +36,7 @@ class ImprovementPolicy(BaseModel):
     dominant_stage_share_percent: float = Field(default=25.0, ge=0.0, le=100.0)
     first_audio_warning_ms: float = Field(default=5000.0, ge=0.0, le=300_000.0)
     isolated_experiments_enabled: bool = False
+    recurring_experiments_enabled: bool = False
     experiment_worktree_root: str = "./data/improvement/worktrees"
     required_gates: dict[str, tuple[str, ...]]
 

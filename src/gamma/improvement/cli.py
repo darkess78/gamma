@@ -121,6 +121,34 @@ def build_parser() -> argparse.ArgumentParser:
     validate_candidate.add_argument("--state-root", type=Path, required=True)
     validate_candidate.add_argument("--receipt", type=Path, required=True)
     validate_candidate.add_argument("--output", type=Path, required=True)
+
+    plan_series = subparsers.add_parser(
+        "plan-series",
+        help="Create a pinned bounded multi-attempt experiment series.",
+    )
+    plan_series.add_argument("--id", required=True)
+    plan_series.add_argument("--hypothesis", required=True)
+    plan_series.add_argument("--domain", required=True)
+    plan_series.add_argument("--change-class", choices=[item.value for item in ChangeClass], required=True)
+    plan_series.add_argument("--baseline-commit", required=True)
+    plan_series.add_argument("--grounding", type=Path, required=True)
+    plan_series.add_argument("--grounded-plans", type=Path, required=True)
+    plan_series.add_argument("--plan-index", type=int, default=0)
+    plan_series.add_argument("--model", action="append", required=True)
+    plan_series.add_argument("--maximum-changed-files", type=int, default=12)
+    plan_series.add_argument("--maximum-attempts", type=int, default=3)
+    plan_series.add_argument("--maximum-wall-clock-minutes", type=int, default=60)
+    plan_series.add_argument("--state-root", type=Path, required=True)
+
+    run_series = subparsers.add_parser(
+        "run-series",
+        help="Run bounded local-model attempts in fresh detached worktrees.",
+    )
+    run_series.add_argument("--id", required=True)
+    run_series.add_argument("--state-root", type=Path, required=True)
+    run_series.add_argument("--grounding", type=Path, required=True)
+    run_series.add_argument("--grounded-plans", type=Path, required=True)
+    run_series.add_argument("--plan-index", type=int, default=0)
     return parser
 
 
@@ -141,6 +169,98 @@ def run(argv: list[str] | None = None) -> int:
             transport.close()
         sys.stdout.write(json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True) + "\n")
         return 0
+
+    if args.command in {"plan-series", "run-series"}:
+        from ..config import PROJECT_ROOT
+        from .coordinator import (
+            BoundedExperimentCoordinator,
+            ExperimentSeriesStore,
+            build_series_manifest,
+        )
+        from .experiments import _file_sha256
+        from .grounded_plans import GroundedPlan
+        from .grounding import SourceGroundingReport
+
+        grounding_report = SourceGroundingReport.model_validate_json(
+            args.grounding.read_text(encoding="utf-8")
+        )
+        plan = _load_indexed_model(
+            args.grounded_plans,
+            collection="plans",
+            index=args.plan_index,
+            model_type=GroundedPlan,
+        )
+        series_store = ExperimentSeriesStore(args.state_root)
+        if args.command == "plan-series":
+            manifest = build_series_manifest(
+                series_id=args.id,
+                hypothesis=args.hypothesis,
+                domain=args.domain,
+                change_class=ChangeClass(args.change_class),
+                baseline_commit=args.baseline_commit,
+                plan=plan,
+                grounding=grounding_report,
+                models=tuple(args.model),
+                maximum_changed_files=args.maximum_changed_files,
+                maximum_attempts=args.maximum_attempts,
+                maximum_wall_clock_minutes=args.maximum_wall_clock_minutes,
+                contract_path=args.contract,
+            )
+            path = series_store.create(manifest)
+            sys.stdout.write(
+                json.dumps(
+                    {
+                        "manifest": str(path),
+                        "status": manifest.status,
+                        "maximum_attempts": manifest.maximum_attempts,
+                        "maximum_wall_clock_minutes": manifest.maximum_wall_clock_minutes,
+                    },
+                    indent=2,
+                )
+                + "\n"
+            )
+            return 0
+
+        from ..llm.factory import build_llm_adapter
+        from .candidates import CandidateDraftGenerator
+        from .proposals import require_local_proposal_destination
+        from .validation import CandidateValidator
+
+        require_local_proposal_destination()
+        contract_path = args.contract or PROJECT_ROOT / "config" / "improvement.toml"
+        fixture_path = PROJECT_ROOT / "evaluations" / "improvement" / "conversation.toml"
+        contract = load_improvement_contract(contract_path)
+        configured_root = Path(contract.policy.experiment_worktree_root)
+        if not configured_root.is_absolute():
+            configured_root = PROJECT_ROOT / configured_root
+        result = BoundedExperimentCoordinator(
+            candidate_generator=CandidateDraftGenerator(build_llm_adapter()),
+            candidate_validator=CandidateValidator(),
+        ).run(
+            store=series_store,
+            series_id=args.id,
+            plan=plan,
+            grounding=grounding_report,
+            contract=contract,
+            current_contract_sha256=_file_sha256(contract_path),
+            current_fixture_catalog_sha256=_file_sha256(fixture_path),
+            project_root=PROJECT_ROOT,
+            worktree_root=configured_root,
+        )
+        sys.stdout.write(
+            json.dumps(
+                {
+                    "status": result.status,
+                    "attempts": len(result.attempts),
+                    "successful_experiment_id": result.successful_experiment_id,
+                    "terminal_reason": result.terminal_reason,
+                    "promotion_authority": False,
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+        return 0 if result.status == "candidate_validated" else 2
 
     if args.command in {
         "plan-experiment",

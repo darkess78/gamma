@@ -628,6 +628,21 @@ class ImprovementEvaluatorTest(unittest.TestCase):
                     fixture_catalog_path=fixture_path,
                     project_root=project_root,
                 )
+            with self.assertRaisesRegex(RuntimeError, "git cat-file -e failed"):
+                build_series_manifest(
+                    series_id="latency-series-bad-commit",
+                    hypothesis="Reject a nonexistent baseline before recording a planned series.",
+                    domain="conversation",
+                    change_class=ChangeClass.BEHAVIOR_OR_CODE,
+                    baseline_commit="f" * 40,
+                    plan=plan,
+                    grounding=grounding,
+                    models=("model-a",),
+                    maximum_wall_clock_minutes=5,
+                    contract_path=contract_path,
+                    fixture_catalog_path=fixture_path,
+                    project_root=project_root,
+                )
             store = ExperimentSeriesStore(state_root)
             store.create(series)
             llm = _RetryCandidateLLM(fact.sha256)

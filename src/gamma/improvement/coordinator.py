@@ -25,6 +25,7 @@ from .experiments import (
     ExperimentStore,
     ExperimentWorkspaceManager,
     _file_sha256,
+    _run_git,
     normalize_experiment_path,
 )
 from .grounded_plans import GroundedPlan, _grounding_sha256, validate_grounded_plan
@@ -607,6 +608,7 @@ def build_series_manifest(
     if plan.grounding_sha256 != _grounding_sha256(grounding):
         raise ValueError("experiment series plan and source grounding digests differ")
     validate_grounded_plan(plan, grounding, project_root=project_root)
+    _run_git(project_root.resolve(), ["cat-file", "-e", f"{baseline_commit}^{{commit}}"])
     contract_path = contract_path or PROJECT_ROOT / "config" / "improvement.toml"
     fixture_catalog_path = fixture_catalog_path or PROJECT_ROOT / "evaluations" / "improvement" / "conversation.toml"
     return ExperimentSeriesManifest(

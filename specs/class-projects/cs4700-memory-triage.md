@@ -199,8 +199,9 @@ policy-only rows.
 
 Pilot v0.3 is frozen as the labeling-guide validation milestone. It is not
 large enough for final model training or final performance claims. It may guide
-final-dataset expansion after the owner approves the practical plan in
-[`final_dataset_expansion_plan.md`](../../research/cs4700_memory_triage/docs/final_dataset_expansion_plan.md).
+final-dataset expansion after the owner approves the practical plan stored as
+the intentionally ignored operator artifact
+`research/cs4700_memory_triage/docs/final_dataset_expansion_plan.md`.
 
 ## Evaluation Contract
 

@@ -31,6 +31,7 @@ from .experiments import (
 from .grounded_plans import GroundedPlan, _grounding_sha256, validate_grounded_plan
 from .grounding import SourceGroundingReport
 from .models import ChangeClass
+from .semantic_review import CandidateSemanticReviewer
 from .validation import CandidateValidationReport, CandidateValidator
 
 
@@ -46,6 +47,8 @@ class ExperimentAttemptRecord(BaseModel):
         "needs_more_source",
         "validation_failed",
         "fixed_tests_passed",
+        "semantic_review_rejected",
+        "ready_for_holdout",
         "deadline_exhausted",
         "infrastructure_error",
     ]
@@ -56,6 +59,8 @@ class ExperimentAttemptRecord(BaseModel):
     receipt_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     validation_artifact: str | None = None
     validation_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    semantic_review_artifact: str | None = None
+    semantic_review_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     started_at: str
     completed_at: str
 
@@ -72,6 +77,7 @@ class ExperimentAttemptRecord(BaseModel):
             ("candidate_artifact", "candidate_sha256"),
             ("receipt_artifact", "receipt_sha256"),
             ("validation_artifact", "validation_sha256"),
+            ("semantic_review_artifact", "semantic_review_sha256"),
         ):
             artifact = getattr(self, path_field)
             digest = getattr(self, digest_field)
@@ -106,6 +112,7 @@ class ExperimentSeriesManifest(BaseModel):
         "planned",
         "running",
         "fixed_tests_passed",
+        "ready_for_holdout",
         "exhausted",
         "failed",
         "abandoned",
@@ -142,17 +149,17 @@ class ExperimentSeriesManifest(BaseModel):
             for item in self.attempts
         ):
             raise ValueError("series attempt id does not match its series and ordinal")
-        if self.status == "fixed_tests_passed" and not self.successful_experiment_id:
-            raise ValueError("fixed_tests_passed series requires a successful experiment id")
+        if self.status in {"fixed_tests_passed", "ready_for_holdout"} and not self.successful_experiment_id:
+            raise ValueError(f"{self.status} series requires a successful experiment id")
         if self.successful_experiment_id and not any(
             item.experiment_id == self.successful_experiment_id
-            and item.outcome == "fixed_tests_passed"
+            and item.outcome == self.status
             for item in self.attempts
         ):
-            raise ValueError("successful experiment id is not a validated series attempt")
+            raise ValueError("successful experiment id does not match the terminal series state")
         if self.status == "running" and not self.started_at:
             raise ValueError("running series requires started_at")
-        if self.status in {"fixed_tests_passed", "exhausted", "failed", "abandoned"}:
+        if self.status in {"fixed_tests_passed", "ready_for_holdout", "exhausted", "failed", "abandoned"}:
             if not self.started_at or not self.completed_at or not self.terminal_reason:
                 raise ValueError("terminal series requires start, completion, and reason fields")
         return self
@@ -216,6 +223,7 @@ class ExperimentSeriesStore:
                 "candidate_sha256": record.candidate_sha256,
                 "receipt_sha256": record.receipt_sha256,
                 "validation_sha256": record.validation_sha256,
+                "semantic_review_sha256": record.semantic_review_sha256,
             },
         )
         return manifest
@@ -224,14 +232,20 @@ class ExperimentSeriesStore:
         self,
         series_id: str,
         *,
-        status: Literal["fixed_tests_passed", "exhausted", "failed", "abandoned"],
+        status: Literal[
+            "fixed_tests_passed",
+            "ready_for_holdout",
+            "exhausted",
+            "failed",
+            "abandoned",
+        ],
         reason: str,
         successful_experiment_id: str | None = None,
     ) -> ExperimentSeriesManifest:
         manifest = self.read(series_id)
         if manifest.status != "running":
             raise ValueError("only a running series may be finished")
-        if status == "fixed_tests_passed" and not successful_experiment_id:
+        if status in {"fixed_tests_passed", "ready_for_holdout"} and not successful_experiment_id:
             raise ValueError("successful experiment id is required")
         manifest.status = status
         manifest.terminal_reason = reason
@@ -302,9 +316,11 @@ class BoundedExperimentCoordinator:
         *,
         candidate_generator: CandidateDraftGenerator,
         candidate_validator: CandidateValidator,
+        semantic_reviewer: CandidateSemanticReviewer | None = None,
     ) -> None:
         self.candidate_generator = candidate_generator
         self.candidate_validator = candidate_validator
+        self.semantic_reviewer = semantic_reviewer
 
     def run(
         self,
@@ -350,6 +366,7 @@ class BoundedExperimentCoordinator:
                 candidate_path = store.series_dir(series.id) / "attempts" / experiment_id / "candidate.json"
                 receipt_path = candidate_path.with_name("receipt.json")
                 validation_path = candidate_path.with_name("validation.json")
+                review_path = candidate_path.with_name("semantic-review.json")
                 manifest = ExperimentManifest(
                     id=experiment_id,
                     hypothesis=series.hypothesis,
@@ -461,12 +478,112 @@ class BoundedExperimentCoordinator:
                         maximum_duration_seconds=remaining,
                     )
                     _write_json(validation_path, validation.model_dump(mode="json"), exclusive=True)
-                    outcome: Literal["validation_failed", "fixed_tests_passed"] = (
-                        "fixed_tests_passed" if validation.passed else "validation_failed"
-                    )
                     if not validation.passed:
                         attempt_store.transition(experiment_id, "rejected")
-                    record = self._record(
+                        record = self._record(
+                            store,
+                            series,
+                            attempt_number=attempt_number,
+                            experiment_id=experiment_id,
+                            requested_model=requested_model,
+                            actual_provider=actual_provider,
+                            actual_model=actual_model,
+                            outcome="validation_failed",
+                            rejection_codes=("fixed_validation_failed",),
+                            candidate_path=candidate_path,
+                            receipt_path=receipt_path,
+                            validation_path=validation_path,
+                            started_at=started_at,
+                        )
+                        feedback.append(_feedback_from_record(record, validation))
+                        series = store.read(series.id)
+                        continue
+
+                    reviewer_models = tuple(
+                        model for model in series.models if model != requested_model
+                    )
+                    if self.semantic_reviewer is None or not reviewer_models:
+                        self._record(
+                            store,
+                            series,
+                            attempt_number=attempt_number,
+                            experiment_id=experiment_id,
+                            requested_model=requested_model,
+                            actual_provider=actual_provider,
+                            actual_model=actual_model,
+                            outcome="fixed_tests_passed",
+                            rejection_codes=("independent_semantic_review_required",),
+                            candidate_path=candidate_path,
+                            receipt_path=receipt_path,
+                            validation_path=validation_path,
+                            started_at=started_at,
+                        )
+                        return store.finish(
+                            series.id,
+                            status="fixed_tests_passed",
+                            reason="independent_semantic_review_required",
+                            successful_experiment_id=experiment_id,
+                        )
+
+                    review_batches = [
+                        self.semantic_reviewer.review(
+                            manifest_id=experiment_id,
+                            plan=plan,
+                            draft=draft,
+                            validation=validation,
+                            model_override=model,
+                        )
+                        for model in reviewer_models
+                    ]
+                    _write_json(
+                        review_path,
+                        {
+                            "authority": "review_advice_only",
+                            "requested_reviewers": reviewer_models,
+                            "batches": [item.model_dump(mode="json") for item in review_batches],
+                        },
+                        exclusive=True,
+                    )
+                    review_codes = tuple(
+                        dict.fromkeys(
+                            code
+                            for batch in review_batches
+                            for code in (
+                                (batch.rejection_code,)
+                                if batch.review is None
+                                else batch.review.reasons
+                            )
+                            if code
+                        )
+                    )
+                    review_passed = all(
+                        batch.review is not None
+                        and batch.review.decision == "ready_for_holdout"
+                        for batch in review_batches
+                    )
+                    if not review_passed:
+                        attempt_store.transition(experiment_id, "rejected")
+                        record = self._record(
+                            store,
+                            series,
+                            attempt_number=attempt_number,
+                            experiment_id=experiment_id,
+                            requested_model=requested_model,
+                            actual_provider=actual_provider,
+                            actual_model=actual_model,
+                            outcome="semantic_review_rejected",
+                            rejection_codes=review_codes or ("semantic_review_rejected",),
+                            candidate_path=candidate_path,
+                            receipt_path=receipt_path,
+                            validation_path=validation_path,
+                            review_path=review_path,
+                            started_at=started_at,
+                        )
+                        feedback.append(_feedback_from_record(record, validation))
+                        series = store.read(series.id)
+                        continue
+
+                    self._record(
                         store,
                         series,
                         attempt_number=attempt_number,
@@ -474,22 +591,20 @@ class BoundedExperimentCoordinator:
                         requested_model=requested_model,
                         actual_provider=actual_provider,
                         actual_model=actual_model,
-                        outcome=outcome,
-                        rejection_codes=() if validation.passed else ("fixed_validation_failed",),
+                        outcome="ready_for_holdout",
+                        rejection_codes=(),
                         candidate_path=candidate_path,
                         receipt_path=receipt_path,
                         validation_path=validation_path,
+                        review_path=review_path,
                         started_at=started_at,
                     )
-                    if validation.passed:
-                        return store.finish(
-                            series.id,
-                            status="fixed_tests_passed",
-                            reason="fixed_validation_profiles_passed",
-                            successful_experiment_id=experiment_id,
-                        )
-                    feedback.append(_feedback_from_record(record, validation))
-                    series = store.read(series.id)
+                    return store.finish(
+                        series.id,
+                        status="ready_for_holdout",
+                        reason="independent_semantic_review_passed",
+                        successful_experiment_id=experiment_id,
+                    )
                 except Exception as exc:
                     _abandon_attempt_safely(attempt_store, experiment_id)
                     error_code = _safe_error_code(exc)
@@ -504,6 +619,7 @@ class BoundedExperimentCoordinator:
                         candidate_path=candidate_path if candidate_path.exists() else None,
                         receipt_path=receipt_path if receipt_path.exists() else None,
                         validation_path=validation_path if validation_path.exists() else None,
+                        review_path=review_path if review_path.exists() else None,
                         started_at=started_at,
                     )
                     return store.finish(series.id, status="failed", reason=error_code)
@@ -563,6 +679,7 @@ class BoundedExperimentCoordinator:
         candidate_path: Path | None = None,
         receipt_path: Path | None = None,
         validation_path: Path | None = None,
+        review_path: Path | None = None,
     ) -> ExperimentAttemptRecord:
         series_dir = store.series_dir(series.id)
         record = ExperimentAttemptRecord(
@@ -579,6 +696,8 @@ class BoundedExperimentCoordinator:
             receipt_sha256=_optional_file_sha256(receipt_path),
             validation_artifact=_relative_artifact(series_dir, validation_path),
             validation_sha256=_optional_file_sha256(validation_path),
+            semantic_review_artifact=_relative_artifact(series_dir, review_path),
+            semantic_review_sha256=_optional_file_sha256(review_path),
             started_at=started_at,
             completed_at=_utc_now(),
         )

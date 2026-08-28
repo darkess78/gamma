@@ -98,6 +98,8 @@ class CandidateAttemptFeedback(BaseModel):
         "needs_more_source",
         "validation_failed",
         "fixed_tests_passed",
+        "semantic_review_rejected",
+        "ready_for_holdout",
         "deadline_exhausted",
         "infrastructure_error",
     ]

@@ -63,9 +63,19 @@ local models, stops at the manifest attempt or wall-clock limit, records every
 structured draft, receipt, validation report, digest, transition, and terminal
 reason, and gives a later attempt only the last three bounded validation
 feedback records. Test output in feedback is marked as untrusted data. A
-passing attempt stops at `fixed_tests_passed`; it does not satisfy holdout,
-performance, review, health, soak, rollback, or approval gates. Recurring runs
+passing the fixed profiles establishes only `fixed_tests_passed`; it does not
+satisfy holdout, performance, human review, health, soak, rollback, or approval
+gates. Recurring runs
 are controlled by a separate policy flag and remain disabled.
+
+When a series names at least two models, fixed-test success is followed by an
+independent semantic review. The candidate-author model is excluded. Each other
+named local model receives the grounded mechanism, exact old/new text, and
+hash-only fixed-test summary, with code and comments explicitly treated as
+untrusted data. Every independent review must recommend `ready_for_holdout`;
+otherwise the attempt is rejected and its bounded reason codes become feedback
+for the next fresh attempt. Review output is advice only and does not satisfy
+the human `diff_review` gate.
 
 Evaluation and improvement-model routes remain available as in-memory trace
 evidence but are excluded from the production route log used as a baseline.
@@ -342,6 +352,12 @@ time with a literal zero, and a failure-rate candidate cannot suppress route
 events or relabel existing status/error telemetry. Fixed-test success is named
 `fixed_tests_passed` deliberately: it is regression evidence, not proof that the
 hypothesis improved its objective.
+
+With independent semantic review configured, unanimous review advances the
+series only to `ready_for_holdout`. That state still lacks paired performance,
+quality/behavior holdout, health, rollback, and owner-approval evidence. A
+single-model series stops at `fixed_tests_passed` because it cannot review its
+own candidate independently.
 
 ## Isolated Experiment Manifests
 

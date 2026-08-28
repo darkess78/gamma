@@ -224,6 +224,7 @@ def run(argv: list[str] | None = None) -> int:
         from ..llm.factory import build_llm_adapter
         from .candidates import CandidateDraftGenerator
         from .proposals import require_local_proposal_destination
+        from .semantic_review import CandidateSemanticReviewer
         from .validation import CandidateValidator
 
         require_local_proposal_destination()
@@ -233,9 +234,11 @@ def run(argv: list[str] | None = None) -> int:
         configured_root = Path(contract.policy.experiment_worktree_root)
         if not configured_root.is_absolute():
             configured_root = PROJECT_ROOT / configured_root
+        improvement_llm = build_llm_adapter()
         result = BoundedExperimentCoordinator(
-            candidate_generator=CandidateDraftGenerator(build_llm_adapter()),
+            candidate_generator=CandidateDraftGenerator(improvement_llm),
             candidate_validator=CandidateValidator(),
+            semantic_reviewer=CandidateSemanticReviewer(improvement_llm),
         ).run(
             store=series_store,
             series_id=args.id,
@@ -260,7 +263,7 @@ def run(argv: list[str] | None = None) -> int:
             )
             + "\n"
         )
-        return 0 if result.status == "fixed_tests_passed" else 2
+        return 0 if result.status in {"fixed_tests_passed", "ready_for_holdout"} else 2
 
     if args.command in {
         "plan-experiment",

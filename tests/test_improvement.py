@@ -48,6 +48,7 @@ from gamma.improvement.proposals import (
     require_local_proposal_destination,
 )
 from gamma.improvement.review import review_proposal_batches
+from gamma.improvement.semantic_review import CandidateSemanticReviewer
 from gamma.improvement.validation import (
     CandidateValidator,
     SandboxedTestResult,
@@ -653,6 +654,7 @@ class ImprovementEvaluatorTest(unittest.TestCase):
             result = BoundedExperimentCoordinator(
                 candidate_generator=CandidateDraftGenerator(llm),
                 candidate_validator=CandidateValidator(_FailFirstSandboxRunner()),
+                semantic_reviewer=CandidateSemanticReviewer(_AcceptReviewLLM()),
             ).run(
                 store=store,
                 series_id=series.id,
@@ -665,11 +667,11 @@ class ImprovementEvaluatorTest(unittest.TestCase):
                 worktree_root=worktree_root,
             )
 
-            self.assertEqual(result.status, "fixed_tests_passed")
+            self.assertEqual(result.status, "ready_for_holdout")
             self.assertEqual(result.successful_experiment_id, "latency-series-001-a02")
             self.assertEqual([item.outcome for item in result.attempts], [
                 "validation_failed",
-                "fixed_tests_passed",
+                "ready_for_holdout",
             ])
             self.assertEqual(llm.models, ["model-a", "model-b"])
             self.assertEqual(llm.contexts[0]["prior_attempt_feedback"], [])
@@ -1120,6 +1122,25 @@ class _RetryCandidateLLM:
                             "new_text": "    return value",
                         }
                     ],
+                }
+            ),
+            metadata={
+                "route": {
+                    "provider": "local",
+                    "model": kwargs.get("model_override"),
+                }
+            },
+        )
+
+
+class _AcceptReviewLLM:
+    def generate_reply(self, system_prompt: str, user_text: str, **kwargs) -> LLMReply:
+        return LLMReply(
+            text=json.dumps(
+                {
+                    "decision": "ready_for_holdout",
+                    "reasons": ["semantics_consistent", "hypothesis_addressed"],
+                    "rationale": "The exact edit matches the grounded mechanism; holdout evidence is still required.",
                 }
             ),
             metadata={

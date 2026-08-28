@@ -251,6 +251,27 @@ class ImprovementEvaluator:
                             suggested_next_step=f"Profile {metric_id} with a paired baseline before changing its implementation.",
                         )
                     )
+        total_p95 = by_id.get("conversation.total_ms")
+        total_p95_value = total_p95.summary.p95 if total_p95 is not None else None
+        if total_p95_value and total_p95_value > 0:
+            for metric_id in _STAGE_METRICS:
+                stage = by_id.get(metric_id)
+                if stage is None or not stage.sufficient_data or stage.summary.p95 is None:
+                    continue
+                share = 100.0 * stage.summary.p95 / total_p95_value
+                if share >= self.contract.policy.dominant_stage_share_percent:
+                    opportunities.append(
+                        ImprovementOpportunity(
+                            domain=metric_id.split(".", 1)[0],
+                            priority="medium",
+                            kind="tail_latency_stage",
+                            evidence=f"{metric_id} p95 is {share:.1f}% of conversation.total_ms p95.",
+                            suggested_next_step=(
+                                f"Compare {metric_id} on paired warm fixtures and optimize the measured "
+                                "tail contributor without weakening quality or safety guardrails."
+                            ),
+                        )
+                    )
         draft_total = by_id.get("conversation.draft_reply_ms")
         if draft_total and draft_total.summary.p50 and draft_total.summary.p50 > 0:
             draft_components = [

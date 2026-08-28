@@ -128,7 +128,10 @@ distributions are also diagnostic. Route failure percentage plus fixture
 quality, safety, privacy, and reliability rates are guardrails. Reports contain
 aggregates and record counts only. The observer calls out slow first audio,
 dominant live-voice stages, route cohorts, fallback use, and draft substage
-dominance without inferring causation from mixed traffic.
+dominance without inferring causation from mixed traffic. Conversation-stage
+opportunities apply the configured dominance threshold to both median and p95
+contribution, so a stage used by only a subset of modes cannot disappear behind
+a zero median; the usual minimum sample requirement still applies.
 
 The contract will later add independently measured scorecards for:
 

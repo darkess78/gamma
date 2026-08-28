@@ -125,6 +125,46 @@ class ImprovementEvaluatorTest(unittest.TestCase):
             {"conversation": 3, "llm_routes": 3, "fixtures": 3, "live_voice": 0},
         )
 
+    def test_observer_surfaces_tail_stage_hidden_by_zero_median(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_dir = Path(temp_dir)
+            records = [
+                {
+                    "timestamp": f"2026-08-27T00:00:{index:02d}Z",
+                    "timing_ms": {
+                        "total_ms": 1000.0,
+                        "draft_reply_ms": 200.0,
+                        "metadata_ms": 0.0 if index < 13 else 400.0,
+                        "memory_persist_ms": 0.0,
+                        "tool_exec_ms": 0.0,
+                        "finalizer_ms": 0.0,
+                        "tts_ms": 0.0,
+                    },
+                }
+                for index in range(25)
+            ]
+            (runtime_dir / "conversation.timings.jsonl").write_text(
+                "\n".join(json.dumps(item) for item in records) + "\n",
+                encoding="utf-8",
+            )
+
+            report = self.evaluator.observe(runtime_dir)
+
+        metadata = next(
+            item
+            for item in report.opportunities
+            if item.kind == "tail_latency_stage"
+            and "conversation.metadata_ms" in item.evidence
+        )
+        self.assertIn("40.0%", metadata.evidence)
+        self.assertFalse(
+            any(
+                item.kind == "dominant_latency_stage"
+                and "conversation.metadata_ms" in item.evidence
+                for item in report.opportunities
+            )
+        )
+
     def test_live_voice_observation_does_not_emit_transcripts_or_replies(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_dir = Path(temp_dir)

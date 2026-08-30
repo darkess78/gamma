@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import subprocess
 import sys
 import time
@@ -111,9 +112,13 @@ class AutonomousImprovementRunner:
         prior_feedback = _previous_proposal_feedback(
             self.data_root / "work" / request.id,
             cycle=cycle,
+            series_root=self.data_root / "series",
+            request_id=request.id,
         )
         excluded_hypotheses = {
-            _hypothesis_digest(item["hypothesis"]) for item in prior_feedback
+            _hypothesis_digest(str(item["hypothesis"]))
+            for item in prior_feedback
+            if item.get("hypothesis")
         }
         proposal_batches: list[ProposalBatch] = []
         available_models: list[str] = []
@@ -497,22 +502,47 @@ def _previous_proposal_feedback(
     request_work_root: Path,
     *,
     cycle: int,
-) -> tuple[dict[str, str], ...]:
-    """Load bounded model-generated hypotheses from completed earlier cycles."""
-    feedback: list[dict[str, str]] = []
+    series_root: Path | None = None,
+    request_id: str | None = None,
+) -> tuple[dict[str, Any], ...]:
+    """Build bounded lessons from proposal, grounding, and candidate failures."""
+    feedback: list[dict[str, Any]] = []
     seen: set[str] = set()
+
+    def append(item: dict[str, Any]) -> None:
+        normalized = json.dumps(item, ensure_ascii=True, sort_keys=True)
+        if normalized in seen:
+            return
+        seen.add(normalized)
+        feedback.append(item)
+
     for previous_cycle in range(1, max(1, cycle)):
-        path = request_work_root / f"cycle-{previous_cycle:02d}" / "proposals.json"
-        try:
-            if path.is_symlink() or not path.is_file() or path.stat().st_size > 2_000_000:
-                continue
-            payload = json.loads(path.read_text(encoding="utf-8", errors="strict"))
-        except (OSError, UnicodeError, ValueError):
+        cycle_root = request_work_root / f"cycle-{previous_cycle:02d}"
+        payload = _read_feedback_json(cycle_root / "proposals.json")
+        if payload is None:
             continue
         batches = payload.get("batches") if isinstance(payload, dict) else None
         if not isinstance(batches, list):
             continue
         for batch in batches:
+            rejections = batch.get("rejections") if isinstance(batch, dict) else None
+            if isinstance(rejections, list):
+                for rejection in rejections[:10]:
+                    if not isinstance(rejection, dict):
+                        continue
+                    codes = _feedback_codes(
+                        [rejection.get("code"), *(rejection.get("issues") or [])]
+                    )
+                    if not codes:
+                        continue
+                    append(
+                        {
+                            "stage": "proposal_validation",
+                            "outcome": "proposal_rejected",
+                            "reason_codes": codes,
+                            "lesson": _failure_lesson(codes, "proposal_rejected"),
+                        }
+                    )
             proposals = batch.get("proposals") if isinstance(batch, dict) else None
             if not isinstance(proposals, list):
                 continue
@@ -520,17 +550,119 @@ def _previous_proposal_feedback(
                 if not isinstance(proposal, dict):
                     continue
                 hypothesis = " ".join(str(proposal.get("hypothesis") or "").split())[:1000]
-                if len(hypothesis) < 12 or hypothesis in seen:
+                if len(hypothesis) < 12:
                     continue
-                seen.add(hypothesis)
-                feedback.append(
+                outcome, codes = _grounding_feedback(cycle_root, hypothesis)
+                append(
                     {
                         "hypothesis": hypothesis,
                         "domain": " ".join(str(proposal.get("domain") or "unknown").split())[:80],
-                        "outcome": "not_actionable_in_prior_cycle",
+                        "stage": "source_grounding",
+                        "outcome": outcome,
+                        "reason_codes": codes,
+                        "lesson": _failure_lesson(codes, outcome),
+                    }
+                )
+        if series_root is not None and request_id:
+            prefix = f"{request_id[:48]}-c{previous_cycle}-"
+            for manifest_path in sorted(series_root.glob(f"{prefix}*/manifest.json")):
+                manifest = _read_feedback_json(manifest_path)
+                if manifest is None:
+                    continue
+                codes: list[Any] = [manifest.get("terminal_reason"), manifest.get("status")]
+                attempts = manifest.get("attempts")
+                if isinstance(attempts, list):
+                    for attempt in attempts[-6:]:
+                        if not isinstance(attempt, dict):
+                            continue
+                        codes.append(attempt.get("outcome"))
+                        codes.extend(attempt.get("rejection_codes") or [])
+                bounded_codes = _feedback_codes(codes)
+                outcome = f"candidate_series_{str(manifest.get('status') or 'ended')[:40]}"
+                append(
+                    {
+                        "hypothesis": " ".join(
+                            str(manifest.get("hypothesis") or "").split()
+                        )[:1000],
+                        "domain": " ".join(str(manifest.get("domain") or "unknown").split())[:80],
+                        "stage": "candidate_validation",
+                        "outcome": outcome,
+                        "reason_codes": bounded_codes,
+                        "lesson": _failure_lesson(bounded_codes, outcome),
                     }
                 )
     return tuple(feedback[-30:])
+
+
+def _read_feedback_json(path: Path) -> dict[str, Any] | None:
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 2_000_000:
+            return None
+        payload = json.loads(path.read_text(encoding="utf-8", errors="strict"))
+    except (OSError, UnicodeError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _grounding_feedback(cycle_root: Path, hypothesis: str) -> tuple[str, list[str]]:
+    payload = _read_feedback_json(
+        cycle_root / f"grounding-{_short_hash(hypothesis)}-plans.json"
+    )
+    if payload is None:
+        return "not_selected_for_grounding", ["not_selected_for_grounding"]
+    statuses: list[Any] = []
+    codes: list[Any] = []
+    batches = payload.get("batches")
+    if isinstance(batches, list):
+        for batch in batches:
+            if not isinstance(batch, dict):
+                continue
+            for plan in batch.get("plans") or []:
+                if isinstance(plan, dict):
+                    statuses.append(plan.get("status"))
+            for rejection in batch.get("rejections") or []:
+                if isinstance(rejection, dict):
+                    codes.append(rejection.get("code"))
+    bounded_codes = _feedback_codes([*statuses, *codes])
+    if "grounded_plan" in statuses:
+        outcome = "grounded_for_candidate_work"
+    elif "refuted" in statuses:
+        outcome = "refuted_by_verified_source"
+    elif "needs_more_source" in statuses:
+        outcome = "insufficient_verified_source"
+    else:
+        outcome = "grounding_rejected"
+    return outcome, bounded_codes
+
+
+def _feedback_codes(values: list[Any]) -> list[str]:
+    codes: list[str] = []
+    for value in values:
+        code = re.sub(r"[^a-z0-9_.:-]+", "_", str(value or "").strip().lower())[:100]
+        if code and code not in codes:
+            codes.append(code)
+    return codes[:12]
+
+
+def _failure_lesson(codes: list[str], outcome: str) -> str:
+    joined = " ".join([outcome, *codes])
+    if "schema" in joined or "unparseable" in joined:
+        return "Return the exact required JSON container and fields before proposing a new mechanism."
+    if "change_class_scope" in joined:
+        return "Use behavior_or_code for source edits and keep paths within the grounded source scope."
+    if "refuted" in joined:
+        return "Do not repeat a mechanism contradicted by verified source; choose a different measured cause."
+    if "citation" in joined or "needs_more_source" in joined or "insufficient_verified_source" in joined:
+        return "Narrow the claim to the verified excerpts and cite only exact available symbols and lines."
+    if "syntax" in joined or "ambiguous_candidate_edit" in joined:
+        return "Produce one syntactically valid, exact, uniquely matching source replacement."
+    if "validation_failed" in joined or "fixed_tests" in joined:
+        return "Change the mechanism in response to validation codes instead of repeating the failed edit."
+    if "semantic_review" in joined:
+        return "Preserve intended behavior and address the semantic review rejection before retrying."
+    if "observability" in joined:
+        return "Use Gamma's structured metrics paths and never add unstructured runtime stdout."
+    return "Materially revise the mechanism or choose a different measured opportunity before retrying."
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:

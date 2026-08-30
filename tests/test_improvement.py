@@ -888,7 +888,16 @@ class ImprovementEvaluatorTest(unittest.TestCase):
                     {
                         "hypothesis": "A prior bounded routing change may reduce total latency.",
                         "domain": "conversation",
-                        "outcome": "not_actionable_in_prior_cycle",
+                        "stage": "source_grounding",
+                        "outcome": "refuted_by_verified_source",
+                        "reason_codes": ["refuted", "invalid_source_citation"],
+                        "lesson": "Choose a different cause supported by exact source lines.",
+                    },
+                    {
+                        "stage": "proposal_validation",
+                        "outcome": "proposal_rejected",
+                        "reason_codes": ["schema_validation_failed"],
+                        "lesson": "Return the exact required JSON container and fields.",
                     },
                 ),
             )
@@ -901,11 +910,19 @@ class ImprovementEvaluatorTest(unittest.TestCase):
         self.assertEqual(supplied["operator_request"]["focus_domains"], ["conversation"])
         self.assertEqual(
             supplied["prior_cycle_feedback"][0]["outcome"],
-            "not_actionable_in_prior_cycle",
+            "refuted_by_verified_source",
+        )
+        self.assertEqual(
+            supplied["prior_cycle_feedback"][0]["reason_codes"],
+            ["refuted", "invalid_source_citation"],
+        )
+        self.assertEqual(
+            supplied["prior_cycle_feedback"][1]["stage"],
+            "proposal_validation",
         )
         self.assertIn("observation", supplied)
         self.assertIn("untrusted objective data", llm.system_prompt)
-        self.assertIn("Do not repeat those hypotheses verbatim", llm.system_prompt)
+        self.assertIn("correct the prior failure mode", llm.system_prompt)
         self.assertEqual(batch.proposals[0].authority, "proposal_only")
 
     def test_model_proposal_rejects_ungrounded_paths_and_binds_trusted_evidence(self) -> None:

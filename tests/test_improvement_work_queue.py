@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -21,15 +22,112 @@ class ImprovementWorkStoreTest(unittest.TestCase):
                 "domain": "conversation",
             }
             (cycle_root / "proposals.json").write_text(
-                json.dumps({"batches": [{"proposals": [proposal, proposal]}]}),
+                json.dumps(
+                    {
+                        "batches": [
+                            {
+                                "proposals": [proposal, proposal],
+                                "rejections": [
+                                    {
+                                        "code": "schema_validation_failed",
+                                        "issues": ["confidence:float_type"],
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            short_hash = hashlib.sha256(proposal["hypothesis"].encode("utf-8")).hexdigest()[:8]
+            (cycle_root / f"grounding-{short_hash}-plans.json").write_text(
+                json.dumps(
+                    {
+                        "batches": [
+                            {
+                                "plans": [{"status": "refuted"}],
+                                "rejections": [{"code": "invalid_source_citation"}],
+                            }
+                        ]
+                    }
+                ),
                 encoding="utf-8",
             )
 
             feedback = _previous_proposal_feedback(work_root, cycle=2)
 
-        self.assertEqual(len(feedback), 1)
-        self.assertEqual(feedback[0]["hypothesis"], proposal["hypothesis"])
-        self.assertEqual(feedback[0]["outcome"], "not_actionable_in_prior_cycle")
+        self.assertEqual(len(feedback), 2)
+        validation_feedback = next(item for item in feedback if not item.get("hypothesis"))
+        hypothesis_feedback = next(item for item in feedback if item.get("hypothesis"))
+        self.assertEqual(validation_feedback["stage"], "proposal_validation")
+        self.assertIn("schema_validation_failed", validation_feedback["reason_codes"])
+        self.assertIn("exact required JSON", validation_feedback["lesson"])
+        self.assertEqual(hypothesis_feedback["hypothesis"], proposal["hypothesis"])
+        self.assertEqual(hypothesis_feedback["outcome"], "refuted_by_verified_source")
+        self.assertIn("invalid_source_citation", hypothesis_feedback["reason_codes"])
+        self.assertIn("contradicted by verified source", hypothesis_feedback["lesson"])
+
+    def test_previous_cycle_feedback_carries_candidate_failure_codes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            data_root = Path(temporary_directory) / "improvement"
+            request_id = "work-20260830-010203-12345678"
+            work_root = data_root / "work" / request_id
+            cycle_root = work_root / "cycle-01"
+            cycle_root.mkdir(parents=True)
+            proposal = {
+                "hypothesis": "A bounded candidate may reduce measured route latency.",
+                "domain": "llm_router",
+            }
+            (cycle_root / "proposals.json").write_text(
+                json.dumps({"batches": [{"proposals": [proposal], "rejections": []}]}),
+                encoding="utf-8",
+            )
+            short_hash = hashlib.sha256(proposal["hypothesis"].encode("utf-8")).hexdigest()[:8]
+            (cycle_root / f"grounding-{short_hash}-plans.json").write_text(
+                json.dumps(
+                    {"batches": [{"plans": [{"status": "grounded_plan"}], "rejections": []}]}
+                ),
+                encoding="utf-8",
+            )
+            series_root = data_root / "series"
+            manifest_root = series_root / f"{request_id[:48]}-c1-{short_hash}"
+            manifest_root.mkdir(parents=True)
+            (manifest_root / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "hypothesis": "Use one exact isolated edit to reduce measured route latency.",
+                        "domain": "llm_router",
+                        "status": "exhausted",
+                        "terminal_reason": "attempt_limit",
+                        "attempts": [
+                            {
+                                "outcome": "draft_rejected",
+                                "rejection_codes": ["candidate_schema_validation_failed"],
+                            },
+                            {
+                                "outcome": "validation_failed",
+                                "rejection_codes": ["fixed_validation_failed"],
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            feedback = _previous_proposal_feedback(
+                work_root,
+                cycle=2,
+                series_root=series_root,
+                request_id=request_id,
+            )
+
+        candidate_feedback = next(
+            item for item in feedback if item["stage"] == "candidate_validation"
+        )
+        self.assertEqual(candidate_feedback["outcome"], "candidate_series_exhausted")
+        self.assertIn("candidate_schema_validation_failed", candidate_feedback["reason_codes"])
+        self.assertIn("fixed_validation_failed", candidate_feedback["reason_codes"])
+        self.assertIn("exact required JSON", candidate_feedback["lesson"])
 
     def test_durable_request_supports_pause_resume_and_stop(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

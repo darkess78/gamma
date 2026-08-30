@@ -59,7 +59,7 @@ class StructuredTurnParser:
 
         # Temporary provider/API migration path: an ordinary plain-text reply is
         # treated as a reply draft. JSON-like planner output never enters it.
-        if _PLANNER_KEYS.search(candidate) or candidate.startswith("["):
+        if _PLANNER_KEYS.search(candidate) or re.match(r"\A\s*\[\s*\{", candidate):
             raise TurnContractError("planner_payload_detected")
         self.validate_communicable_text(candidate)
         return ParsedTurn(

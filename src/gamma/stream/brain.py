@@ -188,7 +188,7 @@ class StreamBrain:
                 "brief_mode": brief_mode,
                 "micro_mode": micro_mode,
                 "defer_llm_safety_review": _is_public_stream_event(event),
-                "delivery_context": "ambient" if event.kind in {"lull", "audio", "system"} else "public_stream",
+                "delivery_context": "ambient" if event.kind in {"conversation_lull", "audio_event", "system"} else "public_stream",
                 "speech_allowed": synthesize_speech,
                 "speech_requested": synthesize_speech,
             }

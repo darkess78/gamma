@@ -32,7 +32,7 @@ class _FakeConversation:
 
 class StreamOutputTest(unittest.TestCase):
     def test_silent_and_text_only_responses_emit_no_spoken_performer_events(self) -> None:
-        input_event = StreamInputEvent(kind="lull", session_id="stream-session")
+        input_event = StreamInputEvent(kind="conversation_lull", session_id="stream-session")
         silent = AssistantResponse(delivery_mode="silent", response_action="stay_silent", emotion="concerned")
         text_only = AssistantResponse(
             spoken_text="Visible in Monitor only.",

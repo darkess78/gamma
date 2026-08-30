@@ -233,6 +233,41 @@ class ConversationPipelineTest(unittest.TestCase):
         self.assertEqual(response.display_text, "")
         self.assertEqual(response.speech_text, "")
 
+    def test_silent_structured_turn_updates_bounded_emotional_state(self) -> None:
+        service = ConversationService()
+        service._llm = _FakeLLMAdapter([
+            json.dumps({
+                "action": "stay_silent",
+                "requested_delivery": "silent",
+                "final_text": "",
+                "internal_summary": "Observed the concern and chose not to interrupt.",
+                "emotion": "concerned",
+                "voice_styles": [],
+                "motions": [],
+                "tool_calls": [],
+                "memory_candidates": [],
+                "state_updates": {
+                    "emotion": "concerned",
+                    "active_topic": "rollout risk",
+                    "deferred_intention": "Revisit after validation",
+                },
+                "reason_code": "silent_observation",
+            })
+        ])
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        service._assistant_state = AssistantStateStore(path=Path(temp_dir.name) / "assistant-state.json")
+
+        with patch("gamma.conversation.service.build_system_prompt", return_value="prompt"), patch.object(
+            service, "_append_timing_log", return_value=None
+        ):
+            response = service.respond("I’m worried about the rollout.", fast_mode=True)
+
+        self.assertEqual(response.delivery_mode, "silent")
+        self.assertEqual(response.display_text, "")
+        self.assertEqual(service._assistant_state.load().current_emotion, "concerned")
+        self.assertEqual(response.state_updates.active_topic, "rollout risk")
+
     def test_spoken_text_constructor_remains_backward_compatible(self) -> None:
         response = AssistantResponse(spoken_text="Legacy reply.")
         self.assertEqual(response.display_text, "Legacy reply.")

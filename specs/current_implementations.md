@@ -1,7 +1,7 @@
 # Current Implementations
 
 Status: Current
-Last verified: 2026-08-28
+Last verified: 2026-08-30
 
 This is a concise inventory of behavior present in the repository. Domain
 specs own detailed contracts; target documents own future work.
@@ -39,10 +39,25 @@ specs own detailed contracts; target documents own future work.
 ## Persistent Shana Core
 
 - Text conversation through `POST /v1/conversation/respond`.
+- Conversation generation now crosses an explicit structured turn boundary:
+  action, requested delivery, final communicable text, safe summary, emotion,
+  presentation hints, authorized tool requests, memory candidates, bounded state
+  updates, and a stable reason code. Raw chain-of-thought is neither requested
+  nor retained.
+- `AssistantResponse.display_text` owns intentional text communication and
+  `AssistantResponse.speech_text` is the sole TTS/spoken-subtitle input.
+  `spoken_text` remains as a compatibility field during migration.
+- Deterministic delivery policy can resolve a turn to speech, text-only,
+  silence, or deferral. Private-marker, planner-payload, contradictory, or
+  malformed structured results receive one bounded regeneration; direct turns
+  then use a safe visible fallback while ambient/public turns fail closed.
 - Stable persona prompt assembly and assistant emotion state.
 - Speaker identity resolution across local, Twitch, Discord, game, and linked accounts.
 - SQLite/SQLModel profile facts, episodic memory, known people, selective writes, and memory tools.
 - Durable per-session turn journals, rolling summaries, working-state checkpoints, and bounded recent-turn context.
+- Silent completed exchanges update bounded working/emotional state without
+  writing a fabricated assistant utterance; only communicated text and safe
+  summaries enter continuity.
 - Durable last-output text restoration without replaying stale speech after restart.
 - Privacy guard and layered speech-safety filtering before public or synthesized output.
 - Mock, OpenAI, and Ollama-compatible LLM adapters.
@@ -56,6 +71,9 @@ specs own detailed contracts; target documents own future work.
 - Faster-Whisper, OpenAI, and stub STT paths.
 - Piper, OpenAI, and Qwen TTS paths with named voice profiles and optional RVC post-processing.
 - File roundtrip, CLI microphone modes, and browser live voice.
+- TTS, live-voice chunking, stream speech safety/budgets, performer speech
+  events, and spoken subtitles consume `speech_text`; Monitor/text clients use
+  `display_text`.
 
 ## Live Voice
 

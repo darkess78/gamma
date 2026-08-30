@@ -1,7 +1,7 @@
 # Shana Output Bus And Performer
 
 Status: Current with explicit future sections
-Last verified: 2026-06-22
+Last verified: 2026-08-30
 
 ## Purpose
 
@@ -63,6 +63,17 @@ dashboard asks question
   -> dashboard receives audio
   -> dashboard is the only playback owner
 ```
+
+The implemented conversation/output boundary distinguishes:
+
+- `display_text`: intentionally communicated text for Monitor and text clients
+- `speech_text`: the only content allowed into TTS and spoken subtitles
+- silent/deferred state: no speech, subtitle, speech-started, or stale replay
+  event, while validated emotion/motion or internal working-state updates may
+  still occur
+
+`spoken_text` remains a compatibility field only. Performer adapters and new
+output consumers must not infer speech authorization from it.
 
 ## Inputs, Outputs, And Monitors
 

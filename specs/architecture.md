@@ -1,7 +1,7 @@
 # Gamma Architecture
 
 Status: Current
-Last verified: 2026-06-22
+Last verified: 2026-08-30
 
 ## Runtime Topology
 
@@ -60,6 +60,26 @@ page navigation destroys browser audio and WebSocket state.
 - bind addresses and public URLs remain separate
 - performer outputs remain generic rather than VTube Studio/OBS-specific
 - public actions and speech pass explicit safety and operator-control gates
+
+## Conversation Decision And Delivery Boundary
+
+The conversation domain owns a compact structured turn draft. It contains an
+action and delivery preference plus only bounded, safe decision fields; it does
+not contain provider chain-of-thought. For ordinary turns the primary model
+returns the decision and `final_text` in one call. `tool_first` turns execute
+authorized tools and require a separate final realization. Raw tool results are
+not presentation output.
+
+```text
+identity/privacy -> context -> structured turn -> optional tools/finalization
+  -> contract and leakage guard -> deterministic delivery -> safety
+  -> bounded state/memory persistence -> optional TTS from speech_text
+```
+
+`display_text` and `speech_text` are separate authorities. Policy may override
+the model's requested delivery for privacy, Presence, public-output controls,
+operator mute, target policy, or speech budgets. The legacy `spoken_text` field
+is API compatibility only and must not be used by new output consumers.
 
 ## Streamer Architecture
 

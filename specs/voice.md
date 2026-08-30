@@ -1,7 +1,7 @@
 # Voice
 
 Status: Current
-Last verified: 2026-06-22
+Last verified: 2026-08-30
 
 ## Ownership
 
@@ -25,6 +25,11 @@ for inference.
 - Voice profiles load from layered `config/voices*.toml` files.
 - RVC is an optional Piper post-process, not a standalone provider.
 - Conversation responses expose text, content type, timing, and local artifact metadata.
+- `speech_text` is the only conversation field eligible for TTS and spoken
+  subtitles. `display_text` may be non-empty for a text-only response while
+  `speech_text` remains empty; silent and deferred responses produce neither.
+- `spoken_text` remains populated for compatible clients but is not a speech
+  authorization boundary.
 
 ## Controllers
 
@@ -36,3 +41,9 @@ for inference.
 
 Provider choice must remain isolated behind adapter/service interfaces. New
 voice research may not change conversation or dashboard ownership boundaries.
+
+Delivery resolution is deterministic: direct voice defaults to speech, direct
+text defaults to text-only, Presence Wake requires an audio-ready listener for
+speech, and public/ambient speech remains subject to Presence, output policy,
+mute, safety, target, and budget gates. A tool result is never synthesized
+directly; only the finalized `speech_text` may reach a TTS provider.

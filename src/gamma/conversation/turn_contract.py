@@ -11,7 +11,8 @@ from ..schemas.response import ConversationTurnDraft, DeliveryMode, ResponseActi
 
 _PRIVATE_MARKERS = re.compile(
     r"<\s*/?\s*(?:think|analysis|reasoning|chain[-_ ]?of[-_ ]?thought)\b|"
-    r"\b(?:private_reasoning|hidden_reasoning|scratchpad)\b",
+    r"\b(?:private_reasoning|hidden_reasoning|scratchpad|chain[-_ ]?of[-_ ]?thought)\b|"
+    r"\b(?:my|private|hidden)\s+(?:analysis|reasoning)\b",
     re.IGNORECASE,
 )
 _PLANNER_KEYS = re.compile(
@@ -95,6 +96,12 @@ class StructuredTurnParser:
             raise TurnContractError("tool_first_without_tools")
         if draft.action != "tool_first" and draft.tool_calls:
             raise TurnContractError("tools_require_tool_first")
+        if any(len(item) > 80 for item in [*draft.voice_styles, *draft.motions]):
+            raise TurnContractError("presentation_hint_too_long")
+        if any(len(json.dumps(call.args, ensure_ascii=False)) > 4000 for call in draft.tool_calls):
+            raise TurnContractError("tool_args_too_large")
+        if any(len(candidate.text) > 2000 for candidate in draft.memory_candidates):
+            raise TurnContractError("memory_candidate_too_large")
 
 
 def resolve_delivery(

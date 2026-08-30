@@ -1,7 +1,7 @@
 # Live Voice
 
 Status: Current
-Last verified: 2026-06-22
+Last verified: 2026-08-30
 
 ## Data Flow
 
@@ -31,6 +31,12 @@ Shana owns transcription, generation, synthesis, job state, and cancellation.
 - cancellation clears stale playback/output and records reason and latency
 - simple chunked mode is the supported default
 - incremental sentence generation remains experimental
+- simple chunking reads only finalized `speech_text`; text-only, silent,
+  deferred, cancelled, and interrupted turns do not create chunks or speech
+  lifecycle events
+- the experimental incremental path is not a separate cognition architecture
+  and must not become primary until a complete private structured plan exists
+  before bounded sentence realization, per-sentence safety, and synthesis
 
 ## Known Limits
 

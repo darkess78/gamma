@@ -925,6 +925,28 @@ class ImprovementEvaluatorTest(unittest.TestCase):
         self.assertIn("correct the prior failure mode", llm.system_prompt)
         self.assertEqual(batch.proposals[0].authority, "proposal_only")
 
+    def test_unparseable_proposal_response_gets_one_strict_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_dir = Path(temp_dir)
+            _write_snapshot(runtime_dir, total_ms=1000.0, route_status="ok", count=25)
+            report = self.evaluator.observe(runtime_dir)
+            llm = _RepairProposalLLM()
+
+            batch = ImprovementProposalGenerator(llm).generate(
+                report=report,
+                contract=self.contract,
+                operator_goal="Improve measured conversation latency safely.",
+            )
+
+        self.assertTrue(batch.repair_attempted)
+        self.assertEqual(llm.call_count, 2)
+        self.assertEqual(len(batch.proposals), 1)
+        self.assertIn("FORMAT REPAIR", llm.system_prompts[1])
+        self.assertEqual(
+            json.loads(llm.user_texts[1])["format_repair"]["rejection_codes"],
+            ["unparseable_response"],
+        )
+
     def test_model_proposal_rejects_ungrounded_paths_and_binds_trusted_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_dir = Path(temp_dir)
@@ -1578,6 +1600,25 @@ class _ProposalLLM:
             text=json.dumps(payload),
             metadata={"route": {"provider": "local", "model": "proposal-fixture"}},
         )
+
+
+class _RepairProposalLLM(_ProposalLLM):
+    def __init__(self) -> None:
+        super().__init__()
+        self.call_count = 0
+        self.system_prompts: list[str] = []
+        self.user_texts: list[str] = []
+
+    def generate_reply(self, system_prompt: str, user_text: str, **kwargs) -> LLMReply:
+        self.call_count += 1
+        self.system_prompts.append(system_prompt)
+        self.user_texts.append(user_text)
+        if self.call_count == 1:
+            return LLMReply(
+                text="analysis without a JSON proposal",
+                metadata={"route": {"provider": "local", "model": "proposal-fixture"}},
+            )
+        return super().generate_reply(system_prompt, user_text, **kwargs)
 
 
 class _SingleProposalLLM:

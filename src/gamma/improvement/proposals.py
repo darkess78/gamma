@@ -76,6 +76,7 @@ class ProposalBatch(BaseModel):
     proposals: tuple[ImprovementProposal, ...]
     rejected_count: int = 0
     rejections: tuple[ProposalRejection, ...] = ()
+    repair_attempted: bool = False
 
 
 class ImprovementProposalGenerator:
@@ -119,14 +120,15 @@ class ImprovementProposalGenerator:
                 }
             if bounded_feedback:
                 user_payload["prior_cycle_feedback"] = bounded_feedback
+        system_prompt = _system_prompt(
+            maximum_proposals,
+            observable_metric_ids,
+            candidate_paths,
+            has_operator_goal=bool(operator_goal),
+            has_prior_feedback=bool(bounded_feedback),
+        )
         reply = self.llm.generate_reply(
-            system_prompt=_system_prompt(
-                maximum_proposals,
-                observable_metric_ids,
-                candidate_paths,
-                has_operator_goal=bool(operator_goal),
-                has_prior_feedback=bool(bounded_feedback),
-            ),
+            system_prompt=system_prompt,
             user_text=json.dumps(user_payload, ensure_ascii=True, sort_keys=True),
             call_context=LLMCallContext(
                 purpose="improvement_analysis",
@@ -140,6 +142,38 @@ class ImprovementProposalGenerator:
             model_override=model_override,
         )
         raw_proposals = _parse_proposals(reply.text)
+        repair_attempted = False
+        if not raw_proposals:
+            repair_payload = (
+                dict(user_payload)
+                if isinstance(user_payload, dict) and "observation" in user_payload
+                else {"observation": observation}
+            )
+            repair_payload["format_repair"] = {
+                "rejection_codes": ["unparseable_response"],
+                "required_container": "proposals",
+            }
+            reply = self.llm.generate_reply(
+                system_prompt=(
+                    system_prompt
+                    + " FORMAT REPAIR: The prior response could not be parsed. Return exactly one "
+                    "valid JSON object with a proposals array and no analysis, markdown, echo, or "
+                    "additional JSON values. Preserve every safety, evidence, metric, and path rule."
+                ),
+                user_text=json.dumps(repair_payload, ensure_ascii=True, sort_keys=True),
+                call_context=LLMCallContext(
+                    purpose="improvement_analysis_repair",
+                    reasoning_depth="normal",
+                    persona_sensitive=False,
+                    interaction_mode="improvement",
+                    cost_sensitive=False,
+                    quality_tier="primary",
+                    minimum_context_tokens=4096,
+                ),
+                model_override=model_override,
+            )
+            raw_proposals = _parse_proposals(reply.text)
+            repair_attempted = True
         route = (reply.metadata or {}).get("route") if isinstance(reply.metadata, dict) else {}
         route = route if isinstance(route, dict) else {}
         accepted: list[ImprovementProposal] = []
@@ -179,12 +213,14 @@ class ImprovementProposalGenerator:
                 continue
             accepted.append(proposal)
         if not raw_proposals:
-            rejections.append(ProposalRejection(proposal_index=0, code="unparseable_response"))
+            code = "unparseable_response_after_repair" if repair_attempted else "unparseable_response"
+            rejections.append(ProposalRejection(proposal_index=0, code=code))
         return ProposalBatch(
             observation_sha256=observation_sha256,
             proposals=tuple(accepted),
             rejected_count=rejected_count + max(0, len(raw_proposals) - maximum_proposals),
             rejections=tuple(rejections),
+            repair_attempted=repair_attempted,
         )
 
 

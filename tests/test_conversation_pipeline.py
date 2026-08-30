@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +12,7 @@ from gamma.persona.assistant_state import AssistantStateStore
 from gamma.safety.privacy_guard import PRIVACY_REFUSAL
 from gamma.memory.service import MemoryService
 from gamma.schemas.conversation import SpeakerContext
+from gamma.schemas.response import AssistantResponse
 from gamma.voice.tts import TTSResult
 
 
@@ -86,6 +88,167 @@ class ConversationPipelineTest(unittest.TestCase):
             emotion="happy",
             session_id=None,
         )
+
+    def test_structured_turn_exposes_and_synthesizes_only_final_text(self) -> None:
+        service = ConversationService()
+        service._llm = _FakeLLMAdapter([
+            json.dumps({
+                "action": "reply",
+                "requested_delivery": "speech",
+                "final_text": "Here is the answer.",
+                "internal_summary": "Chose a concise answer after checking the request.",
+                "emotion": "happy",
+                "voice_styles": ["soft"],
+                "motions": [],
+                "tool_calls": [],
+                "memory_candidates": [],
+                "state_updates": {"active_topic": "the answer"},
+                "reason_code": "direct_answer",
+            })
+        ])
+        fake_tts = _FakeTTSService()
+        service._tts = fake_tts
+        service._remember_assistant_state = Mock()
+
+        with patch("gamma.conversation.service.build_system_prompt", return_value="prompt"), patch.object(
+            service, "_append_timing_log", return_value=None
+        ):
+            response = service.respond("answer me", synthesize_speech=True, fast_mode=True)
+
+        self.assertEqual(response.display_text, "Here is the answer.")
+        self.assertEqual(response.speech_text, "Here is the answer.")
+        self.assertEqual(response.internal_summary, "Chose a concise answer after checking the request.")
+        self.assertEqual(fake_tts.calls, [("Here is the answer.", "happy", ["soft"])])
+        self.assertNotIn(response.internal_summary, fake_tts.calls[0][0])
+
+    def test_private_markers_fail_to_safe_direct_fallback_after_one_repair(self) -> None:
+        service = ConversationService()
+        service._llm = _FakeLLMAdapter([
+            "<think>private plan</think> I should answer.",
+            "<analysis>still private</analysis>",
+        ])
+        service._remember_assistant_state = Mock()
+
+        with patch("gamma.conversation.service.build_system_prompt", return_value="prompt"), patch.object(
+            service, "_append_timing_log", return_value=None
+        ):
+            response = service.respond("hello", fast_mode=True)
+
+        self.assertEqual(len(service._llm.calls), 2)
+        self.assertEqual(response.reason_code, "contract_fallback_direct")
+        self.assertNotIn("private", response.display_text or "")
+        self.assertNotIn("analysis", response.spoken_text.lower())
+
+    def test_text_only_structured_turn_never_calls_tts(self) -> None:
+        service = ConversationService()
+        service._llm = _FakeLLMAdapter([
+            json.dumps({
+                "action": "reply",
+                "requested_delivery": "text_only",
+                "final_text": "Read this quietly.",
+                "internal_summary": "Selected text-only delivery.",
+                "emotion": "neutral",
+                "voice_styles": [],
+                "motions": [],
+                "tool_calls": [],
+                "memory_candidates": [],
+                "state_updates": {},
+                "reason_code": "text_only_selected",
+            })
+        ])
+        fake_tts = _FakeTTSService()
+        service._tts = fake_tts
+        service._remember_assistant_state = Mock()
+
+        with patch("gamma.conversation.service.build_system_prompt", return_value="prompt"), patch.object(
+            service, "_append_timing_log", return_value=None
+        ):
+            response = service.respond("keep it quiet", synthesize_speech=True, fast_mode=True)
+
+        self.assertEqual(response.delivery_mode, "text_only")
+        self.assertEqual(response.display_text, "Read this quietly.")
+        self.assertEqual(response.speech_text, "")
+        self.assertEqual(fake_tts.calls, [])
+
+    def test_tool_first_synthesizes_only_finalized_text(self) -> None:
+        service = ConversationService()
+        service._llm = _FakeLLMAdapter([
+            json.dumps({
+                "action": "tool_first",
+                "requested_delivery": "speech",
+                "final_text": "",
+                "internal_summary": "Requested a bounded local lookup.",
+                "emotion": "neutral",
+                "voice_styles": [],
+                "motions": [],
+                "tool_calls": [{"tool": "missing_test_tool", "args": {}}],
+                "memory_candidates": [],
+                "state_updates": {},
+                "reason_code": "tool_lookup",
+            }),
+            json.dumps({
+                "action": "reply",
+                "requested_delivery": "speech",
+                "final_text": "I couldn’t complete that lookup.",
+                "internal_summary": "Reported the tool failure without exposing its payload.",
+                "emotion": "concerned",
+                "voice_styles": [],
+                "motions": [],
+                "tool_calls": [],
+                "memory_candidates": [],
+                "state_updates": {},
+                "reason_code": "tool_failure_finalized",
+            }),
+        ])
+        fake_tts = _FakeTTSService()
+        service._tts = fake_tts
+        service._remember_assistant_state = Mock()
+
+        with patch("gamma.conversation.service.build_system_prompt", return_value="prompt"), patch.object(
+            service, "_append_timing_log", return_value=None
+        ):
+            response = service.respond("look it up", synthesize_speech=True, fast_mode=True)
+
+        self.assertEqual(response.speech_text, "I couldn’t complete that lookup.")
+        self.assertEqual(fake_tts.calls[0][0], "I couldn’t complete that lookup.")
+        self.assertNotIn("Unknown tool", fake_tts.calls[0][0])
+
+    def test_ambient_malformed_turn_fails_closed_to_silence(self) -> None:
+        service = ConversationService()
+        service._llm = _FakeLLMAdapter(["<think>private</think>", "{not valid json"])
+        service._remember_assistant_state = Mock()
+
+        with patch("gamma.conversation.service.build_system_prompt", return_value="prompt"), patch.object(
+            service, "_append_timing_log", return_value=None
+        ):
+            response = service.respond(
+                "ambient observation",
+                synthesize_speech=True,
+                fast_mode=True,
+                delivery_context="ambient",
+                speech_requested=True,
+            )
+
+        self.assertEqual(response.delivery_mode, "silent")
+        self.assertEqual(response.display_text, "")
+        self.assertEqual(response.speech_text, "")
+
+    def test_spoken_text_constructor_remains_backward_compatible(self) -> None:
+        response = AssistantResponse(spoken_text="Legacy reply.")
+        self.assertEqual(response.display_text, "Legacy reply.")
+        self.assertEqual(response.speech_text, "Legacy reply.")
+
+    def test_silent_response_clears_stale_audio_fields(self) -> None:
+        response = AssistantResponse(
+            spoken_text="stale",
+            delivery_mode="silent",
+            response_action="stay_silent",
+            audio_path="stale.wav",
+            audio_content_type="audio/wav",
+        )
+        self.assertEqual(response.spoken_text, "")
+        self.assertIsNone(response.audio_path)
+        self.assertIsNone(response.audio_content_type)
 
     def test_fast_mode_passes_hidden_voice_style_tags_to_tts(self) -> None:
         service = ConversationService()

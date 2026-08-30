@@ -80,6 +80,44 @@ def test_unknown_scope_cannot_read_private_turns() -> None:
     assert "Private reply" not in context
 
 
+def test_silent_exchange_updates_working_state_without_fake_assistant_turn() -> None:
+    with TemporaryDirectory() as temp_dir:
+        service = ContinuityService(database_url=_database_url(Path(temp_dir) / "silent.db"))
+        exchange_id = service.begin_exchange(
+            session_id="silent-session",
+            text="Keep considering the rollout risk.",
+            speaker_name="Owner",
+            input_source="local",
+            privacy_scope="local_private",
+        )
+        service.complete_exchange(
+            exchange_id=exchange_id,
+            session_id="silent-session",
+            assistant_text="",
+            trace_id="trace-silent",
+            output_target="dashboard_monitor",
+            privacy_scope="local_private",
+            internal_summary="Deferred the response safely.",
+            state_updates={
+                "active_topic": "rollout risk",
+                "current_objective": "Review the rollout risk",
+                "deferred_intention": "Revisit after validation",
+            },
+        )
+        turns = service.recent_turns(
+            "silent-session",
+            privacy_scopes={"local_private"},
+            token_budget=1000,
+        )
+        snapshot = service.snapshot("silent-session")
+
+    assert [turn.role for turn in turns] == ["user"]
+    assert snapshot["working_state"]["active_topic"] == "rollout risk"
+    assert snapshot["working_state"]["current_objective"] == "Review the rollout risk"
+    assert snapshot["working_state"]["next_intended_action"] == "Revisit after validation"
+    assert snapshot["summary"]["completed_exchanges"] == 1
+
+
 def test_pending_turn_is_marked_interrupted_after_reconstruction() -> None:
     with TemporaryDirectory() as temp_dir:
         url = _database_url(Path(temp_dir) / "interrupted.db")

@@ -144,6 +144,7 @@ class ContinuityService:
         privacy_scope: str,
         internal_summary: str | None = None,
         tool_metadata: dict | None = None,
+        state_updates: dict | None = None,
     ) -> None:
         now = _utc_now()
         with Session(self._engine) as session:
@@ -156,36 +157,40 @@ class ContinuityService:
             if user_entry is not None:
                 user_entry.completion_status = "completed"
                 session.add(user_entry)
-            assistant = ConversationJournalEntry(
-                exchange_id=exchange_id,
-                session_id=session_id[:120],
-                role="assistant",
-                speaker_name="Shana",
-                input_source="assistant",
-                text=assistant_text[:16_000],
-                trace_id=trace_id,
-                output_target=output_target,
-                privacy_scope=privacy_scope,
-                completion_status="completed",
-                tool_metadata_json=json.dumps(tool_metadata or {}, ensure_ascii=False)[:8000],
-                occurred_at=now,
-            )
-            session.add(assistant)
+            assistant = None
+            if assistant_text.strip():
+                assistant = ConversationJournalEntry(
+                    exchange_id=exchange_id,
+                    session_id=session_id[:120],
+                    role="assistant",
+                    speaker_name="Shana",
+                    input_source="assistant",
+                    text=assistant_text[:16_000],
+                    trace_id=trace_id,
+                    output_target=output_target,
+                    privacy_scope=privacy_scope,
+                    completion_status="completed",
+                    tool_metadata_json=json.dumps(tool_metadata or {}, ensure_ascii=False)[:8000],
+                    occurred_at=now,
+                )
+                session.add(assistant)
             session.commit()
-            session.refresh(assistant)
+            if assistant is not None:
+                session.refresh(assistant)
             self._update_working_state_locked(
                 session,
                 session_id=session_id,
                 user_text=user_entry.text if user_entry is not None else "",
                 assistant_text=assistant_text,
                 internal_summary=internal_summary,
+                state_updates=state_updates or {},
                 now=now,
                 privacy_scope=privacy_scope,
             )
             self._maybe_update_summary_locked(
                 session,
                 session_id=session_id,
-                through_entry_id=assistant.id,
+                through_entry_id=assistant.id if assistant is not None else (user_entry.id if user_entry is not None else None),
                 privacy_scope=privacy_scope,
             )
             session.commit()
@@ -345,7 +350,7 @@ class ContinuityService:
                         select(ConversationJournalEntry.exchange_id)
                         .where(
                             ConversationJournalEntry.session_id == session_id,
-                            ConversationJournalEntry.role == "assistant",
+                            ConversationJournalEntry.role == "user",
                             ConversationJournalEntry.completion_status == "completed",
                         )
                         .order_by(ConversationJournalEntry.id.desc())
@@ -381,7 +386,7 @@ class ContinuityService:
             session.exec(
                 select(func.count()).select_from(ConversationJournalEntry).where(
                     ConversationJournalEntry.session_id == session_id,
-                    ConversationJournalEntry.role == "assistant",
+                    ConversationJournalEntry.role == "user",
                     ConversationJournalEntry.completion_status == "completed",
                 )
             ).one()
@@ -416,19 +421,26 @@ class ContinuityService:
         user_text: str,
         assistant_text: str,
         internal_summary: str | None,
+        state_updates: dict,
         now: datetime,
         privacy_scope: str,
     ) -> None:
         state = session.get(WorkingStateCheckpoint, session_id)
         if state is None:
             state = WorkingStateCheckpoint(session_id=session_id)
-        state.active_topic = " ".join(user_text.split())[:500]
-        if internal_summary:
-            state.current_objective = " ".join(internal_summary.split())[:1000]
+        state.active_topic = " ".join(str(state_updates.get("active_topic") or user_text).split())[:500]
+        objective = state_updates.get("current_objective") or internal_summary
+        if objective:
+            state.current_objective = " ".join(str(objective).split())[:1000]
         state.pending_questions_json = json.dumps([user_text[:1000]] if user_text.rstrip().endswith("?") else [])
         state.last_meaningful_interaction = now
         state.last_assistant_action = " ".join(assistant_text.split())[:1000]
-        state.next_intended_action = "Respond to the next turn using the current topic and unresolved questions."
+        state.next_intended_action = " ".join(
+            str(state_updates.get("deferred_intention") or "Respond to the next turn using the current topic and unresolved questions.").split()
+        )[:1000]
+        relationship_signals = state_updates.get("relationship_signals")
+        if isinstance(relationship_signals, list):
+            state.relevant_people_json = json.dumps([" ".join(str(item).split())[:200] for item in relationship_signals[:8]])
         state.privacy_scope = privacy_scope
         state.updated_at = now
         session.add(state)

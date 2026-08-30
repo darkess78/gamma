@@ -1747,6 +1747,7 @@ audio {
 .improvement-item-state[data-state="high"],
 .improvement-item-state[data-state="validation_failed"],
 .improvement-item-state[data-state="semantic_review_rejected"],
+.improvement-item-state[data-state="rejected"],
 .improvement-item-state[data-state="infrastructure_error"] {
   border-color: rgba(255, 95, 115, 0.38);
   background: rgba(255, 95, 115, 0.1);

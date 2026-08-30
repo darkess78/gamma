@@ -1,4 +1,4 @@
-// Read-only self-improvement activity view.
+// Bounded self-improvement activity and operator controls.
 const dashboardPage = String(window.GAMMA_DASHBOARD_PAGE || '').trim().toLowerCase();
 
 if (dashboardPage === 'improvement') {
@@ -210,6 +210,9 @@ if (dashboardPage === 'improvement') {
   }
 
   async function controlWork(requestId, action) {
+    if (action === 'reject' && !window.confirm('Reject this isolated candidate? Its audit evidence will be retained and nothing will be promoted.')) {
+      return;
+    }
     const message = byId('improvementWorkMessage');
     if (message) message.textContent = action.charAt(0).toUpperCase() + action.slice(1) + ' requested…';
     try {
@@ -263,7 +266,11 @@ if (dashboardPage === 'improvement') {
         const latest = events[events.length - 1];
         card.appendChild(node('p', 'improvement-item-meta', displayTime(latest.at) + ' · ' + latest.message));
       }
-      if (!['review_ready', 'exhausted', 'failed', 'stopped'].includes(request.status)) {
+      if (request.status === 'review_ready') {
+        const controls = node('div', 'improvement-control-row');
+        controls.appendChild(workButton('Reject candidate', 'ghost danger-outline', request.id, 'reject'));
+        card.appendChild(controls);
+      } else if (!['rejected', 'exhausted', 'failed', 'stopped'].includes(request.status)) {
         const controls = node('div', 'improvement-control-row');
         if (request.status === 'paused') {
           controls.appendChild(workButton('Resume', 'secondary', request.id, 'resume'));

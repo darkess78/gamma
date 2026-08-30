@@ -434,6 +434,7 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn("fetch('/api/improvement/status?_='", improvement_script)
         self.assertIn("fetch('/api/improvement/work'", improvement_script)
         self.assertIn("'/control'", improvement_script)
+        self.assertIn("Reject candidate", improvement_script)
         self.assertIn("target.replaceChildren();", improvement_script)
         self.assertIn("target.textContent", improvement_script)
         self.assertNotIn("innerHTML", improvement_script)

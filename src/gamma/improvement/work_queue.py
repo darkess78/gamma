@@ -18,6 +18,7 @@ WorkStatus = Literal[
     "running",
     "paused",
     "review_ready",
+    "rejected",
     "exhausted",
     "failed",
     "stopped",
@@ -27,7 +28,7 @@ DesiredState = Literal["running", "paused", "stopped"]
 _WORK_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{7,79}$")
 _DOMAIN_RE = re.compile(r"^[a-z][a-z0-9_-]{1,79}$")
 _MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,199}$")
-_TERMINAL_STATUSES = {"review_ready", "exhausted", "failed", "stopped"}
+_TERMINAL_STATUSES = {"review_ready", "rejected", "exhausted", "failed", "stopped"}
 
 
 def utc_now() -> str:
@@ -206,8 +207,33 @@ class ImprovementWorkStore:
             self._write(updated)
             return updated
 
-    def control(self, request_id: str, action: Literal["pause", "resume", "stop"]) -> ImprovementWorkRequest:
+    def control(
+        self,
+        request_id: str,
+        action: Literal["pause", "resume", "stop", "reject"],
+    ) -> ImprovementWorkRequest:
         def apply(request: ImprovementWorkRequest) -> ImprovementWorkRequest:
+            if action == "reject":
+                if request.status != "review_ready":
+                    raise ValueError("only review-ready work may be rejected")
+                request.status = "rejected"
+                request.desired_state = "stopped"
+                request.stage = "rejected"
+                request.result_summary = (
+                    "The isolated candidate was rejected during owner review; all evidence was retained."
+                )
+                request.reason_codes = tuple(
+                    dict.fromkeys((*request.reason_codes, "owner_rejected_candidate"))
+                )
+                request.events = (
+                    *request.events,
+                    WorkEvent(
+                        stage="rejected",
+                        code="owner_rejected_candidate",
+                        message="Review-ready candidate rejected; evidence retained and nothing promoted.",
+                    ),
+                )[-50:]
+                return request
             if request.status in _TERMINAL_STATUSES:
                 raise ValueError("completed work cannot be controlled")
             if action == "pause":

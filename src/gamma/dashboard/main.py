@@ -40,7 +40,7 @@ class ImprovementWorkCreateRequest(BaseModel):
 
 
 class ImprovementWorkControlRequest(BaseModel):
-    action: str = Field(pattern=r"^(pause|resume|stop)$")
+    action: str = Field(pattern=r"^(pause|resume|stop|reject)$")
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="dashboard-static")
 

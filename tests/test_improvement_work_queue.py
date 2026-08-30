@@ -79,6 +79,37 @@ class ImprovementWorkStoreTest(unittest.TestCase):
                     maximum_attempts_per_series=2,
                 )
 
+    def test_review_ready_candidate_can_be_rejected_without_losing_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            store = ImprovementWorkStore(Path(temporary_directory) / "control")
+            request = store.create(
+                goal="Improve the highest-priority measured Gamma bottleneck safely.",
+                selection_mode="automatic",
+                focus_domains=(),
+                models=("model-a", "model-b"),
+                budget_minutes=480,
+                maximum_cycles=3,
+                maximum_attempts_per_series=6,
+            )
+
+            def ready_for_review(item):
+                item.status = "review_ready"
+                item.stage = "review_ready"
+                item.current_series_id = "review-series-001"
+                item.completed_at = "2026-08-29T20:00:00Z"
+                return item
+
+            store.mutate(request.id, ready_for_review)
+            rejected = store.control(request.id, "reject")
+
+            self.assertEqual(rejected.status, "rejected")
+            self.assertEqual(rejected.current_series_id, "review-series-001")
+            self.assertIn("owner_rejected_candidate", rejected.reason_codes)
+            self.assertIn("evidence was retained", rejected.result_summary)
+            self.assertFalse(rejected.public_summary()["promotion_authority"])
+            with self.assertRaisesRegex(ValueError, "only review-ready"):
+                store.control(rejected.id, "reject")
+
     def test_runner_honors_safe_stop_before_model_work(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             data_root = Path(temporary_directory) / "improvement"

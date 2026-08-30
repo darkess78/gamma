@@ -170,6 +170,29 @@ class ConversationPipelineTest(unittest.TestCase):
         self.assertEqual(response.speech_text, "")
         self.assertEqual(fake_tts.calls, [])
 
+    def test_external_live_chunking_can_request_speech_without_internal_tts(self) -> None:
+        service = ConversationService()
+        service._llm = _FakeLLMAdapter(["Ready for external chunking."])
+        fake_tts = _FakeTTSService()
+        service._tts = fake_tts
+        service._remember_assistant_state = Mock()
+
+        with patch("gamma.conversation.service.build_system_prompt", return_value="prompt"), patch.object(
+            service, "_append_timing_log", return_value=None
+        ):
+            response = service.respond(
+                "reply by voice",
+                synthesize_speech=False,
+                speech_requested=True,
+                speech_allowed=True,
+                delivery_context="direct_voice",
+                fast_mode=True,
+            )
+
+        self.assertEqual(response.delivery_mode, "speech")
+        self.assertEqual(response.speech_text, "Ready for external chunking.")
+        self.assertEqual(fake_tts.calls, [])
+
     def test_tool_first_synthesizes_only_finalized_text(self) -> None:
         service = ConversationService()
         service._llm = _FakeLLMAdapter([

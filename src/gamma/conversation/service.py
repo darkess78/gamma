@@ -416,6 +416,7 @@ class ConversationService:
         stripped = user_text.strip()
         if not stripped:
             raise ConversationError("user_text must not be empty.")
+        wants_speech = synthesize_speech if speech_requested is None else speech_requested
 
         try:
             privacy_decision = review_private_info_request(stripped)
@@ -425,7 +426,7 @@ class ConversationService:
                     action="reply",
                     requested="speech" if synthesize_speech else "text_only",
                     context=delivery_context,
-                    speech_requested=synthesize_speech if speech_requested is None else speech_requested,
+                    speech_requested=wants_speech,
                     speech_allowed=speech_allowed,
                 )
                 response = AssistantResponse(
@@ -524,7 +525,7 @@ class ConversationService:
                     "For live speech, avoid numbered lists, bullet lists, section labels, and essay formatting. "
                     "Prefer natural spoken prose with short clauses and clear sentence boundaries."
                 )
-            legacy_delivery: DeliveryMode = "speech" if synthesize_speech else "text_only"
+            legacy_delivery: DeliveryMode = "speech" if wants_speech else "text_only"
             system_prompt += structured_turn_instruction(default_delivery=legacy_delivery)
             timing["prompt_context_ms"] = round(
                 (time.perf_counter() - prompt_context_started) * 1000,
@@ -669,7 +670,7 @@ class ConversationService:
                     action=turn_draft.action,
                     requested=turn_draft.requested_delivery,
                     context=delivery_context,
-                    speech_requested=synthesize_speech if speech_requested is None else speech_requested,
+                    speech_requested=wants_speech,
                     speech_allowed=speech_allowed,
                 )
                 communicated_text = safe_spoken.spoken_text if delivery_mode not in {"silent", "deferred"} else ""
@@ -818,7 +819,7 @@ class ConversationService:
                 action=turn_draft.action,
                 requested=turn_draft.requested_delivery,
                 context=delivery_context,
-                speech_requested=synthesize_speech if speech_requested is None else speech_requested,
+                speech_requested=wants_speech,
                 speech_allowed=speech_allowed,
             )
             communicated_text = final_reply_text if delivery_mode not in {"silent", "deferred"} else ""

@@ -204,6 +204,8 @@ def _series_summary(manifest: ExperimentSeriesManifest, *, lock_present: bool) -
         "status": manifest.status,
         "terminal_reason": _bounded_text(manifest.terminal_reason, 120) if manifest.terminal_reason else None,
         "successful_experiment_id": manifest.successful_experiment_id,
+        "source_scope": [_bounded_text(path, 240) for path in manifest.allowed_paths[:12]],
+        "source_scope_truncated": len(manifest.allowed_paths) > 12,
         "created_at": manifest.created_at,
         "started_at": manifest.started_at,
         "completed_at": manifest.completed_at,

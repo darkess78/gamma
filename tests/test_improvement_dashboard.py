@@ -35,6 +35,10 @@ class ImprovementStatusReaderTest(unittest.TestCase):
         self.assertEqual(payload["state"]["code"], "running")
         self.assertEqual(payload["current_series"]["id"], "latency-series-001")
         self.assertEqual(payload["current_series"]["attempt_count"], 1)
+        self.assertEqual(
+            payload["current_series"]["source_scope"],
+            ["src/gamma/conversation/service.py"],
+        )
         self.assertEqual(payload["recent_attempts"][0]["outcome"], "validation_failed")
         self.assertEqual(payload["latest_observation"]["metrics"][0]["value"], 9233.8)
         self.assertEqual(payload["latest_observation"]["opportunities"][0]["kind"], "dominant_stage")

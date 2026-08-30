@@ -98,6 +98,11 @@ if (dashboardPage === 'improvement') {
     details.appendChild(detailRow('Models', (series.models || []).join(', ') || 'None'));
     details.appendChild(detailRow('Attempts', series.attempt_count + ' of ' + series.maximum_attempts));
     details.appendChild(detailRow('Baseline', series.baseline_commit || 'Unknown'));
+    const sourceScope = Array.isArray(series.source_scope) ? series.source_scope : [];
+    if (sourceScope.length) {
+      const scopeLabel = sourceScope.join(', ') + (series.source_scope_truncated ? ', …' : '');
+      details.appendChild(detailRow('Source scope', scopeLabel));
+    }
     if (series.terminal_reason) details.appendChild(detailRow('Terminal reason', series.terminal_reason));
     card.appendChild(details);
     return card;

@@ -33,9 +33,9 @@ class ImprovementWorkCreateRequest(BaseModel):
     goal: str = Field(min_length=12, max_length=1200)
     selection_mode: str = Field(default="directed", pattern=r"^(directed|automatic)$")
     focus_domains: tuple[str, ...] = ()
-    models: tuple[str, ...] = ("qwen3.8:27b", "gpt-oss:20b", "devstral:24b")
+    models: tuple[str, ...] = ("qwen3.8:27b", "gpt-oss:20b", "devstral-small-2:latest")
     budget_minutes: int = Field(default=480, ge=15, le=720)
-    maximum_cycles: int = Field(default=3, ge=1, le=5)
+    maximum_cycles: int = Field(default=5, ge=1, le=5)
     maximum_attempts_per_series: int = Field(default=6, ge=1, le=10)
 
 

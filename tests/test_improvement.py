@@ -1055,6 +1055,13 @@ class ImprovementEvaluatorTest(unittest.TestCase):
                 observation=observation,
                 project_root=ROOT,
             )
+            repairing_llm = _RepairingGroundedPlanLLM(source, symbol)
+            repaired_batch = GroundedPlanGenerator(repairing_llm).generate(
+                proposal=proposal,
+                grounding=grounding,
+                observation=observation,
+                project_root=ROOT,
+            )
             refuted_batch = GroundedPlanGenerator(_RefutedGroundedPlanLLM(source, symbol)).generate(
                 proposal=proposal,
                 grounding=grounding,
@@ -1068,6 +1075,9 @@ class ImprovementEvaluatorTest(unittest.TestCase):
         self.assertEqual(batch.plans[0].source_evidence[0].file_sha256, source.sha256)
         self.assertIn("verified_source_excerpts", llm.user_text)
         self.assertIn("generate_reply", llm.user_text)
+        self.assertEqual(len(repaired_batch.plans), 1)
+        self.assertEqual(repairing_llm.call_count, 2)
+        self.assertIn("exactly one valid JSON object", repairing_llm.system_prompts[1])
         self.assertEqual(refuted_batch.plans[0].status, "refuted")
         self.assertIn("contradicts", refuted_batch.plans[0].mechanism_hypothesis)
 
@@ -1108,6 +1118,9 @@ class ImprovementEvaluatorTest(unittest.TestCase):
         parsed = _parse_plan_json_object(f"analysis {echoed}\nfinal {json.dumps(actual)}")
 
         self.assertEqual(parsed, actual)
+
+        minimal = {"status": "needs_more_source", "reason": "Insufficient facts."}
+        self.assertEqual(_parse_plan_json_object(json.dumps(minimal)), minimal)
 
     def test_grounding_includes_bounded_same_file_callees_near_metric_timer(self) -> None:
         grounding = build_source_grounding(
@@ -1552,6 +1565,23 @@ class _GroundedPlanLLM:
             ),
             metadata={"route": {"provider": "local", "model": "grounding-fixture"}},
         )
+
+
+class _RepairingGroundedPlanLLM(_GroundedPlanLLM):
+    def __init__(self, source, symbol) -> None:
+        super().__init__(source, symbol)
+        self.call_count = 0
+        self.system_prompts: list[str] = []
+
+    def generate_reply(self, system_prompt: str, user_text: str, **kwargs) -> LLMReply:
+        self.call_count += 1
+        self.system_prompts.append(system_prompt)
+        if self.call_count == 1:
+            return LLMReply(
+                text=f"analysis {user_text}",
+                metadata={"route": {"provider": "local", "model": "grounding-fixture"}},
+            )
+        return super().generate_reply(system_prompt, user_text, **kwargs)
 
 
 class _RefutedGroundedPlanLLM:

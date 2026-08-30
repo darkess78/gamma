@@ -429,6 +429,8 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('id="improvementSafeguards"', dashboard_html)
         self.assertIn('id="improvementWorkForm"', dashboard_html)
         self.assertIn('id="improvementWorkQueue"', dashboard_html)
+        self.assertIn("devstral-small-2:latest", dashboard_html)
+        self.assertIn('id="improvementMaximumCycles" type="number" min="1" max="5" value="5"', dashboard_html)
         self.assertIn("fetch('/api/improvement/status?_='", improvement_script)
         self.assertIn("fetch('/api/improvement/work'", improvement_script)
         self.assertIn("'/control'", improvement_script)

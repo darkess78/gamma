@@ -122,16 +122,32 @@ class GroundedPlanGenerator:
             ),
             model_override=model_override,
         )
-        route = (reply.metadata or {}).get("route") if isinstance(reply.metadata, dict) else {}
-        route = route if isinstance(route, dict) else {}
         raw = _parse_plan_json_object(reply.text)
         if raw is None:
-            return GroundedPlanBatch(
-                proposal_sha256=proposal_sha256,
-                grounding_sha256=grounding_sha256,
-                plans=(),
-                rejections=(GroundedPlanRejection(code="unparseable_response"),),
+            reply = self.llm.generate_reply(
+                system_prompt=_repair_system_prompt(),
+                user_text=json.dumps(context, ensure_ascii=True, sort_keys=True),
+                call_context=LLMCallContext(
+                    purpose="improvement_source_grounding_repair",
+                    reasoning_depth="normal",
+                    persona_sensitive=False,
+                    interaction_mode="improvement",
+                    cost_sensitive=False,
+                    quality_tier="primary",
+                    minimum_context_tokens=4096,
+                ),
+                model_override=model_override,
             )
+            raw = _parse_plan_json_object(reply.text)
+            if raw is None:
+                return GroundedPlanBatch(
+                    proposal_sha256=proposal_sha256,
+                    grounding_sha256=grounding_sha256,
+                    plans=(),
+                    rejections=(GroundedPlanRejection(code="unparseable_response_after_repair"),),
+                )
+        route = (reply.metadata or {}).get("route") if isinstance(reply.metadata, dict) else {}
+        route = route if isinstance(route, dict) else {}
         if isinstance(raw.get("plan"), dict):
             raw = raw["plan"]
         received_fields = tuple(
@@ -430,6 +446,18 @@ def _system_prompt() -> str:
     )
 
 
+def _repair_system_prompt() -> str:
+    return (
+        "Return exactly one valid JSON object and no other text. This is a formatting repair for "
+        "Gamma's source-grounding analysis; you still have no tools and may use only the supplied "
+        "context. Use status grounded_plan, refuted, or needs_more_source. Include "
+        "mechanism_hypothesis, source_evidence, validation_plan, risk_notes, and confidence. Every "
+        "source_evidence item must copy path, file_sha256, symbol, line_start, and line_end from the "
+        "supplied source facts. If the facts do not establish an actionable and safely testable "
+        "mechanism, return needs_more_source. Do not include markdown, analysis, or the input wrapper."
+    )
+
+
 def _normalize_plan(raw: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(raw)
     status = str(raw.get("status") or "").strip().lower().replace("-", "_")
@@ -532,18 +560,7 @@ def _plan_shaped_object(value: Any) -> dict[str, Any] | None:
         if isinstance(nested, dict):
             candidates.append(nested)
     for candidate in candidates:
-        if "status" not in candidate:
-            continue
-        if any(
-            field in candidate
-            for field in (
-                "mechanism_hypothesis",
-                "mechanism",
-                "hypothesis",
-                "source_evidence",
-                "citations",
-            )
-        ):
+        if "status" in candidate:
             return candidate
     return None
 

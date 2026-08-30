@@ -102,9 +102,9 @@ class DashboardService:
             "worker_running": bool(worker.get("process", {}).get("running")),
             "worker_pid": worker.get("process", {}).get("pid"),
             "defaults": {
-                "models": ["qwen3.8:27b", "gpt-oss:20b", "devstral:24b"],
+                "models": ["qwen3.8:27b", "gpt-oss:20b", "devstral-small-2:latest"],
                 "budget_minutes": 480,
-                "maximum_cycles": 3,
+                "maximum_cycles": 5,
                 "maximum_attempts_per_series": 6,
             },
             "limits": {

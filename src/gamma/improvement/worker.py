@@ -5,12 +5,14 @@ import hashlib
 import json
 import math
 import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from ..config import PROJECT_ROOT, settings
+from ..errors import GammaError
 from ..llm.factory import build_llm_adapter
 from .candidates import CandidateDraftGenerator
 from .contract import load_improvement_contract
@@ -87,6 +89,7 @@ class AutonomousImprovementRunner:
         except _WorkStopped:
             return self.store.load(request_id)
         except Exception as exc:
+            print(f"Improvement worker stopped safely: {_safe_error_code(exc)}", file=sys.stderr, flush=True)
             return self._finish(
                 request_id,
                 status="failed",
@@ -105,21 +108,39 @@ class AutonomousImprovementRunner:
         self._checkpoint(request_id)
         self._update(request_id, stage="proposing", message=f"Cycle {cycle}: asking {len(request.models)} local models for evidence-bound hypotheses.")
         llm = build_llm_adapter()
-        proposal_batches = [
-            ImprovementProposalGenerator(llm).generate(
-                report=report,
-                contract=contract,
-                maximum_proposals=3,
-                model_override=model,
-                operator_goal=request.goal,
-                focus_domains=request.focus_domains,
-            )
-            for model in request.models
-        ]
+        proposal_batches: list[ProposalBatch] = []
+        available_models: list[str] = []
+        for model in request.models:
+            try:
+                batch = ImprovementProposalGenerator(llm).generate(
+                    report=report,
+                    contract=contract,
+                    maximum_proposals=3,
+                    model_override=model,
+                    operator_goal=request.goal,
+                    focus_domains=request.focus_domains,
+                )
+            except GammaError:
+                self._update(
+                    request_id,
+                    stage="proposing",
+                    message=f"Cycle {cycle}: model {model} was unavailable; continuing when independent review remains possible.",
+                    code="proposal_model_unavailable",
+                )
+                continue
+            proposal_batches.append(batch)
+            available_models.append(model)
         _write_json(
             cycle_root / "proposals.json",
             {"authority": "proposal_only", "batches": [batch.model_dump(mode="json") for batch in proposal_batches]},
         )
+        if len(available_models) < 2:
+            return self._finish(
+                request_id,
+                status="failed",
+                summary="Fewer than two configured local models were available, so Gamma stopped before autonomous candidate work.",
+                reason="insufficient_available_models",
+            )
 
         self._checkpoint(request_id)
         self._update(request_id, stage="reviewing", message=f"Cycle {cycle}: screening proposals and ranking independent agreement.")
@@ -148,16 +169,25 @@ class AutonomousImprovementRunner:
                 continue
             grounding_path = cycle_root / f"grounding-{_short_hash(proposal.hypothesis)}.json"
             _write_json(grounding_path, grounding.model_dump(mode="json"))
-            plan_batches = [
-                GroundedPlanGenerator(llm).generate(
-                    proposal=proposal,
-                    grounding=grounding,
-                    observation=report,
-                    model_override=model,
-                    project_root=self.project_root,
-                )
-                for model in request.models
-            ]
+            plan_batches = []
+            for model in available_models:
+                try:
+                    plan_batches.append(
+                        GroundedPlanGenerator(llm).generate(
+                            proposal=proposal,
+                            grounding=grounding,
+                            observation=report,
+                            model_override=model,
+                            project_root=self.project_root,
+                        )
+                    )
+                except GammaError:
+                    self._update(
+                        request_id,
+                        stage="grounding",
+                        message=f"Cycle {cycle}: model {model} could not complete source grounding; other validated results remain eligible.",
+                        code="grounding_model_unavailable",
+                    )
             _write_json(
                 grounding_path.with_name(grounding_path.stem + "-plans.json"),
                 {"authority": "grounding_only", "batches": [batch.model_dump(mode="json") for batch in plan_batches]},
@@ -177,6 +207,7 @@ class AutonomousImprovementRunner:
                 plan=grounded[0],
                 contract=contract,
                 llm=llm,
+                models=tuple(available_models),
             )
 
         self._update(
@@ -197,6 +228,7 @@ class AutonomousImprovementRunner:
         plan: GroundedPlan,
         contract,
         llm,
+        models: tuple[str, ...],
     ) -> ImprovementWorkRequest | None:
         request = self._checkpoint(request_id)
         remaining_minutes = self._remaining_minutes(request)
@@ -212,7 +244,7 @@ class AutonomousImprovementRunner:
             baseline_commit=baseline_commit,
             plan=plan,
             grounding=grounding,
-            models=request.models,
+            models=models,
             maximum_changed_files=min(12, max(1, len(plan.allowed_paths))),
             maximum_attempts=request.maximum_attempts_per_series,
             maximum_wall_clock_minutes=series_minutes,

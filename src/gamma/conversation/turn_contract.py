@@ -146,5 +146,12 @@ def structured_turn_instruction(*, default_delivery: DeliveryMode) -> str:
         f"text_only, silent, or deferred; default to {default_delivery}. final_text is the only text that may be "
         "shown or spoken. internal_summary must be a short safe non-reasoning summary. state_updates may contain "
         "only emotion, active_topic, current_objective, deferred_intention, and relationship_signals. "
-        "Use empty final_text for stay_silent, defer, or an unfinished tool_first decision."
+        "Use empty final_text for stay_silent, defer, or an unfinished tool_first decision. "
+        "All list fields must be JSON arrays, even when empty. Follow this exact value shape: "
+        '{"action":"reply","requested_delivery":"'
+        + default_delivery
+        + '","final_text":"...","internal_summary":"safe summary","emotion":"neutral",'
+        '"voice_styles":[],"motions":[],"tool_calls":[],"memory_candidates":[],"state_updates":'
+        '{"emotion":null,"active_topic":null,"current_objective":null,"deferred_intention":null,'
+        '"relationship_signals":[]},"reason_code":"reply"}.'
     )

@@ -107,14 +107,34 @@ class AutonomousImprovementRunner:
         _write_json(cycle_root / "observation.json", report.model_dump(mode="json"))
 
         self._checkpoint(request_id)
-        self._update(request_id, stage="proposing", message=f"Cycle {cycle}: asking {len(request.models)} local models for evidence-bound hypotheses.")
-        llm = build_llm_adapter()
         prior_feedback = _previous_proposal_feedback(
             self.data_root / "work" / request.id,
             cycle=cycle,
             series_root=self.data_root / "series",
             request_id=request.id,
         )
+        _write_json(
+            cycle_root / "prior-feedback.json",
+            {
+                "authority": "failure_lessons_only",
+                "lesson_count": len(prior_feedback),
+                "lessons": prior_feedback,
+            },
+        )
+        feedback_detail = (
+            f" while applying {len(prior_feedback)} bounded prior failure lessons"
+            if prior_feedback
+            else ""
+        )
+        self._update(
+            request_id,
+            stage="proposing",
+            message=(
+                f"Cycle {cycle}: asking {len(request.models)} local models for evidence-bound "
+                f"hypotheses{feedback_detail}."
+            ),
+        )
+        llm = build_llm_adapter()
         excluded_hypotheses = {
             _hypothesis_digest(str(item["hypothesis"]))
             for item in prior_feedback

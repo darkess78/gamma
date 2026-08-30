@@ -537,6 +537,16 @@ class ImprovementEvaluatorTest(unittest.TestCase):
                     grounding=grounding,
                     workspace=workspace,
                 )
+            stdout_payload = batch.draft.model_dump(mode="json")
+            stdout_payload["edits"][0]["new_text"] = '    print("metric")\n    return value'
+            with self.assertRaisesRegex(ValueError, "introduced unstructured stdout"):
+                validate_candidate_draft(
+                    CandidateDraft.model_validate(stdout_payload),
+                    manifest=manifest,
+                    plan=plan,
+                    grounding=grounding,
+                    workspace=workspace,
+                )
             receipt = apply_candidate_draft(
                 batch.draft,
                 manifest=manifest,

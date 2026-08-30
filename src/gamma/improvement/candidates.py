@@ -445,6 +445,12 @@ def _validate_candidate_metric_integrity(draft: CandidateDraft, plan: GroundedPl
     for edit in draft.edits:
         old_text = edit.old_text
         new_text = edit.new_text
+        if edit.path.startswith("src/gamma/") and _count_print_calls(new_text) > _count_print_calls(
+            old_text
+        ):
+            raise ValueError(
+                f"candidate observability violation:introduced unstructured stdout:{edit.path}"
+            )
         if latency_targeted and any(
             old_text.count(marker) > new_text.count(marker) for marker in timer_markers
         ):
@@ -469,6 +475,10 @@ def _validate_candidate_metric_integrity(draft: CandidateDraft, plan: GroundedPl
                 raise ValueError(
                     f"candidate metric integrity violation:changed route event count:{edit.path}"
                 )
+
+
+def _count_print_calls(source: str) -> int:
+    return len(re.findall(r"(?m)^\s*(?:builtins\.)?print\s*\(", source))
 
 
 def _candidate_source_context(plan: GroundedPlan, *, workspace: Path) -> list[dict[str, Any]]:
@@ -594,6 +604,8 @@ def _candidate_rejection_code(exc: Exception) -> str:
         return "candidate_scope_violation"
     if "metric integrity" in detail:
         return "candidate_metric_integrity_violation"
+    if "observability violation" in detail:
+        return "candidate_observability_violation"
     if "match exactly once" in detail or "overlap" in detail:
         return "ambiguous_candidate_edit"
     if "limit exceeded" in detail or "size limit" in detail:

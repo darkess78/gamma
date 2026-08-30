@@ -108,6 +108,13 @@ class AutonomousImprovementRunner:
         self._checkpoint(request_id)
         self._update(request_id, stage="proposing", message=f"Cycle {cycle}: asking {len(request.models)} local models for evidence-bound hypotheses.")
         llm = build_llm_adapter()
+        prior_feedback = _previous_proposal_feedback(
+            self.data_root / "work" / request.id,
+            cycle=cycle,
+        )
+        excluded_hypotheses = {
+            _hypothesis_digest(item["hypothesis"]) for item in prior_feedback
+        }
         proposal_batches: list[ProposalBatch] = []
         available_models: list[str] = []
         for model in request.models:
@@ -119,6 +126,7 @@ class AutonomousImprovementRunner:
                     model_override=model,
                     operator_goal=request.goal,
                     focus_domains=request.focus_domains,
+                    prior_cycle_feedback=prior_feedback,
                 )
             except GammaError:
                 self._update(
@@ -146,13 +154,27 @@ class AutonomousImprovementRunner:
         self._update(request_id, stage="reviewing", message=f"Cycle {cycle}: screening proposals and ranking independent agreement.")
         review = review_proposal_batches(proposal_batches, report)
         _write_json(cycle_root / "proposal-review.json", review.model_dump(mode="json"))
-        ranked = _rank_proposals(proposal_batches, review, request.focus_domains)
+        ranked = _rank_proposals(
+            proposal_batches,
+            review,
+            request.focus_domains,
+            excluded_hypothesis_sha256s=excluded_hypotheses,
+        )
         if not ranked:
+            reason = (
+                "no_novel_screened_proposal"
+                if excluded_hypotheses and any(batch.proposals for batch in proposal_batches)
+                else "no_screened_proposal"
+            )
             self._update(
                 request_id,
                 stage="cycle_complete",
-                message=f"Cycle {cycle}: no proposal passed deterministic screening; Gamma will re-observe if budget remains.",
-                code="no_screened_proposal",
+                message=(
+                    f"Cycle {cycle}: no novel proposal passed deterministic screening; Gamma will re-observe with prior-cycle feedback if budget remains."
+                    if reason == "no_novel_screened_proposal"
+                    else f"Cycle {cycle}: no proposal passed deterministic screening; Gamma will re-observe if budget remains."
+                ),
+                code=reason,
             )
             return None
 
@@ -441,8 +463,11 @@ def _rank_proposals(
     batches: list[ProposalBatch],
     review: ProposalReviewReport,
     focus_domains: tuple[str, ...],
+    *,
+    excluded_hypothesis_sha256s: set[str] | None = None,
 ) -> list[ImprovementProposal]:
     proposals = [proposal for batch in batches for proposal in batch.proposals]
+    excluded = excluded_hypothesis_sha256s or set()
     support: dict[str, int] = {}
     for consensus in review.consensus:
         for digest in consensus.proposal_hashes:
@@ -456,14 +481,56 @@ def _rank_proposals(
         if item.state == "needs_revision" and set(item.reasons) != {"aggregate_only_proposal_requires_code_grounding"}:
             continue
         proposal = proposals[item.proposal_index]
-        digest = hashlib.sha256(proposal.hypothesis.encode("utf-8")).hexdigest()
+        review_digest = hashlib.sha256(proposal.hypothesis.encode("utf-8")).hexdigest()
+        if _hypothesis_digest(proposal.hypothesis) in excluded:
+            continue
         focus_score = int(
             not focus_domains
             or any(domain in proposal.domain.lower() or proposal.domain.lower() in domain for domain in focus_domains)
         )
-        eligible.append((focus_score, support.get(digest, 0), proposal.confidence, proposal))
+        eligible.append((focus_score, support.get(review_digest, 0), proposal.confidence, proposal))
     eligible.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
     return [item[3] for item in eligible]
+
+
+def _previous_proposal_feedback(
+    request_work_root: Path,
+    *,
+    cycle: int,
+) -> tuple[dict[str, str], ...]:
+    """Load bounded model-generated hypotheses from completed earlier cycles."""
+    feedback: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for previous_cycle in range(1, max(1, cycle)):
+        path = request_work_root / f"cycle-{previous_cycle:02d}" / "proposals.json"
+        try:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > 2_000_000:
+                continue
+            payload = json.loads(path.read_text(encoding="utf-8", errors="strict"))
+        except (OSError, UnicodeError, ValueError):
+            continue
+        batches = payload.get("batches") if isinstance(payload, dict) else None
+        if not isinstance(batches, list):
+            continue
+        for batch in batches:
+            proposals = batch.get("proposals") if isinstance(batch, dict) else None
+            if not isinstance(proposals, list):
+                continue
+            for proposal in proposals:
+                if not isinstance(proposal, dict):
+                    continue
+                hypothesis = " ".join(str(proposal.get("hypothesis") or "").split())[:1000]
+                if len(hypothesis) < 12 or hypothesis in seen:
+                    continue
+                seen.add(hypothesis)
+                feedback.append(
+                    {
+                        "hypothesis": hypothesis,
+                        "domain": " ".join(str(proposal.get("domain") or "unknown").split())[:80],
+                        "outcome": "not_actionable_in_prior_cycle",
+                    }
+                )
+    return tuple(feedback[-30:])
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -476,6 +543,11 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 def _short_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
+
+
+def _hypothesis_digest(value: str) -> str:
+    normalized = " ".join(value.lower().split())
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _coordinator_control(request: ImprovementWorkRequest) -> str:

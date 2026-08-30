@@ -348,13 +348,12 @@ def _verified_source_excerpts(
     maximum_total_lines: int = 240,
 ) -> list[dict[str, Any]]:
     lines = path.read_text(encoding="utf-8", errors="strict").splitlines()
-    centers: list[int] = []
+    centers: set[int] = set()
     for metric_lines in metric_reference_lines.values():
         for line in metric_lines:
-            if line not in centers:
-                centers.append(line)
+            centers.add(line)
     windows: list[tuple[int, int]] = []
-    for center in centers:
+    for center in sorted(centers):
         start = max(1, center - context_lines)
         end = min(len(lines), center + context_lines)
         if windows and start <= windows[-1][1] + 1:

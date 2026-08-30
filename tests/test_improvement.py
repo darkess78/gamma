@@ -32,6 +32,7 @@ from gamma.improvement.grounded_plans import (
     SourceCitation,
     _grounding_sha256,
     _relevant_source_facts,
+    _verified_source_excerpts,
     validate_grounded_plan,
     validate_grounding_current,
 )
@@ -1188,6 +1189,33 @@ class ImprovementEvaluatorTest(unittest.TestCase):
         self.assertIn("ConversationService._extract_turn_metadata", callee_names)
         self.assertIn("strict JSON metadata extractor", callee_text)
         self.assertLessEqual(callee_line_count, 300)
+
+    def test_grounding_excerpt_windows_follow_source_order_across_metrics(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source_path = Path(temporary_directory) / "source.py"
+            source_path.write_text(
+                "\n".join(f"line_{line_number}" for line_number in range(1, 801)) + "\n",
+                encoding="utf-8",
+            )
+
+            excerpts = _verified_source_excerpts(
+                source_path,
+                {
+                    "conversation.total_ms": (300, 389, 399, 566, 607, 719),
+                    "conversation.draft_reply_ms": (524,),
+                },
+            )
+
+        covered_lines = {
+            line_number
+            for excerpt in excerpts
+            for line_number in range(excerpt["line_start"], excerpt["line_end"] + 1)
+        }
+        self.assertIn(524, covered_lines)
+        self.assertEqual(
+            [(item["line_start"], item["line_end"]) for item in excerpts],
+            sorted((item["line_start"], item["line_end"]) for item in excerpts),
+        )
 
 
 def _write_snapshot(runtime_dir: Path, *, total_ms: float, route_status: str, count: int) -> None:

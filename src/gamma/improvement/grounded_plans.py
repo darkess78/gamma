@@ -483,7 +483,7 @@ def _parse_json_object(text: str) -> dict[str, Any] | None:
     )
     try:
         payload = json.loads(cleaned)
-        return payload if isinstance(payload, dict) else None
+        return _plan_shaped_object(payload)
     except json.JSONDecodeError:
         decoder = json.JSONDecoder()
         for count, start in enumerate(index for index, char in enumerate(cleaned) if char == "{"):
@@ -493,8 +493,35 @@ def _parse_json_object(text: str) -> dict[str, Any] | None:
                 payload, _ = decoder.raw_decode(cleaned, start)
             except json.JSONDecodeError:
                 continue
-            if isinstance(payload, dict):
-                return payload
+            selected = _plan_shaped_object(payload)
+            if selected is not None:
+                return selected
+    return None
+
+
+def _plan_shaped_object(value: Any) -> dict[str, Any] | None:
+    """Select a plan object without accepting echoed source context as output."""
+    if not isinstance(value, dict):
+        return None
+    candidates = [value]
+    for key in ("plan", "result", "grounded_plan"):
+        nested = value.get(key)
+        if isinstance(nested, dict):
+            candidates.append(nested)
+    for candidate in candidates:
+        if "status" not in candidate:
+            continue
+        if any(
+            field in candidate
+            for field in (
+                "mechanism_hypothesis",
+                "mechanism",
+                "hypothesis",
+                "source_evidence",
+                "citations",
+            )
+        ):
+            return candidate
     return None
 
 

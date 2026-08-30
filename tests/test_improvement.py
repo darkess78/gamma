@@ -1095,6 +1095,20 @@ class ImprovementEvaluatorTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "generated_response_cache"):
             validate_grounded_plan(cached, grounding, project_root=ROOT)
 
+    def test_grounded_plan_parser_skips_echoed_input_context(self) -> None:
+        from gamma.improvement.grounded_plans import _parse_json_object
+
+        echoed = json.dumps({"proposal": {"hypothesis": "input"}, "source_facts": []})
+        actual = {
+            "status": "needs_more_source",
+            "mechanism_hypothesis": "The bounded source facts do not establish an actionable mechanism.",
+            "source_evidence": [],
+        }
+
+        parsed = _parse_json_object(f"analysis {echoed}\nfinal {json.dumps(actual)}")
+
+        self.assertEqual(parsed, actual)
+
     def test_grounding_includes_bounded_same_file_callees_near_metric_timer(self) -> None:
         grounding = build_source_grounding(
             paths=("src/gamma/conversation/service.py",),

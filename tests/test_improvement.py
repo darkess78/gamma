@@ -1096,7 +1096,7 @@ class ImprovementEvaluatorTest(unittest.TestCase):
             validate_grounded_plan(cached, grounding, project_root=ROOT)
 
     def test_grounded_plan_parser_skips_echoed_input_context(self) -> None:
-        from gamma.improvement.grounded_plans import _parse_json_object
+        from gamma.improvement.grounded_plans import _parse_plan_json_object
 
         echoed = json.dumps({"proposal": {"hypothesis": "input"}, "source_facts": []})
         actual = {
@@ -1105,7 +1105,7 @@ class ImprovementEvaluatorTest(unittest.TestCase):
             "source_evidence": [],
         }
 
-        parsed = _parse_json_object(f"analysis {echoed}\nfinal {json.dumps(actual)}")
+        parsed = _parse_plan_json_object(f"analysis {echoed}\nfinal {json.dumps(actual)}")
 
         self.assertEqual(parsed, actual)
 

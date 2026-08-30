@@ -124,7 +124,7 @@ class GroundedPlanGenerator:
         )
         route = (reply.metadata or {}).get("route") if isinstance(reply.metadata, dict) else {}
         route = route if isinstance(route, dict) else {}
-        raw = _parse_json_object(reply.text)
+        raw = _parse_plan_json_object(reply.text)
         if raw is None:
             return GroundedPlanBatch(
                 proposal_sha256=proposal_sha256,
@@ -483,7 +483,30 @@ def _parse_json_object(text: str) -> dict[str, Any] | None:
     )
     try:
         payload = json.loads(cleaned)
-        return _plan_shaped_object(payload)
+        return payload if isinstance(payload, dict) else None
+    except json.JSONDecodeError:
+        decoder = json.JSONDecoder()
+        for count, start in enumerate(index for index, char in enumerate(cleaned) if char == "{"):
+            if count >= 200:
+                break
+            try:
+                payload, _ = decoder.raw_decode(cleaned, start)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                return payload
+    return None
+
+
+def _parse_plan_json_object(text: str) -> dict[str, Any] | None:
+    cleaned = re.sub(
+        r"^\s*```(?:json)?\s*|\s*```\s*$",
+        "",
+        text.strip()[:1_000_000],
+        flags=re.IGNORECASE,
+    )
+    try:
+        return _plan_shaped_object(json.loads(cleaned))
     except json.JSONDecodeError:
         decoder = json.JSONDecoder()
         for count, start in enumerate(index for index, char in enumerate(cleaned) if char == "{"):

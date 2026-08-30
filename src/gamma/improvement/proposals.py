@@ -333,7 +333,7 @@ def _parse_proposals(text: str) -> list[dict[str, Any]]:
                 candidate, _ = decoder.raw_decode(cleaned, start)
             except json.JSONDecodeError:
                 continue
-            if _proposal_items(candidate):
+            if _proposal_items(candidate, require_container=True):
                 payload = candidate
                 break
         if payload is None:
@@ -341,8 +341,17 @@ def _parse_proposals(text: str) -> list[dict[str, Any]]:
     return _proposal_items(payload)
 
 
-def _proposal_items(payload: Any) -> list[dict[str, Any]]:
-    proposals = payload.get("proposals") if isinstance(payload, dict) else payload
+def _proposal_items(
+    payload: Any,
+    *,
+    require_container: bool = False,
+) -> list[dict[str, Any]]:
+    if isinstance(payload, dict):
+        proposals = payload.get("proposals")
+    elif require_container:
+        return []
+    else:
+        proposals = payload
     if not isinstance(proposals, list):
         return []
     return [item for item in proposals if isinstance(item, dict)]

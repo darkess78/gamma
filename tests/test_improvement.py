@@ -975,6 +975,44 @@ class ImprovementEvaluatorTest(unittest.TestCase):
         parsed = _parse_proposals("analysis {not-json}\n" + payload + "\ntrailer {also-bad}")
 
         self.assertEqual(parsed, [{"hypothesis": "bounded proposal"}])
+        self.assertEqual(
+            _parse_proposals('[{"hypothesis":"direct top-level proposal"}]'),
+            [{"hypothesis": "direct top-level proposal"}],
+        )
+
+    def test_proposal_parser_skips_echoed_observation_and_prior_feedback_arrays(self) -> None:
+        echoed = {
+            "observation": {
+                "cohorts": [
+                    {
+                        "dimensions": {"model": "local-model"},
+                        "duration": {"p95": 123.0},
+                        "record_count": 30,
+                    }
+                ]
+            },
+            "prior_cycle_feedback": [
+                {
+                    "hypothesis": "A previously rejected hypothesis with enough text.",
+                    "domain": "conversation",
+                    "outcome": "not_actionable_in_prior_cycle",
+                }
+            ],
+        }
+        actual = {
+            "proposals": [
+                {
+                    "hypothesis": "A novel bounded proposal with enough text.",
+                    "domain": "memory",
+                }
+            ]
+        }
+
+        parsed = _parse_proposals(
+            f"analysis {json.dumps(echoed)}\nfinal {json.dumps(actual)}"
+        )
+
+        self.assertEqual(parsed, actual["proposals"])
 
     def test_deterministic_review_separates_measurement_from_unsupported_causality(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

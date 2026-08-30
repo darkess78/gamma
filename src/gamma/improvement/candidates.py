@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from ..llm.base import LLMAdapter, LLMCallContext
+from ..llm.base import LLMAdapter, LLMCallContext, LLMReply
 from .experiments import (
     ExperimentManifest,
     _run_git,
@@ -21,7 +21,6 @@ from .experiments import (
 from .grounded_plans import (
     GroundedPlan,
     _grounding_sha256,
-    _parse_json_object,
     validate_grounded_plan,
 )
 from .grounding import SourceGroundingReport
@@ -80,6 +79,7 @@ class CandidateDraftRejection(BaseModel):
 class CandidateDraftBatch(BaseModel):
     draft: CandidateDraft | None = None
     rejections: tuple[CandidateDraftRejection, ...] = ()
+    repair_attempted: bool = False
 
 
 class CandidateTestFeedback(BaseModel):
@@ -184,52 +184,102 @@ class CandidateDraftGenerator:
             ),
             model_override=model_override,
         )
-        route = (reply.metadata or {}).get("route") if isinstance(reply.metadata, dict) else {}
-        route = route if isinstance(route, dict) else {}
-        raw = _parse_json_object(reply.text)
-        if raw is None:
-            return CandidateDraftBatch(
-                rejections=(CandidateDraftRejection(code="unparseable_response"),)
-            )
-        if isinstance(raw.get("candidate"), dict):
-            raw = raw["candidate"]
-        received_fields = tuple(
-            sorted(key for key in raw if isinstance(key, str) and key.replace("_", "").isalnum())
+        batch = _candidate_batch_from_reply(
+            reply,
+            manifest=manifest,
+            plan=plan,
+            grounding=grounding,
+            workspace=workspace,
         )
-        status = str(raw.get("status") or "").strip().lower().replace("-", "_")
-        if status in {"needs_source", "insufficient_source", "needs_more_context"}:
-            status = "needs_more_source"
-        try:
-            draft = CandidateDraft.model_validate(
-                {
-                    "status": status,
-                    "manifest_id": manifest.id,
-                    "baseline_commit": manifest.baseline_commit,
-                    "plan_sha256": candidate_plan_sha256(plan),
-                    "grounding_sha256": _grounding_sha256(grounding),
-                    "rationale": str(raw.get("rationale") or raw.get("reason") or "").strip(),
-                    "edits": raw.get("edits") or (),
-                    "provider": route.get("provider"),
-                    "model": route.get("model"),
-                }
+        if batch.draft is not None:
+            return batch
+        repair_context = {
+            **context,
+            "format_repair": {
+                "rejection_codes": [item.code for item in batch.rejections],
+                "received_fields": sorted(
+                    {field for item in batch.rejections for field in item.received_fields}
+                ),
+            },
+        }
+        repaired_reply = self.llm.generate_reply(
+            system_prompt=_candidate_repair_system_prompt(),
+            user_text=json.dumps(repair_context, ensure_ascii=True, sort_keys=True),
+            call_context=LLMCallContext(
+                purpose="improvement_candidate_draft_repair",
+                reasoning_depth="normal",
+                persona_sensitive=False,
+                interaction_mode="improvement",
+                cost_sensitive=False,
+                quality_tier="primary",
+                minimum_context_tokens=8192,
+            ),
+            model_override=model_override,
+        )
+        repaired = _candidate_batch_from_reply(
+            repaired_reply,
+            manifest=manifest,
+            plan=plan,
+            grounding=grounding,
+            workspace=workspace,
+        )
+        return repaired.model_copy(update={"repair_attempted": True})
+
+
+def _candidate_batch_from_reply(
+    reply: LLMReply,
+    *,
+    manifest: ExperimentManifest,
+    plan: GroundedPlan,
+    grounding: SourceGroundingReport,
+    workspace: Path,
+) -> CandidateDraftBatch:
+    route = (reply.metadata or {}).get("route") if isinstance(reply.metadata, dict) else {}
+    route = route if isinstance(route, dict) else {}
+    raw = _parse_candidate_json_object(reply.text)
+    if raw is None:
+        return CandidateDraftBatch(
+            rejections=(CandidateDraftRejection(code="unparseable_response"),)
+        )
+    if isinstance(raw.get("candidate"), dict):
+        raw = raw["candidate"]
+    received_fields = tuple(
+        sorted(key for key in raw if isinstance(key, str) and key.replace("_", "").isalnum())
+    )
+    status = str(raw.get("status") or "").strip().lower().replace("-", "_")
+    if status in {"needs_source", "insufficient_source", "needs_more_context"}:
+        status = "needs_more_source"
+    try:
+        draft = CandidateDraft.model_validate(
+            {
+                "status": status,
+                "manifest_id": manifest.id,
+                "baseline_commit": manifest.baseline_commit,
+                "plan_sha256": candidate_plan_sha256(plan),
+                "grounding_sha256": _grounding_sha256(grounding),
+                "rationale": str(raw.get("rationale") or raw.get("reason") or "").strip(),
+                "edits": raw.get("edits") or (),
+                "provider": route.get("provider"),
+                "model": route.get("model"),
+            }
+        )
+        validate_candidate_draft(
+            draft,
+            manifest=manifest,
+            plan=plan,
+            grounding=grounding,
+            workspace=workspace,
+        )
+    except (SyntaxError, TypeError, ValueError) as exc:
+        return CandidateDraftBatch(
+            rejections=(
+                CandidateDraftRejection(
+                    code=_candidate_rejection_code(exc),
+                    received_fields=received_fields,
+                ),
             )
-            validate_candidate_draft(
-                draft,
-                manifest=manifest,
-                plan=plan,
-                grounding=grounding,
-                workspace=workspace,
-            )
-        except (SyntaxError, TypeError, ValueError) as exc:
-            return CandidateDraftBatch(
-                rejections=(
-                    CandidateDraftRejection(
-                        code=_candidate_rejection_code(exc),
-                        received_fields=received_fields,
-                    ),
-                )
-            )
-        return CandidateDraftBatch(draft=draft)
+        )
+    return CandidateDraftBatch(draft=draft)
 
 
 def validate_candidate_draft(
@@ -481,6 +531,57 @@ def _candidate_system_prompt() -> str:
         "metric appear better by removing timers, replacing measured time with zero, suppressing "
         "events, or relabeling failure telemetry. Do not use markdown."
     )
+
+
+def _candidate_repair_system_prompt() -> str:
+    return (
+        "Return exactly one valid JSON object and no other text. This is a formatting repair for an "
+        "isolated Gamma candidate; you still have no tools and may use only the supplied verified "
+        "source. Use either "
+        '{"status":"candidate","rationale":"...","edits":[{"path":"repository/relative.py",'
+        '"file_sha256":"64 lowercase hex characters","old_text":"exact source text",'
+        '"new_text":"replacement text"}]} or '
+        '{"status":"needs_more_source","rationale":"...","edits":[]}. '
+        "Do not include manifest IDs or hashes other than each edit's supplied file_sha256; Gamma "
+        "binds the candidate to its manifest and plan deterministically. Every old_text must be an "
+        "exact, unique substring of the supplied source excerpt. Keep the change minimal and obey "
+        "all original safety, scope, telemetry-integrity, and no-generated-response-cache rules."
+    )
+
+
+def _parse_candidate_json_object(text: str) -> dict[str, Any] | None:
+    cleaned = re.sub(
+        r"^\s*```(?:json)?\s*|\s*```\s*$",
+        "",
+        text.strip()[:1_000_000],
+        flags=re.IGNORECASE,
+    )
+    try:
+        return _candidate_shaped_object(json.loads(cleaned))
+    except json.JSONDecodeError:
+        decoder = json.JSONDecoder()
+        for count, start in enumerate(index for index, character in enumerate(cleaned) if character == "{"):
+            if count >= 200:
+                break
+            try:
+                payload, _ = decoder.raw_decode(cleaned, start)
+            except json.JSONDecodeError:
+                continue
+            selected = _candidate_shaped_object(payload)
+            if selected is not None:
+                return selected
+    return None
+
+
+def _candidate_shaped_object(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    candidates = [value]
+    for key in ("candidate", "draft", "result"):
+        nested = value.get(key)
+        if isinstance(nested, dict):
+            candidates.append(nested)
+    return next((candidate for candidate in candidates if "status" in candidate), None)
 
 
 def _candidate_rejection_code(exc: Exception) -> str:

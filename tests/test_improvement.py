@@ -499,11 +499,23 @@ class ImprovementEvaluatorTest(unittest.TestCase):
                 grounding=grounding,
                 workspace=workspace,
             )
+            repairing_llm = _RepairCandidateLLM(fact.sha256)
+            repaired_batch = CandidateDraftGenerator(repairing_llm).generate(
+                manifest=manifest,
+                plan=plan,
+                grounding=grounding,
+                workspace=workspace,
+            )
 
             self.assertIsNotNone(batch.draft)
             assert batch.draft is not None
             self.assertEqual(batch.draft.authority, "candidate_draft_only")
             self.assertIn("exact_source_excerpt", _CandidateLLM.last_user_text)
+            self.assertIsNotNone(repaired_batch.draft)
+            self.assertTrue(repaired_batch.repair_attempted)
+            self.assertEqual(repairing_llm.call_count, 2)
+            self.assertIn("format_repair", repairing_llm.contexts[1])
+            self.assertIn("exactly one valid JSON object", repairing_llm.system_prompts[1])
             ambiguous_payload = batch.draft.model_dump(mode="json")
             ambiguous_payload["edits"][0]["old_text"] = "value"
             ambiguous_payload["edits"][0]["new_text"] = "item"
@@ -1307,6 +1319,37 @@ class _CandidateLLM:
             ),
             metadata={"route": {"provider": "local", "model": "candidate-fixture"}},
         )
+
+
+class _RepairCandidateLLM(_CandidateLLM):
+    def __init__(self, file_sha256: str) -> None:
+        super().__init__(file_sha256)
+        self.call_count = 0
+        self.contexts: list[dict] = []
+        self.system_prompts: list[str] = []
+
+    def generate_reply(self, system_prompt: str, user_text: str, **kwargs) -> LLMReply:
+        self.call_count += 1
+        self.contexts.append(json.loads(user_text))
+        self.system_prompts.append(system_prompt)
+        if self.call_count == 1:
+            return LLMReply(
+                text=json.dumps(
+                    {
+                        "status": "candidate",
+                        "rationale": "The first response deliberately omits its source hash.",
+                        "edits": [
+                            {
+                                "path": "src/gamma/example.py",
+                                "old_text": "    return value + 1",
+                                "new_text": "    return value",
+                            }
+                        ],
+                    }
+                ),
+                metadata={"route": {"provider": "local", "model": "candidate-fixture"}},
+            )
+        return super().generate_reply(system_prompt, user_text, **kwargs)
 
 
 class _RetryCandidateLLM:

@@ -21,7 +21,9 @@ def main() -> None:
         json.dumps(
             {
                 "input": text,
-                "reply": response.spoken_text,
+                "reply": response.display_text or "",
+                "speech_text": response.speech_text or "",
+                "delivery_mode": response.delivery_mode,
                 "emotion": response.emotion,
                 "internal_summary": response.internal_summary,
             },

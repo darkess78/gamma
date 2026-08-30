@@ -149,14 +149,17 @@ def output_events_from_response(
             type="emotion_changed",
             payload={"emotion": response.emotion, **context},
         ),
-        StreamOutputEvent(
-            input_event_id=input_event.event_id,
-            turn_id=turn_id,
-            type="subtitle_line",
-            payload={"text": response.spoken_text, **context},
-        ),
     ]
-    if response.audio_path or response.audio_content_type:
+    if response.speech_text:
+        events.append(
+            StreamOutputEvent(
+                input_event_id=input_event.event_id,
+                turn_id=turn_id,
+                type="subtitle_line",
+                payload={"text": response.speech_text, **context},
+            )
+        )
+    if response.speech_text and (response.audio_path or response.audio_content_type):
         events.insert(
             1,
             StreamOutputEvent(

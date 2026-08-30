@@ -59,7 +59,7 @@ class VoiceRoundtripService:
                 audio_bytes = Path(response.audio_path).read_bytes()
                 audio_base64 = base64.b64encode(audio_bytes).decode("ascii")
             else:
-                chunk_texts = split_reply_text(response.spoken_text)
+                chunk_texts = split_reply_text(response.speech_text or "")
                 chunk_policies = build_interruptibility(chunk_texts)
                 for index, chunk_text in enumerate(chunk_texts, start=1):
                     policy = chunk_policies[index - 1] if index - 1 < len(chunk_policies) else {}
@@ -76,7 +76,7 @@ class VoiceRoundtripService:
             return VoiceRoundtripResponse(
                 transcript=transcript,
                 audio_context=audio_context,
-                reply_text=response.spoken_text,
+                reply_text=response.display_text or "",
                 reply_chunks=reply_chunks,
                 audio_content_type=response.audio_content_type,
                 audio_base64=audio_base64,

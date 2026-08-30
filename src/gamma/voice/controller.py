@@ -358,7 +358,7 @@ class VoiceModeController:
                 policy=asdict(effective_policy),
                 input_audio=str(capture_path),
                 transcript=transcript,
-                reply_text=response.spoken_text,
+                reply_text=response.display_text or "",
                 reply_audio=response.audio_path,
                 playback_attempted=playback_attempted,
                 metadata={

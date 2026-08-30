@@ -84,7 +84,7 @@
         streamTitleHtml(speaker, actor.platform_id || actor.source || ''),
         streamQuoteHtml(input.text, 'stream-quote'),
         streamKvHtml(detailRows),
-        streamQuoteHtml(response.spoken_text, 'stream-reply')
+        streamQuoteHtml(response.display_text || response.spoken_text, 'stream-reply')
       ]);
     }).join('');
   }

@@ -471,7 +471,7 @@
       return 'No Gamma vision reply available.';
     }
     var lines = [
-      'Reply: ' + (payload.spoken_text || 'n/a'),
+      'Reply: ' + (payload.display_text || payload.spoken_text || 'n/a'),
       'Emotion: ' + (payload.emotion || 'neutral')
     ];
     if (payload.vision) {

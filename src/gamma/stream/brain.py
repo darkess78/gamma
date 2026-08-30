@@ -188,6 +188,9 @@ class StreamBrain:
                 "brief_mode": brief_mode,
                 "micro_mode": micro_mode,
                 "defer_llm_safety_review": _is_public_stream_event(event),
+                "delivery_context": "ambient" if event.kind in {"lull", "audio", "system"} else "public_stream",
+                "speech_allowed": synthesize_speech,
+                "speech_requested": synthesize_speech,
             }
             if _is_public_stream_event(event):
                 recent_context = self._assemble_recent_context()
@@ -196,7 +199,7 @@ class StreamBrain:
             response = self._conversation.respond(**conversation_args)
             action_plan = self._action_planner.plan_from_response(response)
         safety_decision = self._review_stream_output(event, response, include_llm=not parallel_safety) if response else {}
-        if response is not None and parallel_safety and not safety_decision.get("blocked"):
+        if response is not None and response.speech_text and parallel_safety and not safety_decision.get("blocked"):
             response, safety_decision, late_review = self._synthesize_with_parallel_review(event, response)
         if safety_decision.get("blocked"):
             response = _filtered_stream_response()
@@ -216,7 +219,7 @@ class StreamBrain:
             )
             response = None
             action_plan = ActionPlan()
-        budget_decision = self._pacer.apply_budget(event, decision, response.spoken_text if response else "")
+        budget_decision = self._pacer.apply_budget(event, decision, response.speech_text if response else "")
         if budget_decision is not None:
             decision = budget_decision
             response = None
@@ -311,7 +314,7 @@ class StreamBrain:
                 "safe_output": "filtered",
                 "playback_approved": False,
             }
-        fast_review = _fast_stream_safety_review(response.spoken_text)
+        fast_review = _fast_stream_safety_review(response.speech_text or "")
         if fast_review["blocked"]:
             return {
                 "action": "filtered",
@@ -324,7 +327,7 @@ class StreamBrain:
                 "safe_output": "filtered",
                 "playback_approved": False,
             }
-        llm_decision = self._review_stream_output_with_llm(event, response.spoken_text) if include_llm else None
+        llm_decision = self._review_stream_output_with_llm(event, response.speech_text or "") if include_llm and response.speech_text else None
         if llm_decision is not None:
             return llm_decision
         return {
@@ -344,10 +347,10 @@ class StreamBrain:
         response: AssistantResponse,
     ) -> tuple[AssistantResponse, dict, tuple[Future, ThreadPoolExecutor] | None]:
         executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="stream-safety")
-        review_future = executor.submit(self._safety_reviewer.review, response.spoken_text)
+        review_future = executor.submit(self._safety_reviewer.review, response.speech_text or "")
         tts_future = executor.submit(
             self._stream_speech_synthesizer().synthesize,
-            response.spoken_text,
+            response.speech_text or "",
             response.emotion,
             response.voice_styles,
         )

@@ -300,6 +300,9 @@ def _stream_result_from_live_payload(
     """
     response = AssistantResponse(
         spoken_text=str(payload.get("reply_text", "") or ""),
+        display_text=str(payload.get("display_text", payload.get("reply_text", "")) or ""),
+        speech_text=str(payload.get("speech_text", payload.get("reply_text", "")) or ""),
+        delivery_mode=str(payload.get("delivery_mode", "speech") or "speech"),
         emotion=response_emotion if response_emotion in {"neutral", "happy", "teasing", "concerned", "excited", "embarrassed", "annoyed"} else "neutral",
         voice_styles=payload.get("voice_styles", []) if isinstance(payload.get("voice_styles"), list) else [],
         motions=[],
@@ -397,6 +400,9 @@ def _run_simple_chunked(
             brief_mode=_should_use_brief_mode(transcript),
             micro_mode=_should_use_micro_mode(transcript),
             background_context=_audio_prompt_context(audio_context),
+            delivery_context="direct_voice",
+            speech_requested=synthesize_speech,
+            speech_allowed=synthesize_speech,
         )
     else:
         response = None
@@ -453,7 +459,10 @@ def _run_simple_chunked(
         "turn_id": args.turn_id,
         "status": "running",
         "transcript": transcript,
-        "reply_text": response.spoken_text,
+        "reply_text": response.display_text or "",
+        "display_text": response.display_text or "",
+        "speech_text": response.speech_text or "",
+        "delivery_mode": response.delivery_mode,
         "reply_chunks": [],
         "response_mode": response_mode,
         "audio_context": audio_context or {},
@@ -470,8 +479,8 @@ def _run_simple_chunked(
         },
     }
 
-    if synthesize_speech:
-        chunks = split_reply_text(response.spoken_text, max_chunks=_live_chunk_budget(response.spoken_text))
+    if synthesize_speech and response.speech_text:
+        chunks = split_reply_text(response.speech_text, max_chunks=_live_chunk_budget(response.speech_text))
         chunk_policies = build_interruptibility(chunks)
         payload["timing_ms"]["chunk_count"] = len(chunks)
         if chunks:

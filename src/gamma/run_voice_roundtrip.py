@@ -54,7 +54,9 @@ def main() -> None:
     payload = {
         "input_audio": str(source),
         "transcript": transcript,
-        "reply": response.spoken_text,
+        "reply": response.display_text or "",
+        "speech_text": response.speech_text or "",
+        "delivery_mode": response.delivery_mode,
         "audio_path": response.audio_path,
         "audio_content_type": response.audio_content_type,
         "timing_ms": response.timing_ms,

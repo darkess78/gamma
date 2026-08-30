@@ -393,14 +393,14 @@ class PresenceService:
         self._conversation.record_durable_output(
             target_policy=DASHBOARD_MONITOR_TARGET,
             turn_id=turn_id,
-            text=response.spoken_text,
+            text=response.display_text or "",
             status="completed",
             spoken=status == "spoken",
         )
         return self._record_wake_result(
             state,
             status=status,
-            opening=response.spoken_text,
+            opening=response.display_text or "",
             event_id=event.event_id,
             turn_id=turn_id,
             session_id=session,

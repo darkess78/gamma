@@ -31,6 +31,22 @@ class _FakeConversation:
 
 
 class StreamOutputTest(unittest.TestCase):
+    def test_silent_and_text_only_responses_emit_no_spoken_performer_events(self) -> None:
+        input_event = StreamInputEvent(kind="lull", session_id="stream-session")
+        silent = AssistantResponse(delivery_mode="silent", response_action="stay_silent", emotion="concerned")
+        text_only = AssistantResponse(
+            spoken_text="Visible in Monitor only.",
+            display_text="Visible in Monitor only.",
+            speech_text="",
+            delivery_mode="text_only",
+        )
+
+        silent_events = output_events_from_response(input_event=input_event, turn_id="silent", response=silent)
+        text_events = output_events_from_response(input_event=input_event, turn_id="text", response=text_only)
+
+        self.assertFalse(any(event.type in {"subtitle_line", "speech_started", "speech_ended"} for event in silent_events))
+        self.assertFalse(any(event.type in {"subtitle_line", "speech_started", "speech_ended"} for event in text_events))
+
     def test_jsonl_adapter_persists_subtitle_and_avatar_payloads(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             adapter = JsonlStreamOutputAdapter(Path(temp_dir) / "outputs.jsonl")

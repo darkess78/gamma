@@ -528,7 +528,9 @@
         throw new Error(result.detail || `HTTP ${response.status}`);
       }
       const decision = result.result && result.result.decision ? result.result.decision : {};
-      const reply = result.result && result.result.assistant_response ? result.result.assistant_response.spoken_text || '' : '';
+      const reply = result.result && result.result.assistant_response
+        ? result.result.assistant_response.display_text || result.result.assistant_response.spoken_text || ''
+        : '';
       if (status) {
         status.textContent = [
           `Decision: ${decision.decision || 'n/a'} / ${decision.reason || 'n/a'}`,

@@ -43,11 +43,12 @@ class VTubeStudioAdapterTest(unittest.TestCase):
         self.assertEqual(action.action_type, "no_mapping")
         self.assertIsNone(action.request)
 
-    def test_speaking_state_tracks_speech_events(self) -> None:
+    def test_producer_speech_events_do_not_confirm_playback(self) -> None:
         adapter = VTubeStudioAdapter(VTubeStudioAdapterConfig(enabled=True))
 
         adapter.handle_event(PerformerOutputEvent(type="speech_started", turn_id="turn-1"))
-        self.assertTrue(adapter.status()["speaking"])
+        self.assertFalse(adapter.status()["speaking"])
+        self.assertEqual(adapter.status()["last_action"]["action_type"], "prepared")
 
         adapter.handle_event(PerformerOutputEvent(type="speech_ended", turn_id="turn-1"))
         self.assertFalse(adapter.status()["speaking"])
@@ -207,7 +208,20 @@ class VTubeStudioAdapterTest(unittest.TestCase):
             async with anyio.create_task_group() as task_group:
                 task_group.start_soon(runner.run_until_stopped)
                 await anyio.sleep(0.05)
-                bus.publish(PerformerOutputEvent(type="expression_set", turn_id="turn-1", payload={"expression": "happy"}))
+                from gamma.delivery.playback import PlaybackLedger
+                from gamma.schemas.response import AssistantResponse
+                from gamma.presence import presence_state_for_mode
+                from state_fixtures import commit_response
+                with tempfile.TemporaryDirectory() as directory:
+                    ledger = PlaybackLedger(database_url=f"sqlite:///{directory}/vtube.db")
+                    with patch("gamma.presence.load_presence_state", return_value=presence_state_for_mode("go_live")), patch(
+                        "gamma.delivery.execution.get_playback_ledger", return_value=ledger):
+                        response = commit_response(ledger, AssistantResponse(spoken_text="Fixture", emotion="happy"))
+                        context = dict(target="stream_public", audience="public", policy="fixture")
+                        grant = ledger.issue(response, **context)
+                        ledger.dispatch(grant, response, **context)
+                        bus.publish(PerformerOutputEvent(type="expression_set", turn_id="turn-1",
+                            payload={"expression": "happy", "delivery_grant": grant}))
                 await anyio.sleep(0.05)
                 runner.stop()
                 await anyio.sleep(0.05)

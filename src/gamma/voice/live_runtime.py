@@ -12,9 +12,9 @@ from .live_jobs import LiveVoiceJobManager
 class LiveTurnRuntime(ABC):
     """Boundary for live voice turn execution.
 
-    The current implementation is subprocess + JSON files. Dashboard and API
-    callers should depend on this interface so a lower-latency runtime can
-    replace it later without changing those callers.
+    Adapters include the legacy subprocess/JSON implementation and the opt-in
+    core-owned pipeline. Callers use this boundary while playback and independent
+    worker lifecycles migrate.
     """
 
     @abstractmethod

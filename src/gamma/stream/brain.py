@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 import time
 import threading
-from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, Future
 from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
 from ..config import settings
 from ..conversation.service import ConversationService
+from ..memory.continuity import ContinuityService
 from ..errors import ConversationError
 from ..schemas.response import AssistantResponse
 from ..safety.hard_blocklist import matched_rules as hard_block_matches
@@ -19,6 +21,9 @@ from ..safety.llm_reviewer import LLMReviewDecision, SpeechLLMReviewer
 from ..safety.privacy_guard import review_private_info_output
 from ..safety.rewrite_guard import rewrite_text
 from ..voice.tts import TTSResult, TTSService
+from ..delivery.synthesis import synthesize_response
+from ..delivery.ordered import OrderedDelivery
+from ..delivery.authority import DeliveryAuthority, policy_revision, presence_snapshot
 from .actions import ActionPlanner
 from .models import (
     ActionPlan,
@@ -84,7 +89,6 @@ class StreamBrain:
         handle_event: Handle stream input events.
         decide: Make turn decision.
         _review_stream_output: Review output stream safety.
-        _synthesize_with_parallel_review: Synthesize with parallel review.
         _pacer.apply: Apply speech pacer.
         _pacer.apply_budget: Apply budget decision.
         _maybe_propose_self_goal: Propose self goal.
@@ -126,26 +130,61 @@ class StreamBrain:
         self._pacer = StreamSpeechPacer()
         self._safety_reviewer = safety_reviewer or SpeechLLMReviewer()
         self._speech_synthesizer = speech_synthesizer
+        self._synthesis_lock = threading.Lock()
         self._temp_memory_store = temp_memory_store or StreamTempMemoryStore()
         self._recent_context = RecentStreamContextAssembler(self._temp_memory_store)
         self._self_goal_store = self_goal_store or StreamSelfGoalStore()
+        self._continuity = getattr(self._conversation, "_continuity", None) or ContinuityService()
+        self._delivery = DeliveryAuthority()
+        self.delivery_jobs = OrderedDelivery(capacity=8)
 
     def handle_event(
+        self, event: StreamInputEvent, *, synthesize_speech: bool = False,
+        fast_mode: bool = True, brief_mode: bool = False, micro_mode: bool = False,
+        defer_delivery: bool = False, delivery_allowed=None,
+    ) -> StreamTurnResult | Future:
+        # Snapshot before policy evaluation, including turns that skip the model.
+        session_id = event.session_id or f"transient:stream:{event.event_id}"
+        privacy_scope = "local_generic" if _is_public_stream_event(event) else "local_private"
+        exchange = self._continuity.begin_exchange(
+            session_id=session_id, text=event.text or event.kind,
+            speaker_name=event.actor.display_name or "stream", input_source=event.kind,
+            privacy_scope=privacy_scope, input_role="event")
+        try:
+            return self._handle_owned_event(event, exchange=exchange,
+                state_session_id=session_id, privacy_scope=privacy_scope,
+                synthesize_speech=synthesize_speech, fast_mode=fast_mode,
+                brief_mode=brief_mode, micro_mode=micro_mode,
+                defer_delivery=defer_delivery, delivery_allowed=delivery_allowed)
+        except BaseException:
+            self._continuity.fail_exchange(exchange)
+            raise
+
+    def _handle_owned_event(
         self,
         event: StreamInputEvent,
         *,
+        exchange: str,
+        state_session_id: str,
+        privacy_scope: str,
         synthesize_speech: bool = False,
         fast_mode: bool = True,
         brief_mode: bool = False,
         micro_mode: bool = False,
-    ) -> StreamTurnResult:
+        defer_delivery: bool = False,
+        delivery_allowed=None,
+    ) -> StreamTurnResult | Future:
         started_at = time.perf_counter()
+        reviewed_presence = presence_snapshot()
+        reviewed_policy = policy_revision(event.metadata.get("twitch_controls"))
+        if defer_delivery:
+            event = event.model_copy(deep=True)
         decision = self.decide(event)
+        brain_generation = decision.metadata.get("brain_generation")
         response = None
         output_events = []
         action_plan = ActionPlan()
         turn_id = uuid4().hex
-        late_review: tuple[Future, ThreadPoolExecutor] | None = None
 
         dry_run_enabled = _twitch_control_enabled(event, "dry_run", False)
         if dry_run_enabled and _would_twitch_dry_run_suppress(decision):
@@ -169,7 +208,8 @@ class StreamBrain:
 
         decision = self._pacer.apply(event, decision)
         canned_response = _canned_response_from_decision(decision)
-        parallel_safety = _parallel_stream_safety_enabled(event, synthesize_speech=synthesize_speech)
+        if not _twitch_control_enabled(event, "voice_enabled", True):
+            synthesize_speech = False
         if canned_response:
             response = AssistantResponse(
                 spoken_text=canned_response,
@@ -182,7 +222,7 @@ class StreamBrain:
             conversation_args = {
                 "user_text": text,
                 "session_id": event.session_id,
-                "synthesize_speech": synthesize_speech and not parallel_safety,
+                "synthesize_speech": False,
                 "speaker_ctx": event.actor.to_speaker_context(),
                 "fast_mode": fast_mode,
                 "brief_mode": brief_mode,
@@ -192,23 +232,36 @@ class StreamBrain:
                 "speech_allowed": synthesize_speech,
                 "speech_requested": synthesize_speech,
             }
+            if isinstance(self._conversation, ConversationService):
+                conversation_args["_parent_exchange_id"] = exchange
+                conversation_args["defer_delivery"] = True
             if _is_public_stream_event(event):
                 recent_context = self._assemble_recent_context()
                 if recent_context:
                     conversation_args["background_context"] = recent_context
             response = self._conversation.respond(**conversation_args)
+            if isinstance(self._conversation, ConversationService):
+                provisional_grant = response.tts_metadata.pop("delivery_grant", None)
+                if provisional_grant:
+                    self._conversation.cancel_delivery(provisional_grant)
             action_plan = self._action_planner.plan_from_response(response)
-        safety_decision = self._review_stream_output(event, response, include_llm=not parallel_safety) if response else {}
-        if response is not None and response.speech_text and parallel_safety and not safety_decision.get("blocked"):
-            response, safety_decision, late_review = self._synthesize_with_parallel_review(event, response)
-        if safety_decision.get("blocked"):
-            response = _filtered_stream_response()
-            action_plan = ActionPlan()
-        elif safety_decision.get("action") in {"skip", "defer", "hold"}:
+        conversation_decision_id = response.route_trace_id if response is not None else None
+        delivery_context = lambda: dict(
+            target=str(event.metadata.get("output_target_policy") or ("stream_public" if _is_public_stream_event(event) else "dashboard_monitor")),
+            audience="public" if _is_public_stream_event(event) else "private",
+            policy=policy_revision(event.metadata.get("twitch_controls")))
+        reviewed_context = delivery_context()
+        reviewed_context["policy"] = reviewed_policy
+        if response is not None:
+            response.audio_path = None
+            response.audio_content_type = None
+        safety_decision = self._review_stream_output(event, response, include_llm=True) if response else {}
+        if safety_decision.get("blocked") or safety_decision.get("action") in {"skip", "defer", "hold"}:
             safety_action = str(safety_decision.get("action") or "skip")
             decision = TurnDecision(
                 decision="defer",
-                reason="stream_safety_review_timeout" if safety_decision.get("review_timeout") else "stream_safety_review_skipped",
+                reason=("stream_safety_review_timeout" if safety_decision.get("review_timeout") else
+                        "stream_safety_review_denied" if safety_decision.get("blocked") else "stream_safety_review_skipped"),
                 should_call_conversation=False,
                 response_mode=decision.response_mode,
                 metadata={
@@ -225,45 +278,92 @@ class StreamBrain:
             response = None
             action_plan = ActionPlan()
             output_events = []
-        elif response is not None:
-            output_events = output_events_from_response(input_event=event, turn_id=turn_id, response=response)
-            if safety_decision.get("blocked"):
-                output_events = _mark_filtered_output_events(output_events, safety_decision)
+
+        from ..presence import guard_presence_control
+        with self._brain_generation_guard(brain_generation), guard_presence_control(reviewed_presence):
+            decision_id = conversation_decision_id
+            if decision_id:
+                self._continuity.fail_exchange(exchange, status="cancelled")
+                if response is not None:
+                    response.route_trace_id = decision_id
             else:
-                output_events = _apply_estimated_subtitle_timing(event, output_events)
-            output_events = _apply_output_target_policy(event, output_events)
-        output_events = _filter_stream_output_events(event, output_events)
-        output_dispatch = self._output_dispatcher.dispatch(output_events) if output_events else None
+                self._continuity.complete_exchange(exchange_id=exchange, session_id=state_session_id,
+                    assistant_text=response.display_text if response is not None else "",
+                    trace_id=exchange, output_target=reviewed_context["target"] if response is not None else "internal",
+                    privacy_scope=privacy_scope)
+                decision_id = exchange
+                if response is not None:
+                    response.route_trace_id = exchange
 
-        result = StreamTurnResult(
-            input_event=event,
-            decision=decision,
-            action_plan=action_plan,
-            assistant_response=response,
-            output_events=output_events,
-            output_dispatch=output_dispatch.model_dump() if output_dispatch else {},
-            safety_decision=safety_decision,
-            timing_ms={"stream_brain_ms": round((time.perf_counter() - started_at) * 1000, 1)},
-        )
-        self._maybe_propose_self_goal(event, result)
-        self._record_temp_memory(result)
-        self._trace_store.append(result)
-        if late_review is not None:
-            self._arm_late_safety_interrupt(
-                event=event,
-                turn_id=turn_id,
-                review_future=late_review[0],
-                executor=late_review[1],
+            result = StreamTurnResult(
+                input_event=event,
+                decision=decision,
+                action_plan=action_plan,
+                assistant_response=response,
+                output_events=output_events,
+                output_dispatch={},
+                safety_decision=safety_decision,
+                timing_ms={"stream_brain_ms": round((time.perf_counter() - started_at) * 1000, 1)},
             )
-        return result
+            with self._continuity._authority.decision_transaction(decision_id, effect="stream_state") as session:
+                self._maybe_propose_self_goal(event, result, session=session)
+                self._record_temp_memory(result, session=session)
+                session.commit()
+            if response is not None:
+                grant = self._delivery.issue(response, **reviewed_context)
+                response.tts_metadata["delivery_grant"] = grant
 
-    def _record_temp_memory(self, result: StreamTurnResult) -> None:
+        def cancel():
+            if response is not None and response.tts_metadata.get("delivery_grant"):
+                self._delivery.cancel(response.tts_metadata["delivery_grant"])
+
+        def deliver():
+            try:
+                if delivery_allowed is not None and not delivery_allowed():
+                    raise ConversationError("stream_delivery_superseded")
+                events = []
+                if response is not None:
+                    if synthesize_speech and response.speech_text and not safety_decision.get("blocked"):
+                        with self._synthesis_lock:
+                            synthesize_response(response, self._stream_speech_synthesizer(), authority=self._delivery,
+                                                grant_id=grant, context=delivery_context)
+                    if delivery_allowed is not None and not delivery_allowed():
+                        raise ConversationError("stream_delivery_superseded")
+                    events = output_events_from_response(input_event=event, turn_id=turn_id, response=response)
+                    for output_event in events:
+                        output_event.payload["delivery_grant"] = grant
+                        output_event.payload["target_policy"] = reviewed_context["target"]
+                    if safety_decision.get("blocked"):
+                        events = _mark_filtered_output_events(events, safety_decision)
+                    else:
+                        events = _apply_estimated_subtitle_timing(event, events)
+                    events = _apply_output_target_policy(event, events)
+                    with self._brain_generation_guard(brain_generation):
+                        self._delivery.dispatch(grant, response, **delivery_context())
+                result.output_events = _filter_stream_output_events(event, events)
+                dispatched = self._output_dispatcher.dispatch(result.output_events) if result.output_events else None
+                result.output_dispatch = dispatched.model_dump() if dispatched else {}
+                result.timing_ms["stream_total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
+                self._trace_store.append(result)
+                return result
+            except BaseException:
+                cancel()
+                raise
+
+        if defer_delivery:
+            return self.delivery_jobs.submit(deliver, on_cancel=cancel)
+        return deliver()
+
+    def _brain_generation_guard(self, generation):
+        if getattr(self._conversation, "_brain_worker", False) is True:
+            from ..brain.process import get_brain_process
+            return get_brain_process().guard(generation)
+        return nullcontext()
+
+    def _record_temp_memory(self, result: StreamTurnResult, *, session) -> None:
         if result.safety_decision.get("review_pending"):
             return
-        try:
-            self._temp_memory_store.record_turn(result)
-        except Exception:
-            pass
+        self._temp_memory_store.record_turn(result, session=session)
 
     def _assemble_recent_context(self) -> str | None:
         try:
@@ -271,26 +371,24 @@ class StreamBrain:
         except Exception:
             return None
 
-    def _maybe_propose_self_goal(self, event: StreamInputEvent, result: StreamTurnResult) -> None:
+    def _maybe_propose_self_goal(self, event: StreamInputEvent, result: StreamTurnResult, *, session) -> None:
         if event.kind != "conversation_lull":
             return
         if not _twitch_control_enabled(event, "self_goal_proposals_enabled", True):
             return
         if not result.decision.metadata.get("would_reply"):
             return
-        try:
-            self._self_goal_store.propose(
-                title="Keep chat warm during quiet moments",
-                description="When the stream is quiet, propose a short safe question or observation for chat instead of letting silence stretch.",
-                source="stream_brain",
-                metadata={
-                    "event_id": event.event_id,
-                    "trace_id": result.trace_id,
-                    "idle_policy_reason": event.metadata.get("idle_policy_reason"),
-                },
-            )
-        except Exception:
-            pass
+        self._self_goal_store.propose(
+            title="Keep chat warm during quiet moments",
+            description="When the stream is quiet, propose a short safe question or observation for chat instead of letting silence stretch.",
+            source="stream_brain",
+            metadata={
+                "event_id": event.event_id,
+                "trace_id": result.trace_id,
+                "idle_policy_reason": event.metadata.get("idle_policy_reason"),
+            },
+            session=session,
+        )
 
     def _review_stream_output(
         self,
@@ -302,6 +400,9 @@ class StreamBrain:
         if response is None or not _is_public_stream_event(event):
             return {}
         speech_filter = response.tts_metadata.get("speech_filter") if isinstance(response.tts_metadata, dict) else None
+        if isinstance(speech_filter, dict) and speech_filter.get("action") in {"review_unavailable", "review_denied"}:
+            return {"action": "skip", "blocked": False, "review_unavailable": True,
+                    "playback_approved": False, "source": "conversation_safety_gate"}
         if isinstance(speech_filter, dict) and speech_filter.get("blocked"):
             return {
                 "action": "filtered",
@@ -314,7 +415,15 @@ class StreamBrain:
                 "safe_output": "filtered",
                 "playback_approved": False,
             }
-        fast_review = _fast_stream_safety_review(response.speech_text or "")
+        texts = list(dict.fromkeys(text for text in (response.display_text, response.speech_text) if text))
+        for text in texts:
+            reviewed = self._review_stream_text(event, text, include_llm=include_llm)
+            if reviewed.get("blocked") or not reviewed.get("playback_approved"):
+                return reviewed
+        return reviewed if texts else {"action": "allow", "blocked": False, "playback_approved": True}
+
+    def _review_stream_text(self, event, text, *, include_llm=True):
+        fast_review = _fast_stream_safety_review(text)
         if fast_review["blocked"]:
             return {
                 "action": "filtered",
@@ -327,7 +436,7 @@ class StreamBrain:
                 "safe_output": "filtered",
                 "playback_approved": False,
             }
-        llm_decision = self._review_stream_output_with_llm(event, response.speech_text or "") if include_llm and response.speech_text else None
+        llm_decision = self._review_stream_output_with_llm(event, text) if include_llm and text else None
         if llm_decision is not None:
             return llm_decision
         return {
@@ -341,91 +450,15 @@ class StreamBrain:
             "playback_approved": True,
         }
 
-    def _synthesize_with_parallel_review(
-        self,
-        event: StreamInputEvent,
-        response: AssistantResponse,
-    ) -> tuple[AssistantResponse, dict, tuple[Future, ThreadPoolExecutor] | None]:
-        executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="stream-safety")
-        review_future = executor.submit(self._safety_reviewer.review, response.speech_text or "")
-        tts_future = executor.submit(
-            self._stream_speech_synthesizer().synthesize,
-            response.speech_text or "",
-            response.emotion,
-            response.voice_styles,
-        )
-        try:
-            tts_result = tts_future.result()
-        except Exception:
-            review_future.cancel()
-            executor.shutdown(wait=False, cancel_futures=True)
-            raise
-        response.audio_path = tts_result.audio_path
-        response.audio_content_type = tts_result.content_type
-        response.tts_metadata = {
-            **dict(response.tts_metadata or {}),
-            **dict(tts_result.metadata or {}),
-        }
-        if review_future.done():
-            try:
-                review = review_future.result()
-            finally:
-                executor.shutdown(wait=False, cancel_futures=True)
-            decision = _llm_review_payload(review)
-            if decision["blocked"]:
-                return _filtered_stream_response(), decision, None
-            return response, decision, None
-        return (
-            response,
-            {
-                "action": "allow_pending_review",
-                "blocked": False,
-                "source": "stream_output_gate_llm",
-                "stage": "llm_parallel",
-                "review_pending": True,
-                "playback_approved": True,
-                "late_interrupt_armed": True,
-            },
-            (review_future, executor),
-        )
-
-    def _arm_late_safety_interrupt(
-        self,
-        *,
-        event: StreamInputEvent,
-        turn_id: str,
-        review_future: Future,
-        executor: ThreadPoolExecutor,
-    ) -> None:
-        def finish_review() -> None:
-            try:
-                review = review_future.result(timeout=max(0.05, float(settings.stream_safety_review_timeout_seconds or 2.0)))
-            except FutureTimeoutError:
-                review_future.cancel()
-                return
-            except Exception:
-                return
-            finally:
-                executor.shutdown(wait=False, cancel_futures=True)
-            decision = _llm_review_payload(review)
-            if not decision["blocked"]:
-                return
-            filtered = _filtered_stream_response()
-            events = _late_safety_override_events(
-                event=event,
-                turn_id=turn_id,
-                response=filtered,
-                safety_decision=decision,
-            )
-            events = _filter_stream_output_events(event, events)
-            if events:
-                self._output_dispatcher.dispatch(events)
-
-        threading.Thread(target=finish_review, name=f"stream-safety-{turn_id[:8]}", daemon=True).start()
-
     def _stream_speech_synthesizer(self) -> StreamSpeechSynthesizer:
         if self._speech_synthesizer is None:
-            self._speech_synthesizer = TTSService()
+            if settings.tts_runtime == "worker":
+                from ..voice.tts_runtime import get_tts_worker
+                self._speech_synthesizer = get_tts_worker()
+            elif settings.tts_runtime == "inprocess":
+                self._speech_synthesizer = TTSService()
+            else:
+                raise ValueError("unsupported TTS runtime")
         return self._speech_synthesizer
 
     def _review_stream_output_with_llm(self, event: StreamInputEvent, text: str) -> dict | None:
@@ -467,6 +500,11 @@ class StreamBrain:
             if future.done():
                 executor.shutdown(wait=False, cancel_futures=True)
         review_ms = round((time.perf_counter() - started_at) * 1000, 1)
+        if (not isinstance(review, LLMReviewDecision) or review.action not in {"allow", "soften", "block"}
+                or not isinstance(review.reason, str) or review.reason in {"llm-reviewer-invalid", "llm-reviewer-unavailable", "llm-disabled"}
+                or type(review.confidence) not in {int, float} or not 0 <= review.confidence <= 1):
+            return {"action": "skip", "blocked": False, "source": "stream_output_gate_llm",
+                    "stage": "llm", "review_unavailable": True, "playback_approved": False}
         if review.action != "allow":
             return {
                 "action": "filtered",
@@ -493,8 +531,7 @@ class StreamBrain:
         }
 
     def record_result(self, result: StreamTurnResult) -> None:
-        if result.output_events and not result.output_dispatch:
-            result.output_dispatch = self._output_dispatcher.dispatch(result.output_events).model_dump()
+        # Recording a trace is never an instruction to execute its output.
         self._trace_store.append(result)
 
     def pending_queue(self) -> dict:
@@ -515,6 +552,8 @@ class StreamBrain:
         Returns:
             StreamTurnResult: Stop stream result.
         """
+        for target in ("stream_public", "dashboard_monitor", "discord_call"):
+            self._delivery.cancel_target(target)
         started_at = time.perf_counter()
         self._pacer.clear_pending()
         metadata = {"reason": reason, "cleared_pending_queue": True}
@@ -571,6 +610,14 @@ class StreamBrain:
         Returns:
             TurnDecision: Turn decision.
         """
+        if getattr(self._conversation, "_brain_worker", False) is True:
+            from ..brain.process import get_brain_process
+            value, generation = get_brain_process().execute("stream_decide",
+                {"event": event.model_dump(mode="json")}, lambda *_: None)
+            with get_brain_process().guard(generation):
+                decision = TurnDecision.model_validate(value)
+                decision.metadata["brain_generation"] = generation
+                return decision
         text = (event.text or "").strip()
         lowered = text.lower()
         input_safety = _input_safety(event)
@@ -1083,63 +1130,6 @@ def _filtered_audio_path() -> Path | None:
     if not path.is_absolute():
         path = settings.project_root / path
     return path if path.exists() else None
-
-
-def _parallel_stream_safety_enabled(event: StreamInputEvent, *, synthesize_speech: bool) -> bool:
-    return (
-        synthesize_speech
-        and _is_public_stream_event(event)
-        and settings.speech_filter_llm_enabled
-        and _twitch_control_enabled(event, "llm_safety_review_enabled", True)
-    )
-
-
-def _llm_review_payload(review: LLMReviewDecision) -> dict:
-    blocked = review.action != "allow"
-    return {
-        "action": "filtered" if blocked else "allow",
-        "blocked": blocked,
-        "source": "stream_output_gate_llm",
-        "stage": "llm_parallel",
-        "matched_rules": [review.reason] if review.reason else [],
-        "layers": ["llm"],
-        "filter_action": review.action,
-        "safe_output": "filtered" if blocked else None,
-        "playback_approved": not blocked,
-        "review_pending": False,
-    }
-
-
-def _late_safety_override_events(
-    *,
-    event: StreamInputEvent,
-    turn_id: str,
-    response: AssistantResponse,
-    safety_decision: dict,
-) -> list[StreamOutputEvent]:
-    context = output_context_from_input(event)
-    clear_events = [
-        StreamOutputEvent(
-            input_event_id=event.event_id,
-            turn_id=turn_id,
-            type="speech_ended",
-            payload={
-                "reason": "late_safety_filter",
-                "interrupted": True,
-                "clear_pending": True,
-                "filtered": True,
-                **context,
-            },
-        ),
-        StreamOutputEvent(
-            input_event_id=event.event_id,
-            turn_id=turn_id,
-            type="subtitle_line",
-            payload={"text": "", "clear": True, "filtered": True, **context},
-        ),
-    ]
-    filtered_events = output_events_from_response(input_event=event, turn_id=turn_id, response=response)
-    return clear_events + _mark_filtered_output_events(filtered_events, safety_decision)
 
 
 def _is_public_stream_event(event: StreamInputEvent) -> bool:

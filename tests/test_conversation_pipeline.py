@@ -42,10 +42,12 @@ class _FakeTTSService:
 
     def synthesize(self, text: str, emotion: str | None = None, styles: list[str] | None = None) -> TTSResult:
         self.calls.append((text, emotion, styles or []))
+        path = settings.data_dir / "fake.wav"
+        path.write_bytes(b"synthetic audio fixture")
         return TTSResult(
             provider="fake",
             text=text,
-            audio_path="fake.wav",
+            audio_path=str(path),
             content_type="audio/wav",
             metadata={"voice": "fake"},
         )
@@ -53,11 +55,19 @@ class _FakeTTSService:
 
 class ConversationPipelineTest(unittest.TestCase):
     def setUp(self) -> None:
+        self._original_database_url = settings.database_url
+        self._original_data_dir = settings.data_dir
+        self._state_directory = tempfile.TemporaryDirectory()
+        settings.data_dir = Path(self._state_directory.name)
+        settings.database_url = f"sqlite:///{settings.data_dir / 'state.db'}"
         self._original_memory_personality = settings.memory_personality
         self._original_speech_filter_llm_enabled = settings.speech_filter_llm_enabled
         settings.speech_filter_llm_enabled = False
 
     def tearDown(self) -> None:
+        settings.database_url = self._original_database_url
+        settings.data_dir = self._original_data_dir
+        self._state_directory.cleanup()
         settings.memory_personality = self._original_memory_personality
         settings.speech_filter_llm_enabled = self._original_speech_filter_llm_enabled
 
@@ -82,12 +92,7 @@ class ConversationPipelineTest(unittest.TestCase):
         self.assertEqual(response.emotion, "happy")
         self.assertEqual(fake_tts.calls, [("Hey there.", "happy", [])])
         self.assertEqual(response.tts_metadata["speech_filter"]["blocked"], False)
-        service._remember_assistant_state.assert_called_once_with(
-            user_text="hello",
-            reply_text="Hey there.",
-            emotion="happy",
-            session_id=None,
-        )
+        self.assertEqual(AssistantStateStore().load().current_emotion, "happy")
 
     def test_structured_turn_exposes_and_synthesizes_only_final_text(self) -> None:
         service = ConversationService()
@@ -279,7 +284,7 @@ class ConversationPipelineTest(unittest.TestCase):
         ])
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
-        service._assistant_state = AssistantStateStore(path=Path(temp_dir.name) / "assistant-state.json")
+        service._assistant_state = AssistantStateStore()
 
         with patch("gamma.conversation.service.build_system_prompt", return_value="prompt"), patch.object(
             service, "_append_timing_log", return_value=None
@@ -367,12 +372,8 @@ class ConversationPipelineTest(unittest.TestCase):
         )
         self.assertEqual(response.tts_metadata["speech_filter"]["blocked"], True)
         self.assertTrue(response.tts_metadata["speech_filter"]["matched_rules"])
-        service._remember_assistant_state.assert_called_once_with(
-            user_text="this message is long enough to use the standard metadata path",
-            reply_text="I’m not going to say that. Let’s keep it safe and respectful.",
-            emotion="happy",
-            session_id=None,
-        )
+        self.assertEqual(AssistantStateStore().load().current_emotion, "happy")
+        self.assertIn("safe and respectful", AssistantStateStore().load().notes[-1])
 
     def test_speech_filter_metadata_is_present_without_tts(self) -> None:
         service = ConversationService()
@@ -420,7 +421,7 @@ class ConversationPipelineTest(unittest.TestCase):
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
         state_path = Path(temp_dir.name) / "assistant_state.json"
-        service._assistant_state = AssistantStateStore(path=state_path)
+        service._assistant_state = AssistantStateStore()
 
         with patch("gamma.conversation.service.build_system_prompt", return_value="prompt"), patch.object(
             service, "_append_timing_log", return_value=None

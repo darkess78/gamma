@@ -5,6 +5,9 @@ import json
 import logging
 import socket
 import ssl
+import hashlib
+import signal
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +20,8 @@ from .client import GammaStreamClient
 from .irc import chat_message_from_irc, parse_irc_line
 from .normalize import normalize_chat_message
 from .trust import ViewerTrustStore
+from .readiness import ConnectionReadiness
+from ...supervisor.worker_events import WorkerHeartbeat
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,15 +108,28 @@ class TwitchIrcWorker:
         fast_mode: bool = True,
         state_path: Path | None = None,
         logger: logging.Logger | None = None,
+        heartbeat: WorkerHeartbeat | None = None,
     ) -> None:
         self.config = config
-        self.client = client or GammaStreamClient()
+        self.client = client or GammaStreamClient(queued=True, timeout_seconds=5)
         self.trust_store = trust_store or ViewerTrustStore()
         self.synthesize_speech = config.voice_enabled if synthesize_speech is None else synthesize_speech
         self.fast_mode = fast_mode
         self.state_path = state_path or twitch_worker_state_path()
         self.logger = logger or configure_logging("twitch_irc")
         self._message_count = 0
+        self.heartbeat = heartbeat
+        self.readiness = ConnectionReadiness(config.bot_username, config.normalized_channel)
+        self._stop = threading.Event()
+        self._socket = None
+
+    def request_stop(self):
+        self._stop.set()
+        if self._socket is not None:
+            try:
+                self._socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
 
     def handle_line(self, line: str) -> dict | None:
         irc_message = parse_irc_line(line)
@@ -139,6 +157,9 @@ class TwitchIrcWorker:
             session_id=f"twitch:{self.config.normalized_channel}",
             twitch_controls=self.config.controls(),
         )
+        if chat_message.message_id:
+            identity = f"{self.config.normalized_channel}:{chat_message.message_id}"
+            event.event_id = "twitch-" + hashlib.sha256(identity.encode()).hexdigest()
         evidence = _safe_event_evidence(
             event_kind=event.kind,
             display_name=chat_message.display_name,
@@ -216,7 +237,7 @@ class TwitchIrcWorker:
             dry_run=self.config.dry_run,
             voice_enabled=self.config.voice_enabled,
         )
-        while True:
+        while not self._stop.is_set():
             try:
                 self._write_state(status="connecting", connected=False, reconnects=reconnects)
                 log_event(
@@ -230,6 +251,8 @@ class TwitchIrcWorker:
                     reconnect_count=reconnects,
                 )
                 self._run_once()
+                if self._stop.is_set():
+                    break
                 reconnects += 1
                 self._write_state(status="disconnected", connected=False, detail="IRC socket closed.", reconnects=reconnects)
                 log_event(
@@ -258,6 +281,8 @@ class TwitchIrcWorker:
                 log_event(self.logger, logging.INFO, "twitch_irc.worker.exit", "Twitch IRC worker stopped.")
                 return
             except Exception as exc:
+                if self._stop.is_set():
+                    break
                 reconnects += 1
                 self._write_state(status="reconnecting", connected=False, detail=str(exc), reconnects=reconnects)
                 log_event(
@@ -289,7 +314,8 @@ class TwitchIrcWorker:
                 reconnect_count=reconnects,
                 backoff_seconds=backoff_seconds,
             )
-            time.sleep(backoff_seconds)
+            self._stop.wait(backoff_seconds)
+        self._write_state(status="stopped", connected=False, reconnects=reconnects)
 
     def _run_once(self) -> None:
         with socket.create_connection((self.config.host, self.config.port), timeout=30) as raw_socket:
@@ -302,6 +328,9 @@ class TwitchIrcWorker:
                 port=self.config.port,
             )
             with ssl.create_default_context().wrap_socket(raw_socket, server_hostname=self.config.host) as irc:
+                self._socket = irc
+                if self._stop.is_set():
+                    return
                 log_event(
                     self.logger,
                     logging.INFO,
@@ -320,6 +349,8 @@ class TwitchIrcWorker:
                     channel=self.config.normalized_channel,
                 )
                 for line in _iter_socket_lines(irc):
+                    if self._stop.is_set():
+                        return
                     if not line:
                         self._write_state(status="connected", connected=True, reconnects=0, last_message_kind="heartbeat")
                         continue
@@ -335,6 +366,10 @@ class TwitchIrcWorker:
                         continue
                     if _is_authentication_failure(line):
                         raise ConfigurationError("Twitch IRC authentication failed.")
+                    was_ready = self.readiness.ready
+                    self.readiness.observe(parse_irc_line(line))
+                    if self.readiness.ready != was_ready:
+                        self._write_state(status="connected", connected=True, reconnects=0)
                     if _is_authentication_success(line):
                         log_event(
                             self.logger,
@@ -379,6 +414,19 @@ class TwitchIrcWorker:
         )
 
     def _write_state(self, *, status: str, connected: bool, **extra: Any) -> None:
+        if status == "connecting":
+            self.readiness.reset()
+        if self.heartbeat is not None:
+            state = "ready" if connected and self.readiness.ready else "starting"
+            if status in {"disconnected", "reconnecting"}:
+                state = "degraded"
+            elif status == "configuration_error":
+                state = "failed"
+            elif status == "stopped":
+                state = "stopped"
+            if self.heartbeat.state != state:
+                self.heartbeat.state = state
+                self.heartbeat.events.emit("connection.state", trace_id=self.heartbeat.trace_id, state=state)
         payload = {
             "status": status,
             "connected": connected,
@@ -419,6 +467,8 @@ def _iter_socket_lines(sock: ssl.SSLSocket) -> Iterable[str]:
         if not chunk:
             return
         buffer += chunk.decode("utf-8", errors="replace")
+        if len(buffer) > 65536:
+            raise ValueError("IRC frame exceeds limit")
         while "\r\n" in buffer:
             line, buffer = buffer.split("\r\n", 1)
             if line:
@@ -462,12 +512,15 @@ def main() -> None:
     parser.add_argument("--synthesize-speech", action="store_true", default=None)
     parser.add_argument("--slow-mode", action="store_true")
     args = parser.parse_args()
-    worker = TwitchIrcWorker(
-        config=TwitchWorkerConfig.from_settings(),
-        synthesize_speech=args.synthesize_speech,
-        fast_mode=not args.slow_mode,
-    )
-    worker.run_forever()
+    with WorkerHeartbeat(settings.data_dir / "runtime", "twitch_worker", initial_state="starting") as heartbeat:
+        worker = TwitchIrcWorker(config=TwitchWorkerConfig.from_settings(), heartbeat=heartbeat,
+                                synthesize_speech=args.synthesize_speech, fast_mode=not args.slow_mode)
+        previous = signal.signal(signal.SIGTERM, lambda *_: worker.request_stop())
+        try:
+            worker.run_forever()
+        finally:
+            worker.request_stop()
+            signal.signal(signal.SIGTERM, previous)
 
 
 if __name__ == "__main__":

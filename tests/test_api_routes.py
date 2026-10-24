@@ -21,11 +21,20 @@ with patch.object(status_module, "SystemStatusService", autospec=True), patch.ob
 
 
 class ApiRoutesTest(unittest.TestCase):
+    def setUp(self) -> None:
+        from gamma.brain.queue import BrainQueue
+
+        queue = BrainQueue()
+        self.addCleanup(queue.close)
+        queue_patch = patch("gamma.api.routes.get_brain_queue", return_value=queue)
+        queue_patch.start()
+        self.addCleanup(queue_patch.stop)
+
     def test_shana_presence_routes_delegate_to_presence_service(self) -> None:
         presence = Mock()
         presence.status.return_value = {"ok": True, "state": {"mode": "sleep"}}
         presence.transition.return_value = {"ok": True, "state": {"mode": "break"}}
-        presence.wake.return_value = {"ok": True, "wake": {"status": "text_only"}}
+        presence.deliver_wake.return_value = {"ok": True, "wake": {"status": "text_only"}}
         with patch("gamma.api.routes.get_presence_service", return_value=presence):
             status = routes.shana_presence_status()
             changed = routes.shana_presence_mode(PresenceModeRequest(mode="break"))
@@ -36,7 +45,8 @@ class ApiRoutesTest(unittest.TestCase):
         self.assertEqual(status["state"]["mode"], "sleep")
         self.assertEqual(changed["state"]["mode"], "break")
         self.assertEqual(wake["wake"]["status"], "text_only")
-        presence.wake.assert_called_once()
+        presence.decide_wake.assert_called_once()
+        presence.deliver_wake.assert_called_once_with(presence.decide_wake.return_value)
 
     def test_conversation_respond_serializes_filtered_voice_metadata(self) -> None:
         assistant_response = AssistantResponse(

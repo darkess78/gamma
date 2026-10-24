@@ -24,6 +24,8 @@ must be updated together when a public contract changes.
 - `audio_understanding.md`
 - `llm_router.md`
 - `resource_routing.md`
+- `modular_worker_runtime_admission_slice.md`
+- `modular_worker_runtime_silent_slice.md`
 - `improvement.md`
 - `integrations.md`
 - `minecraft_companion.md`
@@ -33,6 +35,12 @@ must be updated together when a public contract changes.
 - `linux_portability.md`
 
 ## Streamer Research And Target
+
+- `modular_worker_runtime_proposal.md`, the proposed worker ownership, lifecycle,
+  dashboard, and phased migration design based on the 2026-09-19 source audit
+- `modular_worker_runtime_audit.md`, source evidence and current coupling points
+- `modular_worker_runtime_brain_process.md`, implemented independent cognition, authority protocol, lifecycle and evidence
+- `modular_state_writer_inventory.md`, completed state writer ownership, evidence and rollback contract
 
 - `streamer_plan/roadmap.md`
 - `streamer_plan/neuro_architecture_review.md`

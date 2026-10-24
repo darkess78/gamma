@@ -4,8 +4,15 @@
   let ws = null;
   let muted = false;
   let audioEnabled = false;
+  let liveReceiverOwnsAudio = false;
   let playing = false;
   let audioQueue = [];
+  let activeAudio = null;
+  let playbackLease = null;
+  const playbackRequests = new PlaybackRequests(message => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) throw new Error('Receiver disconnected');
+    ws.send(JSON.stringify(message));
+  });
   let lastSequence = 0;
   let monitorStatusInFlight = false;
   let monitorStatusController = null;
@@ -50,7 +57,7 @@
     ws.send(JSON.stringify({
       type: 'subscriber_capabilities',
       text_ready: true,
-      audio_ready: audioEnabled && !muted
+      audio_ready: audioEnabled && !muted && !liveReceiverOwnsAudio
     }));
   }
 
@@ -163,10 +170,16 @@
 
     ws.onmessage = (event) => {
       const payload = JSON.parse(event.data);
+      if (payload.type === 'playback_revoked') { revokeAudio(payload); return; }
+      if (playbackRequests.receive(payload)) return;
+      if (payload.type === 'playback_rejected' && activeAudio?.playback.event_id === payload.event_id) clearAudio();
+      if (payload.type === 'ready') playbackLease = payload.playback_lease?.lease_id || null;
       updateMonitor(payload);
     };
 
     ws.onclose = () => {
+      clearAudio();
+      playbackLease = null;
       if (document.getElementById('connectionDot')) {
         document.getElementById('connectionDot').classList.remove('connected');
         document.getElementById('connectionDot').classList.add('disconnected');
@@ -258,17 +271,18 @@
       }
     } else if (payload.type === 'turn_state_changed') {
       if (document.getElementById('turnState')) {
-        document.getElementById('turnState').textContent = payload.payload?.state || 'unknown';
+        const state = payload.payload?.state || 'unknown';
+        document.getElementById('turnState').textContent = ({speaking: 'synthesizing', completed: 'ready'})[state] || state;
         document.getElementById('turnState').classList.remove('active');
       }
     } else if (payload.type === 'speech_started' || payload.type === 'speech_chunk_ready') {
       if (document.getElementById('turnState')) {
-        document.getElementById('turnState').textContent = 'speaking';
+        document.getElementById('turnState').textContent = 'ready';
         document.getElementById('turnState').classList.add('active');
       }
     } else if (payload.type === 'speech_ended') {
       if (document.getElementById('turnState')) {
-        document.getElementById('turnState').textContent = 'completed';
+        document.getElementById('turnState').textContent = 'ready';
         document.getElementById('turnState').classList.remove('active');
       }
     } else if (payload.type === 'output_cleared') {
@@ -388,11 +402,13 @@
   }
 
   function enqueueAudio(payload) {
+    if (liveReceiverOwnsAudio) return;
+    if (!payload.playback || payload.playback.lease_id !== playbackLease || payload.replay) return;
     const url = audioSourceFromEvent(payload);
     if (!url) {
       return;
     }
-    audioQueue.push(url);
+    audioQueue.push({url, playback: payload.playback});
     if (document.getElementById('queueSize')) {
       document.getElementById('queueSize').textContent = audioQueue.length + (playing ? 1 : 0);
     }
@@ -414,25 +430,79 @@
     return '';
   }
 
-  function playNextAudio() {
-    if (!audioEnabled || muted || playing || audioQueue.length === 0) {
+  async function playNextAudio() {
+    if (!playing && audioQueue.length === 0) {
+      const indicator = document.getElementById('queueIndicator');
+      if (indicator) indicator.textContent = 'No queue activity';
+    }
+    if (!audioEnabled || muted || liveReceiverOwnsAudio || playing || audioQueue.length === 0) {
       return;
     }
-    const url = audioQueue.shift();
+    const item = audioQueue.shift();
+    if (item.playback.lease_id !== playbackLease || item.playback.expires_at * 1000 <= Date.now()) {
+      playNextAudio();
+      return;
+    }
+    activeAudio = item;
     playing = true;
-    if (audio) {
-      audio.src = url;
-      audio.play().catch(() => {
-        playing = false;
-        playNextAudio();
-      });
+    item.controller = new AbortController();
+    try {
+      const frozen = await PlaybackRequests.loadAudio(item.playback, apiBase, token, item.controller.signal);
+      if (activeAudio !== item) { if (frozen) URL.revokeObjectURL(frozen); return; }
+      item.objectUrl = frozen;
+      const permit = await playbackRequests.request(item.playback);
+      if (activeAudio !== item || muted || !audioEnabled || item.playback.lease_id !== playbackLease || permit.expires_at * 1000 <= Date.now()) throw new Error('Playback context changed');
+      audio.src = frozen || item.url;
+      await audio.play();
+    } catch (_error) {
+      if (activeAudio !== item) return;
+      acknowledgeAudio('failed');
+      releaseAudio(item);
+      activeAudio = null;
+      playing = false;
+      playNextAudio();
     }
     if (document.getElementById('queueSize')) {
       document.getElementById('queueSize').textContent = audioQueue.length + 1;
     }
   }
 
+  function acknowledgeAudio(status, item = activeAudio) {
+    if (!item || !ws || ws.readyState !== WebSocket.OPEN) return;
+    const receipt = item.playback;
+    if (receipt.lease_id !== playbackLease) return;
+    ws.send(JSON.stringify({type: 'playback_ack', schema_version: 1,
+      lease_id: receipt.lease_id, event_id: receipt.event_id, status}));
+  }
+
+  function revokeAudio(message) {
+    if (message.lease_id !== playbackLease) return;
+    playbackRequests.cancelReceipt(message.lease_id, message.event_id);
+    audioQueue = audioQueue.filter(item => item.playback.event_id !== message.event_id);
+    if (activeAudio?.playback.event_id === message.event_id) {
+      releaseAudio(activeAudio);
+      activeAudio = null;
+      playing = false;
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+      playNextAudio();
+    }
+    const size = document.getElementById('queueSize');
+    if (size) size.textContent = audioQueue.length + (playing ? 1 : 0);
+  }
+
+  function releaseAudio(item) {
+    if (item?.controller) item.controller.abort();
+    if (item?.objectUrl) URL.revokeObjectURL(item.objectUrl);
+  }
+
   function clearAudio() {
+    playbackRequests.cancelAll();
+    acknowledgeAudio('interrupted');
+    audioQueue.forEach(item => acknowledgeAudio('interrupted', item));
+    releaseAudio(activeAudio);
+    activeAudio = null;
     audioQueue = [];
     playing = false;
     if (!audio) return;
@@ -455,7 +525,7 @@
       button.textContent = muted ? 'Unmute Monitor' : 'Mute Monitor';
     }
     if (muted) {
-      if (audio) audio.pause();
+      clearAudio();
     } else {
       playing = false;
       playNextAudio();
@@ -647,7 +717,11 @@
   }
 
   if (audio) {
+    audio.addEventListener('playing', () => acknowledgeAudio('started'));
     audio.addEventListener('ended', () => {
+      acknowledgeAudio('completed');
+      releaseAudio(activeAudio);
+      activeAudio = null;
       playing = false;
       const queueSizeEl = document.getElementById('queueSize');
       if (queueSizeEl) {
@@ -657,6 +731,9 @@
     });
 
     audio.addEventListener('error', () => {
+      acknowledgeAudio('failed');
+      releaseAudio(activeAudio);
+      activeAudio = null;
       playing = false;
       const queueSizeEl = document.getElementById('queueSize');
       if (queueSizeEl) {
@@ -673,8 +750,14 @@
   connect();
   loadMonitorStatus();
   window.setInterval(loadMonitorStatus, 10000);
+  window.setInterval(sendCapabilities, 15000);
 
   window.setMonitorTheme = setMonitorTheme;
+  window.setLiveReceiverOwnsAudio = function (active) {
+    liveReceiverOwnsAudio = !!active;
+    if (active) clearAudio();
+    sendCapabilities();
+  };
   window.enableAudio = enableAudio;
   window.toggleMute = toggleMute;
   window.clearOutput = clearOutput;

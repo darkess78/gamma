@@ -98,7 +98,7 @@ class VTubeStudioClient:
         async with self._lock:
             await self._close_locked()
 
-    async def send_request(self, request: dict[str, Any]) -> dict[str, Any]:
+    async def send_request(self, request: dict[str, Any], *, before_send=None) -> dict[str, Any]:
         if not self.config.enabled:
             return {"ok": False, "error": "VTube Studio adapter disabled"}
         request_id = str(request.get("requestID") or "")
@@ -108,6 +108,8 @@ class VTubeStudioClient:
             try:
                 await self._ensure_connected_locked()
                 await self._ensure_authenticated_locked()
+                if before_send is not None:
+                    before_send()
                 return await self._send_locked(request)
             except Exception as exc:
                 self._last_error = str(exc)
@@ -340,7 +342,15 @@ class VTubeStudioAdapter:
         action = self.handle_event(event)
         if action.request is None:
             return action
-        response = await self.client.send_request(action.request)
+        from ..delivery.execution import claim_event, finish_event, validate_event
+        claim = claim_event(event, "vtube_studio")
+        try:
+            response = await self.client.send_request(action.request,
+                before_send=lambda: validate_event(event))
+        except BaseException:
+            finish_event(claim, succeeded=False)
+            raise
+        finish_event(claim, succeeded=bool(response.get("ok")))
         action.response = response
         action.ok = action.ok and bool(response.get("ok"))
         if not action.ok:
@@ -367,8 +377,8 @@ class VTubeStudioAdapter:
             motion = str(event.payload.get("motion") or "").strip().lower()
             return self._hotkey_action(event, motion, self.config.motion_hotkeys, "motion")
         if event.type == "speech_started":
-            self._speaking = True
-            return VTubeStudioAction(ok=True, action_type="speaking_state", detail="speaking started", event_type=event.type, event_id=event.event_id)
+            # Producer readiness cannot establish playback at any receiver.
+            return VTubeStudioAction(ok=True, action_type="prepared", detail="audio prepared; playback unconfirmed", event_type=event.type, event_id=event.event_id)
         if event.type in {"speech_ended", "output_cleared"}:
             self._speaking = False
             return VTubeStudioAction(ok=True, action_type="speaking_state", detail="speaking ended", event_type=event.type, event_id=event.event_id)
@@ -474,6 +484,8 @@ class VTubeStudioRunner:
                     continue
                 context_token = None
                 try:
+                    if payload.get("replay"):
+                        continue
                     event = PerformerOutputEvent(**payload)
                     context_token = bind_context(
                         event_id=event.event_id,

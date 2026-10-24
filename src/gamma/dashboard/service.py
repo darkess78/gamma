@@ -30,6 +30,8 @@ from ..resources.runtime_registry import load_resource_routing_registry
 from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..schemas.voice import VoiceRoundtripResponse
 from ..supervisor.manager import ProcessManager
+from ..supervisor.workers import WorkerRuntime
+from ..supervisor.worker_events import WorkerEvents
 from ..system.cuda_env import prepend_cuda_library_path
 from ..voice.voice_profiles import get_voice_profile, list_voice_profiles, profile_template, save_voice_profile
 from .improvement_status import ImprovementStatusReader
@@ -37,6 +39,7 @@ from .shana_client import ShanaApiClient, ShanaClientError
 
 
 class DashboardService:
+    SHANA_SYSTEMD_USER_UNIT = "gamma-shana.service"
     IMPROVEMENT_WORKER_SERVICE = "improvement_worker"
     IMPROVEMENT_WORKER_MODULE = "gamma.improvement.worker"
     TWITCH_WORKER_SERVICE = "twitch_worker"
@@ -161,11 +164,12 @@ class DashboardService:
             maximum_cycles=maximum_cycles,
             maximum_attempts_per_series=maximum_attempts_per_series,
         )
-        worker = self._process_manager.start_module(
-            self.IMPROVEMENT_WORKER_SERVICE,
-            self.IMPROVEMENT_WORKER_MODULE,
-            ["--idle-timeout-seconds", "300"],
-        )
+        events = WorkerEvents(self._process_manager._runtime_dir, self.IMPROVEMENT_WORKER_SERVICE)
+        try:
+            events.emit("job.accepted", trace_id=request.id, job_id=request.id)
+        finally:
+            events.close()
+        worker = WorkerRuntime(self._process_manager).control(self.IMPROVEMENT_WORKER_SERVICE, "start")
         return {
             "ok": True,
             "request": request.public_summary(),
@@ -180,11 +184,7 @@ class DashboardService:
         request = self._improvement_work.control(request_id, action)  # type: ignore[arg-type]
         worker: dict[str, Any] | None = None
         if action == "resume":
-            worker = self._process_manager.start_module(
-                self.IMPROVEMENT_WORKER_SERVICE,
-                self.IMPROVEMENT_WORKER_MODULE,
-                ["--idle-timeout-seconds", "300"],
-            )
+            worker = WorkerRuntime(self._process_manager).control(self.IMPROVEMENT_WORKER_SERVICE, "start")
         return {
             "ok": True,
             "request": request.public_summary(),
@@ -708,35 +708,73 @@ class DashboardService:
         return "Presence set to Go Live. Public stream output is enabled for this Shana backend session."
 
     def start_shana(self) -> dict[str, Any]:
+        if self._uses_systemd_user_lifecycle():
+            return self._run_systemd_user_shana_action("start")
         return self._process_manager.start("shana")
 
     def stop_shana(self) -> dict[str, Any]:
+        if self._uses_systemd_user_lifecycle():
+            return self._run_systemd_user_shana_action("stop")
         return self._process_manager.stop("shana")
 
     def restart_shana(self) -> dict[str, Any]:
+        if self._uses_systemd_user_lifecycle():
+            return self._run_systemd_user_shana_action("restart")
         return self._process_manager.restart("shana")
 
     def stop_dashboard(self) -> dict[str, Any]:
+        if self._uses_systemd_user_lifecycle():
+            return {
+                "ok": False,
+                "detail": "Dashboard is configured as an always-on systemd user service and was not stopped.",
+                "url": settings.dashboard_base_url,
+            }
         self._schedule_stop("dashboard")
         return {"ok": True, "detail": "dashboard-stop-scheduled", "url": settings.dashboard_base_url}
 
     def stop_all(self) -> dict[str, Any]:
-        shana_result = self._process_manager.stop("shana")
+        shana_result = self.stop_shana()
         twitch_result = self.stop_twitch_worker()
         eventsub_result = self.stop_twitch_eventsub_worker()
         discord_result = self.stop_discord_text_worker()
         tts_results = self._stop_all_tts_servers()
-        self._schedule_stop("dashboard")
+        preserve_dashboard = self._uses_systemd_user_lifecycle()
+        if not preserve_dashboard:
+            self._schedule_stop("dashboard")
         tts_ok = all(bool(result.get("ok")) for result in tts_results.values())
         return {
             "ok": bool(shana_result.get("ok", False)) and bool(twitch_result.get("ok", False)) and bool(eventsub_result.get("ok", False)) and bool(discord_result.get("ok", False)) and tts_ok,
-            "detail": "all-stop-scheduled",
+            "detail": "runtime-services-stop-requested" if preserve_dashboard else "all-stop-scheduled",
             "shana": shana_result,
             "twitch_worker": twitch_result,
             "twitch_eventsub": eventsub_result,
             "discord_text": discord_result,
             "tts": tts_results,
             "dashboard_url": settings.dashboard_base_url,
+            "dashboard_preserved": preserve_dashboard,
+        }
+
+    @staticmethod
+    def _uses_systemd_user_lifecycle() -> bool:
+        return os.environ.get("GAMMA_LIFECYCLE_MANAGER", "").strip().lower() == "systemd-user"
+
+    def _run_systemd_user_shana_action(self, action: str) -> dict[str, Any]:
+        completed = subprocess.run(
+            ["systemctl", "--user", action, self.SHANA_SYSTEMD_USER_UNIT],
+            cwd=settings.project_root,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "systemctl command failed").strip()
+            return {"ok": False, "detail": detail, "service": self.SHANA_SYSTEMD_USER_UNIT}
+        return {
+            "ok": True,
+            "detail": f"shana-systemd-{action}-completed",
+            "service": self.SHANA_SYSTEMD_USER_UNIT,
+            "url": settings.shana_base_url,
         }
 
     def start_twitch_worker(self) -> dict[str, Any]:
@@ -750,7 +788,7 @@ class DashboardService:
                 "process": {"running": False},
                 "missing_config": self._missing_twitch_irc_config(),
             }
-        result = self._process_manager.start_module(self.TWITCH_WORKER_SERVICE, self.TWITCH_WORKER_MODULE)
+        result = WorkerRuntime(self._process_manager).control(self.TWITCH_WORKER_SERVICE, "start")
         return {
             **result,
             "channel": config.normalized_channel,
@@ -758,7 +796,7 @@ class DashboardService:
         }
 
     def stop_twitch_worker(self) -> dict[str, Any]:
-        return self._process_manager.stop_module(self.TWITCH_WORKER_SERVICE, self.TWITCH_WORKER_MODULE)
+        return WorkerRuntime(self._process_manager).control(self.TWITCH_WORKER_SERVICE, "stop")
 
     def start_twitch_eventsub_worker(self) -> dict[str, Any]:
         try:
@@ -771,7 +809,7 @@ class DashboardService:
                 "process": {"running": False},
                 "missing_config": self._missing_twitch_eventsub_config(),
             }
-        result = self._process_manager.start_module(self.TWITCH_EVENTSUB_SERVICE, self.TWITCH_EVENTSUB_MODULE)
+        result = WorkerRuntime(self._process_manager).control(self.TWITCH_EVENTSUB_SERVICE, "start")
         return {
             **result,
             "broadcaster_user_id": config.broadcaster_user_id,
@@ -779,7 +817,7 @@ class DashboardService:
         }
 
     def stop_twitch_eventsub_worker(self) -> dict[str, Any]:
-        return self._process_manager.stop_module(self.TWITCH_EVENTSUB_SERVICE, self.TWITCH_EVENTSUB_MODULE)
+        return WorkerRuntime(self._process_manager).control(self.TWITCH_EVENTSUB_SERVICE, "stop")
 
     def start_discord_text_worker(self) -> dict[str, Any]:
         config = DiscordRuntimeConfig.from_app_config()

@@ -23,7 +23,7 @@ for inference.
 - Qwen TTS uses a managed local HTTP sidecar.
 - OpenAI provides hosted speech.
 - Voice profiles load from layered `config/voices*.toml` files.
-- RVC is an optional Piper post-process, not a standalone provider.
+- RVC is an optional generated-WAV post-process, not a standalone provider.
 - Conversation responses expose text, content type, timing, and local artifact metadata.
 - `speech_text` is the only conversation field eligible for TTS and spoken
   subtitles. `display_text` may be non-empty for a text-only response while
@@ -47,3 +47,14 @@ text defaults to text-only, Presence Wake requires an audio-ready listener for
 speech, and public/ambient speech remains subject to Presence, output policy,
 mute, safety, target, and budget gates. A tool result is never synthesized
 directly; only the finalized `speech_text` may reach a TTS provider.
+
+
+## Independent worker acceptance
+
+Stopping the persistent TTS worker resolves new requested speech to reviewed
+text-only output without disabling transcription or restarting cognition. A
+mid-flight synthesis failure remains fail-closed. The intended Qwen profile and
+actual browser playback are exercised by `scripts/verify_voice_acceptance.py`;
+supervised Windows microphone/playback and interruption checks also passed.
+Decision/review fixtures were synthetic. Optional enabled-RVC acceptance is separate.
+See `modular_voice_acceptance.md` for the measured scope and limitations.

@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import hashlib
 import logging
+import signal
 import time
 import urllib.error
 import urllib.request
@@ -18,6 +20,8 @@ from ...errors import ConfigurationError
 from ...observability import bind_context, configure_logging, log_event, redact, reset_context
 from ...stream.models import StreamActor, StreamInputEvent
 from .client import GammaStreamClient
+from .eventsub_readiness import EventSubReadiness
+from ...supervisor.worker_events import WorkerHeartbeat
 from .sanitize import classify_chat_text, safe_username_alias
 
 
@@ -111,13 +115,16 @@ class TwitchEventSubWorker:
         *,
         config: TwitchEventSubConfig,
         client: GammaStreamClient | None = None,
+        heartbeat: WorkerHeartbeat | None = None,
         state_path: Path | None = None,
         synthesize_speech: bool | None = None,
         fast_mode: bool = True,
         logger: logging.Logger | None = None,
     ) -> None:
         self.config = config
-        self.client = client or GammaStreamClient()
+        self.heartbeat = heartbeat
+        self.readiness = EventSubReadiness()
+        self.client = client or GammaStreamClient(queued=True, timeout_seconds=5)
         self.state_path = state_path or twitch_eventsub_state_path()
         self.synthesize_speech = config.voice_enabled if synthesize_speech is None else synthesize_speech
         self.fast_mode = fast_mode
@@ -338,6 +345,9 @@ class TwitchEventSubWorker:
                 if event is not None:
                     subscription = payload.get("payload", {}).get("subscription", {})
                     evidence = _safe_notification_evidence(event=event, subscription=subscription if isinstance(subscription, dict) else {})
+                    if message_id:
+                        identity = f"{self.config.broadcaster_user_id}:{message_id}"
+                        event.event_id = "eventsub-" + hashlib.sha256(identity.encode()).hexdigest()
                     event.metadata.setdefault("message_id", message_id)
                     event.metadata.setdefault("eventsub_subscription_id", str(subscription.get("id") or ""))
                     context_token = bind_context(
@@ -346,7 +356,8 @@ class TwitchEventSubWorker:
                         session_id=event.session_id,
                     )
                     try:
-                        self.client.post_event(event, synthesize_speech=self.synthesize_speech, fast_mode=self.fast_mode)
+                        await asyncio.to_thread(self.client.post_event, event,
+                                                synthesize_speech=self.synthesize_speech, fast_mode=self.fast_mode)
                     except Exception as exc:
                         log_event(
                             self.logger,
@@ -551,6 +562,16 @@ class TwitchEventSubWorker:
             ) from exc
 
     def _write_state(self, *, status: str, connected: bool, **extra: Any) -> None:
+        if status == "connecting":
+            self._subscription_ok_count = 0
+            self._subscription_error_count = 0
+            self._subscriptions = []
+        state = self.readiness.observe(status, connected=connected,
+                                       subscriptions_ok=self._subscription_ok_count,
+                                       subscriptions_failed=self._subscription_error_count)
+        if self.heartbeat is not None and self.heartbeat.state != state:
+            self.heartbeat.state = state
+            self.heartbeat.events.emit("connection.state", trace_id=self.heartbeat.trace_id, state=state)
         payload = {
             "status": status,
             "connected": connected,
@@ -727,13 +748,26 @@ def _http_error_detail(exc: urllib.error.HTTPError) -> str | dict[str, Any]:
     return redact(payload) if isinstance(payload, dict) else str(redact(raw))
 
 
+async def _run_owned_worker(worker):
+    loop = asyncio.get_running_loop()
+    task = asyncio.create_task(worker.run_forever())
+    previous = signal.signal(signal.SIGTERM, lambda *_: loop.call_soon_threadsafe(task.cancel))
+    try:
+        await task
+    except asyncio.CancelledError:
+        worker._write_state(status="stopped", connected=False)
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the Gamma Twitch EventSub WebSocket worker.")
     parser.add_argument("--no-speech", action="store_true")
     args = parser.parse_args()
     config = TwitchEventSubConfig.from_settings()
-    worker = TwitchEventSubWorker(config=config, synthesize_speech=False if args.no_speech else None)
-    asyncio.run(worker.run_forever())
+    with WorkerHeartbeat(settings.data_dir / "runtime", "twitch_eventsub", initial_state="starting") as heartbeat:
+        worker = TwitchEventSubWorker(config=config, heartbeat=heartbeat,
+                                     synthesize_speech=False if args.no_speech else None)
+        asyncio.run(_run_owned_worker(worker))
 
 
 if __name__ == "__main__":

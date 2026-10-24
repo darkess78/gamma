@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
+from dataclasses import dataclass
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,9 +14,16 @@ from .conversation.service import ConversationService
 from .identity.profile import SpeakerProfile, UNKNOWN_PUBLIC
 from .identity.resolver import IdentityResolver
 from .memory.service import MemoryService
+from .memory.revision_json import StaleRevision, _strict_nonneg_int
+from .memory.documents import StateDocuments
+from .memory.state_authority import StateAuthority
+from sqlalchemy.pool import NullPool
+from sqlmodel import create_engine
+from .supervisor.lifecycle_lock import lifecycle_lock
 from .performer.bus import PerformerEventBus, get_performer_event_bus
 from .performer.models import DASHBOARD_MONITOR_TARGET
 from .schemas.presence import AudienceSelection
+from .schemas.response import AssistantResponse
 from .stream.models import StreamActor, StreamInputEvent, output_events_from_response
 from .stream.output import StreamOutputDispatcher
 
@@ -45,6 +54,7 @@ def presence_state_path() -> Path:
 def default_presence_state() -> dict[str, Any]:
     return {
         "mode": "sleep",
+        "control_revision": 0,
         "desired_mode": "sleep",
         "requires_confirmation": False,
         "last_confirmed_live_at": None,
@@ -112,6 +122,9 @@ def presence_state_for_mode(
     normalized = normalize_presence_mode(mode)
     state = deepcopy(default_presence_state())
     if previous:
+        state["control_revision"] = previous.get("control_revision", 0)
+        if "revision" in previous:
+            state["revision"] = previous["revision"]
         state["activity"] = dict(previous.get("activity") or state["activity"])
         state["last_confirmed_live_at"] = previous.get("last_confirmed_live_at")
         state["audience"] = dict(previous.get("audience") or state["audience"])
@@ -157,6 +170,23 @@ def normalize_presence_mode(mode: str) -> str:
     return normalized
 
 
+def _presence_documents(state_path: Path) -> StateDocuments:
+    default_path = settings.data_dir / "runtime" / "presence" / "state.json"
+    if state_path.resolve() == default_path.resolve():
+        database_url = settings.database_url
+    else:
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        database_url = f"sqlite:///{state_path.with_suffix(state_path.suffix + '.state.sqlite3')}"
+    return StateDocuments(create_engine(database_url, poolclass=NullPool))
+
+
+def _presence_controls(state):
+    return {key: state.get(key) for key in (
+        "control_revision", "mode", "desired_mode", "requires_confirmation", "last_confirmed_live_at", "audience",
+        "inputs", "outputs", "safety")}, {
+        key: value for key, value in (state.get("autonomy") or {}).items() if key != "scheduler"
+    }
+
 def load_presence_state(
     *,
     path: Path | None = None,
@@ -164,30 +194,64 @@ def load_presence_state(
     booted_at: datetime | None = None,
 ) -> dict[str, Any]:
     state_path = path or presence_state_path()
-    try:
-        payload = json.loads(state_path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return default_presence_state()
-    except Exception:
-        payload = {}
+    payload = _presence_documents(state_path).load("presence", state_path)
     state = merge_presence_state(payload if isinstance(payload, dict) else {})
+    state.setdefault("revision", 0)
     if downgrade_stale_live:
         state = downgrade_stale_live_state(state, booted_at=booted_at or SHANA_BOOTED_AT)
     return state
 
 
-def save_presence_state(state: dict[str, Any], *, path: Path | None = None) -> dict[str, Any]:
+def save_presence_state(state: dict[str, Any], *, path: Path | None = None,
+                        decision_id: str | None = None, generation_id: str | None = None) -> dict[str, Any]:
     state_path = path or presence_state_path()
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    merged = merge_presence_state(state)
-    temp_path = state_path.with_suffix(state_path.suffix + ".tmp")
-    temp_path.write_text(json.dumps(merged, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
-    temp_path.replace(state_path)
-    return merged
+    with lifecycle_lock(state_path.with_suffix(".lock")):
+        documents = _presence_documents(state_path)
+        authority = StateAuthority(documents.engine, generation_id=generation_id)
+        with authority.transaction() as session:
+            if decision_id is not None:
+                if generation_id is None:
+                    raise ValueError("decision generation required")
+                authority.committed_decision(session, decision_id, owned=True)
+            def transform(original):
+                current = merge_presence_state(original)
+                revision = original.get("revision", 0)
+                if not _strict_nonneg_int(revision):
+                    raise ValueError("stored revision must be a non-negative int")
+                expected = state.get("revision", revision)
+                if not _strict_nonneg_int(expected):
+                    raise ValueError("revision must be a non-negative int")
+                if expected != revision:
+                    raise StaleRevision(f"expected {revision}, got {expected}")
+                result = merge_presence_state(state)
+                result["revision"] = revision + 1
+                if _presence_controls(current) != _presence_controls(result):
+                    authority.invalidate(session)
+                return result
+            result = documents.mutate("presence", state_path, transform, session=session)
+            session.commit()
+            return result
+
+
+@contextmanager
+def guard_presence_control(expected: dict[str, Any], *, path: Path | None = None):
+    """Serialize a short authorized commit with operator Presence changes.
+
+    Never hold this guard during inference or external network calls.
+    """
+    state_path = path or presence_state_path()
+    with lifecycle_lock(state_path.with_suffix(".lock")):
+        current = load_presence_state(path=state_path, downgrade_stale_live=True)
+        if any(current.get(key) != expected.get(key) for key in ("control_revision", "mode", "audience", "outputs")):
+            raise StaleRevision("presence control changed")
+        yield current
 
 
 def merge_presence_state(payload: dict[str, Any]) -> dict[str, Any]:
     state = default_presence_state()
+    state["control_revision"] = payload.get("control_revision", 0)
+    if "revision" in payload:
+        state["revision"] = payload["revision"]
     mode = str(payload.get("mode") or state["mode"]).strip().lower()
     if mode in PRESENCE_MODES:
         state["mode"] = mode
@@ -298,6 +362,15 @@ def public_presence_payload(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@dataclass
+class WakeDecision:
+    expected: dict[str, Any]
+    response: AssistantResponse
+    session_id: str
+    speaker: SpeakerProfile
+    audio_eligible: bool
+
+
 class PresenceService:
     """Own Presence transitions and dedicated Wake event generation inside Shana."""
 
@@ -317,8 +390,11 @@ class PresenceService:
         self._dispatcher = dispatcher or StreamOutputDispatcher()
 
     def status(self) -> dict[str, Any]:
-        state = load_presence_state(downgrade_stale_live=True)
-        save_presence_state(state)
+        with lifecycle_lock(presence_state_path().with_suffix(".lock")):
+            original = load_presence_state()
+            state = downgrade_stale_live_state(original, booted_at=SHANA_BOOTED_AT)
+            if state != original:
+                state = save_presence_state(state)
         session_id = str((state.get("activity") or {}).get("session_id") or "")
         continuity = self._conversation.continuity_snapshot(session_id) if session_id else None
         return {
@@ -340,35 +416,85 @@ class PresenceService:
         normalized = normalize_presence_mode(mode)
         if normalized == "go_live" and not confirm_public_output:
             raise ValueError("confirm_public_output is required for Go Live")
-        previous = load_presence_state(downgrade_stale_live=True)
-        state = presence_state_for_mode(
-            normalized,
-            previous=previous,
-            updated_by=updated_by,
-            confirmed_live_at=utc_now() if normalized == "go_live" else None,
-        )
-        if audience is not None:
-            state["audience"] = self._audience_payload(audience)
-        if normalized == "go_live":
-            state["audience"] = {"kind": "unknown", "known_person_id": None, "display_name": "Public audience"}
-        saved = save_presence_state(state)
+        with lifecycle_lock(presence_state_path().with_suffix(".lock")):
+            previous = load_presence_state(downgrade_stale_live=True)
+            state = presence_state_for_mode(
+                normalized,
+                previous=previous,
+                updated_by=updated_by,
+                confirmed_live_at=utc_now() if normalized == "go_live" else None,
+            )
+            if audience is not None:
+                state["audience"] = self._audience_payload(audience)
+            if normalized == "go_live":
+                state["audience"] = {"kind": "unknown", "known_person_id": None, "display_name": "Public audience"}
+            state["control_revision"] = int(previous.get("control_revision", 0)) + 1
+            saved = save_presence_state(state)
         return {"ok": True, "state": saved, "detail": self._detail(saved)}
 
-    def wake(self, *, audience: AudienceSelection, session_id: str | None = None) -> dict[str, Any]:
-        transition = self.transition("wake", audience=audience, updated_by="presence_wake")
-        state = transition["state"]
+    def prepare_wake(self, *, audience: AudienceSelection) -> dict[str, Any]:
+        return self.transition("wake", audience=audience, updated_by="presence_wake")["state"]
+
+    def _current_wake_state(self, expected: dict[str, Any]) -> dict[str, Any] | None:
+        current = load_presence_state(downgrade_stale_live=True)
+        if any(current.get(key) != expected.get(key) for key in ("control_revision", "mode", "audience", "outputs")):
+            return None
+        return current
+
+    @staticmethod
+    def _superseded_wake() -> dict[str, Any]:
+        return {"ok": False, "state": load_presence_state(downgrade_stale_live=True),
+                "wake": {"status": "suppressed", "reason": "presence_changed"}}
+
+    def wake(self, *, audience: AudienceSelection, session_id: str | None = None,
+             prepared_state: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self.deliver_wake(self.decide_wake(audience=audience, session_id=session_id, prepared_state=prepared_state))
+
+    def decide_wake(self, *, audience: AudienceSelection, session_id: str | None = None,
+                    prepared_state: dict[str, Any] | None = None) -> WakeDecision | dict[str, Any]:
+        expected = prepared_state if prepared_state is not None else self.prepare_wake(audience=audience)
+        state = self._current_wake_state(expected)
+        if state is None:
+            return self._superseded_wake()
         if not state.get("wake", {}).get("enabled", True):
             return self._record_wake_result(state, status="suppressed", reason="wake_opening_disabled")
 
         speaker = self._speaker_for_audience(audience)
         session = str(session_id or f"presence-{datetime.now(timezone.utc).date().isoformat()}")[:120]
         audio_eligible = self._bus.has_eligible_listener(DASHBOARD_MONITOR_TARGET, audio=True)
-        response = self._conversation.respond_presence_wake(
-            session_id=session,
-            speaker=speaker,
-            wake_context=self._build_wake_context(state=state, speaker=speaker),
-            synthesize_speech=audio_eligible,
-        )
+        try:
+            response = self._conversation.respond_presence_wake(
+                session_id=session, speaker=speaker,
+                wake_context=self._build_wake_context(state=state, speaker=speaker),
+                synthesize_speech=audio_eligible, defer_delivery=True, expected_presence=expected)
+        except StaleRevision:
+            return self._superseded_wake()
+        return WakeDecision(deepcopy(expected), response, session, speaker, audio_eligible)
+
+    def cancel_wake(self, decision):
+        if isinstance(decision, WakeDecision):
+            grant = decision.response.tts_metadata.get("delivery_grant")
+            if grant:
+                self._conversation.cancel_delivery(grant)
+
+    def deliver_wake(self, decision: WakeDecision | dict[str, Any]) -> dict[str, Any]:
+        if isinstance(decision, dict):
+            return decision
+        expected, response = decision.expected, decision.response
+        session, speaker, audio_eligible = decision.session_id, decision.speaker, decision.audio_eligible
+        state = self._current_wake_state(expected)
+        if state is None:
+            self.cancel_wake(decision)
+            return self._superseded_wake()
+        try:
+            self._conversation.deliver_response(response, synthesize_speech=audio_eligible)
+        except Exception:
+            self.cancel_wake(decision)
+            raise
+        state = self._current_wake_state(expected)
+        if state is None:
+            self.cancel_wake(decision)
+            return self._superseded_wake()
         event = StreamInputEvent(
             kind="presence_wake",
             session_id=session,
@@ -389,13 +515,15 @@ class PresenceService:
         for output_event in output_events:
             output_event.payload["target_policy"] = DASHBOARD_MONITOR_TARGET
         dispatch = self._dispatcher.dispatch(output_events)
-        status = "spoken" if response.audio_path or response.audio_content_type else "text_only"
+        status = "audio_ready" if response.audio_path or response.audio_content_type else "text_only"
         self._conversation.record_durable_output(
             target_policy=DASHBOARD_MONITOR_TARGET,
             turn_id=turn_id,
             text=response.display_text or "",
-            status="completed",
-            spoken=status == "spoken",
+            status="ready",
+            spoken=False,
+            decision_id=response.route_trace_id,
+            grant_id=response.tts_metadata.get("delivery_grant"),
         )
         return self._record_wake_result(
             state,
@@ -493,13 +621,16 @@ class PresenceService:
         state["activity"] = {
             **dict(state.get("activity") or {}),
             "last_event_kind": "presence_wake",
-            "last_output_target": DASHBOARD_MONITOR_TARGET if status in {"spoken", "text_only"} else None,
+            "last_output_target": DASHBOARD_MONITOR_TARGET if status in {"audio_ready", "text_only"} else None,
             "current_turn_id": details.get("turn_id"),
             "session_id": details.get("session_id"),
         }
-        if status in {"spoken", "text_only"}:
+        if status in {"audio_ready", "text_only"}:
             state.setdefault("lifecycle", {})["last_interaction_at"] = now
-        saved = save_presence_state(state)
+        try:
+            saved = save_presence_state(state)
+        except StaleRevision:
+            return self._superseded_wake()
         return {"ok": status != "failed", "state": saved, "wake": {"status": status, **details}}
 
     @staticmethod

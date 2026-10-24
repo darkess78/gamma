@@ -38,8 +38,11 @@ models below the required context/persona capability are skipped.
 ## Context Budgeting
 
 Model capability records distinguish advertised context, configured usable
-input, reserved output, safety margin, persona/vision/tool capability, and
-provenance. Prompt assembly budgets the complete request for each candidate.
+input, an optional model-specific runtime context, reserved output, safety
+margin, persona/vision/tool capability, and provenance. Prompt assembly budgets
+the complete request for each candidate. When a local model has a configured
+runtime context, the Ollama adapter sends that value explicitly as `num_ctx`;
+models without one continue to use their existing Ollama defaults.
 Persona, boundaries, privacy/safety rules, current input, and current speaker
 are mandatory; working state, summary, memories, recent turns, and background
 are compacted in priority order.

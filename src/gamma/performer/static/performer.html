@@ -229,7 +229,8 @@
         <div class="status-row"><span>Motion</span><span id="motionValue" class="value">none</span></div>
         <div class="status-row"><span>Audio queue</span><span id="queueValue" class="value">0</span></div>
         <div class="controls">
-          <button id="muteButton" type="button">Mute</button>
+        <button id="audioEnableButton" type="button">Enable Audio</button>
+        <button id="muteButton" type="button">Mute</button>
           <button id="reconnectButton" type="button">Reconnect</button>
           <button id="clearButton" type="button">Clear</button>
         </div>
@@ -242,12 +243,34 @@
     </aside>
   </main>
   <audio id="audioEngine" preload="auto"></audio>
+  <script src="/performer/assets/playback-requests.js?v=20260919"></script>
   <script>
     (function () {
       var socket = null;
       var reconnectTimer = null;
       var audioQueue = [];
       var playing = false;
+      var activeAudio = null;
+      var playbackLease = null;
+      var playbackRequests = new PlaybackRequests(function (message) {
+        if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error('Receiver disconnected');
+        socket.send(JSON.stringify(message));
+      });
+      var audioEnabled = false;
+
+      function sendCapabilities() {
+        if (!socket || socket.readyState !== WebSocket.OPEN) return;
+        socket.send(JSON.stringify({type: 'subscriber_capabilities', text_ready: true, audio_ready: audioEnabled && !muted}));
+      }
+
+      function acknowledgeAudio(status, item) {
+        item = item || activeAudio;
+        if (!item || !socket || socket.readyState !== WebSocket.OPEN) return;
+        var receipt = item.playback;
+        if (receipt.lease_id !== playbackLease) return;
+        socket.send(JSON.stringify({type: 'playback_ack', schema_version: 1,
+          lease_id: receipt.lease_id, event_id: receipt.event_id, status: status}));
+      }
       var muted = false;
       var subtitleTimer = null;
       var lastSequence = 0;
@@ -366,6 +389,11 @@
       }
 
       function clearOutput() {
+        playbackRequests.cancelAll();
+        acknowledgeAudio('interrupted');
+        audioQueue.forEach(function (item) { acknowledgeAudio('interrupted', item); });
+        releaseAudio(activeAudio);
+        activeAudio = null;
         audioQueue = [];
         playing = false;
         audio.pause();
@@ -396,11 +424,12 @@
       }
 
       function enqueueAudio(event) {
+        if (!event.playback || event.playback.lease_id !== playbackLease || event.replay) return;
         var url = audioSourceFromEvent(event);
         if (!url) {
           return;
         }
-        audioQueue.push({ url: url, turnId: event.turn_id || '' });
+        audioQueue.push({ url: url, turnId: event.turn_id || '', playback: event.playback });
         updateQueue();
         playNext();
       }
@@ -418,35 +447,83 @@
         return '';
       }
 
-      function playNext() {
-        if (playing || muted || audioQueue.length === 0) {
+      function revokeAudio(message) {
+        if (message.lease_id !== playbackLease) return;
+        playbackRequests.cancelReceipt(message.lease_id, message.event_id);
+        audioQueue = audioQueue.filter(function (item) { return item.playback.event_id !== message.event_id; });
+        if (activeAudio && activeAudio.playback.event_id === message.event_id) {
+          releaseAudio(activeAudio);
+          activeAudio = null;
+          playing = false;
+          audio.pause();
+          audio.removeAttribute('src');
+          audio.load();
+          playNext();
+        }
+        updateQueue();
+      }
+
+      function releaseAudio(item) {
+        if (item && item.controller) item.controller.abort();
+        if (item && item.objectUrl) URL.revokeObjectURL(item.objectUrl);
+      }
+
+      async function playNext() {
+        if (!audioEnabled || playing || muted || audioQueue.length === 0) {
           updateQueue();
           return;
         }
         var item = audioQueue.shift();
+        if (item.playback.lease_id !== playbackLease || item.playback.expires_at * 1000 <= Date.now()) {
+          playNext();
+          return;
+        }
+        activeAudio = item;
         playing = true;
         turnValue.textContent = item.turnId || 'none';
-        audio.src = item.url;
-        audio.play().catch(function () {
+        item.controller = new AbortController();
+        try {
+          var frozen = await PlaybackRequests.loadAudio(item.playback, apiBase, token, item.controller.signal);
+          if (activeAudio !== item) { if (frozen) URL.revokeObjectURL(frozen); return; }
+          item.objectUrl = frozen;
+          var permit = await playbackRequests.request(item.playback);
+          if (activeAudio !== item || muted || !audioEnabled || item.playback.lease_id !== playbackLease || permit.expires_at * 1000 <= Date.now()) throw new Error('Playback context changed');
+          audio.src = frozen || item.url;
+          await audio.play();
+        } catch (_error) {
+          if (activeAudio !== item) return;
+          acknowledgeAudio('failed');
+          releaseAudio(item);
+          activeAudio = null;
           playing = false;
           updateQueue();
-        });
+          playNext();
+        }
         updateQueue();
       }
 
       audio.addEventListener('ended', function () {
+        acknowledgeAudio('completed');
+        releaseAudio(activeAudio);
+        activeAudio = null;
         playing = false;
         updateQueue();
         playNext();
       });
 
       audio.addEventListener('error', function () {
+        acknowledgeAudio('failed');
+        releaseAudio(activeAudio);
+        activeAudio = null;
         playing = false;
         updateQueue();
         playNext();
       });
 
       function handleEvent(event) {
+        if (event && event.type === 'playback_revoked') { revokeAudio(event); return; }
+        if (playbackRequests.receive(event)) return;
+        if (event && event.type === 'playback_rejected' && activeAudio && activeAudio.playback.event_id === event.event_id) clearOutput();
         if (!event || !event.type) {
           return;
         }
@@ -464,6 +541,8 @@
         }
         updateEventContext(event);
         if (event.type === 'ready') {
+          playbackLease = event.playback_lease && event.playback_lease.lease_id;
+          sendCapabilities();
           replayValue.textContent = replayLabel(event);
           if (targetMutedFromStats(event.stats)) {
             clearOutput();
@@ -532,6 +611,8 @@
           }
         });
         socket.addEventListener('close', function () {
+          clearOutput();
+          playbackLease = null;
           setConnection('disconnected', false);
           reconnectTimer = window.setTimeout(connect, 2000);
         });
@@ -544,18 +625,28 @@
         muted = !muted;
         muteButton.textContent = muted ? 'Unmute' : 'Mute';
         if (muted) {
-          audio.pause();
+          clearOutput();
         } else {
           playing = false;
           playNext();
         }
         updateQueue();
+        sendCapabilities();
       });
 
       reconnectButton.addEventListener('click', connect);
+      document.getElementById('audioEnableButton').addEventListener('click', function () {
+        audioEnabled = true;
+        this.textContent = 'Audio Enabled';
+        this.disabled = true;
+        sendCapabilities();
+        playNext();
+      });
       clearButton.addEventListener('click', clearOutput);
       updateLinks();
       connect();
+      audio.addEventListener('playing', function () { acknowledgeAudio('started'); });
+      window.setInterval(sendCapabilities, 15000);
     })();
   </script>
 </body>

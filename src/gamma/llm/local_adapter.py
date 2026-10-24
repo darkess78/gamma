@@ -4,11 +4,13 @@ import base64
 import json
 from urllib import error, request
 
-from ..errors import ConfigurationError
+from ..errors import ConfigurationError, CapabilityMismatchError
 from ..config import settings
-from ..errors import ContextOverflowError, ExternalServiceError
+from ..resources.shared_execution import admitted_urlopen
+from ..errors import ContextOverflowError, CompletedContextOverflowError, ExternalServiceError
 from .ollama_probe import probe_ollama_model_capabilities
 from .base import LLMAdapter, LLMCallContext, LLMImageInput, LLMReply
+from .capabilities import model_capability
 from .context_budget import is_context_overflow_message
 
 
@@ -64,7 +66,7 @@ class LocalLLMAdapter(LLMAdapter):
         endpoint = (endpoint_override or settings.local_llm_endpoint).rstrip("/")
         if image_inputs:
             if not self.supports_vision:
-                raise ConfigurationError(
+                raise CapabilityMismatchError(
                     "Local vision is disabled. Set SHANA_LOCAL_LLM_SUPPORTS_VISION=true and configure a multimodal Ollama model."
                 )
             target_model = self._model_name_for_request(has_images=True, model_override=model_override)
@@ -78,21 +80,28 @@ class LocalLLMAdapter(LLMAdapter):
                     f"Local vision capability check failed for model {target_model}: {capability.get('detail', 'unknown error')}"
                 )
             if not capability.get("supports_vision"):
-                raise ConfigurationError(
+                raise CapabilityMismatchError(
                     f"Configured local vision model {target_model} does not report vision capability from Ollama /api/show."
                 )
+        target_model = self._model_name_for_request(
+            has_images=bool(image_inputs),
+            system_prompt=system_prompt,
+            user_text=user_text,
+            model_override=model_override,
+        )
         payload = {
-            "model": self._model_name_for_request(
-                has_images=bool(image_inputs),
-                system_prompt=system_prompt,
-                user_text=user_text,
-                model_override=model_override,
-            ),
+            "model": target_model,
             "system": system_prompt,
             "prompt": user_text,
             "stream": False,
             "keep_alive": settings.local_llm_keep_alive,
         }
+        runtime_context_tokens = model_capability("local", target_model).runtime_context_tokens
+        if runtime_context_tokens is not None:
+            payload["options"] = {"num_ctx": runtime_context_tokens}
+        if getattr(call_context, "interaction_mode", None) == "silent":
+            payload.setdefault("options", {})["num_predict"] = 512
+            payload["think"] = False
         if image_inputs:
             payload["images"] = [base64.b64encode(item.data).decode("ascii") for item in image_inputs]
         body = json.dumps(payload).encode("utf-8")
@@ -103,12 +112,14 @@ class LocalLLMAdapter(LLMAdapter):
             method="POST",
         )
         try:
-            with request.urlopen(req, timeout=settings.local_llm_timeout_seconds) as resp:
+            with admitted_urlopen(request.urlopen, req, timeout=settings.local_llm_timeout_seconds, context=call_context) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
         except error.HTTPError as exc:
             details = exc.read().decode("utf-8", errors="replace")
             if is_context_overflow_message(details):
-                raise ContextOverflowError(f"Local LLM context overflow: {details}") from exc
+                if exc.code in {400, 413, 422}:
+                    raise CompletedContextOverflowError("Local LLM rejected the context budget") from exc
+                raise ContextOverflowError("Local LLM reported a context failure") from exc
             raise ExternalServiceError(f"Local LLM request failed: HTTP {exc.code}: {details}") from exc
         except error.URLError as exc:
             raise ExternalServiceError(f"Local LLM request failed: {exc}") from exc

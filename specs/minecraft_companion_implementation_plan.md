@@ -4,7 +4,7 @@ Status: Proposed
 
 Inspection date: 2026-07-10
 
-This document records the read-only repository inspection and concrete implementation plan for adding a companion-first Minecraft Java Edition integration for Shana. It proposes no change to the protected deployment topology in `specs/LOCKED_GAMMA_NETWORK_DEPLOYMENT.md`.
+This document records the read-only repository inspection and concrete implementation plan for adding a companion-first Minecraft Java Edition integration for Shana. It proposes no change to the current deployment topology in `specs/LOCKED_GAMMA_NETWORK_DEPLOYMENT.md`.
 
 ## 1. Preflight State
 
@@ -54,7 +54,7 @@ The recent tray-removal cleanup therefore has a fresh, passing full-suite baseli
 
 ## 3. Repository Rules That Apply
 
-Material rules found in `AGENTS.md`, `specs/architecture.md`, and the protected network deployment specification:
+Material rules found in `AGENTS.md`, `specs/architecture.md`, and the network deployment reference:
 
 - Active source is exclusively under `src/gamma`; top-level `gamma/` is stale bytecode.
 - Shana and Dashboard remain separate FastAPI processes on ports 8000 and 8001.
@@ -64,7 +64,9 @@ Material rules found in `AGENTS.md`, `specs/architecture.md`, and the protected 
 - Shana-owned Minecraft routes should be under `/v1/*`; the sidecar control socket can therefore use the existing Shana listener rather than a third public port.
 - Public URLs and internal bind addresses must remain separate.
 - WebSocket routing must remain reverse-proxy compatible.
-- `specs/LOCKED_GAMMA_NETWORK_DEPLOYMENT.md` must never be edited.
+- `specs/LOCKED_GAMMA_NETWORK_DEPLOYMENT.md` is an editable deployment reference.
+  The owner removed its file lock and separate architecture-approval requirement
+  on 2026-09-19. Preserve route compatibility during this integration.
 - Portable, non-secret defaults belong in `config/app.example.toml`.
 - Host-specific paths, account data, and secrets belong in `.env` or `config/app.local.toml`.
 - Optional integrations must be disabled by default and fail closed when incompletely configured.
@@ -143,7 +145,7 @@ Authorized voice / Monitor / Dashboard / owner Minecraft chat
 | 2 | TypeScript sidecar: `sidecars/minecraft/` | `scripts/` is launcher-oriented; `helper_projects/` contains separate tooling rather than runtime dependencies. A top-level sidecar directory makes the process boundary explicit. | Lock before implementation |
 | 3 | Sidecar is a WebSocket client; Shana is server | Matches the existing Shana WebSocket ownership direction, avoids a new exposed listener, and lets the sidecar stop immediately when its controlling socket closes. | Lock |
 | 4 | Sidecar initiates connection | Alternatives are Gamma dialing the sidecar or both exposing servers. Outbound sidecar connection is simpler to supervise and safer under reverse proxies. | Lock |
-| 5 | Use `ws://127.0.0.1:8000/v1/minecraft/control`; no new port | Reuses the Shana listener and protected route ownership. Do not change the locked deployment topology. | Lock |
+| 5 | Use `ws://127.0.0.1:8000/v1/minecraft/control`; no new port | Reuses the Shana listener and current route ownership. No topology migration is needed for this integration. | Preserve |
 | 6 | Require loopback plus a dedicated control token when enabled | Loopback-only without authentication is vulnerable if proxying or host boundaries change; global API bearer alone over-couples integrations. Token must be supplied only through local config/environment. | Lock |
 | 7 | Python protocol models are canonical; target spec documents semantics | Gamma owns command/policy semantics. Pydantic is already the Python schema convention. | Lock |
 | 8 | Hand-maintained TypeScript validators plus shared JSON fixtures; no code generation | Generation adds tooling and versioning complexity. Shared fixtures give cross-language evidence without a schema-generation framework. | Flexible after v1 |
@@ -1009,7 +1011,8 @@ Validation:
 Stopping conditions:
 - Stop before creating any WebSocket endpoint or sidecar runtime.
 - Stop if the protocol requires a new public port.
-- Stop if implementation would require editing the locked deployment spec.
+- Update the deployment reference if an authorized implementation changes its
+  documented behavior; editing that reference is not a reason to stop work.
 - Stop if tests reveal an existing unrelated failure; report it without
   changing unrelated code.
 - Finish with a concise list of files changed, tests run, and results.

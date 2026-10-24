@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from .models import DEFAULT_TARGET_POLICY, PerformerOutputEvent, utc_now
 
 
-SpokenTurnStatus = Literal["queued", "generating", "synthesizing", "speaking", "completed", "interrupted", "cancelled", "failed"]
+SpokenTurnStatus = Literal["queued", "generating", "synthesizing", "ready", "speaking", "completed", "interrupted", "cancelled", "failed"]
 
 
 class SpokenTurn(BaseModel):
@@ -49,6 +49,7 @@ class SpokenTurnStore:
         return self.upsert(turn_id, status=status, **updates)
 
     def apply_event(self, event: PerformerOutputEvent) -> SpokenTurn:
+        """Track producer readiness; only receiver receipts establish playback."""
         updates: dict[str, Any] = {
             "target_policy": event.target_policy,
             "source": event.source,
@@ -62,12 +63,15 @@ class SpokenTurnStore:
         elif event.type == "turn_state_changed":
             updates["status"] = _status_or_default(event.payload.get("state"), "generating")
         elif event.type in {"speech_started", "speech_chunk_ready"}:
-            updates["status"] = "speaking"
+            updates["status"] = "ready"
         elif event.type == "speech_ended":
-            updates["status"] = "completed"
+            updates["status"] = "ready"
         elif event.type == "output_cleared":
             updates["status"] = _terminal_clear_status(event.payload.get("status"))
             updates["cancellation_reason"] = event.payload.get("reason")
+        current = self.get(event.turn_id)
+        if event.type != "output_cleared" and current and current.status in {"interrupted", "cancelled", "failed"}:
+            updates.pop("status", None)
         if "text" in event.payload:
             updates["generated_text"] = str(event.payload.get("text") or "")
         if event.type in {"subtitle_update", "subtitle_clear"}:
@@ -103,7 +107,8 @@ class SpokenTurnStore:
 
 def _status_or_default(value: Any, default: SpokenTurnStatus) -> SpokenTurnStatus:
     text = str(value or "").strip().lower()
-    if text in {"queued", "generating", "synthesizing", "speaking", "completed", "interrupted", "cancelled", "failed"}:
+    text = {"speaking": "synthesizing", "completed": "ready"}.get(text, text)
+    if text in {"queued", "generating", "synthesizing", "ready", "interrupted", "cancelled", "failed"}:
         return text  # type: ignore[return-value]
     return default
 

@@ -50,6 +50,7 @@ def build_system_prompt(
     user_text: str | None = None,
     session_id: str | None = None,
     speaker: "SpeakerProfile | None" = None,
+    *, core_memories: str | None = None, emotion_context: dict | None = None,
 ) -> str:
     """Build system prompt.
     
@@ -131,9 +132,9 @@ def build_system_prompt(
 
     memory_block = "\n".join(memory_lines).strip() or "No stored memory injected for this turn."
 
-    core_memories_block = _load_core_memories()
+    core_memories_block = _load_core_memories() if core_memories is None else core_memories
     if settings.assistant_state_enabled:
-        emotion_memory = EmotionMemoryService().relevant_context(user_text=user_text or "")
+        emotion_memory = emotion_context if emotion_context is not None else EmotionMemoryService().relevant_context(user_text=user_text or "")
         assistant_state_block = emotion_memory["state"].to_prompt_block()
         emotional_episode_block = "\n".join(
             f"- [{item.emotion}] {item.event_summary} effect={item.relationship_effect} intensity={item.intensity:.2f}"
@@ -180,7 +181,8 @@ def _load_core_memories() -> str:
     Returns:
         str: Core memories or default message.
     """
-    raw = _cached_text(CORE_MEMORIES_PATH)
+    from ..memory.core import CoreMemoryStore
+    raw = CoreMemoryStore().load()
     if not raw:
         return "No core memories stored yet."
     # Extract bullet lines only — skip comments and headers

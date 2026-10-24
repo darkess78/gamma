@@ -247,46 +247,19 @@ class SoundDeviceCaptureBackend:
 
 
 class AudioPlayback:
+    """Compatibility adapter: raw producer paths no longer authorize playback."""
     def __init__(self, binary: str | None = None) -> None:
-        self._system = platform.system()
-        self._binary = binary or self._default_binary()
+        from .approved_playback import ApprovedAudioPlayback
+        self._approved = ApprovedAudioPlayback(binary=binary)
 
-    def play(self, audio_path: str | None) -> bool:
-        if not audio_path:
-            return False
-        if self._system == "Windows":
-            return self._play_windows(audio_path)
-        return self._play_with_binary(audio_path)
+    def play_response(self, response) -> bool:
+        return self._approved.play_response(response)
 
-    def _default_binary(self) -> str | None:
-        if self._system == "Darwin":
-            return "afplay"
-        if self._system == "Windows":
-            return None
-        return "aplay"
-
-    def _play_windows(self, audio_path: str) -> bool:
-        if Path(audio_path).suffix.lower() != ".wav":
-            print(f"[warn] Windows playback currently supports WAV files only; synthesized audio saved at {audio_path}")
-            return False
-        try:
-            import winsound
-
-            winsound.PlaySound(audio_path, winsound.SND_FILENAME)
-        except Exception as exc:
-            print(f"[warn] Windows audio playback failed ({exc}); synthesized audio saved at {audio_path}")
-            return False
-        return True
-
-    def _play_with_binary(self, audio_path: str) -> bool:
-        if not self._binary:
-            return False
-        player = shutil.which(self._binary)
-        if not player:
-            print(f"[warn] {self._binary} not found; synthesized audio saved at {audio_path}")
-            return False
-        subprocess.run([player, audio_path], check=False)
-        return True
+    def play(self, response) -> bool:
+        if not hasattr(response, "tts_metadata"):
+            from ..delivery.authority import DeliveryDenied
+            raise DeliveryDenied("Raw audio playback is retired; pass an approved response")
+        return self.play_response(response)
 
 
 class VoiceModeController:
@@ -301,7 +274,8 @@ class VoiceModeController:
         self._stt = stt or STTService()
         self._conversation = conversation or ConversationService()
         self._capture = capture_backend or _build_capture_backend()
-        self._playback = playback or AudioPlayback()
+        from .approved_playback import ApprovedAudioPlayback
+        self._playback = playback or ApprovedAudioPlayback()
 
     def run_turn(self, config: VoiceLoopConfig) -> VoiceTurnResult:
         turn_started_at = perf_counter()
@@ -350,7 +324,7 @@ class VoiceModeController:
             playback_seconds = 0.0
             if config.playback_enabled and response.audio_path:
                 playback_started_at = perf_counter()
-                playback_attempted = self._playback.play(response.audio_path)
+                playback_attempted = self._playback.play_response(response)
                 playback_seconds = perf_counter() - playback_started_at
 
             return VoiceTurnResult(

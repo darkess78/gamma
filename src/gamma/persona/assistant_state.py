@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sqlalchemy.pool import NullPool
+from sqlmodel import create_engine
+
 from ..config import settings
+from ..memory.documents import StateDocuments
 
 
 _DEFAULT_STATE_PATH = settings.data_dir / "assistant_state.json"
@@ -66,7 +69,13 @@ class AssistantStateStore:
         Args:
             path: State file path (default from settings).
         """
-        self._path = path or _DEFAULT_STATE_PATH
+        self._path = path or settings.data_dir / "assistant_state.json"
+        if path is None:
+            self._documents = StateDocuments()
+        else:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            database = self._path.with_suffix(self._path.suffix + ".state.sqlite3")
+            self._documents = StateDocuments(create_engine(f"sqlite:///{database}", poolclass=NullPool))
 
     def load(self) -> AssistantFeelingState:
         """Load state.
@@ -74,12 +83,10 @@ class AssistantStateStore:
         Returns:
             AssistantFeelingState: Loaded state.
         """
-        if not self._path.exists():
-            return AssistantFeelingState()
-        try:
-            payload = json.loads(self._path.read_text(encoding="utf-8"))
-        except Exception:
-            return AssistantFeelingState()
+        return self._decode(self._documents.load("assistant_feeling", self._path))
+
+    @staticmethod
+    def _decode(payload: dict) -> AssistantFeelingState:
         current = str(payload.get("current_emotion", "neutral")).strip().lower()
         if current not in _ALLOWED_EMOTIONS:
             current = "neutral"
@@ -97,7 +104,7 @@ class AssistantStateStore:
             updated_at=str(updated_at) if updated_at else None,
         )
 
-    def update(self, *, emotion: str, user_text: str, reply_text: str) -> AssistantFeelingState:
+    def update(self, *, emotion: str, user_text: str, reply_text: str, session=None) -> AssistantFeelingState:
         """Update state.
         
         Args:
@@ -108,7 +115,12 @@ class AssistantStateStore:
         Returns:
             AssistantFeelingState: Updated state.
         """
-        state = self.load()
+        def transform(payload):
+            return self._propose(payload, emotion=emotion, user_text=user_text, reply_text=reply_text)
+        return self._decode(self._documents.mutate("assistant_feeling", self._path, transform, session=session))
+
+    def _propose(self, payload: dict, *, emotion: str, user_text: str, reply_text: str) -> dict:
+        state = self._decode(payload)
         normalized = emotion.strip().lower() if emotion else "neutral"
         if normalized not in _ALLOWED_EMOTIONS:
             normalized = "neutral"
@@ -120,21 +132,7 @@ class AssistantStateStore:
             state.notes.append(note)
             state.notes = state.notes[-8:]
         state.updated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(
-            json.dumps(
-                {
-                    "current_emotion": state.current_emotion,
-                    "recent_emotions": state.recent_emotions,
-                    "notes": state.notes,
-                    "updated_at": state.updated_at,
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        return state
+        return asdict(state)
 
     def _build_note(self, *, user_text: str, reply_text: str, emotion: str) -> str | None:
         """Build emotion note.

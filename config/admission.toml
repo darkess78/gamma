@@ -1,0 +1,12 @@
+# Shared provider admission. All runtime roots must use the same policy.
+# This conservative initial bound admits one interactive model operation.
+# Background work requires a measured capacity increase with reserved headroom.
+wait_seconds = 2.0
+
+[budgets.model-work]
+capacity = 1
+reserved = 1
+
+# Additional budget dimensions may be configured, e.g. ram_mb or gpu0_mb.
+# Each workload declares integer demands against those named budgets.
+# Policy conflicts with the existing shared ledger fail closed.

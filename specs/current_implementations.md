@@ -8,12 +8,76 @@ specs own detailed contracts; target documents own future work.
 
 ## Runtime
 
+- Modular voice acceptance now includes intended-profile Whisper/Qwen GPU audio,
+  real Chromium playback receipts, independent TTS stop and STT restart/crash
+  checks, duplicate-final guards and decision/grant trace linkage. Supervised
+  Windows microphone/playback, text-only operation and interruption passed with
+  synthetic decision/review fixtures. See
+  `modular_voice_acceptance.md` for evidence and the existing legacy-test failures.
+
+- Bounded silent autonomy selects approved self-goals and fresh observations,
+  coalesces disposable input, reserves foreground attention and rejects cancelled,
+  expired or approval-revoked results. Finite budgets, cooldowns, Pause/Resume/Stop
+  and a 512-token generation cap bound work. Approved internal results persist
+  without delivery grants or tool execution. See
+  `modular_worker_runtime_silent_slice.md` for controls and runtime evidence.
+
+- Shared provider admission now covers direct/routed model inference, safety,
+  STT, TTS/Piper/RVC, vision/audio perception and improvement callers across
+  participating runtime roots. Atomic resource budgets, interactive reservations,
+  bounded waiting deadlines, retained uncertain capacity, evidence-based recovery
+  and worker request deduplication are implemented. The workers page exposes
+  allocations, waiting and unresolved work. Initial capacity is one interactive
+  operation; background model work requires a measured policy increase. See
+  `modular_worker_runtime_admission_slice.md` for evidence and deployment limits.
+
+- Managed cognition now runs in one independently controlled brain child. Text,
+  image, stream policy, Wake, voice-derived and silent inputs share its versioned
+  protocol. The core retains persistence, permissions, review and delivery.
+  Authenticated Start/Pause/Resume/Stop and generation fences keep the API and
+  dashboard available after worker stop or crash. See
+  `modular_worker_runtime_brain_process.md` for process and real HTTP evidence.
+
+- The modular runtime's first lifecycle/log slice adds authenticated
+  `/dashboard/workers`, `/api/workers`, and `/api/worker-logs`. The existing
+  improvement worker is the first controllable adapter, with heartbeat
+  readiness, generation identity, serialized controls and correlated bounded
+  logs. Other inventory cards leave unsupported controls disabled. See
+  `modular_worker_runtime_phase0.md` and `modular_worker_runtime_lifecycle_slice.md` for
+  isolated-checkout evidence and the remaining migration boundaries. This
+  does not establish a persistent brain or a single state writer.
+
+- The state authority owns persistence transactions for history, working state,
+  approved memory/persona/tool updates, stream context/goals, Presence/performer
+  controls, viewer trust and publication records. Decisions and downstream
+  effects reject stale snapshots or foreign generations. Operator edits atomically
+  invalidate snapshots and delivery permission; recovery is restricted to proven
+  eligible owners. Publication is generation/session/decision-bound and cannot
+  replace newer target output. Verified backups precede additive schema changes.
+  See `modular_state_writer_inventory.md` for the writer audit and executable
+  crash/concurrency evidence. Production migration has not been performed.
+
+- Conversation, Presence Wake, stream and core-live output follow decision commit
+  and required review. Failed, denied, delayed or malformed required review
+  releases no candidate text, synthesized speech or cached filtered fallback.
+  Atomic preparation/publication and durable semantic consumer claims prevent
+  restart replay and duplicate dispatch. Consumers recheck current authorization;
+  browser and CLI playback use connection-owned offers, start permits, revocation
+  and receipts. Prepared audio, adapter dispatch and confirmed playback remain
+  separate states. See `modular_delivery_inventory.md` and
+  `modular_worker_runtime_delivery_slice.md`.
+
 - Shana FastAPI application on port 8000.
 - Dashboard FastAPI application on port 8001.
 - Layered TOML, `.env`, and process-environment configuration.
 - Separate internal bind and browser-facing public URLs.
 - Optional bearer authentication for Shana and session authentication for the dashboard.
 - Supervisor-managed Shana, dashboard, Qwen TTS, Twitch, Discord, and audio-understanding processes.
+- The production Linux host uses lingering systemd user units for boot-time
+  Shana and dashboard ownership. In `systemd-user` lifecycle mode, dashboard
+  Shana controls delegate to `gamma-shana.service`, dependency hooks restore
+  configured local voice sidecars, and runtime stop controls preserve the
+  always-on dashboard.
 - Structured rotating logs and request correlation.
 - Disabled-by-default Shana-owned Minecraft coordinator wiring and authenticated
   loopback WebSocket control transport at `/v1/minecraft/control`.
@@ -79,8 +143,12 @@ specs own detailed contracts; target documents own future work.
 
 - Dashboard WebSocket at `/api/voice/live` delegates inference to Shana `/v1/voice/*` jobs.
 - Browser-side VAD, partial transcript snapshots, chunked playback, and transcript-confirmed barge-in.
-- Subprocess-isolated live turns with queued/running/speaking/completed/cancelled/failed states.
-- Hard cancellation, cancel latency, persisted job history, and reply interruptibility metadata.
+- Core-owned bounded live turns share managed transcription, brain and delivery.
+  Legacy subprocess configuration and job facade select core; direct legacy
+  generation and JSON output publication reject explicitly.
+- Cancellation revokes grants during synthesis and rejects late results. Producer
+  readiness never proves playback: receiver receipts track actual start,
+  completion, interruption and failure separately.
 - Shana-owned bounded proactive scheduler exists, is configurable and disabled by default, and does not depend on browser WebSockets.
 - Browser capture still uses deprecated `ScriptProcessorNode`; AudioWorklet migration remains future work.
 
@@ -110,16 +178,20 @@ specs own detailed contracts; target documents own future work.
 - Temporary stream context, pending speech, self-goal approval, traces, replay, and evaluation.
 - Twitch IRC and EventSub workers, sanitization, viewer trust, dry-run replay, and durable worker state.
 - Discord allowlisted text ingestion; Discord reply and voice output remain disabled.
-- Public-output safety runs fast filters and optional parallel LLM review with filtered fallback output.
+- Public-output safety completes mandatory privacy/fast checks and required LLM review before synthesis or publication. Failed, unavailable, timed-out or denied required review releases no output or cached filtered fallback.
 
 ## Performer And Outputs
 
 - Ordered performer event bus with replay windows and target policies.
 - `stream_public`, `dashboard_monitor`, and `discord_call` targets.
 - Speech, subtitle, emotion, motion, clear, and speaking-state events.
-- Network-safe audio artifacts for remote consumers.
+- Hash-verified approved audio URLs and connection-owned playback offers; raw
+  path/base64 decision playback and legacy artifact routes are retired (HTTP 410).
+- Durable consumer claims precede effects. Restart does not replay approved text
+  or uncertain sends. CLI playback stops its exact player process on revocation
+  or disconnect and waits for an accepted completion receipt.
 - Browser performer, subtitle overlay, and dashboard monitor clients.
-- VTube Studio adapter and runner exist but remain optional and require live validation.
+- VTube Studio checks authorization after asynchronous authentication immediately before its claimed action. It remains optional; hardware/avatar lifecycle validation is separate.
 
 ## Dashboard
 
@@ -131,6 +203,8 @@ specs own detailed contracts; target documents own future work.
 - Lightweight header polling avoids full provider, memory, log, and machine-status work on interaction and operations pages.
 - Status, Settings, and Memory use separate bounded status contracts rather than transferring the legacy full diagnostics payload.
 - Service lifecycle and provider smoke-test controls.
+- Systemd-aware Shana lifecycle controls with no dashboard self-stop control
+  on the operator page.
 - TTS profile selection/editor and generated-audio controls.
 - Memory and known-person management.
 - Twitch/EventSub/Discord worker controls and stream operations.

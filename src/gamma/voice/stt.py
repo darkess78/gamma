@@ -5,6 +5,7 @@ import logging
 import re
 
 from ..config import settings
+from ..resources.shared_execution import admitted
 from ..errors import ConfigurationError, ExternalServiceError
 from ..system.cuda_env import prepend_cuda_library_path
 from ..system.torch_devices import resolve_torch_device
@@ -79,6 +80,7 @@ class FasterWhisperSTTBackend(STTBackend):
 
     provider_name = "faster-whisper"
 
+    @admitted("stt", local=True)
     def __init__(self) -> None:
         """Initialize faster-whisper model.
         
@@ -134,6 +136,7 @@ class FasterWhisperSTTBackend(STTBackend):
         except Exception as exc:
             raise ConfigurationError(f"Failed to initialize faster-whisper STT: {exc}") from exc
 
+    @admitted("stt", local=True)
     def transcribe_audio(self, source: str) -> str:
         """Transcribe audio file to text.
         
@@ -182,8 +185,9 @@ class OpenAISTTBackend(STTBackend):
             from openai import OpenAI
         except Exception as exc:
             raise ConfigurationError("The OpenAI SDK is required for SHANA_STT_PROVIDER=openai.") from exc
-        self._client = OpenAI(api_key=settings.openai_api_key)
+        self._client = OpenAI(api_key=settings.openai_api_key, max_retries=0)
 
+    @admitted("stt", endpoint="https://api.openai.com")
     def transcribe_audio(self, source: str) -> str:
         """Transcribe audio file to text via OpenAI.
         

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import threading
 from collections import deque
 from dataclasses import dataclass
@@ -11,6 +10,9 @@ from typing import Any
 from uuid import uuid4
 
 from ..config import settings
+from ..memory.documents import StateDocuments
+from sqlalchemy.pool import NullPool
+from sqlmodel import create_engine
 from .models import (
     DASHBOARD_MONITOR_TARGET,
     DEFAULT_TARGET_POLICY,
@@ -46,13 +48,33 @@ class PerformerEventBus:
         self._history: deque[PerformerOutputEvent] = deque(maxlen=max(1, history_limit))
         self._subscribers: dict[str, _Subscriber] = {}
         self._state_path = state_path
+        self._documents = None
+        if state_path is not None:
+            default_path = settings.data_dir / "runtime" / "performer" / "state.json"
+            if state_path.resolve() == default_path.resolve():
+                self._documents = StateDocuments()
+            else:
+                state_path.parent.mkdir(parents=True, exist_ok=True)
+                database = state_path.with_suffix(state_path.suffix + ".state.sqlite3")
+                self._documents = StateDocuments(create_engine(f"sqlite:///{database}", poolclass=NullPool))
         self._muted_targets: set[str] = self._load_muted_targets()
         self._subscriber_queue_size = max(1, subscriber_queue_size)
         self._next_sequence = 1
+        self._target_epochs: dict[str, int] = {}
         self._turn_store = turn_store or SpokenTurnStore()
         self._lock = threading.Lock()
 
     def publish(self, event: PerformerOutputEvent) -> None:
+        from ..delivery.execution import claim_event, finish_event
+        claim = claim_event(event, "performer_bus", bus=self)
+        try:
+            self._publish(event)
+        except BaseException:
+            finish_event(claim, succeeded=False)
+            raise
+        finish_event(claim, succeeded=True)
+
+    def _publish(self, event: PerformerOutputEvent) -> None:
         with self._lock:
             if event.sequence is None:
                 event.sequence = self._next_sequence
@@ -132,12 +154,29 @@ class PerformerEventBus:
         else:
             recent = []
         for event in recent:
-            self._put_nowait(queue, event.model_dump())
+            payload = event.model_dump()
+            payload["replay"] = True
+            self._put_nowait(queue, payload)
         return subscriber_id, queue
 
     def unsubscribe(self, subscriber_id: str) -> None:
         with self._lock:
             self._subscribers.pop(subscriber_id, None)
+
+    def audio_delivery_allowed(self, subscriber_id: str, target_policy: str) -> bool:
+        """Recheck the receiving connection at send time, after queueing."""
+        with self._lock:
+            subscriber = self._subscribers.get(subscriber_id)
+            return bool(subscriber and subscriber.audio_ready
+                and subscriber.target_policy not in self._muted_targets
+                and target_policy not in self._muted_targets
+                and _subscriber_receives_event(subscriber.target_policy, target_policy))
+
+    def audio_target_epoch(self, target_policy: str, subscriber_id: str | None = None) -> int:
+        with self._lock:
+            subscriber = self._subscribers.get(subscriber_id) if subscriber_id else None
+            own_epoch = self._target_epochs.get(subscriber.target_policy, 0) if subscriber and subscriber.target_policy != target_policy else 0
+            return self._target_epochs.get(target_policy, 0) + own_epoch
 
     def update_subscriber_capabilities(
         self,
@@ -176,11 +215,16 @@ class PerformerEventBus:
     def set_target_muted(self, target_policy: str, muted: bool, *, reason: str = "operator") -> dict[str, Any]:
         target = _normalize_target_policy(target_policy)
         with self._lock:
-            if muted:
+            if self._state_path is not None:
+                self._save_state_locked(target, muted)
+            elif muted:
                 self._muted_targets.add(target)
             else:
                 self._muted_targets.discard(target)
-            self._save_state_locked()
+            if muted:
+                self._target_epochs[target] = self._target_epochs.get(target, 0) + 1
+        if muted:
+            self._cancel_grants(target)
         event_type = "output_cleared" if muted else "target_mute_changed"
         self.publish(
             PerformerOutputEvent(
@@ -193,8 +237,15 @@ class PerformerEventBus:
         )
         return {"ok": True, "target_policy": target, "muted": muted, "stats": self.stats()}
 
+    def _cancel_grants(self, target: str) -> None:
+        from ..delivery.execution import get_playback_ledger
+        get_playback_ledger().cancel_target(target)
+
     def clear_target(self, target_policy: str, *, reason: str = "operator") -> dict[str, Any]:
         target = _normalize_target_policy(target_policy)
+        with self._lock:
+            self._target_epochs[target] = self._target_epochs.get(target, 0) + 1
+        self._cancel_grants(target)
         self.publish(
             PerformerOutputEvent(
                 type="output_cleared",
@@ -269,28 +320,24 @@ class PerformerEventBus:
     def _load_muted_targets(self) -> set[str]:
         if self._state_path is None:
             return set()
-        try:
-            payload = json.loads(self._state_path.read_text(encoding="utf-8"))
-        except Exception:
-            return set()
-        if not isinstance(payload, dict):
-            return set()
+        payload = self._documents.load("performer_controls", self._state_path)
         raw_targets = payload.get("muted_targets", [])
         if not isinstance(raw_targets, list):
             return set()
         return {_normalize_target_policy(item) for item in raw_targets if str(item or "").strip()}
 
-    def _save_state_locked(self) -> None:
+    def _save_state_locked(self, target: str, muted: bool) -> None:
         if self._state_path is None:
             return
-        payload = {
-            "updated_at": _utc_now(),
-            "muted_targets": sorted(self._muted_targets),
-        }
-        self._state_path.parent.mkdir(parents=True, exist_ok=True)
-        temp_path = self._state_path.with_suffix(self._state_path.suffix + ".tmp")
-        temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        temp_path.replace(self._state_path)
+        def transform(payload):
+            targets = {_normalize_target_policy(item) for item in payload.get("muted_targets", [])}
+            if muted:
+                targets.add(target)
+            else:
+                targets.discard(target)
+            return {"updated_at": _utc_now(), "muted_targets": sorted(targets)}
+        payload = self._documents.mutate("performer_controls", self._state_path, transform)
+        self._muted_targets = set(payload["muted_targets"])
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")

@@ -26,3 +26,15 @@ enabled in shared/local configuration.
 
 Resource routing is experimental. It may not prevent the core assistant from
 starting with explicit provider/device configuration.
+
+## Shared execution authority
+
+Model calls now acquire endpoint and workload budgets through a cross-process
+SQLite authority independent of the checkout data directory. The shared
+`config/admission.toml` policy starts with one interactive-only execution unit.
+Background capacity must be measured before it is enabled. This mandatory
+execution boundary is separate from optional/advisory placement ranking above.
+Uncertain provider work retains capacity; expiry and process death alone do not
+prove remote completion. See `modular_worker_runtime_admission_slice.md` for the
+caller audit, resource dimensions, reconciliation rules and Gamma measurements.
+Model residency, eviction and unmanaged external callers remain separate.

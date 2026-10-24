@@ -1,0 +1,22 @@
+const assert = require('node:assert/strict');
+const LiveOffers = require('../src/gamma/dashboard/static/live-offers.js');
+let now=0;
+const seen=[];
+const offers=new LiveOffers(event=>seen.push(event), {now:()=>now});
+const make=(turn,id=turn)=>({type:'speech_chunk_ready',source:'core_live',turn_id:turn,
+  playback:{schema_version:1,lease_id:'lease',event_id:id,grant_id:'a'.repeat(32),audio_digest:'b'.repeat(64)}});
+offers.receive(make('early'));
+assert.equal(seen.length,0);
+offers.own('early');
+assert.equal(seen.length,1);
+offers.receive(make('early')); assert.equal(seen.length,1);
+offers.receive({...make('other'),source:'legacy'});
+offers.own('other'); assert.equal(seen.length,1);
+offers.receive(make('expired')); now=6000; offers.own('expired'); assert.equal(seen.length,1);
+offers.own('immediate'); offers.receive(make('immediate')); assert.equal(seen.length,2);
+offers.clear(); offers.receive(make('immediate','late')); assert.equal(seen.length,2);
+for(let i=0;i<100;i++) offers.receive(make('queued'+i));
+offers.own('queued0'); assert.equal(seen.length,2);
+offers.own('queued99'); assert.equal(seen.length,3);
+offers.own('bad'); offers.receive({...make('bad'),playback:null}); assert.equal(seen.length,3);
+console.log('live offer ownership, expiry, duplicate and bounds checks passed');

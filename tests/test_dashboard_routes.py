@@ -246,7 +246,9 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('rel="icon" href="/static/favicon.svg"', dashboard.body.decode("utf-8"))
         self.assertNotIn('src="/static/monitor.js', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/nav.js?v=20260828"', dashboard.body.decode("utf-8"))
-        self.assertIn('src="/static/live.js?v=20260611e"', dashboard.body.decode("utf-8"))
+        self.assertIn('src="/static/live.js?v=20260919"', dashboard.body.decode("utf-8"))
+        self.assertLess(dashboard.body.index(b'/static/live-offers.js'), dashboard.body.index(b'/static/live.js'))
+        self.assertLess(dashboard.body.index(b'/static/playback-requests.js'), dashboard.body.index(b'/static/live.js'))
         self.assertIn('src="/static/memory.js?v=20260611e"', dashboard.body.decode("utf-8"))
         self.assertIn('href="/static/dashboard.css?v=20260828b"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/status.js?v=20260623c"', dashboard.body.decode("utf-8"))
@@ -499,8 +501,10 @@ class DashboardRoutesTest(unittest.TestCase):
     def test_monitor_has_stream_controls_and_status_reporting(self) -> None:
         body = main.dashboard_monitor_page().body.decode("utf-8")
 
-        self.assertIn('src="/static/monitor.js?v=20260623"', body)
-        self.assertIn('src="/static/live.js?v=20260618"', body)
+        self.assertIn('src="/static/monitor.js?v=20260919b"', body)
+        self.assertLess(body.index('src="/static/playback-requests.js'), body.index('src="/static/monitor.js'))
+        self.assertIn('src="/static/live.js?v=20260919"', body)
+        self.assertLess(body.index('/static/live-offers.js'), body.index('/static/live.js'))
         self.assertIn("Server And Provider Status", body)
         self.assertIn("Live Voice", body)
         self.assertIn('id="liveVoiceButton"', body)
@@ -612,6 +616,45 @@ class DashboardRoutesTest(unittest.TestCase):
                     response = getattr(main, method_name)()
                 self.assertEqual(response, payload)
                 method.assert_called_once_with()
+
+    def test_systemd_user_lifecycle_controls_shana_unit(self) -> None:
+        service = DashboardService()
+        completed = Mock(returncode=0, stdout="", stderr="")
+        with (
+            patch.dict("os.environ", {"GAMMA_LIFECYCLE_MANAGER": "systemd-user"}),
+            patch("gamma.dashboard.service.subprocess.run", return_value=completed) as run,
+        ):
+            payload = service.stop_shana()
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["detail"], "shana-systemd-stop-completed")
+        run.assert_called_once_with(
+            ["systemctl", "--user", "stop", "gamma-shana.service"],
+            cwd=settings.project_root,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+
+    def test_systemd_user_lifecycle_preserves_dashboard_stop(self) -> None:
+        service = DashboardService()
+        with (
+            patch.dict("os.environ", {"GAMMA_LIFECYCLE_MANAGER": "systemd-user"}),
+            patch.object(service, "_schedule_stop") as schedule_stop,
+        ):
+            payload = service.stop_dashboard()
+
+        self.assertFalse(payload["ok"])
+        self.assertIn("always-on systemd user service", payload["detail"])
+        schedule_stop.assert_not_called()
+
+    def test_dashboard_page_omits_self_stop_control(self) -> None:
+        body = main.dashboard().body.decode("utf-8")
+
+        self.assertNotIn("/api/dashboard/stop", body)
+        self.assertNotIn("Stop Dashboard", body)
+        self.assertIn("Stop Shana + Workers", body)
 
     def test_twitch_worker_routes(self) -> None:
         action_map = {

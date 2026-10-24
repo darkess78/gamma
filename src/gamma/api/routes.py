@@ -1,15 +1,26 @@
 from __future__ import annotations
 
 import asyncio
+import anyio
 import secrets
 import mimetypes
+from concurrent.futures import CancelledError
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from pydantic import BaseModel, Field
 
 from ..config import settings
 from ..conversation.service import ConversationService
+from ..brain.runtime import get_brain_queue, await_brain_job
+from ..brain.runtime import stream_ingress_epoch, invalidate_stream_ingress
+from ..brain.queue import BrainQueueClosed, BrainQueueFull
+from ..voice.uploads import VoiceUploadTooLarge
+from ..delivery.executor import DeliveryExecutor, DeliveryQueueFull
+from ..delivery.playback import get_playback_ledger
+from ..delivery.authority import DeliveryDenied
+from ..delivery.digest import fingerprint
 from ..errors import ConfigurationError, ConversationError, ExternalServiceError, GammaError
 from ..integrations.twitch.trust import VALID_TRUST_LEVELS, ViewerTrustStore
 from ..memory.service import MemoryService
@@ -25,7 +36,7 @@ from ..integrations.discord import DiscordRuntime
 from ..integrations.minecraft.coordinator import MinecraftCoordinator
 from ..integrations.minecraft.websocket import create_minecraft_control_router
 from ..performer.bus import PerformerEventBus, get_performer_event_bus
-from ..performer.models import DEFAULT_TARGET_POLICY, KNOWN_TARGET_POLICIES
+from ..performer.models import DEFAULT_TARGET_POLICY, KNOWN_TARGET_POLICIES, PerformerOutputEvent
 from ..presence import PresenceService, apply_presence_to_stream_event, load_presence_state, save_presence_state
 from ..proactive import ProactiveScheduler
 from ..performer.vtube_studio import VTubeStudioAdapter, VTubeStudioRunner
@@ -39,6 +50,8 @@ from ..voice.live_runtime import LiveTurnRuntime, SubprocessLiveTurnRuntime
 from ..voice.roundtrip import VoiceRoundtripService
 
 router = APIRouter()
+_image_delivery = DeliveryExecutor(capacity=8)
+_wake_delivery = DeliveryExecutor(capacity=8)
 PERFORMER_STATIC_DIR = Path(__file__).resolve().parents[1] / "performer" / "static"
 DASHBOARD_DIR = Path(__file__).resolve().parents[1] / "dashboard"
 DASHBOARD_STATIC_DIR = DASHBOARD_DIR / "static"
@@ -71,7 +84,7 @@ def get_conversation_service() -> ConversationService:
     Returns:
         ConversationService: Lazy singleton instance.
     """
-    return conversation_service.get(ConversationService)
+    return conversation_service.get(lambda: ConversationService(use_worker=True))
 
 
 def get_presence_service() -> PresenceService:
@@ -79,7 +92,9 @@ def get_presence_service() -> PresenceService:
 
 
 def get_proactive_scheduler() -> ProactiveScheduler:
-    return proactive_scheduler.get(lambda: ProactiveScheduler(stream_brain=get_stream_brain(), bus=get_performer_bus()))
+    from ..brain.silent_work import SilentWork
+    return proactive_scheduler.get(lambda: ProactiveScheduler(stream_brain=get_stream_brain(), bus=get_performer_bus(),
+        silent_prepare=get_conversation_service().prepare_silent_cycle, silent_work=SilentWork()))
 
 
 def get_system_status_service() -> SystemStatusService:
@@ -118,7 +133,7 @@ def get_voice_roundtrip_service() -> VoiceRoundtripService:
     Returns:
         VoiceRoundtripService: Lazy singleton instance.
     """
-    return voice_roundtrip_service.get(VoiceRoundtripService)
+    return voice_roundtrip_service.get(lambda: VoiceRoundtripService(conversation=get_conversation_service()))
 
 
 def get_live_turn_runtime() -> LiveTurnRuntime:
@@ -127,7 +142,26 @@ def get_live_turn_runtime() -> LiveTurnRuntime:
     Returns:
         LiveTurnRuntime: Lazy singleton instance.
     """
-    return live_turn_runtime.get(SubprocessLiveTurnRuntime)
+    def create():
+        if settings.live_voice_runtime in {"core", "subprocess"}:
+            from ..voice.core_live import CoreLiveTurnRuntime
+            return CoreLiveTurnRuntime(media=get_voice_roundtrip_service(),
+                conversation=get_conversation_service(), bus=get_performer_bus(), compatibility_modes=True)
+        raise ConfigurationError("unsupported live voice runtime")
+    return live_turn_runtime.get(create)
+
+
+def stop_voice_transcription() -> None:
+    value = voice_roundtrip_service._value
+    if value is not None:
+        value.close()
+
+
+def stop_core_live_runtime() -> None:
+    # Shutdown must not construct an unused runtime or touch legacy subprocesses.
+    value = live_turn_runtime._value
+    if value is not None and hasattr(value, "close"):
+        value.close()
 
 
 def get_stream_brain() -> StreamBrain:
@@ -136,7 +170,7 @@ def get_stream_brain() -> StreamBrain:
     Returns:
         StreamBrain: Lazy singleton instance.
     """
-    return stream_brain.get(StreamBrain)
+    return stream_brain.get(lambda: StreamBrain(conversation=get_conversation_service()))
 
 
 def get_stream_replay_service() -> StreamReplayService:
@@ -356,6 +390,11 @@ def performer_default_image() -> FileResponse:
     return FileResponse(SHANA_DEFAULT_IMAGE, media_type="image/png")
 
 
+@router.get("/performer/assets/playback-requests.js")
+def playback_client_asset() -> FileResponse:
+    return FileResponse(DASHBOARD_STATIC_DIR / "playback-requests.js", media_type="text/javascript")
+
+
 @router.get("/v1/assistant/demo", response_model=AssistantResponse)
 def assistant_demo() -> AssistantResponse:
     return AssistantResponse(
@@ -474,14 +513,24 @@ def system_status() -> dict:
 @router.post("/v1/conversation/respond", response_model=AssistantResponse)
 def conversation_respond(request: ConversationRequest) -> AssistantResponse:
     try:
-        return get_conversation_service().respond(
-            user_text=request.user_text,
-            session_id=request.session_id,
-            synthesize_speech=request.synthesize_speech,
-            speaker_ctx=request.speaker,
-            fast_mode=request.fast_mode,
-            evaluation_mode=request.evaluation_mode,
-        )
+        def decide():
+            service = get_conversation_service()
+            response = service.respond(
+                user_text=request.user_text,
+                session_id=request.session_id,
+                synthesize_speech=request.synthesize_speech,
+                speaker_ctx=request.speaker,
+                fast_mode=request.fast_mode,
+                evaluation_mode=request.evaluation_mode,
+                defer_delivery=True,
+            )
+            return service, response
+        service, response = get_brain_queue().submit(decide).result()
+        if not request.evaluation_mode:
+            service.deliver_response(response, synthesize_speech=request.synthesize_speech)
+        return response
+    except (BrainQueueClosed, BrainQueueFull, CancelledError) as exc:
+        raise HTTPException(status_code=503, detail="brain queue unavailable", headers={"Retry-After": "1"}) from exc
     except ConversationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ConfigurationError as exc:
@@ -490,6 +539,89 @@ def conversation_respond(request: ConversationRequest) -> AssistantResponse:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except GammaError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/v1/brain/status")
+def brain_status() -> dict:
+    from ..brain.process import get_brain_process
+    return {**get_brain_queue().status(), "worker": get_brain_process().status()}
+
+
+class SilentBudget(BaseModel):
+    budget: int = Field(default=1, ge=1, le=8, strict=True)
+    cooldown_seconds: int = Field(default=60, ge=5, le=3600, strict=True)
+    cycle_seconds: int = Field(default=60, ge=1, le=60, strict=True)
+
+
+class SilentObservation(BaseModel):
+    key: str = Field(min_length=1, max_length=80)
+    text: str = Field(min_length=1, max_length=2000)
+    goal_id: int = Field(gt=0, strict=True)
+    ttl_seconds: int = Field(default=120, ge=1, le=3600, strict=True)
+
+
+@router.post("/v1/autonomy/silent/observations")
+def silent_observe(payload: SilentObservation):
+    try:
+        return get_proactive_scheduler().silent.work.observe(**payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(400, "observation requires valid input and an approved goal") from exc
+
+
+@router.post("/v1/autonomy/silent/pause")
+def silent_pause():
+    return get_proactive_scheduler().silent.pause()
+
+
+@router.post("/v1/autonomy/silent/resume")
+def silent_resume():
+    return get_proactive_scheduler().silent.resume()
+
+
+@router.get("/v1/autonomy/silent")
+def silent_status():
+    return get_proactive_scheduler().silent.status()
+
+
+@router.post("/v1/autonomy/silent/enable")
+def silent_enable(payload: SilentBudget):
+    try:
+        return get_proactive_scheduler().silent.enable(**payload.model_dump())
+    except RuntimeError as exc:
+        raise HTTPException(409, "silent cycle is active") from exc
+
+
+@router.post("/v1/autonomy/silent/disable")
+def silent_disable():
+    return get_proactive_scheduler().silent.disable()
+
+
+@router.post("/v1/brain/{action}")
+def brain_control(action: str) -> dict:
+    if action not in {"start", "stop", "pause", "resume"}:
+        raise HTTPException(status_code=400, detail="unsupported brain action")
+    queue = get_brain_queue()
+    try:
+        from ..brain.process import get_brain_process, BrainUnavailable
+        from ..brain.runtime import start_brain_queue
+        if action == "stop":
+            get_proactive_scheduler().silent.disable()
+            get_brain_process().control(action)
+            queue.close(timeout=0)
+        elif action == "start":
+            get_brain_process().control(action)
+            queue = start_brain_queue()
+        elif action == "pause":
+            get_proactive_scheduler().silent.pause()
+            queue.pause()
+            get_brain_process().control(action)
+        else:
+            get_brain_process().control(action)
+            queue.resume()
+            get_proactive_scheduler().silent.resume()
+    except (BrainQueueClosed, BrainUnavailable) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {**queue.status(), "worker": get_brain_process().status()}
 
 
 @router.get("/v1/presence")
@@ -534,32 +666,60 @@ def shana_presence_mode(request: PresenceModeRequest) -> dict:
 @router.post("/v1/presence/wake")
 def shana_presence_wake(request: PresenceWakeRequest) -> dict:
     try:
-        return get_presence_service().wake(audience=request.audience, session_id=request.session_id)
+        service = get_presence_service()
+        prepared = service.prepare_wake(audience=request.audience)
+        decision = get_brain_queue().submit(lambda: service.decide_wake(
+            audience=request.audience, session_id=request.session_id, prepared_state=prepared)).result()
+        return _wake_delivery.run_sync(lambda: service.deliver_wake(decision), on_cancel=lambda: service.cancel_wake(decision))
+    except DeliveryQueueFull as exc:
+        raise HTTPException(503, "wake delivery queue full", headers={"Retry-After": "1"}) from exc
+    except (BrainQueueClosed, BrainQueueFull, CancelledError) as exc:
+        raise HTTPException(status_code=503, detail="brain queue unavailable", headers={"Retry-After": "1"}) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except GammaError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@router.post("/v1/stream/events", response_model=StreamTurnResult)
-def stream_event(event: StreamInputEvent, synthesize_speech: bool = False, fast_mode: bool = True) -> StreamTurnResult:
-    try:
+def submit_stream_event(event: StreamInputEvent, synthesize_speech: bool = False, fast_mode: bool = True, *, wrapper=None):
+    event = event.model_copy(deep=True)
+    accepted_epoch = stream_ingress_epoch()
+
+    def execute():
+        if accepted_epoch != stream_ingress_epoch():
+            raise HTTPException(status_code=409, detail="stream request superseded by stop")
         request_id = current_request_id()
         if request_id:
             event.metadata.setdefault("request_id", request_id)
         presence = load_presence_state(downgrade_stale_live=True)
         if presence.get("requires_confirmation"):
             save_presence_state(presence)
-        event, synthesize_speech = apply_presence_to_stream_event(
+        prepared_event, speech = apply_presence_to_stream_event(
             event,
             synthesize_speech=synthesize_speech,
             state=presence,
         )
+        def delivery_allowed():
+            current = load_presence_state(downgrade_stale_live=True)
+            return accepted_epoch == stream_ingress_epoch() and all(
+                current.get(key) == presence.get(key) for key in ("control_revision", "mode", "audience", "outputs"))
         return get_stream_brain().handle_event(
-            event,
-            synthesize_speech=synthesize_speech,
+            prepared_event,
+            synthesize_speech=speech,
             fast_mode=fast_mode,
+            defer_delivery=True,
+            delivery_allowed=delivery_allowed,
         )
+
+    return get_brain_queue().submit(lambda: wrapper(execute) if wrapper else execute())
+
+
+@router.post("/v1/stream/events", response_model=StreamTurnResult)
+def stream_event(event: StreamInputEvent, synthesize_speech: bool = False, fast_mode: bool = True) -> StreamTurnResult:
+    try:
+        return submit_stream_event(event, synthesize_speech, fast_mode).result().result()
+    except (BrainQueueClosed, BrainQueueFull, CancelledError) as exc:
+        raise HTTPException(status_code=503, detail="brain queue unavailable", headers={"Retry-After": "1"}) from exc
     except ConversationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ConfigurationError as exc:
@@ -703,19 +863,53 @@ def performer_target_clear(target_policy: str, reason: str = "operator") -> dict
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@router.get("/v1/delivery/{grant_id}/audio")
+def approved_audio(grant_id: str) -> Response:
+    try:
+        data, content_type, digest = get_playback_ledger().read_audio(grant_id)
+    except DeliveryDenied as exc:
+        raise HTTPException(status_code=410, detail=str(exc)) from exc
+    return Response(content=data, media_type=content_type,
+        headers={"Cache-Control": "no-store", "X-Content-SHA256": digest})
+
+
 @router.get("/v1/audio/artifacts/{filename}")
 def audio_artifact(filename: str) -> FileResponse:
-    safe_name = Path(filename).name
-    audio_path = settings.audio_output_dir / safe_name
-    try:
-        if audio_path.resolve().parent != settings.audio_output_dir.resolve():
-            raise HTTPException(status_code=400, detail="invalid audio artifact path")
-    except OSError as exc:
-        raise HTTPException(status_code=400, detail="invalid audio artifact path") from exc
-    if not audio_path.exists() or not audio_path.is_file():
-        raise HTTPException(status_code=404, detail="audio artifact not found")
-    media_type = mimetypes.guess_type(str(audio_path))[0] or "application/octet-stream"
-    return FileResponse(str(audio_path), media_type=media_type)
+    raise HTTPException(status_code=410, detail="Use a current approved delivery audio URL")
+
+
+def _playback_presence():
+    state = load_presence_state()
+    return state, fingerprint({key: state.get(key) for key in
+        ("mode", "audience", "outputs", "requires_confirmation", "last_confirmed_live_at")})
+
+
+def _offer_playback(ledger, bus, lease_id, subscriber_id, event):
+    _, revision = _playback_presence()
+    return ledger.offer(lease_id, subscriber_id, event,
+        target_epoch=bus.audio_target_epoch(event["target_policy"], subscriber_id), presence=revision)
+
+
+def _playback_context(bus, subscriber_id):
+    state, revision = _playback_presence()
+    outputs = state.get("outputs") or {}
+    def eligible(target):
+        allowed = bool(outputs.get("voice")) and state.get("mode") in {"wake", "go_live"}
+        if target == "stream_public":
+            allowed = allowed and state.get("mode") == "go_live" and bool(outputs.get("stream_public")) and not state.get("requires_confirmation")
+        else:
+            allowed = allowed and bool(outputs.get("dashboard_monitor"))
+        return allowed and bus.audio_delivery_allowed(subscriber_id, target)
+    return dict(eligible=eligible,
+        target_epoch=lambda target: bus.audio_target_epoch(target, subscriber_id), presence=revision)
+
+
+def _prepare_playback(ledger, bus, lease_id, subscriber_id, message):
+    return ledger.prepare(lease_id, subscriber_id, message, **_playback_context(bus, subscriber_id))
+
+
+def _revoke_playback(ledger, bus, lease_id, subscriber_id):
+    return ledger.revoke_obsolete(lease_id, subscriber_id, **_playback_context(bus, subscriber_id))
 
 
 @router.websocket("/v1/performer/events")
@@ -729,6 +923,9 @@ async def performer_events(
     if not _websocket_api_auth_ok(websocket):
         await websocket.close(code=1008)
         return
+    if target_policy.strip().lower() not in KNOWN_TARGET_POLICIES:
+        await websocket.close(code=1008)
+        return
     await websocket.accept()
     bus = get_performer_bus()
     subscriber_target_policy = target_policy.strip().lower() or DEFAULT_TARGET_POLICY
@@ -739,10 +936,13 @@ async def performer_events(
         client_name=client_name,
         client_host=websocket.client.host if websocket.client else None,
     )
+    ledger = get_playback_ledger()
+    lease_id = await asyncio.to_thread(ledger.open, receiver=subscriber_id, target=subscriber_target_policy)
     await websocket.send_json(
         {
             "type": "ready",
             "subscriber_id": subscriber_id,
+            "playback_lease": {"schema_version": 1, "lease_id": lease_id},
             "target_policy": subscriber_target_policy,
             "client_name": client_name.strip().lower() or "unknown_client",
             "replay_recent": max(0, min(replay_recent, 100)),
@@ -754,31 +954,126 @@ async def performer_events(
     )
     queue_task = asyncio.create_task(queue.get())
     receive_task = asyncio.create_task(websocket.receive_json())
+    loop = asyncio.get_running_loop()
+    next_revocation_check = loop.time() + 0.5
     try:
         while True:
             done, _pending = await asyncio.wait(
                 {queue_task, receive_task},
                 return_when=asyncio.FIRST_COMPLETED,
+                timeout=max(0, next_revocation_check - loop.time()),
             )
+            if receive_task in done and receive_task.exception() is not None:
+                receive_task.result()
+            if loop.time() >= next_revocation_check:
+                revoked = await asyncio.to_thread(_revoke_playback, ledger, bus, lease_id, subscriber_id)
+                for event_id in revoked:
+                    await websocket.send_json({"type": "playback_revoked", "lease_id": lease_id, "event_id": event_id})
+                next_revocation_check = loop.time() + 0.5
             if queue_task in done:
-                await websocket.send_json(queue_task.result())
+                event = queue_task.result()
+                from ..delivery.execution import validate_event
+                try:
+                    if not event.get("replay"):
+                        await asyncio.to_thread(validate_event, PerformerOutputEvent(**event), ledger=ledger, bus=bus)
+                except DeliveryDenied:
+                    queue_task = asyncio.create_task(queue.get())
+                    continue
+                audio_payload = event.get("payload", {})
+                has_audio = any(audio_payload.get(key) for key in ("audio_url", "audio_base64", "audio_path"))
+                if has_audio:
+                    if event.get("replay") or not bus.audio_delivery_allowed(subscriber_id, event.get("target_policy")):
+                        event = {**event, "payload": {key: value for key, value in audio_payload.items()
+                            if key not in {"audio_url", "audio_base64", "audio_path"}}}
+                    else:
+                        try:
+                            event = {**event, "playback": await asyncio.to_thread(_offer_playback, ledger, bus, lease_id, subscriber_id, event)}
+                        except DeliveryDenied:
+                            event = None
+                if event is not None:
+                    text_claim = None
+                    from ..delivery.execution import claim_event, finish_event
+                    try:
+                        if event.get("type") == "subtitle_update" and not event.get("replay"):
+                            text_claim = await asyncio.to_thread(claim_event, PerformerOutputEvent(**event),
+                                f"websocket_text:{lease_id}", ledger=ledger, bus=bus)
+                        await websocket.send_json(event)
+                    except DeliveryDenied:
+                        pass
+                    except BaseException:
+                        await asyncio.to_thread(finish_event, text_claim, succeeded=False)
+                        raise
+                    else:
+                        await asyncio.to_thread(finish_event, text_claim, succeeded=True)
                 queue_task = asyncio.create_task(queue.get())
             if receive_task in done:
                 message = receive_task.result()
                 if isinstance(message, dict) and message.get("type") == "subscriber_capabilities":
+                    await asyncio.to_thread(ledger.renew, lease_id, subscriber_id)
                     capabilities = bus.update_subscriber_capabilities(
                         subscriber_id,
                         text_ready=message.get("text_ready"),
                         audio_ready=message.get("audio_ready"),
                     )
                     await websocket.send_json({"type": "subscriber_capabilities", "capabilities": capabilities})
+                elif isinstance(message, dict) and message.get("type") == "delivery_offer":
+                    grant = message.get("grant_id")
+                    claim = None
+                    try:
+                        if not isinstance(grant, str) or not grant or len(grant) > 128:
+                            raise DeliveryDenied("invalid_delivery_grant")
+                        response, context = await asyncio.to_thread(ledger.response_for_grant, grant)
+                        if context["target"] != subscriber_target_policy:
+                            raise DeliveryDenied("delivery_target_mismatch")
+                        item = PerformerOutputEvent(type="speech_chunk_ready", turn_id=response.route_trace_id,
+                            target_policy=context["target"], payload={"text": response.speech_text or "",
+                                "delivery_grant": grant, "audio_url": response.tts_metadata.get("delivery_audio_url")})
+                        from ..delivery.execution import validate_event
+                        await asyncio.to_thread(validate_event, item, ledger=ledger, bus=bus)
+                        if not item.payload.get("audio_url"):
+                            raise DeliveryDenied("delivery_has_no_audio")
+                        from ..delivery.execution import claim_event, finish_event
+                        claim = await asyncio.to_thread(claim_event, item, "explicit_playback", ledger=ledger, bus=bus)
+                        event = item.model_dump()
+                        event["playback"] = await asyncio.to_thread(_offer_playback, ledger, bus, lease_id, subscriber_id, event)
+                        await websocket.send_json(event)
+                        await asyncio.to_thread(finish_event, claim, succeeded=True)
+                    except (ValueError, DeliveryDenied):
+                        if claim is not None:
+                            await asyncio.to_thread(finish_event, claim, succeeded=False)
+                        await websocket.send_json({"type": "playback_rejected", "grant_id": grant})
+                elif isinstance(message, dict) and message.get("type") == "playback_prepare":
+                    try:
+                        permit = await asyncio.to_thread(_prepare_playback, ledger, bus, lease_id, subscriber_id, message)
+                        await websocket.send_json(permit)
+                    except (ValueError, DeliveryDenied):
+                        await websocket.send_json({"type": "playback_rejected", "lease_id": lease_id,
+                            "event_id": str(message.get("event_id", ""))[:128]})
+                elif isinstance(message, dict) and message.get("type") == "playback_ack":
+                    try:
+                        await asyncio.to_thread(_revoke_playback, ledger, bus, lease_id, subscriber_id)
+                        receipt = await asyncio.to_thread(ledger.acknowledge, lease_id, subscriber_id, message)
+                        await websocket.send_json({"type": "playback_receipt", **receipt})
+                    except (ValueError, DeliveryDenied):
+                        await websocket.send_json({"type": "playback_rejected", "lease_id": lease_id,
+                            "event_id": str(message.get("event_id", ""))[:128]})
                 receive_task = asyncio.create_task(websocket.receive_json())
+    except DeliveryDenied:
+        await websocket.close(code=1008)
     except WebSocketDisconnect:
         pass
+    except RuntimeError as exc:
+        # ASGI may observe transport closure before receive_json delivers disconnect.
+        # This is a closed receiver, never permission to retain or replay its audio.
+        if not (str(exc).startswith("Unexpected ASGI message 'websocket.send'")
+                or str(exc).startswith('Cannot call "send" once a close message has been sent')):
+            raise
     finally:
         queue_task.cancel()
         receive_task.cancel()
         bus.unsubscribe(subscriber_id)
+        with anyio.CancelScope(shield=True):
+            await anyio.to_thread.run_sync(ledger.close, lease_id, subscriber_id)
 
 
 @router.get("/v1/stream/temp-memory")
@@ -848,12 +1143,18 @@ def stream_self_goals_clear() -> dict:
 @router.post("/v1/stream/stop", response_model=StreamTurnResult)
 def stream_stop(reason: str = "operator_stop") -> StreamTurnResult:
     try:
+        invalidate_stream_ingress()
         live_cancellations = _cancel_active_live_turns(reason=reason)
         return get_stream_brain().stop_stream(reason=reason, live_cancellations=live_cancellations)
     except GammaError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/v1/delivery/{grant_id}/cancel")
+def cancel_delivery(grant_id: str) -> dict:
+    return {"cancelled": get_conversation_service().cancel_delivery(grant_id)}
 
 
 @router.post("/v1/conversation/respond-with-image", response_model=AssistantResponse)
@@ -865,16 +1166,29 @@ async def conversation_respond_with_image(
     synthesize_speech: bool = Form(default=False),
 ) -> AssistantResponse:
     try:
-        image_bytes = await image_file.read()
-        return get_conversation_service().respond_with_image(
-            user_text=user_text,
-            image_bytes=image_bytes,
-            image_media_type=image_file.content_type or "",
-            image_filename=image_file.filename,
-            vision_mode=vision_mode,
-            session_id=session_id,
-            synthesize_speech=synthesize_speech,
-        )
+        image_bytes = await image_file.read(settings.vision_max_image_bytes + 1)
+        if len(image_bytes) > settings.vision_max_image_bytes:
+            raise ConversationError(f"Image exceeds SHANA_VISION_MAX_IMAGE_BYTES ({settings.vision_max_image_bytes} bytes).")
+        def decide():
+            service = get_conversation_service()
+            response = service.respond_with_image(
+                user_text=user_text,
+                image_bytes=image_bytes,
+                image_media_type=image_file.content_type or "",
+                image_filename=image_file.filename,
+                vision_mode=vision_mode,
+                session_id=session_id,
+                synthesize_speech=synthesize_speech,
+                defer_delivery=True,
+            )
+            return service, response
+        service, response = await await_brain_job(decide)
+        grant = response.tts_metadata.get("delivery_grant")
+        await _image_delivery.run(lambda: service.deliver_response(response, synthesize_speech=synthesize_speech),
+            on_cancel=lambda: service.cancel_delivery(grant) if grant else None)
+        return response
+    except (BrainQueueClosed, BrainQueueFull, DeliveryQueueFull) as exc:
+        raise HTTPException(status_code=503, detail="brain queue unavailable", headers={"Retry-After": "1"}) from exc
     except ConversationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ConfigurationError as exc:
@@ -892,14 +1206,18 @@ async def vision_analyze(
     vision_mode: str | None = Form(default="auto"),
 ) -> VisionAnalysis:
     try:
-        image_bytes = await image_file.read()
-        return get_conversation_service().analyze_image(
+        image_bytes = await image_file.read(settings.vision_max_image_bytes + 1)
+        if len(image_bytes) > settings.vision_max_image_bytes:
+            raise ConversationError(f"Image exceeds SHANA_VISION_MAX_IMAGE_BYTES ({settings.vision_max_image_bytes} bytes).")
+        return await await_brain_job(lambda: get_conversation_service().analyze_image(
             user_text=user_text,
             image_bytes=image_bytes,
             image_media_type=image_file.content_type or "",
             image_filename=image_file.filename,
             vision_mode=vision_mode,
-        )
+        ))
+    except (BrainQueueClosed, BrainQueueFull) as exc:
+        raise HTTPException(status_code=503, detail="brain queue unavailable", headers={"Retry-After": "1"}) from exc
     except ConversationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ConfigurationError as exc:
@@ -922,6 +1240,10 @@ async def voice_roundtrip(
             session_id=session_id,
             synthesize_speech=synthesize_speech,
         )
+    except VoiceUploadTooLarge as exc:
+        raise HTTPException(status_code=413, detail="voice upload exceeds limit") from exc
+    except (BrainQueueClosed, BrainQueueFull) as exc:
+        raise HTTPException(status_code=503, detail="brain queue unavailable", headers={"Retry-After": "1"}) from exc
     except ConversationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ConfigurationError as exc:
@@ -938,6 +1260,10 @@ async def voice_transcribe(
 ) -> VoiceTranscriptionResponse:
     try:
         return await get_voice_roundtrip_service().run_transcription(audio_file=audio_file)
+    except VoiceUploadTooLarge as exc:
+        raise HTTPException(status_code=413, detail="voice upload exceeds limit") from exc
+    except (BrainQueueClosed, BrainQueueFull) as exc:
+        raise HTTPException(status_code=503, detail="transcription queue unavailable", headers={"Retry-After": "1"}) from exc
     except ConversationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ConfigurationError as exc:
@@ -964,6 +1290,12 @@ async def voice_live_start(
             response_mode=response_mode,
             turn_id=turn_id,
         )
+    except VoiceUploadTooLarge as exc:
+        raise HTTPException(status_code=413, detail="voice upload exceeds limit") from exc
+    except BrainQueueFull as exc:
+        raise HTTPException(status_code=503, detail="live turn capacity unavailable", headers={"Retry-After": "1"}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except GammaError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:

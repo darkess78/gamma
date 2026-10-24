@@ -4,6 +4,7 @@ import base64
 import os
 
 from ..config import settings
+from ..resources.shared_execution import admitted
 from ..errors import ConfigurationError, ContextOverflowError, ExternalServiceError
 from .base import LLMAdapter, LLMCallContext, LLMImageInput, LLMReply
 from .context_budget import is_context_overflow_message
@@ -35,13 +36,14 @@ class OpenAIAdapter(LLMAdapter):
             from openai import OpenAI
         except Exception as exc:
             raise ConfigurationError("The OpenAI SDK is required for SHANA_LLM_PROVIDER=openai.") from exc
-        self._client = OpenAI(api_key=api_key)
+        self._client = OpenAI(api_key=api_key, max_retries=0)
 
     @property
     def supports_vision(self) -> bool:
         """Check if adapter supports vision inputs (always True)."""
         return True
 
+    @admitted("model", endpoint="https://api.openai.com")
     def generate_reply(
         self,
         system_prompt: str,
@@ -86,6 +88,7 @@ class OpenAIAdapter(LLMAdapter):
                     {"role": "system", "content": [{"type": "input_text", "text": system_prompt}]},
                     {"role": "user", "content": user_content},
                 ],
+                **({"max_output_tokens": 512} if getattr(call_context, "interaction_mode", None) == "silent" else {}),
             )
         except Exception as exc:
             if is_context_overflow_message(str(exc)):

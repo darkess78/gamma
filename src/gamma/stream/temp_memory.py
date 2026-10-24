@@ -11,6 +11,7 @@ from typing import Any
 from ..config import settings
 from ..errors import ConfigurationError
 from .models import StreamTurnResult
+from .state_store import StreamStateStore
 
 
 STREAM_TEMP_MEMORY_BUCKETS = {"chat_mood", "event_history", "owner_directives"}
@@ -66,7 +67,7 @@ class StreamTempMemoryRecord:
         }
 
 
-class StreamTempMemoryStore:
+class StreamTempMemoryStore(StreamStateStore):
     """Stream temp memory store.
     
     Attributes:
@@ -93,15 +94,20 @@ class StreamTempMemoryStore:
         self.database_url = database_url or settings.database_url
         self.path = _sqlite_path_from_url(self.database_url)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
+        self._initialize_authority()
 
-    def record_turn(self, result: StreamTurnResult) -> None:
+    def record_turn(self, result: StreamTurnResult, *, session=None) -> None:
         """Record turn result.
         
         Args:
             result: StreamTurnResult to record.
         """
         if not _is_public_stream_result(result):
+            return
+        if session is None:
+            with self._authority.transaction(operator=True) as owned:
+                self.record_turn(result, session=owned)
+                owned.commit()
             return
         input_event = result.input_event
         metadata = input_event.metadata or {}
@@ -121,8 +127,9 @@ class StreamTempMemoryStore:
             "safety_action": safety.get("action") if isinstance(safety, dict) else None,
             "safety_category": safety.get("category") if isinstance(safety, dict) else None,
         }
-        self.add(bucket="event_history", key=result.trace_id, value=event_value, metadata=event_metadata)
+        self.add(bucket="event_history", key=result.trace_id, value=event_value, metadata=event_metadata, session=session)
         self.upsert(
+            session=session,
             bucket="chat_mood",
             key="recent_activity",
             value=_recent_activity_summary(result, safe_text),
@@ -135,7 +142,7 @@ class StreamTempMemoryStore:
             },
         )
 
-    def upsert(self, *, bucket: str, key: str, value: str, metadata: dict[str, Any] | None = None) -> StreamTempMemoryRecord:
+    def upsert(self, *, bucket: str, key: str, value: str, metadata: dict[str, Any] | None = None, session=None) -> StreamTempMemoryRecord:
         """Upsert memory record.
         
         Args:
@@ -153,7 +160,7 @@ class StreamTempMemoryStore:
         _validate_bucket(bucket)
         normalized_key = " ".join((key or "").split())[:120] or "default"
         now = _utc_now()
-        with self._connect() as conn:
+        with self._write_connect(session) as conn:
             existing = conn.execute(
                 "SELECT created_at FROM stream_temp_memory WHERE bucket = ? AND key = ?",
                 (bucket, normalized_key),
@@ -170,13 +177,12 @@ class StreamTempMemoryStore:
                 """,
                 (bucket, normalized_key, value, json.dumps(metadata or {}, ensure_ascii=False), created_at, now),
             )
-            conn.commit()
-        record = self.get(bucket=bucket, key=normalized_key)
+            record = _record_from_row(conn.execute("SELECT * FROM stream_temp_memory WHERE bucket = ? AND key = ?", (bucket, normalized_key)).fetchone())
         if record is None:
             raise ConfigurationError("stream temp memory write failed")
         return record
 
-    def add(self, *, bucket: str, key: str, value: str, metadata: dict[str, Any] | None = None) -> StreamTempMemoryRecord:
+    def add(self, *, bucket: str, key: str, value: str, metadata: dict[str, Any] | None = None, session=None) -> StreamTempMemoryRecord:
         """Add memory record.
         
         Args:
@@ -193,7 +199,7 @@ class StreamTempMemoryStore:
         """
         _validate_bucket(bucket)
         now = _utc_now()
-        with self._connect() as conn:
+        with self._write_connect(session) as conn:
             cursor = conn.execute(
                 """
                 INSERT INTO stream_temp_memory (bucket, key, value, metadata_json, created_at, updated_at)
@@ -201,9 +207,8 @@ class StreamTempMemoryStore:
                 """,
                 (bucket, key[:120] or "event", value, json.dumps(metadata or {}, ensure_ascii=False), now, now),
             )
-            conn.commit()
             record_id = int(cursor.lastrowid)
-        record = self.get_by_id(record_id)
+            record = _record_from_row(conn.execute("SELECT * FROM stream_temp_memory WHERE id = ?", (record_id,)).fetchone())
         if record is None:
             raise ConfigurationError("stream temp memory write failed")
         return record
@@ -282,7 +287,7 @@ class StreamTempMemoryStore:
             "items": [_record_from_row(row).as_payload() for row in rows],
         }
 
-    def clear(self, *, bucket: str | None = None) -> dict[str, Any]:
+    def clear(self, *, bucket: str | None = None, session=None) -> dict[str, Any]:
         """Clear records.
         
         Args:
@@ -293,12 +298,11 @@ class StreamTempMemoryStore:
         """
         if bucket:
             _validate_bucket(bucket)
-        with self._connect() as conn:
+        with self._write_connect(session) as conn:
             if bucket:
                 cursor = conn.execute("DELETE FROM stream_temp_memory WHERE bucket = ?", (bucket,))
             else:
                 cursor = conn.execute("DELETE FROM stream_temp_memory")
-            conn.commit()
             deleted = int(cursor.rowcount or 0)
         return {"ok": True, "deleted": deleted, "bucket": bucket}
 
@@ -307,25 +311,6 @@ class StreamTempMemoryStore:
         conn.row_factory = sqlite3.Row
         return conn
 
-    def _ensure_schema(self) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS stream_temp_memory (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    bucket TEXT NOT NULL,
-                    key TEXT NOT NULL,
-                    value TEXT NOT NULL,
-                    metadata_json TEXT NOT NULL DEFAULT '{}',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    UNIQUE(bucket, key)
-                )
-                """
-            )
-            conn.execute("CREATE INDEX IF NOT EXISTS ix_stream_temp_memory_bucket ON stream_temp_memory (bucket)")
-            conn.execute("CREATE INDEX IF NOT EXISTS ix_stream_temp_memory_updated_at ON stream_temp_memory (updated_at)")
-            conn.commit()
 
 
 class RecentStreamContextAssembler:

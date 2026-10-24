@@ -142,6 +142,8 @@ def output_events_from_response(
         list[StreamOutputEvent]: List of output events matching the response.
     """
     context = output_context_from_input(input_event)
+    if response.tts_metadata.get("delivery_grant"):
+        context["delivery_grant"] = response.tts_metadata["delivery_grant"]
     events = [
         StreamOutputEvent(
             input_event_id=input_event.event_id,
@@ -178,7 +180,7 @@ def output_events_from_response(
                 input_event_id=input_event.event_id,
                 turn_id=turn_id,
                 type="speech_ended",
-                payload={"audio_path": response.audio_path, **context},
+                payload=dict(context),
             )
         )
     for motion in response.motions:

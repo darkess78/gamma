@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sqlalchemy.pool import NullPool
+from sqlmodel import create_engine
+
 from ..config import settings
+from ..memory.documents import StateDocuments
 from .emotion_extractor import extract_emotion_turn
 from .emotion_models import AssistantEmotionState, EmotionalEpisode, EmotionalPattern
 
@@ -42,7 +45,13 @@ class EmotionMemoryService:
         Args:
             path: Emotion memory path (default from settings).
         """
-        self._path = path or _DEFAULT_PATH
+        self._path = path or settings.data_dir / "assistant_emotion_memory.json"
+        if path is None:
+            self._documents = StateDocuments()
+        else:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            database = self._path.with_suffix(self._path.suffix + ".state.sqlite3")
+            self._documents = StateDocuments(create_engine(f"sqlite:///{database}", poolclass=NullPool))
 
     def load_bundle(self) -> dict[str, object]:
         """Load bundle.
@@ -50,16 +59,10 @@ class EmotionMemoryService:
         Returns:
             dict[str, object]: Bundle with state, episodes, patterns.
         """
-        if not self._path.exists():
-            return {
-                "state": AssistantEmotionState(),
-                "episodes": [],
-                "patterns": [],
-            }
-        try:
-            payload = json.loads(self._path.read_text(encoding="utf-8"))
-        except Exception:
-            return {"state": AssistantEmotionState(), "episodes": [], "patterns": []}
+        return self._decode(self._documents.load("assistant_emotion", self._path))
+
+    @staticmethod
+    def _decode(payload):
         state_payload = payload.get("state", {}) if isinstance(payload, dict) else {}
         episodes_payload = payload.get("episodes", []) if isinstance(payload, dict) else []
         patterns_payload = payload.get("patterns", []) if isinstance(payload, dict) else []
@@ -100,7 +103,7 @@ class EmotionMemoryService:
             "patterns": relevant_patterns[-limit:],
         }
 
-    def update_from_turn(self, *, emotion: str, user_text: str, reply_text: str, session_id: str | None = None) -> None:
+    def update_from_turn(self, *, emotion: str, user_text: str, reply_text: str, session_id: str | None = None, session=None) -> None:
         """Update from turn.
         
         Args:
@@ -109,7 +112,12 @@ class EmotionMemoryService:
             reply_text: Reply text.
             session_id: Session ID.
         """
-        bundle = self.load_bundle()
+        def transform(payload):
+            return self._propose(payload, emotion=emotion, user_text=user_text, reply_text=reply_text, session_id=session_id)
+        self._documents.mutate("assistant_emotion", self._path, transform, session=session)
+
+    def _propose(self, payload, *, emotion, user_text, reply_text, session_id):
+        bundle = self._decode(payload)
         state: AssistantEmotionState = bundle["state"]
         episodes: list[EmotionalEpisode] = bundle["episodes"]
         patterns: list[EmotionalPattern] = bundle["patterns"]
@@ -163,7 +171,7 @@ class EmotionMemoryService:
                 if item.evidence_count >= 1
             ][-20:]
 
-        self._save(state=state, episodes=episodes, patterns=patterns)
+        return self._payload(state=state, episodes=episodes, patterns=patterns)
 
     def dashboard_payload(self) -> dict[str, object]:
         """Get dashboard payload.
@@ -181,7 +189,8 @@ class EmotionMemoryService:
             "patterns": [item.as_dict() for item in patterns[-8:]],
         }
 
-    def _save(self, *, state: AssistantEmotionState, episodes: list[EmotionalEpisode], patterns: list[EmotionalPattern]) -> None:
+    @staticmethod
+    def _payload(*, state: AssistantEmotionState, episodes: list[EmotionalEpisode], patterns: list[EmotionalPattern]) -> dict:
         """Save bundle.
         
         Args:
@@ -189,10 +198,8 @@ class EmotionMemoryService:
             episodes: Episodes.
             patterns: Patterns.
         """
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
+        return {
             "state": state.as_dict(),
             "episodes": [item.as_dict() for item in episodes],
             "patterns": [item.as_dict() for item in patterns if item.evidence_count >= settings.assistant_emotion_pattern_threshold or item.evidence_count >= 1],
         }
-        self._path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

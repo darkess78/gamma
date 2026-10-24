@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from .conversation.service import ConversationService
+from .conversation.client import ConversationClient
 from .voice.stt import STTService
 
 
@@ -40,7 +40,7 @@ def main() -> None:
         raise SystemExit(f"audio file not found: {source}")
 
     stt = STTService()
-    conversation = ConversationService()
+    conversation = ConversationClient()
 
     transcript = stt.transcribe_audio(str(source)).strip()
     if not transcript:

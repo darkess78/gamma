@@ -1,15 +1,24 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sqlalchemy import event, func
+from sqlalchemy import event, func, text as sql_text
 from sqlalchemy.pool import NullPool
 from sqlmodel import Field, Session, SQLModel, create_engine, delete, select
 
 from ..config import settings
 from ..llm.capabilities import estimate_text_tokens
+from .state_authority import (StateAuthority, StateConflict, exchanges, generations, outbox, versions,
+                              publications, decision_commits, decision_effects)
+from .service import MemoryService
+from ..schemas.response import MemoryCandidate
+from ..persona.assistant_state import AssistantStateStore
+from ..persona.emotion_service import EmotionMemoryService
+from .core import CoreMemoryStore
+from .delivery_history import history_line
 
 
 def _utc_now() -> datetime:
@@ -67,14 +76,16 @@ class DurableOutputState(SQLModel, table=True):
 class ContinuityService:
     """Durable recent-turn, rolling-summary, and working-state storage."""
 
-    def __init__(self, *, database_url: str | None = None) -> None:
+    def __init__(self, *, database_url: str | None = None, generation_id: str | None = None) -> None:
         url = database_url or settings.database_url
         connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
         engine_kwargs = {"poolclass": NullPool} if url.startswith("sqlite") else {}
         self._engine = create_engine(url, connect_args=connect_args, **engine_kwargs)
         if url.startswith("sqlite"):
             event.listen(self._engine, "connect", self._configure_sqlite)
+        self._authority = StateAuthority(self._engine, generation_id=generation_id)
         SQLModel.metadata.create_all(self._engine)
+        self._memory_writer = MemoryService(database_url=url)
         if url.startswith("sqlite"):
             with self._engine.begin() as connection:
                 self._ensure_sqlite_column(
@@ -89,7 +100,15 @@ class ContinuityService:
                     "privacy_scope",
                     "TEXT DEFAULT 'local_generic'",
                 )
-        self.mark_pending_interrupted()
+
+    @property
+    def generation_id(self) -> str:
+        return self._authority.generation_id
+
+    @contextmanager
+    def _write_session(self):
+        with self._authority.transaction() as session:
+            yield session
 
     @staticmethod
     def _configure_sqlite(connection, _record) -> None:
@@ -115,14 +134,28 @@ class ContinuityService:
         speaker_name: str,
         input_source: str,
         privacy_scope: str,
+        input_role: str = "user",
+        parent_exchange_id: str | None = None,
+        _session=None,
     ) -> str:
+        if input_role not in {"user", "event"}:
+            raise ValueError("invalid decision input role")
         exchange_id = uuid4().hex
-        with Session(self._engine) as session:
+        session_id = session_id[:120]
+        with self._write_session() if _session is None else nullcontext(_session) as session:
+            StateAuthority.require_transaction(session)
+            if parent_exchange_id is not None:
+                parent = self._authority.owner(session, parent_exchange_id)
+                if (parent is None or parent["generation_id"] != self.generation_id or
+                        parent["status"] != "pending" or
+                        parent["base_version"] != self._authority.version(session, parent["session_id"])):
+                    raise StateConflict("parent_decision_stale_or_not_owned")
+            self._authority.begin(session, exchange_id, session_id, privacy_scope)
             session.add(
                 ConversationJournalEntry(
                     exchange_id=exchange_id,
                     session_id=session_id[:120],
-                    role="user",
+                    role=input_role,
                     speaker_name=speaker_name[:120],
                     input_source=input_source[:80],
                     text=text[:16_000],
@@ -130,7 +163,8 @@ class ContinuityService:
                     completion_status="pending",
                 )
             )
-            session.commit()
+            if _session is None:
+                session.commit()
         return exchange_id
 
     def complete_exchange(
@@ -145,18 +179,50 @@ class ContinuityService:
         internal_summary: str | None = None,
         tool_metadata: dict | None = None,
         state_updates: dict | None = None,
+        memory_candidates: list[MemoryCandidate] | None = None,
+        persona_emotion: str | None = None,
+        core_facts: list[str] | None = None,
+        approved_internal_goal: dict | None = None,
+        internal_result: dict | None = None,
     ) -> None:
         now = _utc_now()
-        with Session(self._engine) as session:
+        session_id = session_id[:120]
+        with self._write_session() as session:
+            if approved_internal_goal is not None:
+                goal = session.execute(sql_text(
+                    "SELECT id, title, description, updated_at, status FROM stream_self_goals WHERE id=:id"),
+                    {"id": approved_internal_goal["id"]}).mappings().first()
+                if (goal is None or goal["status"] != "approved" or any(
+                        goal[key] != approved_internal_goal[key] for key in ("id", "title", "description", "updated_at"))):
+                    raise StateConflict("silent_goal_approval_changed")
+            self._authority.complete(session, exchange_id, session_id, privacy_scope,
+                                     {"display_text": assistant_text[:16_000], "output_target": output_target,
+                                      "trace_id": trace_id, "tool_metadata": tool_metadata or {},
+                                      **({"internal_result": internal_result} if internal_result is not None else {})})
+            if memory_candidates or core_facts or (persona_emotion is not None and settings.assistant_state_enabled):
+                # These stores are shared across sessions. Other pending decisions
+                # must not commit against a snapshot preceding this shared update.
+                session.execute(versions.update().where(versions.c.session_id != session_id)
+                                .values(version=versions.c.version + 1))
+            if memory_candidates:
+                self._memory_writer.persist_candidates_in_session(session, memory_candidates, session_id=session_id)
+            for fact in core_facts or []:
+                CoreMemoryStore().append(fact, session=session)
             user_entry = session.exec(
                 select(ConversationJournalEntry).where(
                     ConversationJournalEntry.exchange_id == exchange_id,
-                    ConversationJournalEntry.role == "user",
+                    ConversationJournalEntry.role.in_(["user", "event"]),
                 )
             ).first()
-            if user_entry is not None:
-                user_entry.completion_status = "completed"
-                session.add(user_entry)
+            if user_entry is None:
+                raise StateConflict("exchange_input_missing")
+            if persona_emotion is not None and settings.assistant_state_enabled:
+                AssistantStateStore().update(emotion=persona_emotion, user_text=user_entry.text,
+                                             reply_text=assistant_text, session=session)
+                EmotionMemoryService().update_from_turn(emotion=persona_emotion, user_text=user_entry.text,
+                                                         reply_text=assistant_text, session_id=session_id, session=session)
+            user_entry.completion_status = "completed"
+            session.add(user_entry)
             assistant = None
             if assistant_text.strip():
                 assistant = ConversationJournalEntry(
@@ -170,11 +236,11 @@ class ContinuityService:
                     output_target=output_target,
                     privacy_scope=privacy_scope,
                     completion_status="completed",
-                    tool_metadata_json=json.dumps(tool_metadata or {}, ensure_ascii=False)[:8000],
+                    tool_metadata_json=json.dumps(tool_metadata or {}, ensure_ascii=False),
                     occurred_at=now,
                 )
                 session.add(assistant)
-            session.commit()
+            session.flush()
             if assistant is not None:
                 session.refresh(assistant)
             self._update_working_state_locked(
@@ -197,7 +263,11 @@ class ContinuityService:
         self.prune()
 
     def fail_exchange(self, exchange_id: str, *, status: str = "failed") -> None:
-        with Session(self._engine) as session:
+        if status not in {"failed", "interrupted", "cancelled"}:
+            raise ValueError("invalid exchange failure status")
+        with self._write_session() as session:
+            if not self._authority.fail(session, exchange_id, status):
+                return
             entries = list(
                 session.exec(select(ConversationJournalEntry).where(ConversationJournalEntry.exchange_id == exchange_id))
             )
@@ -207,11 +277,19 @@ class ContinuityService:
                     session.add(entry)
             session.commit()
 
-    def mark_pending_interrupted(self) -> int:
-        with Session(self._engine) as session:
+    def retire_generation(self) -> None:
+        with self._write_session() as session:
+            self._authority.retire(session)
+            session.commit()
+
+    def mark_pending_interrupted(self, *, generation_id: str) -> int:
+        """Explicitly reconcile only a retired or provably dead expired generation."""
+        with self._write_session() as session:
+            owned = self._authority.recover(session, generation_id)
             entries = list(
                 session.exec(
-                    select(ConversationJournalEntry).where(ConversationJournalEntry.completion_status == "pending")
+                    select(ConversationJournalEntry).where(ConversationJournalEntry.completion_status == "pending",
+                                                           ConversationJournalEntry.exchange_id.in_(owned))
                 )
             )
             for entry in entries:
@@ -219,6 +297,16 @@ class ContinuityService:
                 session.add(entry)
             session.commit()
         return len(entries)
+
+    def reconcile_expired_generations(self, *, limit: int = 100) -> int:
+        """Called by the core lifecycle, never by a constructor or request reader."""
+        import time
+        with Session(self._engine) as session:
+            candidates = list(session.execute(select(generations.c.id).where(
+                generations.c.status.in_(("active", "retired")), generations.c.host == self._authority.host,
+                generations.c.lease_until < time.time())
+                .order_by(generations.c.lease_until).limit(max(1, min(limit, 100)))).scalars())
+        return sum(self.mark_pending_interrupted(generation_id=item) for item in candidates)
 
     def recent_turns(
         self,
@@ -234,7 +322,9 @@ class ContinuityService:
                 select(ConversationJournalEntry)
                 .where(
                     ConversationJournalEntry.session_id == session_id,
-                    ConversationJournalEntry.completion_status == "completed",
+                    ((ConversationJournalEntry.completion_status == "completed")
+                     | ((ConversationJournalEntry.role == "user")
+                        & ConversationJournalEntry.completion_status.in_(("cancelled", "interrupted", "failed")))),
                     ConversationJournalEntry.privacy_scope.in_(privacy_scopes),
                 )
                 .order_by(ConversationJournalEntry.id.desc())
@@ -255,52 +345,74 @@ class ContinuityService:
 
     def prompt_context(self, session_id: str, *, privacy_scopes: set[str], token_budget: int | None = None) -> str:
         snapshot = self.snapshot(session_id)
-        parts: list[str] = []
-        summary = snapshot.get("summary")
-        if (
-            isinstance(summary, dict)
-            and summary.get("summary_text")
-            and summary.get("privacy_scope") in privacy_scopes
-        ):
-            parts.append("# Rolling Session Summary\n" + str(summary["summary_text"]))
-        working = snapshot.get("working_state")
-        if (
-            isinstance(working, dict)
-            and working.get("privacy_scope") in privacy_scopes
-            and any(working.get(key) for key in ("active_topic", "current_objective", "next_intended_action"))
-        ):
-            parts.append("# Active Working State\n" + json.dumps(working, ensure_ascii=False, sort_keys=True))
         turns = self.recent_turns(session_id, privacy_scopes=privacy_scopes, token_budget=token_budget)
-        if turns:
-            lines = [f"{entry.role}: {entry.text}" for entry in turns]
-            parts.append("# Recent Conversation Turns\n" + "\n".join(lines))
+        parts = []
+        # Stored summaries/checkpoints remain the decision audit. Rebuild the
+        # prompt view against current receipts so late outcomes cannot leave
+        # unqualified generated speech in a cached summary or last-action field.
+        with Session(self._engine) as session:
+            summary = snapshot.get("summary")
+            if summary and summary.get("privacy_scope") in privacy_scopes and summary.get("through_entry_id"):
+                older = list(session.exec(select(ConversationJournalEntry).where(
+                    ConversationJournalEntry.session_id == session_id,
+                    ConversationJournalEntry.privacy_scope.in_(privacy_scopes),
+                    ConversationJournalEntry.completion_status == "completed",
+                    ConversationJournalEntry.id <= summary["through_entry_id"],
+                ).order_by(ConversationJournalEntry.id.desc()).limit(12)))
+                if older:
+                    parts.append("# Rolling Session Summary\n" + "\n".join(
+                        history_line(session, entry)[:400] for entry in reversed(older)))
+            working = snapshot.get("working_state")
+            if working and working.get("privacy_scope") in privacy_scopes:
+                working = dict(working)
+                last = session.exec(select(ConversationJournalEntry).where(
+                    ConversationJournalEntry.session_id == session_id,
+                    ConversationJournalEntry.role == "assistant",
+                    ConversationJournalEntry.privacy_scope.in_(privacy_scopes),
+                    ConversationJournalEntry.completion_status == "completed",
+                ).order_by(ConversationJournalEntry.id.desc()).limit(1)).first()
+                working["last_assistant_action"] = history_line(session, last)[:1000] if last else ""
+                parts.append("# Internal Working State (intentions are not delivery evidence)\n"
+                             + json.dumps(working, ensure_ascii=False, sort_keys=True))
+            if turns:
+                parts.append("# Recent Conversation Turns\n" + "\n".join(
+                    history_line(session, entry) for entry in turns))
         return "\n\n".join(parts)
 
     def snapshot(self, session_id: str) -> dict:
         with Session(self._engine) as session:
+            if self._engine.dialect.name == "sqlite":
+                session.connection().exec_driver_sql("BEGIN")
             summary = session.get(RollingSessionSummary, session_id)
             working = session.get(WorkingStateCheckpoint, session_id)
+            version = self._authority.version(session, session_id)
         return {
             "session_id": session_id,
+            "state_version": version,
             "summary": self._summary_payload(summary),
             "working_state": self._working_payload(working),
         }
 
-    def record_output(self, *, target_policy: str, turn_id: str, text: str, status: str, spoken: bool) -> None:
-        with Session(self._engine) as session:
-            current = session.get(DurableOutputState, target_policy)
-            if current is None:
-                current = DurableOutputState(target_policy=target_policy, turn_id=turn_id, text=text, status=status)
-            current.turn_id = turn_id
-            current.text = text[:16_000]
-            current.status = status
-            current.spoken = spoken
-            current.occurred_at = _utc_now()
-            session.add(current)
+    def record_output(self, *, target_policy: str, turn_id: str, text: str, status: str, spoken: bool,
+                      decision_id: str, grant_id: str) -> None:
+        with self._write_session() as session:
+            self._authority.validate_publication(session, decision_id, grant_id, target_policy, text)
+            if spoken:
+                raise StateConflict("playback_receipt_required")
+            # Producer completion proves prepared output, never receiver playback.
+            production_status = "ready" if status in {"completed", "speaking", "synthesized"} else status
+            session.execute(publications.update().where(publications.c.grant_id == grant_id)
+                            .values(turn_id=turn_id, status=production_status))
             session.commit()
 
     def last_output(self, target_policy: str) -> dict | None:
         with Session(self._engine) as session:
+            record = session.execute(select(publications).where(publications.c.target == target_policy)
+                .order_by(publications.c.sequence.desc()).limit(1)).mappings().first()
+            if record is not None:
+                return dict(target_policy=target_policy, turn_id=record["turn_id"], text=record["text"],
+                    status=record["status"], spoken=bool(record["spoken"]),
+                    occurred_at=datetime.fromtimestamp(record["occurred_at"], timezone.utc).isoformat())
             output = session.get(DurableOutputState, target_policy)
         if output is None:
             return None
@@ -314,7 +426,8 @@ class ContinuityService:
         }
 
     def delete_session(self, session_id: str) -> int:
-        with Session(self._engine) as session:
+        with self._write_session() as session:
+            self._authority.invalidate(session, session_id)
             count = int(
                 session.exec(
                     select(func.count()).select_from(ConversationJournalEntry).where(
@@ -323,6 +436,13 @@ class ContinuityService:
                 ).one()
             )
             session.exec(delete(ConversationJournalEntry).where(ConversationJournalEntry.session_id == session_id))
+            owned = select(exchanges.c.exchange_id).where(exchanges.c.session_id == session_id)
+            session.execute(decision_effects.delete().where(decision_effects.c.exchange_id.in_(owned)))
+            session.execute(decision_commits.delete().where(decision_commits.c.exchange_id.in_(owned)))
+            session.execute(publications.delete().where(publications.c.session_id == session_id))
+            session.execute(outbox.delete().where(outbox.c.session_id == session_id))
+            session.execute(exchanges.delete().where(exchanges.c.session_id == session_id))
+            # Keep the version tombstone so an old snapshot can never become current again.
             summary = session.get(RollingSessionSummary, session_id)
             working = session.get(WorkingStateCheckpoint, session_id)
             if summary is not None:
@@ -335,9 +455,12 @@ class ContinuityService:
     def prune(self) -> int:
         cutoff = _utc_now() - timedelta(days=max(1, settings.conversation_journal_retention_days))
         removed = 0
-        with Session(self._engine) as session:
+        with self._write_session() as session:
             expired = list(
-                session.exec(select(ConversationJournalEntry).where(ConversationJournalEntry.occurred_at < cutoff))
+                session.exec(select(ConversationJournalEntry).where(
+                    ConversationJournalEntry.occurred_at < cutoff,
+                    ConversationJournalEntry.completion_status != "pending",
+                ))
             )
             for entry in expired:
                 session.delete(entry)
@@ -350,7 +473,7 @@ class ContinuityService:
                         select(ConversationJournalEntry.exchange_id)
                         .where(
                             ConversationJournalEntry.session_id == session_id,
-                            ConversationJournalEntry.role == "user",
+                            ConversationJournalEntry.role.in_(["user", "event"]),
                             ConversationJournalEntry.completion_status == "completed",
                         )
                         .order_by(ConversationJournalEntry.id.desc())
@@ -368,6 +491,29 @@ class ContinuityService:
                     for entry in stale_entries:
                         session.delete(entry)
                     removed += len(stale_entries)
+            session.flush()
+            retained = select(ConversationJournalEntry.exchange_id)
+            # Only undispatched decisions are disposable here. Future external
+            # action receipts must have their own reconciliation/retention policy.
+            session.execute(outbox.delete().where(
+                outbox.c.exchange_id.not_in(retained),
+                outbox.c.status.in_(["awaiting_authorization", "cancelled_generation"]),
+            ))
+            session.execute(exchanges.delete().where(
+                exchanges.c.exchange_id.not_in(retained), exchanges.c.status != "pending",
+                exchanges.c.exchange_id.not_in(select(outbox.c.exchange_id)),
+            ))
+            for table in (decision_effects, decision_commits):
+                session.execute(table.delete().where(table.c.exchange_id.not_in(select(exchanges.c.exchange_id))))
+            transient = select(versions.c.session_id).where(
+                versions.c.session_id.like("transient:%"),
+                versions.c.session_id.not_in(select(ConversationJournalEntry.session_id)),
+                versions.c.session_id.not_in(select(exchanges.c.session_id)),
+                versions.c.session_id.not_in(select(outbox.c.session_id)),
+            )
+            for model in (RollingSessionSummary, WorkingStateCheckpoint):
+                session.exec(delete(model).where(model.session_id.in_(transient)))
+            session.execute(versions.delete().where(versions.c.session_id.in_(transient)))
             session.commit()
         return removed
 
@@ -386,7 +532,7 @@ class ContinuityService:
             session.exec(
                 select(func.count()).select_from(ConversationJournalEntry).where(
                     ConversationJournalEntry.session_id == session_id,
-                    ConversationJournalEntry.role == "user",
+                    ConversationJournalEntry.role.in_(["user", "event"]),
                     ConversationJournalEntry.completion_status == "completed",
                 )
             ).one()

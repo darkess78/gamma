@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sys
 
-from .conversation.service import ConversationService
+from .conversation.client import ConversationClient
 
 
 def main() -> None:
@@ -16,7 +16,7 @@ def main() -> None:
         JSON with input, reply, emotion, internal_summary.
     """
     text = " ".join(sys.argv[1:]).strip() or "Dashboard LLM smoke test."
-    response = ConversationService().respond(text, synthesize_speech=False)
+    response = ConversationClient().respond(text, synthesize_speech=False)
     print(
         json.dumps(
             {

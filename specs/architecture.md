@@ -12,8 +12,16 @@ Gamma intentionally runs two FastAPI applications:
 | Shana API | 8000 | conversation, memory, voice inference, vision, stream decisions, performer state |
 | Dashboard | 8001 | authentication, browser clients, supervisor controls, machine status, local configuration |
 
-The protected deployment and proxy contract is
+The editable deployment and proxy reference is
 `LOCKED_GAMMA_NETWORK_DEPLOYMENT.md`.
+
+## Independent cognition
+
+The managed API retains input admission, identity, state transactions, permissions,
+safety and delivery. One supervised brain child assembles context and generates
+structured decisions, tool intentions and final response text over versioned private
+JSON IPC. It has independent readiness and lifecycle. Brain Stop or failure does not
+stop the API or dashboard. See `modular_worker_runtime_brain_process.md`.
 
 ## Dependency Direction
 

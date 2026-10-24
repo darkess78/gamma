@@ -19,12 +19,10 @@ from .voice.audio_understanding import AudioUnderstandingService, build_audio_pr
 from .voice.reply_chunking import split_reply_text
 from .voice.reply_interruptibility import build_interruptibility
 from .voice.reply_planner import ReplyPlanner
-from .voice.reply_state import AssistantTurnState, SentenceState
+from .voice.reply_state import AssistantTurnState
 from .voice.sentence_generator import SentenceGenerator
 from .voice.stt import STTService
-from .voice.expressive_text import strip_hidden_style_tags
 from .voice.tts import TTSService
-from .safety.speech_filter import SpeechSafetyFilter
 
 
 def _utc_now() -> str:
@@ -130,23 +128,6 @@ def _normalize_estimated_sentence_count(planner_state: dict[str, Any]) -> int:
     except (TypeError, ValueError):
         estimated = 2
     return max(1, min(4, estimated))
-
-
-def _append_memory_fast_path(conversation: ConversationService, *, user_text: str, reply_text: str, session_id: str | None) -> None:
-    """Append memory via fast path.
-    
-    Args:
-        conversation: Conversation service.
-        user_text: User text.
-        reply_text: Reply text.
-        session_id: Session ID.
-    """
-    try:
-        candidates = conversation._build_memory_candidates(user_text=user_text, reply_text=reply_text)
-        if candidates:
-            conversation._memory.persist_candidates(candidates, session_id=session_id)
-    except Exception:
-        pass
 
 
 def _should_use_brief_mode(transcript: str) -> bool:
@@ -362,175 +343,7 @@ def _run_simple_chunked(
     turn_state: AssistantTurnState,
     audio_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Run simple chunked mode.
-    
-    Args:
-        started_at: Start time.
-        args: CLI args.
-        transcript: User transcript.
-        synthesize_speech: Whether to synthesize speech.
-        conversation: Conversation service.
-        stream_brain: Stream brain.
-        output_path: Output path.
-        status_path: Status path.
-        status_payload: Status payload.
-        response_mode: Response mode.
-        planner_state: Planner state.
-        turn_state: Turn state.
-        audio_context: Audio-understanding context (optional).
-    
-    Returns:
-        dict[str, Any]: Payload.
-    """
-    conversation_started = time.perf_counter()
-    stream_event = _live_voice_stream_event(
-        turn_id=args.turn_id,
-        transcript=transcript,
-        session_id=args.session_id,
-        response_mode=response_mode,
-        audio_context=audio_context,
-    )
-    stream_decision = stream_brain.decide(stream_event)
-    if stream_decision.should_call_conversation:
-        response = conversation.respond(
-            transcript,
-            session_id=args.session_id,
-            synthesize_speech=False,
-            fast_mode=True,
-            brief_mode=_should_use_brief_mode(transcript),
-            micro_mode=_should_use_micro_mode(transcript),
-            background_context=_audio_prompt_context(audio_context),
-            delivery_context="direct_voice",
-            speech_requested=synthesize_speech,
-            speech_allowed=synthesize_speech,
-        )
-    else:
-        response = None
-    conversation_ms = round((time.perf_counter() - conversation_started) * 1000, 1)
-    if response is None:
-        stream_result = StreamTurnResult(
-            input_event=stream_event,
-            decision=stream_decision,
-            action_plan=ActionPlan(),
-            assistant_response=None,
-            output_events=[],
-            safety_decision={},
-            timing_ms={"stream_brain_ms": 0.0},
-        )
-        stream_brain.record_result(stream_result)
-        payload = {
-            "turn_id": args.turn_id,
-            "status": "completed",
-            "transcript": transcript,
-            "reply_text": "",
-            "reply_chunks": [],
-            "response_mode": response_mode,
-            "audio_context": audio_context or {},
-            "voice_affect": audio_context or {},
-            "stream": _serialize_stream_turn_result(stream_result),
-            "planner_state": planner_state,
-            "incremental_preview": _serialize_turn_state(turn_state),
-            "audio_content_type": None,
-            "audio_base64": None,
-            "timing_ms": {
-                "conversation_ms": conversation_ms,
-                "chunk_count": 0,
-                "tts_ms": 0.0,
-            },
-        }
-        _write_output(output_path, payload)
-        return payload
-
-    # Keep the new stream-brain trace around the old direct live conversation call.
-    # This preserves the pre-router live latency profile while the control-plane
-    # event boundary continues to collect replayable decisions and outputs.
-    stream_result = StreamTurnResult(
-        input_event=stream_event,
-        decision=stream_decision,
-        action_plan=ActionPlanner().plan_from_response(response),
-        assistant_response=response,
-        output_events=output_events_from_response(input_event=stream_event, turn_id=args.turn_id, response=response),
-        safety_decision={},
-        timing_ms={"stream_brain_ms": 0.0},
-    )
-    stream_brain.record_result(stream_result)
-
-    payload: dict[str, Any] = {
-        "turn_id": args.turn_id,
-        "status": "running",
-        "transcript": transcript,
-        "reply_text": response.display_text or "",
-        "display_text": response.display_text or "",
-        "speech_text": response.speech_text or "",
-        "delivery_mode": response.delivery_mode,
-        "reply_chunks": [],
-        "response_mode": response_mode,
-        "audio_context": audio_context or {},
-        "voice_affect": audio_context or {},
-        "voice_styles": response.voice_styles,
-        "stream": _serialize_stream_turn_result(stream_result),
-        "planner_state": planner_state,
-        "incremental_preview": _serialize_turn_state(turn_state),
-        "audio_content_type": response.audio_content_type,
-        "audio_base64": None,
-        "timing_ms": {
-            "conversation_ms": conversation_ms,
-            **response.timing_ms,
-        },
-    }
-
-    if synthesize_speech and response.speech_text:
-        chunks = split_reply_text(response.speech_text, max_chunks=_live_chunk_budget(response.speech_text))
-        chunk_policies = build_interruptibility(chunks)
-        payload["timing_ms"]["chunk_count"] = len(chunks)
-        if chunks:
-            tts = TTSService()
-            status_payload["status"] = "speaking"
-            _write_status(status_path, status_payload)
-            chunk_timings: list[float] = []
-            for index, chunk_text in enumerate(chunks, start=1):
-                policy = chunk_policies[index - 1] if index - 1 < len(chunk_policies) else {}
-                chunk_started = time.perf_counter()
-                tts_result = tts.synthesize(chunk_text, emotion=response.emotion, styles=response.voice_styles)
-                chunk_tts_ms = round((time.perf_counter() - chunk_started) * 1000, 1)
-                chunk_timings.append(chunk_tts_ms)
-                audio_bytes = _read_live_tts_audio_bytes(tts_result)
-                chunk_payload = {
-                    "chunk_index": index,
-                    "text": chunk_text,
-                    "audio_content_type": tts_result.content_type,
-                    "audio_base64": base64.b64encode(audio_bytes).decode("ascii"),
-                    "timing_ms": {
-                        "tts_ms": chunk_tts_ms,
-                        "audio_bytes": len(audio_bytes),
-                        "text_chars": len(chunk_text),
-                        "text_words": len(chunk_text.split()),
-                    },
-                    "interruptible": bool(policy.get("interruptible", True)),
-                    "protect_ms": int(policy.get("protect_ms", 0) or 0),
-                    "is_final": index == len(chunks),
-                }
-                payload["reply_chunks"].append(chunk_payload)
-                if index == 1:
-                    payload["audio_content_type"] = tts_result.content_type
-                    payload["audio_base64"] = chunk_payload["audio_base64"]
-                    payload["timing_ms"]["tts_ms"] = chunk_tts_ms
-                    payload["timing_ms"]["time_to_first_chunk_audio_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
-                payload["timing_ms"][f"chunk_{index}_tts_ms"] = chunk_tts_ms
-                payload["timing_ms"][f"chunk_{index}_audio_bytes"] = len(audio_bytes)
-                payload["timing_ms"][f"chunk_{index}_text_chars"] = len(chunk_text)
-                payload["timing_ms"][f"chunk_{index}_text_words"] = len(chunk_text.split())
-                payload["status"] = "speaking" if index < len(chunks) else "completed"
-                _write_output(output_path, payload)
-            payload["timing_ms"]["tts_ms"] = round(sum(chunk_timings), 1)
-        else:
-            payload["timing_ms"]["chunk_count"] = 0
-            payload["timing_ms"]["tts_ms"] = 0.0
-    else:
-        payload["timing_ms"]["chunk_count"] = 0
-        payload["timing_ms"]["tts_ms"] = 0.0
-
-    return payload
+    raise RuntimeError("Legacy live subprocess output is retired; use the core live API")
 
 
 def _run_incremental_experimental(
@@ -550,200 +363,19 @@ def _run_incremental_experimental(
     turn_state: AssistantTurnState,
     audio_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    speech_filter = SpeechSafetyFilter(settings.speech_filter_level)
-    stream_event = _live_voice_stream_event(
-        turn_id=args.turn_id,
-        transcript=transcript,
-        session_id=args.session_id,
-        response_mode=response_mode,
-        audio_context=audio_context,
+    # Sentence previews previously escaped before an owned decision committed.
+    # Preserve the entry point while using the committed conversation pipeline.
+    return _run_simple_chunked(
+        started_at=started_at, args=args, transcript=transcript,
+        synthesize_speech=synthesize_speech, conversation=conversation,
+        stream_brain=stream_brain, audio_context=audio_context,
+        output_path=output_path, status_path=status_path,
+        status_payload=status_payload, response_mode="simple_chunked",
+        planner_state=planner_state, turn_state=turn_state,
     )
-    stream_decision = stream_brain.decide(stream_event)
-    payload: dict[str, Any] = {
-        "turn_id": args.turn_id,
-        "status": "running",
-        "transcript": transcript,
-        "reply_text": "",
-        "reply_chunks": [],
-        "response_mode": response_mode,
-        "audio_context": audio_context or {},
-        "voice_affect": audio_context or {},
-        "stream": {
-            "input_event": stream_event.model_dump(),
-            "decision": stream_decision.model_dump(),
-            "action_plan": ActionPlan().model_dump(),
-            "safety_decision": {},
-            "output_events": [],
-            "timing_ms": {"stream_brain_ms": 0.0},
-        },
-        "planner_state": planner_state,
-        "incremental_preview": _serialize_turn_state(turn_state),
-        "audio_content_type": None,
-        "audio_base64": None,
-        "timing_ms": {
-            "conversation_ms": 0.0,
-            "tts_ms": 0.0,
-            "chunk_count": 0,
-            "planner_ms": float(planner_state.get("planner_ms", 0.0) or 0.0),
-        },
-    }
-    if not stream_decision.should_call_conversation:
-        stream_result = StreamTurnResult(
-            input_event=stream_event,
-            decision=stream_decision,
-            action_plan=ActionPlan(),
-            assistant_response=None,
-            output_events=[],
-            timing_ms={"stream_brain_ms": 0.0},
-        )
-        stream_brain.record_result(stream_result)
-        payload["stream"] = _serialize_stream_turn_result(stream_result)
-        payload["status"] = "completed"
-        return payload
-
-    max_sentences = _normalize_estimated_sentence_count(planner_state)
-    total_generation_ms = 0.0
-    total_tts_ms = 0.0
-    response_emotion = "neutral"
-    response_voice_styles: list[str] = []
-    tts = TTSService() if synthesize_speech else None
-
-    for sentence_index in range(1, max_sentences + 1):
-        turn_state.status = "generating"
-        next_sentence = sentence_generator.generate_next_sentence(
-            user_text=transcript,
-            session_id=args.session_id,
-            planner_state=planner_state,
-            assistant_reply_so_far=turn_state.assistant_reply_so_far,
-            sentence_index=sentence_index,
-        )
-        generation_ms = float(next_sentence.get("generation_ms", 0.0) or 0.0)
-        total_generation_ms += generation_ms
-        sentence_text = str(next_sentence.get("sentence_text", "") or "").strip()
-        is_final = bool(next_sentence.get("is_final", False))
-
-        if not sentence_text:
-            if sentence_index == 1:
-                break
-            if is_final:
-                break
-            continue
-
-        expressive = strip_hidden_style_tags(sentence_text)
-        if expressive.emotion:
-            response_emotion = expressive.emotion
-        for style in expressive.styles:
-            if style not in response_voice_styles:
-                response_voice_styles.append(style)
-        sentence_text = speech_filter.apply(expressive.clean_text).spoken_text
-
-        sentence_state = SentenceState(
-            sentence_index=sentence_index,
-            text=sentence_text,
-            status="generated",
-            is_final=is_final,
-            timing_ms={"generation_ms": generation_ms},
-        )
-        turn_state.append_sentence(sentence_state)
-        payload["reply_text"] = turn_state.assistant_reply_so_far
-        payload["incremental_preview"] = _serialize_turn_state(turn_state)
-        payload["timing_ms"]["conversation_ms"] = round(float(payload["timing_ms"]["planner_ms"]) + total_generation_ms, 1)
-        payload["timing_ms"][f"sentence_{sentence_index}_generation_ms"] = generation_ms
-
-        if synthesize_speech and tts is not None:
-            turn_state.status = "synthesizing"
-            sentence_state.status = "synthesizing"
-            if sentence_index == 1:
-                status_payload["status"] = "speaking"
-                _write_status(status_path, status_payload)
-            chunk_started = time.perf_counter()
-            tts_result = tts.synthesize(sentence_text, emotion=expressive.emotion, styles=expressive.styles)
-            chunk_tts_ms = round((time.perf_counter() - chunk_started) * 1000, 1)
-            total_tts_ms += chunk_tts_ms
-            audio_bytes = _read_live_tts_audio_bytes(tts_result)
-            policy = build_interruptibility([sentence_text])[0] if sentence_index == 1 else {"interruptible": True, "protect_ms": 0}
-            sentence_state.status = "ready"
-            sentence_state.timing_ms["tts_ms"] = chunk_tts_ms
-            chunk_payload = {
-                "chunk_index": sentence_index,
-                "text": sentence_text,
-                "audio_content_type": tts_result.content_type,
-                "audio_base64": base64.b64encode(audio_bytes).decode("ascii"),
-                "timing_ms": {
-                    "tts_ms": chunk_tts_ms,
-                    "generation_ms": generation_ms,
-                    "audio_bytes": len(audio_bytes),
-                    "text_chars": len(sentence_text),
-                    "text_words": len(sentence_text.split()),
-                },
-                "interruptible": bool(policy.get("interruptible", True)),
-                "protect_ms": int(policy.get("protect_ms", 0) or 0),
-                "is_final": is_final,
-            }
-            payload["reply_chunks"].append(chunk_payload)
-            payload["timing_ms"][f"chunk_{sentence_index}_tts_ms"] = chunk_tts_ms
-            payload["timing_ms"][f"chunk_{sentence_index}_audio_bytes"] = len(audio_bytes)
-            payload["timing_ms"][f"chunk_{sentence_index}_text_chars"] = len(sentence_text)
-            payload["timing_ms"][f"chunk_{sentence_index}_text_words"] = len(sentence_text.split())
-            payload["timing_ms"]["tts_ms"] = round(total_tts_ms, 1)
-            payload["timing_ms"]["chunk_count"] = len(payload["reply_chunks"])
-            payload["status"] = "speaking"
-            payload["incremental_preview"] = _serialize_turn_state(turn_state)
-            if sentence_index == 1:
-                payload["audio_content_type"] = tts_result.content_type
-                payload["audio_base64"] = chunk_payload["audio_base64"]
-                payload["timing_ms"]["time_to_first_chunk_audio_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
-            _write_output(output_path, payload)
-
-        if is_final:
-            break
-
-    if not turn_state.sentences:
-        fallback_state = SentenceState(
-            sentence_index=1,
-            text="",
-            status="failed",
-            is_final=True,
-            timing_ms={},
-        )
-        turn_state.sentences.append(fallback_state)
-        return _run_simple_chunked(
-            started_at=started_at,
-            args=args,
-            transcript=transcript,
-            synthesize_speech=synthesize_speech,
-            conversation=conversation,
-            stream_brain=stream_brain,
-            audio_context=audio_context,
-            output_path=output_path,
-            status_path=status_path,
-            status_payload=status_payload,
-            response_mode="simple_chunked",
-            planner_state=planner_state,
-            turn_state=turn_state,
-        )
-
-    turn_state.status = "completed"
-    payload["reply_text"] = turn_state.assistant_reply_so_far
-    payload["incremental_preview"] = _serialize_turn_state(turn_state)
-    payload["timing_ms"]["conversation_ms"] = round(float(payload["timing_ms"]["planner_ms"]) + total_generation_ms, 1)
-    payload["timing_ms"]["tts_ms"] = round(total_tts_ms, 1)
-    payload["timing_ms"]["chunk_count"] = len(payload["reply_chunks"])
-    payload["voice_styles"] = response_voice_styles
-    stream_result = _stream_result_from_live_payload(
-        stream_event=stream_event,
-        stream_brain=stream_brain,
-        payload=payload,
-        response_emotion=response_emotion,
-        decision=stream_decision,
-    )
-    stream_brain.record_result(stream_result)
-    payload["stream"] = _serialize_stream_turn_result(stream_result)
-    _append_memory_fast_path(conversation, user_text=transcript, reply_text=payload["reply_text"], session_id=args.session_id)
-    return payload
-
 
 def main() -> int:
+    raise RuntimeError("Legacy live subprocess output is retired; use the core live API")
     parser = argparse.ArgumentParser()
     parser.add_argument("--turn-id", required=True)
     parser.add_argument("--audio-path", required=True)

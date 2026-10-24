@@ -404,6 +404,7 @@ class Settings:
     )
     minecraft: MinecraftSettings = field(default_factory=_load_minecraft_settings)
 
+    brain_model_runtime: str = str(_setting("SHANA_BRAIN_MODEL_RUNTIME", _config_value(APP_CONFIG, "brain_model_runtime", default="inprocess")))
     llm_provider: str = str(
         _setting(
             "SHANA_LLM_PROVIDER",
@@ -555,6 +556,13 @@ class Settings:
             _config_value(APP_CONFIG, "local_llm_timeout_seconds", default=120),
         ),
         default=120,
+    )
+    live_voice_runtime: str = str(
+        _setting("SHANA_LIVE_VOICE_RUNTIME", _config_value(APP_CONFIG, "live_voice_runtime", default="subprocess"))
+    )
+    voice_upload_max_bytes: int = _as_int(
+        _setting("SHANA_VOICE_UPLOAD_MAX_BYTES", _config_value(APP_CONFIG, "voice_upload_max_bytes", default=33554432)),
+        default=33554432,
     )
     live_voice_response_mode: str = str(
         _setting(
@@ -726,6 +734,7 @@ class Settings:
         default=20,
     )
 
+    stt_runtime: str = str(_setting("SHANA_STT_RUNTIME", _config_value(APP_CONFIG, "stt_runtime", default="inprocess")))
     stt_provider: str = str(
         _setting(
             "SHANA_STT_PROVIDER",
@@ -898,6 +907,7 @@ class Settings:
         default=500,
     )
 
+    tts_runtime: str = str(_setting("SHANA_TTS_RUNTIME", _config_value(APP_CONFIG, "tts_runtime", default="inprocess")))
     tts_provider: str = str(
         _setting(
             "SHANA_TTS_PROVIDER",

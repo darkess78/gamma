@@ -62,7 +62,8 @@ def main() -> None:
         synthesize_speech=not args.no_tts,
         playback_enabled=not args.no_playback,
     )
-    controller = VoiceModeController()
+    from .conversation.client import ConversationClient
+    controller = VoiceModeController(conversation=ConversationClient())
     try:
         controller.run_cli_loop(config)
     except (AudioBackendError, MissingBinaryError) as exc:

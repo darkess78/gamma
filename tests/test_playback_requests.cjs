@@ -1,0 +1,58 @@
+const assert = require('node:assert/strict');
+const PlaybackRequests = require('../src/gamma/dashboard/static/playback-requests.js');
+(async () => {
+  const sent=[]; const requests=new PlaybackRequests(message=>sent.push(message), {timeoutMs:20});
+  const receipt={schema_version:1,lease_id:'lease',event_id:'event'};
+  const promise=requests.request(receipt);
+  assert.equal(sent[0].type,'playback_prepare');
+  assert.equal(requests.receive({type:'playback_permit',lease_id:'other',event_id:'event',expires_at:Date.now()/1000+2}),false);
+  assert.equal(requests.receive({type:'playback_permit',lease_id:'lease',event_id:'event',expires_at:Date.now()/1000+2}),true);
+  assert.equal((await promise).event_id,'event');
+  const waiting=requests.request({...receipt,event_id:'second'});
+  requests.cancelAll(); await assert.rejects(waiting);
+  await assert.rejects(requests.request({...receipt,event_id:'timeout'}));
+  const expired=requests.request({...receipt,event_id:'expired'});
+  requests.receive({type:'playback_permit',lease_id:'lease',event_id:'expired',expires_at:0});
+  await assert.rejects(expired);
+  await assert.rejects(requests.request(null));
+  const first=requests.request({...receipt,event_id:'revoke'});
+  const second=requests.request({...receipt,lease_id:'other',event_id:'revoke'});
+  assert.equal(requests.cancelReceipt('lease','revoke'),true);
+  assert.equal(requests.cancelReceipt('lease','revoke'),false);
+  await assert.rejects(first);
+  requests.receive({type:'playback_permit',lease_id:'other',event_id:'revoke',expires_at:Date.now()/1000+2});
+  await second;
+  const {createHash, webcrypto} = require('node:crypto');
+  if (!globalThis.crypto) globalThis.crypto = webcrypto;
+  globalThis.location = {origin:'https://fixture.invalid'};
+  const bytes=Buffer.from('approved synthetic audio');
+  const media={grant_id:'a'.repeat(32), audio_digest:createHash('sha256').update(bytes).digest('hex')};
+  const calls=[];
+  globalThis.fetch = async (url, options) => {calls.push({url:String(url),options}); return new Response(bytes, {headers:{'Content-Type':'audio/wav'}});};
+  const blob=await PlaybackRequests.loadAudio(media,'https://fixture.invalid','fixture-token');
+  assert.ok(blob.startsWith('blob:')); URL.revokeObjectURL(blob);
+  assert.equal(calls[0].url,`https://fixture.invalid/v1/delivery/${media.grant_id}/audio`);
+  assert.equal(calls[0].options.headers.Authorization,'Bearer fixture-token');
+  assert.equal(calls[0].options.redirect,'error');
+  const controller = new AbortController();
+  const dashboardBlob = await PlaybackRequests.loadDashboardAudio(media, controller.signal);
+  URL.revokeObjectURL(dashboardBlob);
+  assert.equal(calls[1].url, `https://fixture.invalid/api/playback/audio/${media.grant_id}`);
+  assert.deepEqual(calls[1].options.headers, {});
+  assert.equal(calls[1].options.credentials, 'same-origin');
+  assert.equal(calls[1].options.cache, 'no-store');
+  assert.equal(calls[1].options.redirect, 'error');
+  assert.equal(calls[1].options.signal, controller.signal);
+  const beforeInvalid = calls.length;
+  for (const invalid of [null, {}, {...media, grant_id:'../escape'}, {...media, audio_digest:'wrong'}]) {
+    await assert.rejects(PlaybackRequests.loadDashboardAudio(invalid));
+  }
+  assert.equal(calls.length, beforeInvalid);
+  globalThis.fetch = async () => new Response('changed audio');
+  await assert.rejects(PlaybackRequests.loadAudio(media,'https://fixture.invalid','fixture-token'));
+  await assert.rejects(PlaybackRequests.loadDashboardAudio(media));
+  globalThis.fetch = async () => new Response(new Uint8Array(33554433));
+  await assert.rejects(PlaybackRequests.loadAudio(media,'https://fixture.invalid','fixture-token'));
+  await assert.rejects(PlaybackRequests.loadDashboardAudio(media));
+})().catch(error=>{console.error(error); process.exitCode=1;});
+

@@ -734,7 +734,7 @@ class TwitchIntegrationTest(unittest.TestCase):
             ]
         )
 
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(settings, "database_url", f"sqlite:///{temp_dir}/stream.db"):
             temp_path = Path(temp_dir)
             store = StreamTempMemoryStore(database_url=f"sqlite:///{temp_path / 'stream.db'}")
             store.add(
@@ -747,7 +747,7 @@ class TwitchIntegrationTest(unittest.TestCase):
                 conversation=conversation,  # type: ignore[arg-type]
                 trace_store=StreamTraceStore(temp_path / "trace.jsonl"),
                 temp_memory_store=store,
-                self_goal_store=StreamSelfGoalStore(database_url=f"sqlite:///{temp_path / 'goals.db'}"),
+                self_goal_store=StreamSelfGoalStore(database_url=f"sqlite:///{temp_path / 'stream.db'}"),
             )
             replay_client = _BrainReplayClient(brain)
 
@@ -969,7 +969,7 @@ class TwitchIntegrationTest(unittest.TestCase):
                 state_path=Path(temp_dir) / "state.json",
                 logger=logger,
             )
-            with patch("gamma.integrations.twitch.worker.time.sleep") as sleep:
+            with patch.object(worker._stop, "wait") as sleep:
                 worker.run_forever(max_reconnects=2)
             for handler in logger.handlers:
                 handler.flush()
@@ -1004,7 +1004,7 @@ class TwitchIntegrationTest(unittest.TestCase):
                 state_path=state_path,
                 logger=logger,
             )
-            with patch("gamma.integrations.twitch.worker.time.sleep") as sleep:
+            with patch.object(worker._stop, "wait") as sleep:
                 worker.run_forever()
             for handler in logger.handlers:
                 handler.flush()

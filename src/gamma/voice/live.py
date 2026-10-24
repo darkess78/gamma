@@ -8,8 +8,10 @@ import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
+from uuid import uuid4
 
 from fastapi import WebSocket
+from ..config import settings
 
 from .idle_policy import LiveIdlePolicy, LiveIdleSettings, LiveIdleState
 
@@ -218,6 +220,8 @@ class LiveVoiceSession:
                     await self._send_json(websocket, {"type": "state", "state": "failed", "detail": "Live turn polling failed."})
                     active_remote_turn_id = None
                     return
+                if active_remote_turn_id != remote_turn_id or remote_turn_id in interrupted_turn_ids:
+                    return
                 active_remote_state = payload
                 chunk_indexes = sent_chunk_indexes.setdefault(remote_turn_id, set())
                 for chunk in payload.get("reply_chunks", []) or []:
@@ -348,12 +352,22 @@ class LiveVoiceSession:
 
                     if message.get("bytes") is not None:
                         if turn_open:
+                            if len(audio_buffer) + len(message["bytes"]) > settings.voice_upload_max_bytes:
+                                turn_open = False
+                                audio_buffer.clear()
+                                await cancel_partial_loop()
+                                await self._send_json(websocket, {"type": "error", "code": "audio_limit",
+                                    "detail": "Live audio exceeds the configured upload limit."})
+                                continue
                             audio_buffer.extend(message["bytes"])
                         continue
 
                     raw_text = message.get("text")
                     if not raw_text:
                         continue
+                    if len(raw_text) > ((settings.voice_upload_max_bytes + 2) // 3) * 4 + 65536:
+                        await websocket.close(code=1009)
+                        break
                     payload = self._parse_message(raw_text)
                     event_type = payload.get("type", "")
 
@@ -370,6 +384,8 @@ class LiveVoiceSession:
                         if audio_base64 and self._partial_transcriber is not None:
                             try:
                                 pcm_bytes = base64.b64decode(audio_base64)
+                                if len(pcm_bytes) > settings.voice_upload_max_bytes:
+                                    raise ValueError("interrupt audio exceeds upload limit")
                                 result = await asyncio.to_thread(self._partial_transcriber, pcm_bytes=pcm_bytes)
                                 transcript = str(result.get("transcript", "")).strip()
                                 timing_ms = result.get("timing_ms", {}) if isinstance(result.get("timing_ms", {}), dict) else {}
@@ -399,6 +415,8 @@ class LiveVoiceSession:
                         last_activity_monotonic = time.monotonic()
                         user_recently_interrupted = False
                         await cancel_partial_loop()
+                        await cancel_active_remote_turn("superseded-by-capture")
+                        await cancel_polling()
                         audio_buffer.clear()
                         current_turn_id += 1
                         last_partial_text = ""
@@ -456,12 +474,16 @@ class LiveVoiceSession:
                         continue
 
                     if event_type == "end_turn":
+                        if not turn_open:
+                            continue
                         last_activity_monotonic = time.monotonic()
                         turn_open = False
                         await cancel_partial_loop()
                         if not audio_buffer:
                             await self._send_json(websocket, {"type": "state", "state": "idle", "detail": "No audio captured for that turn."})
                             continue
+                        remote_turn_id = uuid4().hex
+                        await self._send_json(websocket, {"type": "turn_submitting", "turn_id": remote_turn_id})
                         try:
                             remote_job = await asyncio.to_thread(
                                 self._job_starter,
@@ -469,7 +491,7 @@ class LiveVoiceSession:
                                 session_id=session_id,
                                 synthesize_speech=synthesize_speech,
                                 response_mode=response_mode,
-                                turn_id=None,
+                                turn_id=remote_turn_id,
                             )
                         except Exception as exc:
                             audio_buffer.clear()

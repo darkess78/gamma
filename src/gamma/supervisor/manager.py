@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 import urllib.request
+from functools import wraps
+from uuid import uuid4
 
 import psutil
 
@@ -22,6 +24,15 @@ from ..resources.runtime_registry import load_resource_routing_registry
 from ..system.cuda_env import prepend_cuda_library_path
 from ..system.python_runtime import resolve_python_executable
 from ..voice.voice_profiles import resolve_tts_config
+from .lifecycle_lock import lifecycle_lock
+
+
+def serialized(method):
+    @wraps(method)
+    def call(self, *args, **kwargs):
+        with lifecycle_lock(self._runtime_dir / "lifecycle.lock"):
+            return method(self, *args, **kwargs)
+    return call
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +149,7 @@ class ProcessManager:
         """
         return self._services[name]
 
+    @serialized
     def start(self, name: str) -> dict[str, Any]:
         """Start service.
         
@@ -214,6 +226,7 @@ class ProcessManager:
             "dependencies": dependencies if name == "shana" else [],
         }
 
+    @serialized
     def stop(self, name: str) -> dict[str, Any]:
         """Stop service.
         
@@ -249,6 +262,7 @@ class ProcessManager:
             payload["dependencies"] = self._stop_shana_dependencies()
         return payload
 
+    @serialized
     def restart(self, name: str) -> dict[str, Any]:
         """Restart service.
         
@@ -280,7 +294,8 @@ class ProcessManager:
             "stderr_path": str(self.stderr_log(name)),
         }
 
-    def start_module(self, name: str, module: str, args: list[str] | None = None) -> dict[str, Any]:
+    @serialized
+    def start_module(self, name: str, module: str, args: list[str] | None = None, *, trace_id: str | None = None) -> dict[str, Any]:
         """Start module.
         
         Args:
@@ -301,6 +316,10 @@ class ProcessManager:
         self._preserve_service_logs(name)
         command = [python_executable, "-m", module, *(args or [])]
         runtime_env = prepend_cuda_library_path(os.environ.copy())
+        instance_id = uuid4().hex
+        runtime_env.update(GAMMA_WORKER_INSTANCE=instance_id, GAMMA_WORKER_TRACE=trace_id or uuid4().hex,
+                           SHANA_PROJECT_ROOT=str(settings.project_root),
+                           PYTHONPATH=str(settings.project_root / "src"))
         with stdout_log.open("ab") as stdout_handle, stderr_log.open("ab") as stderr_handle:
             process = subprocess.Popen(
                 command,
@@ -321,13 +340,15 @@ class ProcessManager:
         time.sleep(0.5)
         found = self.find_module_process(name, module)
         return {
-            "ok": True,
-            "detail": "started",
+            "ok": process.poll() is None,
+            "detail": "started" if process.poll() is None else "exited-before-ready",
+            "instance_id": instance_id,
             "process": self.process_payload(found),
             "stdout_path": str(stdout_log),
             "stderr_path": str(stderr_log),
         }
 
+    @serialized
     def stop_module(self, name: str, module: str) -> dict[str, Any]:
         """Stop module.
         
@@ -348,11 +369,19 @@ class ProcessManager:
                 process.terminate()
                 process.wait(timeout=10)
             except psutil.TimeoutExpired:
+                if module == "gamma.improvement.worker":
+                    # A job admitted just before SIGTERM may still be draining.
+                    # Never kill its controller and orphan an isolated experiment.
+                    return {"ok": False, "detail": "worker-draining", "pids": stopped_pids}
                 process.kill()
                 process.wait(timeout=5)
             except psutil.Error:
                 continue
             stopped_pids.append(process.pid)
+        remaining = [p.pid for p in self.find_module_processes(name, module)
+                     if self.process_payload(p).get("running")]
+        if remaining:
+            return {"ok": False, "detail": "stop-failed", "pids": stopped_pids}
         self.clear_pid_file(name)
         return {"ok": True, "detail": "stopped", "pids": stopped_pids}
 
@@ -408,12 +437,9 @@ class ProcessManager:
             except psutil.Error:
                 self.clear_pid_file(name)
 
-        target = f"-m {module}".lower()
         for process in psutil.process_iter(["pid", "name", "cmdline"]):
             try:
-                cmdline = " ".join(process.cmdline()).lower()
-                if target in cmdline:
-                    self.pid_file(name).write_text(str(process.pid), encoding="utf-8")
+                if self.looks_like_module_process(process, module):
                     matches[process.pid] = process
             except psutil.Error:
                 continue
@@ -429,8 +455,12 @@ class ProcessManager:
         Returns:
             bool: Whether process matches.
         """
-        cmdline = " ".join(process.cmdline()).lower()
-        return f"-m {module}".lower() in cmdline
+        command = process.cmdline()
+        return (self._owns_process(process) and any(command[i:i + 2] == ["-m", module]
+                for i in range(len(command) - 1)))
+
+    def _owns_process(self, process: psutil.Process) -> bool:
+        return Path(process.cwd()).resolve() == settings.project_root.resolve()
 
     def find_process(self, name: str) -> psutil.Process | None:
         """Find process.
@@ -463,12 +493,9 @@ class ProcessManager:
             except psutil.Error:
                 self.clear_pid_file(name)
 
-        target = self.service(name).module.lower()
         for process in psutil.process_iter(["pid", "name", "cmdline"]):
             try:
-                cmdline = " ".join(process.cmdline()).lower()
-                if "uvicorn" in cmdline and target in cmdline:
-                    self.pid_file(name).write_text(str(process.pid), encoding="utf-8")
+                if self.looks_like_service(process, name):
                     matches[process.pid] = process
             except psutil.Error:
                 continue
@@ -498,8 +525,9 @@ class ProcessManager:
         Returns:
             bool: Whether process matches.
         """
-        cmdline = " ".join(process.cmdline()).lower()
-        return "uvicorn" in cmdline and self.service(name).module.lower() in cmdline
+        command = process.cmdline()
+        return (self._owns_process(process) and self.service(name).module in command
+                and any("uvicorn" == Path(arg).stem for arg in command))
 
     def process_payload(self, process: psutil.Process | None) -> dict[str, Any]:
         if not process:

@@ -7,6 +7,8 @@ import math
 import re
 import subprocess
 import sys
+import signal
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +17,7 @@ from typing import Any
 from ..config import PROJECT_ROOT, settings
 from ..errors import GammaError
 from ..llm.factory import build_llm_adapter
+from ..supervisor.worker_events import WorkerHeartbeat
 from .candidates import CandidateDraftGenerator
 from .contract import load_improvement_contract
 from .coordinator import BoundedExperimentCoordinator, ExperimentSeriesStore, build_series_manifest
@@ -454,20 +457,31 @@ class AutonomousImprovementRunner:
         return completed.stdout.strip()
 
 
-def run_worker(*, once: bool = False, idle_timeout_seconds: int = 300) -> int:
+def run_worker(*, once: bool = False, idle_timeout_seconds: int = 300,
+               stop_event: threading.Event | None = None) -> int:
     runner = AutonomousImprovementRunner()
+    stop_event = stop_event or threading.Event()
     idle_started = time.monotonic()
-    while True:
-        request = runner.store.next_queued()
-        if request is not None:
-            idle_started = time.monotonic()
-            runner.run(request.id)
-            if once:
+    with WorkerHeartbeat(settings.data_dir / "runtime", "improvement_worker") as heartbeat:
+        while not stop_event.is_set():
+            request = runner.store.next_queued()
+            if request is not None:
+                idle_started = time.monotonic()
+                job_started = time.perf_counter()
+                heartbeat.state, heartbeat.job_id = "busy", request.id
+                heartbeat.events.emit("job.started", trace_id=request.id, job_id=request.id)
+                result = runner.run(request.id)
+                heartbeat.events.emit("job.completed", trace_id=request.id,
+                                      job_id=request.id, outcome=result.status,
+                                      duration_ms=round((time.perf_counter() - job_started) * 1000, 3))
+                heartbeat.state, heartbeat.job_id = "ready", None
+                if once:
+                    return 0
+                continue
+            if once or time.monotonic() - idle_started >= idle_timeout_seconds:
                 return 0
-            continue
-        if once or time.monotonic() - idle_started >= idle_timeout_seconds:
-            return 0
-        time.sleep(2.0)
+            stop_event.wait(2.0)
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -481,7 +495,16 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if not 5 <= args.idle_timeout_seconds <= 3600:
         raise ValueError("idle timeout must be between 5 and 3600 seconds")
-    return run_worker(once=args.once, idle_timeout_seconds=args.idle_timeout_seconds)
+    stop_event = threading.Event()
+    previous = signal.signal(signal.SIGTERM, lambda *_: stop_event.set())
+    try:
+        return run_worker(once=args.once, idle_timeout_seconds=args.idle_timeout_seconds, stop_event=stop_event)
+    finally:
+        try:
+            from ..brain.model_runtime import close_model_worker
+            close_model_worker()
+        finally:
+            signal.signal(signal.SIGTERM, previous)
 
 
 def _rank_proposals(

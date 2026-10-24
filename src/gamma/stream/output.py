@@ -97,9 +97,21 @@ class StreamOutputDispatcher:
         records: list[OutputDispatchRecord] = []
         for event in events:
             for adapter in self._adapters:
+                claim = None
                 try:
-                    records.append(adapter.handle(event))
+                    from ..delivery.execution import claim_event, finish_event
+                    mapped = performer_event_from_stream_output(event)
+                    if mapped is not None:
+                        claim = claim_event(mapped, f"stream_adapter:{adapter.name}")
+                    elif event.type == "overlay_update" and not event.payload.get("clear"):
+                        from ..delivery.authority import DeliveryDenied
+                        raise DeliveryDenied("overlay_adapter_not_authorized")
+                    record = adapter.handle(event)
+                    records.append(record)
+                    finish_event(claim, succeeded=record.ok)
                 except Exception as exc:
+                    if claim is not None:
+                        finish_event(claim, succeeded=False)
                     records.append(
                         OutputDispatchRecord(
                             adapter=adapter.name,

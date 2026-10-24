@@ -9,7 +9,6 @@ from ..system.status import SystemStatusService
 from .base import Tool, ToolResult
 
 
-_CORE_MEMORIES_PATH = settings.data_dir / "core_memories.md"
 
 
 class MemoryStatsTool(Tool):
@@ -231,7 +230,7 @@ class SaveMemoryTool(Tool):
     def __init__(self) -> None:
         self._memory = MemoryService()
 
-    def run(
+    def prepare(
         self,
         type: str,
         text: str,
@@ -242,7 +241,7 @@ class SaveMemoryTool(Tool):
         relationship_to_user: str | None = None,
         session_id: str | None = None,
         **kwargs,
-    ) -> ToolResult:
+    ) -> tuple[MemoryCandidate, str | None]:
         _ = kwargs
         normalized_tags = [str(tag).strip() for tag in (tags or []) if str(tag).strip()]
         normalized_text = " ".join(str(text).split())
@@ -256,14 +255,11 @@ class SaveMemoryTool(Tool):
             subject_name=subject_name,
             relationship_to_user=relationship_to_user,
         )
-        saved = self._memory.persist_candidates([candidate], session_id=session_id)
-        payload = {
-            "saved": saved,
-            "candidate": candidate.model_dump(),
-            "session_id": session_id,
-        }
-        return ToolResult(ok=True, output=json.dumps(payload, ensure_ascii=False, indent=2), metadata=payload)
+        return candidate, session_id
 
+    def run(self, **kwargs) -> ToolResult:
+        return ToolResult(ok=False, output="State writes require an owned decision proposal.",
+                          metadata={"saved": 0, "reason": "decision_ownership_required"})
     def _normalize_type(self, candidate_type: str, text: str, tags: list[str]) -> str:
         lowered = text.lower()
         tag_set = {tag.lower() for tag in tags}
@@ -280,7 +276,7 @@ class SaveMemoryTool(Tool):
 
 
 class SaveCoreMemoryTool(Tool):
-    """Append a permanent fact to data/core_memories.md.
+    """Persist a core fact through the state document authority.
 
     Only callable when the speaker is the owner — enforced in the conversation
     service before this tool is ever invoked.
@@ -290,25 +286,5 @@ class SaveCoreMemoryTool(Tool):
     description = "Permanently store a core fact that persists across all sessions. Owner-only."
 
     def run(self, fact: str, **kwargs) -> ToolResult:
-        _ = kwargs
-        fact_clean = " ".join(str(fact).strip().split())
-        if not fact_clean:
-            return ToolResult(ok=False, output="No fact provided.", metadata={"saved": 0})
-
-        _CORE_MEMORIES_PATH.parent.mkdir(parents=True, exist_ok=True)
-        if not _CORE_MEMORIES_PATH.exists():
-            _CORE_MEMORIES_PATH.write_text("# Core Memories\n\n", encoding="utf-8")
-
-        existing = _CORE_MEMORIES_PATH.read_text(encoding="utf-8")
-        # Avoid exact duplicates
-        if f"- {fact_clean}" in existing:
-            return ToolResult(ok=True, output="Already stored.", metadata={"saved": 0, "duplicate": True})
-
-        with _CORE_MEMORIES_PATH.open("a", encoding="utf-8") as fh:
-            fh.write(f"- {fact_clean}\n")
-
-        return ToolResult(
-            ok=True,
-            output=f"Stored: {fact_clean}",
-            metadata={"saved": 1, "fact": fact_clean},
-        )
+        return ToolResult(ok=False, output="State writes require an owned decision proposal.",
+                          metadata={"saved": 0, "reason": "decision_ownership_required"})

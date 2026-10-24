@@ -36,6 +36,12 @@ import sys
 import wave
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+if __package__:
+    from .qwen_jobs import JobLedger
+else:
+    from qwen_jobs import JobLedger
+
+JOBS = JobLedger()
 
 # Add venv to path if available
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -319,9 +325,18 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
+        if self.path.startswith("/jobs/"):
+            try:
+                record = JOBS.status(self.path.removeprefix("/jobs/"))
+            except ValueError:
+                self._send(400, b'{"error":"invalid job identity"}')
+                return
+            self._send(200, json.dumps(record).encode())
+            return
         if self.path in {"/health", "/health/"}:
             self._send(200, json.dumps({
                 "status": "ok",
+                "generation": JOBS.generation,
                 "model": MODEL_ID,
                 "device": REPORTED_DEVICE or _resolved_device or DEVICE_STR,
                 "dtype": DTYPE_STR,
@@ -340,8 +355,20 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._send(400, json.dumps({"error": f"bad JSON: {exc}"}).encode())
             return
+        job_id = self.headers.get("X-Shana-Job-ID")
+        if job_id is not None:
+            try:
+                JOBS.begin(job_id)
+            except ValueError:
+                self._send(400, b'{"error":"invalid job identity"}')
+                return
+            except RuntimeError:
+                self._send(409, b'{"error":"job duplicate or ledger full"}')
+                return
+        succeeded = False
         try:
             wav_bytes = synthesize(body)
+            succeeded = True
         except (ValueError, FileNotFoundError) as exc:
             self._send(400, json.dumps({"error": str(exc)}).encode())
             return
@@ -349,6 +376,9 @@ class Handler(BaseHTTPRequestHandler):
             log.exception("Synthesis error")
             self._send(500, json.dumps({"error": str(exc)}).encode())
             return
+        finally:
+            if job_id is not None:
+                JOBS.finish(job_id, succeeded)
         self._send(200, wav_bytes, "audio/wav")
 
 

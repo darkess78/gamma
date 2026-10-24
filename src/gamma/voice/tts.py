@@ -25,6 +25,7 @@ except ImportError:
     _SCIPY_AVAILABLE = False
 
 from ..config import settings
+from ..resources.shared_execution import admitted, admitted_urlopen, admitted_subprocess_run
 from ..errors import ConfigurationError, ExternalServiceError
 from .rvc_support import (
     resolve_rvc_index_path,
@@ -230,7 +231,7 @@ class TTSService:
             },
         )
 
-    def synthesize(self, text: str, emotion: str | None = None, styles: list[str] | None = None) -> TTSResult:
+    def synthesize(self, text: str, emotion: str | None = None, styles: list[str] | None = None, job_id: str | None = None) -> TTSResult:
         """Generate audio from text with optional post-processing.
         
         Args:
@@ -248,7 +249,7 @@ class TTSService:
             if style not in voice_styles:
                 voice_styles.append(style)
         if isinstance(self._backend, QwenTTSBackend):
-            result = self._backend.synthesize(text=expressive.clean_text, emotion=expressive.emotion, styles=voice_styles)
+            result = self._backend.synthesize(text=expressive.clean_text, emotion=expressive.emotion, styles=voice_styles, **({"job_id": job_id} if job_id else {}))
         else:
             result = self._backend.synthesize(text=expressive.clean_text, emotion=expressive.emotion)
         result = self._maybe_apply_rvc(result, emotion=expressive.emotion)
@@ -380,7 +381,7 @@ class TTSService:
             run_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
         try:
-            subprocess.run(command, **run_kwargs)
+            admitted_subprocess_run(command, workload="tts", **run_kwargs)
         except FileNotFoundError as exc:
             raise ConfigurationError(f"RVC Python not found: {rvc_python}") from exc
         except subprocess.CalledProcessError as exc:
@@ -552,7 +553,7 @@ class QwenTTSBackend(BaseFileTTSBackend):
                 "python scripts/start_qwen_tts_server.py"
             )
 
-    def synthesize(self, text: str, emotion: str | None = None, styles: list[str] | None = None) -> TTSResult:
+    def synthesize(self, text: str, emotion: str | None = None, styles: list[str] | None = None, job_id: str | None = None) -> TTSResult:
         """Synthesize text via Qwen TTS HTTP API.
         
         Args:
@@ -593,12 +594,12 @@ class QwenTTSBackend(BaseFileTTSBackend):
         request = urllib.request.Request(
             self._cfg.qwen_tts_endpoint,
             data=body,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", **({"X-Shana-Job-ID": job_id} if job_id else {})},
             method="POST",
         )
         path = self._target_path(".wav")
         try:
-            with urllib.request.urlopen(request, timeout=self._cfg.qwen_tts_timeout_seconds) as response:
+            with admitted_urlopen(urllib.request.urlopen, request, timeout=self._cfg.qwen_tts_timeout_seconds, workload="tts") as response:
                 audio_bytes = response.read()
         except urllib.error.HTTPError as exc:
             details = exc.read().decode("utf-8", errors="replace")
@@ -801,8 +802,9 @@ class OpenAITTSBackend(BaseFileTTSBackend):
             from openai import OpenAI
         except Exception as exc:
             raise ConfigurationError("The OpenAI SDK is required for SHANA_TTS_PROVIDER=openai.") from exc
-        self._client = OpenAI(api_key=api_key)
+        self._client = OpenAI(api_key=api_key, max_retries=0)
 
+    @admitted("tts", endpoint="https://api.openai.com")
     def synthesize(self, text: str, emotion: str | None = None) -> TTSResult:
         """Synthesize text via OpenAI TTS API.
         
@@ -984,7 +986,7 @@ class PiperTTSBackend(BaseFileTTSBackend):
             run_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
         try:
-            subprocess.run(command, **run_kwargs)
+            admitted_subprocess_run(command, workload="tts", **run_kwargs)
         except FileNotFoundError as exc:
             raise ConfigurationError(
                 f"Piper executable not found: {self._executable}. Set SHANA_PIPER_EXE to the Piper binary."

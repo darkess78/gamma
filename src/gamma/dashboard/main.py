@@ -10,6 +10,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .service import DashboardService
+from .worker_routes import router as worker_router
+from .playback_proxy import router as playback_router
 from .shana_client import ShanaClientError
 from ..config import settings as _app_settings
 from .auth import auth_config, dashboard_auth_ready, is_authenticated, session_cookie_value, verify_login, websocket_is_authenticated
@@ -20,6 +22,8 @@ from ..system.lazy_singleton import LazySingleton
 from ..voice.live import LiveVoiceSession
 
 app = FastAPI(title="Gamma Dashboard")
+app.include_router(worker_router)
+app.include_router(playback_router)
 service = LazySingleton[DashboardService]()
 live_voice_session = LazySingleton[LiveVoiceSession]()
 STATIC_DIR = Path(__file__).resolve().parent / "static"

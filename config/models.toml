@@ -52,3 +52,16 @@ reserved_output_tokens = 1536
 safety_margin_tokens = 2048
 persona_capable = false
 provenance = "configured"
+
+[[model_capabilities]]
+provider = "local"
+model = "qwen3.8:27b"
+advertised_context_tokens = 262144
+runtime_context_tokens = 65536
+usable_input_tokens = 57344
+reserved_output_tokens = 4096
+safety_margin_tokens = 4096
+persona_capable = true
+vision_capable = true
+tools_capable = true
+provenance = "live-validated"

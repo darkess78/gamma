@@ -154,38 +154,67 @@ Example event types:
 - `mouth_level`
 - `output_cleared`
 
-Example speech chunk payload:
+Example approved speech event before the server adds a receiver offer:
 
 ```json
 {
   "type": "speech_chunk_ready",
-  "turn_id": "abc123",
-  "chunk_index": 1,
-  "text": "Give me a second.",
-  "audio_url": "http://shana-pc:8000/v1/audio/artifacts/abc123/1.wav",
-  "content_type": "audio/wav",
-  "interruptible": true,
-  "protect_ms": 0,
-  "is_final": false
+  "turn_id": "approved-decision-id",
+  "target_policy": "dashboard_monitor",
+  "payload": {
+    "text": "Give me a second.",
+    "delivery_grant": "current-grant-id",
+    "audio_url": "https://shana.example/v1/delivery/current-grant-id/audio",
+    "chunk_index": 1,
+    "is_final": true
+  }
 }
 ```
 
-Output events must not require clients to read local Shana PC file paths.
+The server adds a connection-owned playback offer containing lease/event identity,
+expiry, grant and audio digest. A URL or retained event alone never permits
+execution. Clients fetch verified immutable bytes, obtain a one-use start permit
+immediately before playback, and report start/completion/failure on the same
+connection. They stop on revocation or disconnect; another receiver cannot
+acknowledge the offer.
 
-## Audio Strategy
+## Current Delivery And Audio Contract
 
-Current TTS output is WAV-oriented, and the live voice path already handles chunked audio. The future output bus should preserve that capability while making audio network-safe.
+Decision commit and every required review precede approved preparation. Failed,
+denied, malformed, unavailable or delayed required review releases no candidate
+output or cached filtered fallback. Preparation atomically stores the approved
+payload, immutable audio binding and publication record.
+`tts_metadata.delivery_state=prepared` is preparation; the legacy grant row value
+`dispatched` remains a compatibility name for that stage. Separate consumer-attempt
+records establish adapter dispatch, and connection-owned playback receipts
+establish receiver-reported start/completion. Neither synthesis completion nor a
+speech-named producer event proves playback.
 
-Recommended progression:
+The dispatcher and performer bus validate the exact grant/target/content and
+commit semantic consumer claims before external effects. Consumers recheck current
+Presence, audience, policy, expiry, cancellation and mute state immediately before
+execution. VTube repeats this check after authentication. A crash with an uncertain
+consumer claim does not retry the effect; a new event UUID cannot evade the claim.
+Restart preserves audit records without replaying old approved output.
 
-1. MVP: Shana creates WAV artifacts and publishes fetchable artifact URLs.
-2. Next: speech chunks are published as they become ready.
-3. Later: lower-latency streaming can be added if WAV artifact fetches are not fast enough.
+Core-live and Wake publication use the same target-bound boundary. Legacy live
+job APIs delegate to core; direct subprocess generation and JSON publication are
+retired. Browser live playback rejects raw base64 chunks. CLI playback uses the
+same receiver protocol, cancels its exact player process on revocation/disconnect,
+and waits for an accepted completion receipt. Reconnecting cannot re-offer the
+same claimed CLI grant. Roundtrip responses expose approved grant/URL metadata
+rather than raw base64. Legacy artifact endpoints return HTTP 410.
 
-Avoid using local filesystem paths in performer-facing payloads. Use one of:
-- artifact URL
-- artifact ID plus fetch endpoint
-- audio bytes/chunks over WebSocket if needed
+Output-clear, subtitle-clear and mute control events can stop output without a
+speech grant. They cannot carry new response content. Diagnostic synthesis is
+preparation only and cannot authorize automatic playback. Lower-latency streaming
+would require a separately specified grant/receipt contract; arbitrary raw chunks
+are not an alternative transport permission.
+
+See modular_delivery_inventory.md for current producers/consumers and
+modular_worker_runtime_delivery_slice.md for acceptance evidence. Hardware speaker
+audibility and avatar lifecycle acceptance remain separate from isolated delivery
+implementation; it has not been deployed to production.
 
 ## Stream PC Performer Client
 

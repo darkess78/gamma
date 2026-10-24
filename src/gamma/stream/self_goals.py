@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from ..config import settings
 from ..errors import ConfigurationError
+from .state_store import StreamStateStore
 
 
 SelfGoalStatus = Literal["proposed", "approved", "rejected", "cleared"]
@@ -59,7 +60,7 @@ class StreamSelfGoal:
         }
 
 
-class StreamSelfGoalStore:
+class StreamSelfGoalStore(StreamStateStore):
     """Stream self goal store.
     
     Attributes:
@@ -85,9 +86,9 @@ class StreamSelfGoalStore:
         self.database_url = database_url or settings.database_url
         self.path = _sqlite_path_from_url(self.database_url)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
+        self._initialize_authority()
 
-    def propose(self, *, title: str, description: str, source: str = "stream_brain", metadata: dict[str, Any] | None = None) -> StreamSelfGoal:
+    def propose(self, *, title: str, description: str, source: str = "stream_brain", metadata: dict[str, Any] | None = None, session=None) -> StreamSelfGoal:
         """Propose self goal.
         
         Args:
@@ -108,16 +109,18 @@ class StreamSelfGoalStore:
         if not normalized_title or not normalized_description:
             raise ValueError("self-goal title and description are required")
         now = _utc_now()
-        with self._connect() as conn:
+        with self._write_connect(session) as conn:
             existing = conn.execute(
                 """
-                SELECT id FROM stream_self_goals
+                SELECT id, status FROM stream_self_goals
                 WHERE title = ? AND status IN ('proposed', 'approved')
                 """,
                 (normalized_title,),
             ).fetchone()
             if existing:
                 record_id = int(existing["id"])
+                if existing["status"] == "approved":
+                    return _record_from_row(conn.execute("SELECT * FROM stream_self_goals WHERE id = ?", (record_id,)).fetchone())
                 conn.execute(
                     """
                     UPDATE stream_self_goals
@@ -135,13 +138,12 @@ class StreamSelfGoalStore:
                     (normalized_title, normalized_description, source, json.dumps(metadata or {}, ensure_ascii=False), now, now),
                 )
                 record_id = int(cursor.lastrowid)
-            conn.commit()
-        record = self.get(record_id)
+            record = _record_from_row(conn.execute("SELECT * FROM stream_self_goals WHERE id = ?", (record_id,)).fetchone())
         if record is None:
             raise ConfigurationError("stream self-goal write failed")
         return record
 
-    def set_status(self, goal_id: int, *, status: str) -> StreamSelfGoal:
+    def set_status(self, goal_id: int, *, status: str, session=None) -> StreamSelfGoal:
         """Set self goal status.
         
         Args:
@@ -156,25 +158,24 @@ class StreamSelfGoalStore:
         """
         _validate_status(status)
         now = _utc_now()
-        with self._connect() as conn:
+        with self._write_connect(session) as conn:
             conn.execute(
                 "UPDATE stream_self_goals SET status = ?, updated_at = ? WHERE id = ?",
                 (status, now, goal_id),
             )
-            conn.commit()
-        record = self.get(goal_id)
+            row = conn.execute("SELECT * FROM stream_self_goals WHERE id = ?", (goal_id,)).fetchone()
+            record = _record_from_row(row) if row else None
         if record is None:
             raise KeyError(goal_id)
         return record
 
-    def clear(self) -> dict[str, Any]:
+    def clear(self, *, session=None) -> dict[str, Any]:
         now = _utc_now()
-        with self._connect() as conn:
+        with self._write_connect(session) as conn:
             cursor = conn.execute(
                 "UPDATE stream_self_goals SET status = 'cleared', updated_at = ? WHERE status IN ('proposed', 'approved')",
                 (now,),
             )
-            conn.commit()
         return {"ok": True, "cleared": int(cursor.rowcount or 0)}
 
     def get(self, goal_id: int) -> StreamSelfGoal | None:
@@ -218,25 +219,6 @@ class StreamSelfGoalStore:
         conn.row_factory = sqlite3.Row
         return conn
 
-    def _ensure_schema(self) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS stream_self_goals (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title TEXT NOT NULL,
-                    description TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    source TEXT NOT NULL,
-                    metadata_json TEXT NOT NULL DEFAULT '{}',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute("CREATE INDEX IF NOT EXISTS ix_stream_self_goals_status ON stream_self_goals (status)")
-            conn.execute("CREATE INDEX IF NOT EXISTS ix_stream_self_goals_updated_at ON stream_self_goals (updated_at)")
-            conn.commit()
 
 
 def _sqlite_path_from_url(database_url: str) -> Path:

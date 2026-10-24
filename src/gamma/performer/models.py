@@ -117,14 +117,10 @@ def _network_safe_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return payload
     network_payload = dict(payload)
     audio_path = str(network_payload.pop("audio_path") or "")
-    artifact_name = _audio_artifact_name(audio_path)
-    if artifact_name:
-        network_payload["audio_artifact"] = artifact_name
-        network_payload["audio_url"] = f"{settings.shana_base_url}/v1/audio/artifacts/{artifact_name}"
+    if network_payload.get("delivery_grant") and audio_path:
+        network_payload["audio_url"] = f"{settings.shana_base_url}/v1/delivery/{network_payload['delivery_grant']}/audio"
         return network_payload
-    if _is_filtered_system_audio(audio_path):
-        network_payload["audio_content_type"] = "audio/wav"
-        network_payload["audio_base64"] = base64.b64encode(Path(audio_path).read_bytes()).decode("ascii")
+    # Legacy filenames and configured WAVs carry no delivery permission.
     return network_payload
 
 

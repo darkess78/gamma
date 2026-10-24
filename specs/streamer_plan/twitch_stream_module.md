@@ -59,7 +59,7 @@ The Twitch worker is an ingestion adapter. It should not import `ConversationSer
 - `mention_replies_enabled`: on.
 - `spam_quips_enabled`: on.
 - `self_goal_proposals_enabled`: on.
-- `llm_safety_review_enabled`: on if configured, otherwise heuristic-only.
+- `llm_safety_review_enabled`: controls optional review only; it cannot disable review required by configured policy or the output target.
 
 Each toggle should be controllable independently so the operator can validate routing, subtitles, voice, safety, and memory in isolation.
 
@@ -283,25 +283,36 @@ Mute only silences audio. Stop should:
 Implement as an API endpoint with a dashboard button.
 
 ## Safety And Playback Gating
-`filtered` means Shana generated something unsafe. It must not be used for slow reviewer timeouts.
+
+Required review is a delivery permission gate. A per-event toggle cannot remove
+review required by configured policy, privacy requirements or the public target.
 
 Required flow:
 1. Shana generates a candidate response.
-2. Fast hard-block and heuristic checks run immediately.
-3. If fast checks fail, discard the response and play the cached neutral `filtered` sound bite.
-4. If fast checks pass, start TTS generation and LLM safety review in parallel.
-5. Public subtitles wait for approval or scheduled playback.
-6. If the LLM reviewer passes before playback, play normally.
-7. If TTS finishes first, playback may begin while the bounded reviewer remains active.
-8. If a late reviewer blocks, publish an output clear immediately, stop current speech/subtitles, and play the cached `filtered` audio with a `filtered` subtitle.
-9. A reviewer timeout does not produce `filtered`; the timeout is recorded and the unsafe candidate is not promoted into stream memory.
-10. If the reviewer fails before playback starts, discard generated audio and play `filtered`.
-11. Shana's future context receives only safe metadata, not the unsafe candidate text.
+2. Mandatory privacy/hard-block checks and configured fast checks run on both
+   display and speech text.
+3. Complete every required LLM review before synthesis or publication. Delayed,
+   timed-out, unavailable, malformed or denied review releases no candidate text,
+   audio, subtitle, expression or cached filtered fallback.
+4. Commit the owned decision before issuing a grant binding approved content,
+   target, audience, Presence and policy.
+   Synthesis is cancellable; cancellation rejects its late result.
+5. Atomically prepare immutable audio and publication records. Claim semantic
+   consumer dispatch before execution, then recheck permission at the consumer.
+   An uncertain send or restart does not replay old output.
+6. Playback requires a connection-owned offer and current start permit. Receipts
+   distinguish preparation, dispatch, playback start, completion and interruption;
+   a second target cannot acknowledge the first target's offer.
+7. Record only safe review metadata for failed candidates in future context.
 
-Unsafe candidate text may be shown in the dashboard by default for the owner. It must not be passed back into Shana's prompt context, stored in temp memory, or used in normal replay prompts.
+Unsafe candidate text must not enter Shana's prompt context, stream temp memory
+or normal replay prompts. Owner diagnostics are not permission to publish it.
 
 ## Filtered Audio
-Store the cached filtered sound outside generated TTS cleanup paths.
+
+Cached filtered audio is diagnostic material, not an automatic failure fallback.
+Any future spoken replacement needs its own approved decision, grant and receiver
+permission. Keep diagnostic caches outside generated TTS cleanup paths.
 
 Recommended path:
 
@@ -423,7 +434,7 @@ Minimum tests:
 - dry-run does not speak
 - voice disabled still produces safe subtitle/output traces
 - Stop Shana clears active speech and subtitles
-- safety failure plays filtered and hides unsafe text from Shana context
+- failed, denied or delayed required review releases no output or cached filtered fallback and excludes unsafe text from Shana context
 - reviewer timeout delays/skips instead of saying filtered
 - follows are high priority but may defer until current speech ends
 - point redeems raise priority but do not force response

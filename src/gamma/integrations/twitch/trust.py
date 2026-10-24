@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ...config import settings
 from ...errors import ConfigurationError
+from ...stream.state_store import StreamStateStore
 from .models import TrustLevel
 
 
@@ -37,7 +38,7 @@ class ViewerTrustRecord:
     updated_at: str | None = None
 
 
-class ViewerTrustStore:
+class ViewerTrustStore(StreamStateStore):
     """DAO for viewer trust records across platforms."""
 
     def __init__(self, *, database_url: str | None = None) -> None:
@@ -49,7 +50,7 @@ class ViewerTrustStore:
         self.database_url = database_url or settings.database_url
         self.path = _sqlite_path_from_url(self.database_url)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
+        self._initialize_authority()
 
     def get(self, *, platform: str, platform_user_id: str) -> ViewerTrustRecord | None:
         """Get trust record for a user on a platform.
@@ -116,9 +117,10 @@ class ViewerTrustStore:
         """
         _validate_trust_level(trust_level)
         now = _utc_now()
-        existing = self.get(platform=platform, platform_user_id=platform_user_id)
-        created_at = existing.created_at if existing and existing.created_at else now
-        with self._connect() as conn:
+        with self._write_connect() as conn:
+            existing = conn.execute("SELECT created_at FROM stream_viewer_trust WHERE platform = ? AND platform_user_id = ?",
+                (platform, platform_user_id)).fetchone()
+            created_at = existing["created_at"] if existing else now
             conn.execute(
                 """
                 INSERT INTO stream_viewer_trust (
@@ -144,8 +146,8 @@ class ViewerTrustStore:
                     now,
                 ),
             )
-            conn.commit()
-        record = self.get(platform=platform, platform_user_id=platform_user_id)
+            record = _record_from_row(conn.execute("SELECT * FROM stream_viewer_trust WHERE platform = ? AND platform_user_id = ?",
+                (platform, platform_user_id)).fetchone())
         if record is None:
             raise ConfigurationError("viewer trust write failed")
         return record
@@ -185,30 +187,6 @@ class ViewerTrustStore:
         conn = sqlite3.connect(self.path)
         conn.row_factory = sqlite3.Row
         return conn
-
-    def _ensure_schema(self) -> None:
-        """Ensure database schema exists."""
-        with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS stream_viewer_trust (
-                    platform TEXT NOT NULL,
-                    platform_user_id TEXT NOT NULL,
-                    display_name TEXT,
-                    trust_level TEXT NOT NULL DEFAULT 'normal',
-                    notes TEXT,
-                    pronunciation_alias TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    PRIMARY KEY (platform, platform_user_id)
-                )
-                """
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS ix_stream_viewer_trust_trust_level ON stream_viewer_trust (trust_level)"
-            )
-            conn.commit()
-
 
 def _sqlite_path_from_url(database_url: str) -> Path:
     """Convert SQLite URL to Path, relative to project root if needed.
@@ -272,4 +250,3 @@ def _utc_now() -> str:
         str: UTC timestamp.
     """
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-

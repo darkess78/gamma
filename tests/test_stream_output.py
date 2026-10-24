@@ -18,6 +18,19 @@ from gamma.stream.output import JsonlStreamOutputAdapter, PerformerBusOutputAdap
 from gamma.stream.trace import StreamTraceStore
 
 
+class _TransportBus(PerformerEventBus):
+    """Exercise queue/history formatting only; authorization has real ledger tests.
+
+    No subscriber in these unit tests executes external output. Production uses
+    PerformerEventBus.publish; test_delivery_execution covers that entry point.
+    """
+    def publish(self, event):
+        self._publish(event)
+
+    def _cancel_grants(self, target):
+        pass
+
+
 class _FakeConversation:
     def respond(self, **_kwargs):
         return AssistantResponse(
@@ -115,10 +128,10 @@ class StreamOutputTest(unittest.TestCase):
 
         self.assertEqual(performer_event.type, "speech_started")  # type: ignore[union-attr]
         self.assertNotIn("audio_path", performer_event.payload)  # type: ignore[union-attr]
-        self.assertEqual(performer_event.payload["audio_artifact"], "tts-test.wav")  # type: ignore[union-attr]
-        self.assertEqual(performer_event.payload["audio_url"], "http://192.168.1.50:8000/v1/audio/artifacts/tts-test.wav")  # type: ignore[union-attr]
+        self.assertNotIn("audio_artifact", performer_event.payload)
+        self.assertNotIn("audio_url", performer_event.payload)
 
-    def test_filtered_system_audio_is_embedded_for_remote_performers(self) -> None:
+    def test_filtered_system_audio_without_grant_is_not_exported(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             audio_path = Path(temp_dir) / "filtered.wav"
             audio_path.write_bytes(b"RIFF-filtered")
@@ -133,7 +146,7 @@ class StreamOutputTest(unittest.TestCase):
 
         self.assertNotIn("audio_path", performer_event.payload)  # type: ignore[union-attr]
         self.assertEqual(performer_event.payload["audio_content_type"], "audio/wav")  # type: ignore[union-attr]
-        self.assertTrue(performer_event.payload["audio_base64"])  # type: ignore[union-attr]
+        self.assertNotIn("audio_base64", performer_event.payload)
 
     def test_stream_output_events_include_input_actor_context(self) -> None:
         input_event = StreamInputEvent(
@@ -175,7 +188,7 @@ class StreamOutputTest(unittest.TestCase):
         self.assertNotIn("target_policy", performer_event.payload)  # type: ignore[union-attr]
 
     def test_performer_bus_adapter_publishes_recent_events(self) -> None:
-        bus = PerformerEventBus()
+        bus = _TransportBus()
         adapter = PerformerBusOutputAdapter(bus)
         stream_event = StreamOutputEvent(input_event_id="in-1", turn_id="turn-1", type="subtitle_line", payload={"text": "Hello."})
 
@@ -189,7 +202,7 @@ class StreamOutputTest(unittest.TestCase):
 
     def test_performer_bus_replays_recent_events_to_subscriber(self) -> None:
         async def run_case() -> None:
-            bus = PerformerEventBus()
+            bus = _TransportBus()
             adapter = PerformerBusOutputAdapter(bus)
             adapter.handle(StreamOutputEvent(input_event_id="in-1", turn_id="turn-1", type="subtitle_line", payload={"text": "One"}))
             subscriber_id, queue = await bus.subscribe(replay_recent=1)
@@ -204,7 +217,7 @@ class StreamOutputTest(unittest.TestCase):
         anyio.run(run_case)
 
     def test_performer_bus_assigns_monotonic_sequences(self) -> None:
-        bus = PerformerEventBus()
+        bus = _TransportBus()
         first = PerformerOutputEvent(type="subtitle_update", turn_id="turn-1", payload={"text": "One"})
         second = PerformerOutputEvent(type="subtitle_update", turn_id="turn-2", payload={"text": "Two"})
 
@@ -216,7 +229,7 @@ class StreamOutputTest(unittest.TestCase):
         self.assertEqual(bus.stats()["last_sequence"], 2)
 
     def test_performer_bus_updates_spoken_turns(self) -> None:
-        bus = PerformerEventBus()
+        bus = _TransportBus()
         bus.publish(PerformerOutputEvent(type="subtitle_update", turn_id="turn-1", payload={"text": "Hello."}))
         bus.publish(PerformerOutputEvent(type="speech_started", turn_id="turn-1"))
         bus.publish(PerformerOutputEvent(type="speech_ended", turn_id="turn-1"))
@@ -224,12 +237,12 @@ class StreamOutputTest(unittest.TestCase):
         turns = bus.recent_turns(limit=5)
 
         self.assertEqual(turns[0]["turn_id"], "turn-1")
-        self.assertEqual(turns[0]["status"], "completed")
+        self.assertEqual(turns[0]["status"], "ready")
         self.assertEqual(turns[0]["subtitle"], "Hello.")
 
     def test_performer_bus_replays_after_sequence(self) -> None:
         async def run_case() -> None:
-            bus = PerformerEventBus()
+            bus = _TransportBus()
             bus.publish(PerformerOutputEvent(type="subtitle_update", turn_id="turn-1", payload={"text": "One"}))
             bus.publish(PerformerOutputEvent(type="subtitle_update", turn_id="turn-2", payload={"text": "Two"}))
 
@@ -248,7 +261,7 @@ class StreamOutputTest(unittest.TestCase):
         anyio.run(run_case)
 
     def test_performer_bus_treats_negative_after_sequence_as_zero(self) -> None:
-        bus = PerformerEventBus()
+        bus = _TransportBus()
         bus.publish(PerformerOutputEvent(type="subtitle_update", turn_id="turn-1", payload={"text": "One"}))
 
         recent = bus.recent(limit=10, after_sequence=-10)
@@ -256,7 +269,7 @@ class StreamOutputTest(unittest.TestCase):
         self.assertEqual([event.turn_id for event in recent], ["turn-1"])
 
     def test_performer_bus_reports_replay_window_gaps(self) -> None:
-        bus = PerformerEventBus(history_limit=2)
+        bus = _TransportBus(history_limit=2)
         bus.publish(PerformerOutputEvent(type="subtitle_update", turn_id="turn-1", payload={"text": "One"}))
         bus.publish(PerformerOutputEvent(type="subtitle_update", turn_id="turn-2", payload={"text": "Two"}))
         bus.publish(PerformerOutputEvent(type="subtitle_update", turn_id="turn-3", payload={"text": "Three"}))
@@ -267,7 +280,7 @@ class StreamOutputTest(unittest.TestCase):
 
     def test_performer_bus_filters_by_target_policy(self) -> None:
         async def run_case() -> None:
-            bus = PerformerEventBus()
+            bus = _TransportBus()
             bus.publish(PerformerOutputEvent(type="subtitle_update", turn_id="public-1", target_policy="stream_public", payload={"text": "Public"}))
             bus.publish(
                 PerformerOutputEvent(
@@ -306,7 +319,7 @@ class StreamOutputTest(unittest.TestCase):
 
     def test_performer_bus_keeps_discord_target_separate(self) -> None:
         async def run_case() -> None:
-            bus = PerformerEventBus()
+            bus = _TransportBus()
             bus.publish(PerformerOutputEvent(type="subtitle_update", turn_id="discord-1", target_policy="discord_call", payload={"text": "Discord only"}))
 
             stream_id, stream_queue = await bus.subscribe(replay_recent=10, target_policy="stream_public")
@@ -326,7 +339,11 @@ class StreamOutputTest(unittest.TestCase):
         anyio.run(run_case)
 
     def test_stream_brain_dispatches_output_events(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
+        from gamma.presence import presence_state_for_mode
+        with tempfile.TemporaryDirectory() as temp_dir, \
+                patch.object(settings, "database_url", f"sqlite:///{temp_dir}/state.db"), \
+                patch("gamma.presence.load_presence_state", return_value=presence_state_for_mode("go_live")):
+
             adapter = JsonlStreamOutputAdapter(Path(temp_dir) / "outputs.jsonl")
             brain = StreamBrain(
                 conversation=_FakeConversation(),  # type: ignore[arg-type]
@@ -338,6 +355,7 @@ class StreamOutputTest(unittest.TestCase):
 
         self.assertEqual([event.type for event in result.output_events], ["emotion_changed", "subtitle_line", "avatar_motion"])
         self.assertEqual(len(result.output_dispatch["records"]), 3)
+        self.assertTrue(all(record["ok"] for record in result.output_dispatch["records"]), result.output_dispatch)
         self.assertEqual(len(recent), 3)
 
     def test_output_log_service_reads_recent_outputs(self) -> None:
@@ -354,7 +372,7 @@ class StreamOutputTest(unittest.TestCase):
     def test_performer_recent_events_route_reads_bus(self) -> None:
         from gamma.api.routes import audio_artifact, performer_recent_events, performer_status, performer_target_clear, performer_target_mute, performer_target_unmute
 
-        bus = PerformerEventBus()
+        bus = _TransportBus()
         PerformerBusOutputAdapter(bus).handle(
             StreamOutputEvent(input_event_id="in-1", turn_id="turn-1", type="subtitle_line", payload={"text": "Monitor this."})
         )
@@ -390,13 +408,14 @@ class StreamOutputTest(unittest.TestCase):
             audio_path = Path(temp_dir) / "tts-test.wav"
             audio_path.write_bytes(b"RIFF")
             with patch.object(settings, "audio_output_dir", Path(temp_dir)):
-                file_response = audio_artifact("tts-test.wav")
-
-        self.assertEqual(file_response.media_type, "audio/x-wav")
+                from fastapi import HTTPException
+                with self.assertRaises(HTTPException) as denied:
+                    audio_artifact("tts-test.wav")
+                self.assertEqual(denied.exception.status_code, 410)
 
     def test_performer_bus_muted_target_filters_non_control_events(self) -> None:
         async def run_case() -> None:
-            bus = PerformerEventBus()
+            bus = _TransportBus()
             subscriber_id, queue = await bus.subscribe(replay_recent=0, target_policy="stream_public")
             try:
                 bus.set_target_muted("stream_public", True, reason="test")
@@ -417,7 +436,7 @@ class StreamOutputTest(unittest.TestCase):
 
     def test_performer_bus_clear_target_does_not_mute(self) -> None:
         async def run_case() -> None:
-            bus = PerformerEventBus()
+            bus = _TransportBus()
             subscriber_id, queue = await bus.subscribe(replay_recent=0, target_policy="stream_public")
             try:
                 result = bus.clear_target("stream_public", reason="test")
@@ -434,7 +453,7 @@ class StreamOutputTest(unittest.TestCase):
 
     def test_performer_bus_muted_target_filters_replay(self) -> None:
         async def run_case() -> None:
-            bus = PerformerEventBus()
+            bus = _TransportBus()
             bus.publish(PerformerOutputEvent(type="subtitle_update", turn_id="before-mute", target_policy="stream_public", payload={"text": "Old"}))
             bus.set_target_muted("stream_public", True, reason="test")
             bus.publish(PerformerOutputEvent(type="subtitle_update", turn_id="during-mute", target_policy="stream_public", payload={"text": "Hidden"}))
@@ -455,13 +474,14 @@ class StreamOutputTest(unittest.TestCase):
     def test_performer_bus_persists_muted_targets(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             state_path = Path(temp_dir) / "performer-state.json"
-            bus = PerformerEventBus(state_path=state_path)
+            bus = _TransportBus(state_path=state_path)
             result = bus.set_target_muted("stream_public", True, reason="test")
             reloaded = PerformerEventBus(state_path=state_path)
 
             self.assertTrue(result["muted"])
             self.assertEqual(reloaded.stats()["muted_targets"], ["stream_public"])
-            saved = json.loads(state_path.read_text(encoding="utf-8"))
+            saved = reloaded._documents.load("performer_controls", state_path)
+            self.assertFalse(state_path.exists())
             self.assertEqual(saved["muted_targets"], ["stream_public"])
 
             reloaded.set_target_muted("stream_public", False, reason="test")

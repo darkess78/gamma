@@ -20,7 +20,7 @@ Shana owns transcription, generation, synthesis, job state, and cancellation.
 - Shana job endpoints: `/v1/voice/live/*` and `/v1/voice/transcribe`
 - messages cover ready, ping/pong, start/end/cancel/interrupt, partial transcripts, reply chunks, job results, and errors
 - jobs use queued, running, speaking, completed, cancelled, and failed states
-- finalized turns run in cancellable subprocess workers
+- finalized modular turns use core orchestration and independently owned persistent workers
 - chunk metadata includes ordering, finality, interruptibility, and protection time
 
 ## Turn And Interruption Policy
@@ -53,3 +53,15 @@ Live voice must fail without orphaning workers, replaying stale audio, or
 blocking the dashboard event loop. Network errors must be visible and safe to
 retry. Monitor provides persistent output playback and links to the Live page,
 which owns microphone/live-voice tuning and diagnostics.
+
+
+## Modular acceptance
+
+The modular live response includes `decision_trace_id` and `delivery_grant` for
+joining final input to the committed decision and receiver playback receipt.
+`completed` describes processing; only a receiver receipt establishes browser
+playback completion. Duplicate end controls are ignored after finalization.
+Starting another capture cancels prior pending work, and late polling results
+cannot publish into the new capture. A stopped TTS worker permits reviewed
+text-only responses. See `modular_voice_acceptance.md` for generated-audio
+acceptance, passed supervised Windows hardware checks and their limitations.

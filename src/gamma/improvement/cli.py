@@ -691,5 +691,14 @@ def _load_indexed_model(path: Path, *, collection: str, index: int, model_type):
     return model_type.model_validate(values[index])
 
 
+def main(argv: list[str] | None = None) -> int:
+    """Own inference subprocess cleanup for command-line execution."""
+    try:
+        return run(argv)
+    finally:
+        from ..brain.model_runtime import close_model_worker
+        close_model_worker()
+
+
 if __name__ == "__main__":
-    raise SystemExit(run())
+    raise SystemExit(main())

@@ -117,10 +117,12 @@ class _SlowBlockReviewer:
 
 class _FakeSpeechSynthesizer:
     def synthesize(self, text: str, emotion: str | None = None, styles: list[str] | None = None) -> TTSResult:
+        path = settings.data_dir / "audio.wav"
+        path.write_bytes(b"synthetic audio fixture")
         return TTSResult(
             provider="test",
             text=text,
-            audio_path="audio.wav",
+            audio_path=str(path),
             content_type="audio/wav",
             metadata={"emotion": emotion, "styles": styles or []},
         )
@@ -145,6 +147,11 @@ class _FakeClock:
 
 class StreamBrainTest(unittest.TestCase):
     def setUp(self) -> None:
+        state_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(state_dir.cleanup)
+        database = patch.object(settings, "database_url", f"sqlite:///{Path(state_dir.name) / 'state.db'}")
+        database.start()
+        self.addCleanup(database.stop)
         patcher = patch.object(settings, "speech_filter_llm_enabled", False)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -298,7 +305,7 @@ class StreamBrainTest(unittest.TestCase):
     def test_conversation_lull_proposes_self_goal_for_dashboard_approval(self) -> None:
         conversation = _FakeConversation()
         with tempfile.TemporaryDirectory() as temp_dir:
-            goal_store = StreamSelfGoalStore(database_url=f"sqlite:///{Path(temp_dir) / 'goals.db'}")
+            goal_store = StreamSelfGoalStore(database_url=settings.database_url)
             brain = StreamBrain(
                 conversation=conversation,  # type: ignore[arg-type]
                 trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
@@ -386,7 +393,7 @@ class StreamBrainTest(unittest.TestCase):
 
         self.assertEqual(result.decision.decision, "reply")
         self.assertEqual([event.type for event in result.output_events], ["emotion_changed", "subtitle_line"])
-        self.assertEqual(result.assistant_response.audio_path if result.assistant_response else None, "audio.wav")
+        self.assertIsNone(result.assistant_response.audio_path if result.assistant_response else None)
 
     def test_twitch_output_without_controls_fails_closed_for_cached_audio(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -417,6 +424,7 @@ class StreamBrainTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             brain = StreamBrain(
                 conversation=_FakeAudioConversation(),  # type: ignore[arg-type]
+                speech_synthesizer=_FakeSpeechSynthesizer(),
                 trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
             )
             result = brain.handle_event(
@@ -432,7 +440,7 @@ class StreamBrainTest(unittest.TestCase):
             [event.type for event in result.output_events],
             ["emotion_changed", "speech_started", "subtitle_line", "speech_ended"],
         )
-        self.assertEqual(result.output_events[1].payload["audio_path"], "audio.wav")
+        self.assertEqual(Path(result.output_events[1].payload["audio_path"]).read_bytes(), b"synthetic audio fixture")
 
     def test_output_target_policy_metadata_marks_stream_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -720,7 +728,7 @@ class StreamBrainTest(unittest.TestCase):
 
     def test_twitch_events_record_temp_stream_memory(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            store = StreamTempMemoryStore(database_url=f"sqlite:///{Path(temp_dir) / 'stream.db'}")
+            store = StreamTempMemoryStore(database_url=settings.database_url)
             brain = StreamBrain(
                 conversation=_FakeConversation(),  # type: ignore[arg-type]
                 trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
@@ -784,7 +792,7 @@ class StreamBrainTest(unittest.TestCase):
     def test_twitch_reply_includes_recent_sanitized_stream_context(self) -> None:
         conversation = _FakeConversation()
         with tempfile.TemporaryDirectory() as temp_dir:
-            store = StreamTempMemoryStore(database_url=f"sqlite:///{Path(temp_dir) / 'stream.db'}")
+            store = StreamTempMemoryStore(database_url=settings.database_url)
             prior_event = normalize_chat_message(
                 TwitchChatMessage(
                     text="The current run is focused on a no-hit boss attempt.",
@@ -832,7 +840,7 @@ class StreamBrainTest(unittest.TestCase):
         self.assertIsNone(result.assistant_response)
         self.assertEqual(result.output_events, [])
 
-    def test_twitch_output_safety_gate_replaces_blocked_reply_with_filtered(self) -> None:
+    def test_twitch_output_safety_gate_releases_no_blocked_reply_or_canned_audio(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             filtered_audio = Path(temp_dir) / "filtered.wav"
             filtered_audio.write_bytes(b"RIFF-filtered")
@@ -851,23 +859,12 @@ class StreamBrainTest(unittest.TestCase):
 
         self.assertTrue(result.safety_decision["blocked"])
         self.assertEqual(result.safety_decision["action"], "filtered")
-        self.assertEqual(result.assistant_response.spoken_text if result.assistant_response else None, "filtered")
-        self.assertEqual(result.assistant_response.audio_path if result.assistant_response else None, str(filtered_audio))
-        self.assertEqual([event.type for event in result.output_events], ["emotion_changed", "subtitle_line"])
-        subtitle = next(event for event in result.output_events if event.type == "subtitle_line")
-        self.assertEqual(subtitle.payload["text"], "filtered")
-        self.assertTrue(subtitle.payload["filtered"])
-        self.assertFalse(
-            any(
-                key in event.payload
-                for event in result.output_events
-                for key in {"audio", "audio_base64", "audio_content_type", "audio_path", "audio_url"}
-            )
-        )
-        self.assertNotIn("idiot", str([event.payload for event in result.output_events]).lower())
+        self.assertIsNone(result.assistant_response)
+        self.assertEqual(result.output_events, [])
+        self.assertEqual(result.output_dispatch, {})
         self.assertEqual(result.action_plan.items, [])
 
-    def test_twitch_llm_safety_reviewer_failure_uses_filtered_output(self) -> None:
+    def test_twitch_llm_safety_reviewer_denial_releases_no_output(self) -> None:
         with (
             tempfile.TemporaryDirectory() as temp_dir,
             patch.object(settings, "speech_filter_llm_enabled", True),
@@ -889,9 +886,9 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual(result.safety_decision["stage"], "llm")
         self.assertTrue(result.safety_decision["blocked"])
         self.assertEqual(result.safety_decision["action"], "filtered")
-        self.assertEqual(result.assistant_response.spoken_text if result.assistant_response else None, "filtered")
-        subtitle = next(event for event in result.output_events if event.type == "subtitle_line")
-        self.assertEqual(subtitle.payload["text"], "filtered")
+        self.assertIsNone(result.assistant_response)
+        self.assertEqual(result.output_events, [])
+        self.assertEqual(result.output_dispatch, {})
 
     def test_twitch_llm_safety_reviewer_timeout_skips_output_without_filtered(self) -> None:
         with (
@@ -921,9 +918,10 @@ class StreamBrainTest(unittest.TestCase):
         self.assertIsNone(result.assistant_response)
         self.assertEqual(result.output_events, [])
 
-    def test_twitch_parallel_safety_interrupts_late_blocked_speech(self) -> None:
+    def test_twitch_waits_for_slow_review_before_synthesis_or_publication(self) -> None:
         dispatcher = _RecordingDispatcher()
         conversation = _FakeConversation()
+        synthesizer = Mock()
         with (
             tempfile.TemporaryDirectory() as temp_dir,
             patch.object(settings, "speech_filter_llm_enabled", True),
@@ -933,7 +931,7 @@ class StreamBrainTest(unittest.TestCase):
                 conversation=conversation,  # type: ignore[arg-type]
                 trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
                 safety_reviewer=_SlowBlockReviewer(),
-                speech_synthesizer=_FakeSpeechSynthesizer(),
+                speech_synthesizer=synthesizer,
                 output_dispatcher=dispatcher,  # type: ignore[arg-type]
             )
             result = brain.handle_event(
@@ -945,22 +943,20 @@ class StreamBrainTest(unittest.TestCase):
                 ),
                 synthesize_speech=True,
             )
-            deadline = time.monotonic() + 1.0
-            while len(dispatcher.calls) < 2 and time.monotonic() < deadline:
-                time.sleep(0.01)
 
         self.assertFalse(conversation.calls[0]["synthesize_speech"])
         self.assertTrue(conversation.calls[0]["defer_llm_safety_review"])
-        self.assertTrue(result.safety_decision["review_pending"])
-        self.assertEqual(result.assistant_response.audio_path if result.assistant_response else None, "audio.wav")
-        self.assertGreaterEqual(len(dispatcher.calls), 2)
-        override = dispatcher.calls[-1]
-        self.assertTrue(any(event.payload.get("clear_pending") for event in override))
-        self.assertTrue(any(event.type == "subtitle_line" and event.payload.get("text") == "filtered" for event in override))
-        self.assertFalse(any("I heard you" in str(event.payload) for event in override))
+        self.assertTrue(result.safety_decision["blocked"])
+        self.assertNotEqual(result.assistant_response.audio_path if result.assistant_response else None, "audio.wav")
+        synthesizer.synthesize.assert_not_called()
+        self.assertEqual(dispatcher.calls, [])
 
     def test_stream_route_delegates_to_brain(self) -> None:
         from gamma.api.routes import stream_event
+        from gamma.brain.queue import BrainQueue
+
+        queue = BrainQueue()
+        self.addCleanup(queue.close)
 
         input_event = StreamInputEvent(kind="chat_message", text="Gamma, hello", session_id="stream-1")
         turn_result = StreamTurnResult(
@@ -974,9 +970,12 @@ class StreamBrainTest(unittest.TestCase):
             assistant_response=AssistantResponse(spoken_text="Hello."),
         )
         stream_brain = Mock()
-        stream_brain.handle_event.return_value = turn_result
+        from concurrent.futures import Future
+        delivery = Future()
+        delivery.set_result(turn_result)
+        stream_brain.handle_event.return_value = delivery
 
-        with patch("gamma.api.routes.get_stream_brain", return_value=stream_brain):
+        with patch("gamma.api.routes.get_stream_brain", return_value=stream_brain), patch("gamma.api.routes.get_brain_queue", return_value=queue):
             result = stream_event(input_event, synthesize_speech=False, fast_mode=True)
 
         self.assertEqual(result.input_event.kind, "chat_message")
@@ -987,6 +986,7 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual(call.args[0].kind, "chat_message")
         self.assertEqual(call.kwargs["synthesize_speech"], False)
         self.assertEqual(call.kwargs["fast_mode"], True)
+        self.assertTrue(call.kwargs["defer_delivery"])
 
     def test_stream_queue_route_delegates_to_brain(self) -> None:
         from gamma.api.routes import stream_pending_queue

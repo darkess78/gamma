@@ -6,11 +6,31 @@ from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 import anyio
+import pytest
 
 from gamma.config import settings
 from gamma import main as shana_main
 from gamma.presence import presence_state_for_mode, save_presence_state
 from gamma.proactive import ProactiveScheduler
+from gamma.presence import load_presence_state
+
+
+def test_failed_attempt_retains_cooldown_and_topic_budget(tmp_path, monkeypatch):
+    monkeypatch.setattr("gamma.presence.presence_state_path", lambda: tmp_path / "presence.json")
+    monkeypatch.setattr(settings, "proactive_idle_enabled", True)
+    monkeypatch.setattr(settings, "proactive_quiet_hours_start", "")
+    now = datetime.now(timezone.utc)
+    state = presence_state_for_mode("wake")
+    state["lifecycle"]["last_interaction_at"] = (now - timedelta(minutes=20)).isoformat()
+    save_presence_state(state)
+    brain = Mock()
+    brain.handle_event.side_effect = RuntimeError("provider unavailable")
+    scheduler = ProactiveScheduler(stream_brain=brain, bus=_eligible_bus())
+    with pytest.raises(RuntimeError):
+        scheduler.evaluate_once(now=now, defer_delivery=True)
+    assert load_presence_state()["autonomy"]["scheduler"]["attempts_for_topic"] == 1
+    assert scheduler.evaluate_once(now=now + timedelta(seconds=1))["reason"] == "cooldown_active"
+    brain.handle_event.assert_called_once()
 
 
 def _eligible_bus(*, muted: bool = False) -> Mock:

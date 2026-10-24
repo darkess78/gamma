@@ -60,6 +60,13 @@ Shana-owned `/v1/presence*` lifecycle APIs. Shana owns Wake context, inference,
 safety, TTS eligibility, and performer dispatch. This preserves the locked
 two-app network boundary.
 
+Internal silent work has a separate explicit enable/budget control. It is
+allowed only in Wake or Go Live, with existing quiet-hours and resource gates.
+It requires an approved goal, but requires no listener or TTS process. Brain
+Pause/Stop and foreground arrivals invalidate pending internal results. Persisted
+results never grant permission to speak or execute external actions. See
+`modular_worker_runtime_silent_slice.md` for observation and result limits.
+
 The Shana process also owns the proactive scheduler. It is disabled by default
 and evaluates deterministic Presence, privacy, listener, active-turn, cooldown,
 attempt, quiet-hours, resource, interruption, and operator-mute gates before

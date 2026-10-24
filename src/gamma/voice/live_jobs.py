@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -19,6 +20,7 @@ from ..performer.models import PerformerOutputEvent
 from ..config import load_desired_tts_selection, settings
 from ..schemas.voice import LiveVoiceJobResponse
 from ..system.python_runtime import resolve_python_executable
+from .uploads import save_stream
 
 
 def _utc_now() -> str:
@@ -60,6 +62,11 @@ class LiveVoiceJobManager:
         self._history_path = self._runtime_dir / "history.current.jsonl"
         self._performer_bus = performer_bus or get_performer_event_bus()
 
+    def _core_runtime(self):
+        # Compatibility callers share the API-owned runtime and its cancellation.
+        from ..api.routes import get_live_turn_runtime
+        return get_live_turn_runtime()
+
     async def start_job(
         self,
         *,
@@ -69,107 +76,15 @@ class LiveVoiceJobManager:
         response_mode: str = "simple_chunked",
         turn_id: str | None = None,
     ) -> LiveVoiceJobResponse:
-        self._prune_finished_jobs()
-        actual_turn_id = turn_id or uuid4().hex
-        input_path = await self._save_upload(actual_turn_id, audio_file)
-        output_path = self._runtime_dir / f"{actual_turn_id}.result.json"
-        status_path = self._runtime_dir / f"{actual_turn_id}.status.json"
-        stdout_log = self._runtime_dir / f"{actual_turn_id}.stdout.log"
-        stderr_log = self._runtime_dir / f"{actual_turn_id}.stderr.log"
-        stdout_log.write_text("", encoding="utf-8")
-        stderr_log.write_text("", encoding="utf-8")
-        self._write_status(
-            status_path,
-            {
-                "turn_id": actual_turn_id,
-                "status": "queued",
-                "session_id": session_id,
-                "synthesize_speech": synthesize_speech,
-                "response_mode": response_mode,
-                "tts": self._selected_tts_env(),
-                "created_at": _utc_now(),
-            },
-        )
-
-        process = self._spawn_worker(
-            turn_id=actual_turn_id,
-            input_path=input_path,
-            output_path=output_path,
-            status_path=status_path,
-            session_id=session_id,
-            synthesize_speech=synthesize_speech,
-            response_mode=response_mode,
-            stdout_log=stdout_log,
-            stderr_log=stderr_log,
-        )
-        created_at = _utc_now()
-        job = LiveVoiceJob(
-            turn_id=actual_turn_id,
-            session_id=session_id,
-            synthesize_speech=synthesize_speech,
-            response_mode=response_mode,
-            input_path=input_path,
-            output_path=output_path,
-            status_path=status_path,
-            stdout_log=stdout_log,
-            stderr_log=stderr_log,
-            created_at=created_at,
-            process=process,
-        )
-        with self._lock:
-            self._jobs[actual_turn_id] = job
-        self._append_lifecycle_event(actual_turn_id, "created", {"pid": process.pid, "session_id": session_id})
-        return self.get_job(actual_turn_id)
+        if turn_id is not None and (not isinstance(turn_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", turn_id)):
+            raise ValueError("invalid turn_id")
+        return await self._core_runtime().start_turn(audio_file=audio_file, session_id=session_id, synthesize_speech=synthesize_speech, response_mode=response_mode, turn_id=turn_id)
 
     def get_job(self, turn_id: str) -> LiveVoiceJobResponse:
-        job = self._require_job(turn_id)
-        self._refresh_job(job)
-        status_payload = self._read_status(job.status_path)
-        output_payload = self._read_json(job.output_path)
-        self._publish_live_performer_events(job, status_payload=status_payload, output_payload=output_payload)
-        return LiveVoiceJobResponse(
-            turn_id=turn_id,
-            status=str(status_payload.get("status", "failed")),
-            session_id=job.session_id,
-            synthesize_speech=job.synthesize_speech,
-            response_mode=job.response_mode,
-            worker_pid=job.process.pid if job.process else None,
-            transcript=output_payload.get("transcript"),
-            audio_context=output_payload.get("audio_context"),
-            reply_text=output_payload.get("reply_text"),
-            reply_chunks=output_payload.get("reply_chunks", []),
-            audio_content_type=output_payload.get("audio_content_type"),
-            audio_base64=output_payload.get("audio_base64"),
-            timing_ms=output_payload.get("timing_ms", {}),
-            created_at=status_payload.get("created_at") or job.created_at,
-            started_at=status_payload.get("started_at"),
-            completed_at=status_payload.get("completed_at") or job.completed_at,
-            cancel_requested_at=job.cancel_requested_at,
-            cancelled_at=status_payload.get("cancelled_at"),
-            cancel_latency_ms=self._cancel_latency_ms(job.cancel_requested_at, status_payload.get("cancelled_at")),
-            cancel_reason=job.cancel_reason or status_payload.get("cancel_reason"),
-            error=status_payload.get("error"),
-        )
+        return self._core_runtime().get_turn(turn_id)
 
     def get_recent_history(self, *, limit: int = 20) -> list[dict[str, Any]]:
-        if not self._history_path.exists():
-            return []
-        entries: list[dict[str, Any]] = []
-        try:
-            with self._history_path.open("r", encoding="utf-8") as handle:
-                for line in handle:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        payload = json.loads(line)
-                    except Exception:
-                        continue
-                    if isinstance(payload, dict):
-                        entries.append(payload)
-        except Exception:
-            return []
-        return entries[-max(1, limit):]
+        return self._core_runtime().get_recent_history(limit=limit)
 
     def _publish_live_performer_events(
         self,
@@ -178,101 +93,7 @@ class LiveVoiceJobManager:
         status_payload: dict[str, Any],
         output_payload: dict[str, Any],
     ) -> None:
-        status = str(status_payload.get("status") or output_payload.get("status") or "failed")
-        output_context = self._live_output_context(job, output_payload)
-        if job.performer_published_chunks is None:
-            job.performer_published_chunks = set()
-
-        if output_payload and not job.performer_started:
-            self._publish_performer_event(
-                "turn_started",
-                job,
-                {
-                    "status": status,
-                    "session_id": job.session_id,
-                    "response_mode": job.response_mode,
-                    "source": "dashboard_live_voice",
-                    **output_context,
-                },
-            )
-            job.performer_started = True
-
-        if status and status != job.performer_last_status:
-            self._publish_performer_event(
-                "turn_state_changed",
-                job,
-                {
-                    "state": status,
-                    "previous_state": job.performer_last_status,
-                    "session_id": job.session_id,
-                    "response_mode": job.response_mode,
-                    "history_count": len(output_payload.get("reply_chunks", []) or []),
-                    **output_context,
-                },
-            )
-            job.performer_last_status = status
-
-        reply_text = str(output_payload.get("reply_text") or "").strip()
-        if reply_text and not job.performer_subtitle_published:
-            self._publish_performer_event("subtitle_update", job, {"text": reply_text, "clear": False, **output_context})
-            emotion = self._live_response_emotion(output_payload)
-            if emotion:
-                self._publish_performer_event("expression_set", job, {"expression": emotion, **output_context})
-            job.performer_subtitle_published = True
-
-        for chunk in output_payload.get("reply_chunks", []) or []:
-            if not isinstance(chunk, dict):
-                continue
-            try:
-                chunk_index = int(chunk.get("chunk_index", 0) or 0)
-            except (TypeError, ValueError):
-                continue
-            if chunk_index <= 0 or chunk_index in job.performer_published_chunks:
-                continue
-            audio_base64 = str(chunk.get("audio_base64") or "")
-            audio_content_type = str(chunk.get("audio_content_type") or output_payload.get("audio_content_type") or "")
-            if not audio_base64 or not audio_content_type:
-                continue
-            if not job.performer_speech_started:
-                self._publish_performer_event(
-                    "speech_started",
-                    job,
-                    {
-                        "status": "speaking",
-                        "session_id": job.session_id,
-                        "response_mode": job.response_mode,
-                        **output_context,
-                    },
-                )
-                job.performer_speech_started = True
-            job.performer_published_chunks.add(chunk_index)
-            self._publish_performer_event(
-                "speech_chunk_ready",
-                job,
-                {
-                    "chunk_index": chunk_index,
-                    "text": str(chunk.get("text") or ""),
-                    "audio_base64": audio_base64,
-                    "audio_content_type": audio_content_type,
-                    "timing_ms": chunk.get("timing_ms", {}) if isinstance(chunk.get("timing_ms", {}), dict) else {},
-                    "interruptible": bool(chunk.get("interruptible", True)),
-                    "protect_ms": int(chunk.get("protect_ms", 0) or 0),
-                    "is_final": bool(chunk.get("is_final", False)),
-                    **output_context,
-                },
-            )
-
-        terminal_statuses = {"completed", "cancelled", "failed"}
-        if status in terminal_statuses and not job.performer_completed:
-            if status == "completed":
-                self._publish_performer_event("speech_ended", job, {"status": status, **output_context})
-            else:
-                self._publish_performer_event(
-                    "output_cleared",
-                    job,
-                    {"status": status, "reason": job.cancel_reason or status_payload.get("error"), **output_context},
-                )
-            job.performer_completed = True
+        raise RuntimeError("Legacy live JSON publication is retired; use the core live runtime")
 
     def _publish_performer_event(self, event_type: str, job: LiveVoiceJob, payload: dict[str, Any]) -> None:
         self._performer_bus.publish(
@@ -331,58 +152,10 @@ class LiveVoiceJobManager:
         }
 
     def cancel_job(self, turn_id: str, *, reason: str = "interrupted") -> LiveVoiceJobResponse:
-        job = self._require_job(turn_id)
-        self._refresh_job(job)
-        current = self._read_status(job.status_path)
-        if current.get("status") in {"completed", "cancelled", "failed"}:
-            return self.get_job(turn_id)
-
-        cancel_requested_at = _utc_now()
-        job.cancel_requested_at = cancel_requested_at
-        job.cancel_reason = reason
-        self._write_status(
-            job.status_path,
-            {
-                **current,
-                "status": "cancelled",
-                "cancel_requested_at": cancel_requested_at,
-                "cancelled_at": _utc_now(),
-                "cancel_reason": reason,
-                "history_logged": True,
-            },
-        )
-        if job.process is not None and job.process.poll() is None:
-            self._kill_process_tree(job.process.pid)
-        job.completed_at = _utc_now()
-        self._cleanup_completed_input(job)
-        self._append_lifecycle_event(turn_id, "cancelled", {"reason": reason, "pid": job.process.pid if job.process else None})
-        self._append_history_entry(
-            {
-                "timestamp": _utc_now(),
-                "kind": "event",
-                "label": "cancelled",
-                "detail": "Live turn cancelled.",
-                "job": {
-                    "turn_id": turn_id,
-                    "cancel_reason": reason,
-                    "cancel_latency_ms": self._cancel_latency_ms(cancel_requested_at, _utc_now()),
-                },
-            }
-        )
-        return self.get_job(turn_id)
+        return self._core_runtime().cancel_turn(turn_id, reason=reason)
 
     def cancel_active_jobs(self, *, reason: str = "interrupted") -> list[LiveVoiceJobResponse]:
-        self._prune_finished_jobs()
-        with self._lock:
-            jobs = list(self._jobs.values())
-        cancelled: list[LiveVoiceJobResponse] = []
-        for job in jobs:
-            self._refresh_job(job)
-            current = self._read_status(job.status_path)
-            if current.get("status") in {"completed", "cancelled", "failed"}:
-                continue
-            cancelled.append(self.cancel_job(job.turn_id, reason=reason))
-        return cancelled
+        return self._core_runtime().cancel_active_turns(reason=reason)
 
     def _spawn_worker(
         self,
@@ -489,9 +262,7 @@ class LiveVoiceJobManager:
     async def _save_upload(self, turn_id: str, audio_file: UploadFile) -> Path:
         suffix = Path(audio_file.filename or "").suffix or ".wav"
         target = self._runtime_dir / f"{turn_id}{suffix}"
-        content = await audio_file.read()
-        target.write_bytes(content)
-        return target
+        return await save_stream(audio_file.file, target, max_bytes=settings.voice_upload_max_bytes)
 
     def _cleanup_completed_input(self, job: LiveVoiceJob) -> None:
         try:

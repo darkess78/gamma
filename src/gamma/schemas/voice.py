@@ -51,6 +51,9 @@ class VoiceTranscriptionResponse(BaseModel):
 class LiveVoiceJobResponse(BaseModel):
     turn_id: str
     status: str
+    playback_expected: bool = False
+    decision_trace_id: str | None = None
+    delivery_grant: str | None = None
     session_id: str | None = None
     synthesize_speech: bool = True
     response_mode: str | None = None
@@ -73,6 +76,8 @@ class LiveVoiceJobResponse(BaseModel):
 
 
 class VoiceRoundtripResponse(BaseModel):
+    delivery_grant: str | None = None
+    delivery_audio_url: str | None = None
     transcript: str
     audio_context: VoiceInputContext | None = None
     reply_text: str

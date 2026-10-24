@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import weakref
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
@@ -13,6 +14,7 @@ from sqlalchemy.pool import NullPool
 from ..config import settings
 from ..schemas.response import MemoryCandidate
 from .models import EpisodicMemory, KnownPerson, PersonIdentity, ProfileFact
+from .state_authority import StateAuthority, versions
 
 
 def _sqlite_path_from_url(database_url: str) -> Path | None:
@@ -204,7 +206,7 @@ class MemoryService:
         resolve_person_identity: Resolve person identity.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, database_url: str | None = None) -> None:
         """Initialize MemoryService.
         
         Creates SQLite engine if configured. Configures SQLite connection
@@ -213,13 +215,15 @@ class MemoryService:
         """
         connect_args = {}
         engine_kwargs = {}
-        if settings.database_url.startswith("sqlite"):
+        database_url = database_url or settings.database_url
+        if database_url.startswith("sqlite"):
             connect_args["check_same_thread"] = False
             engine_kwargs["poolclass"] = NullPool
-        self._engine = create_engine(settings.database_url, connect_args=connect_args, **engine_kwargs)
-        if settings.database_url.startswith("sqlite"):
+        self._engine = create_engine(database_url, connect_args=connect_args, **engine_kwargs)
+        if database_url.startswith("sqlite"):
             event.listen(self._engine, "connect", self._configure_sqlite_connection)
         self._engine_finalizer = weakref.finalize(self, self._engine.dispose)
+        self._authority = StateAuthority(self._engine)
         SQLModel.metadata.create_all(self._engine)
         self._ensure_compatible_schema()
 
@@ -230,6 +234,12 @@ class MemoryService:
         """
         if self._engine_finalizer.alive:
             self._engine_finalizer()
+
+    @contextmanager
+    def _operator_session(self):
+        """Operator mutations invalidate in-flight snapshots in the same transaction."""
+        with self._authority.transaction(operator=True) as session:
+            yield session
 
     @staticmethod
     def _configure_sqlite_connection(dbapi_connection, _connection_record) -> None:
@@ -254,7 +264,7 @@ class MemoryService:
         Adds required columns and indexes for SQLite databases.
         No-op for other database types.
         """
-        if not settings.database_url.startswith("sqlite"):
+        if self._engine.dialect.name != "sqlite":
             return
         with self._engine.begin() as conn:
             self._ensure_sqlite_columns(
@@ -404,18 +414,26 @@ class MemoryService:
         Returns:
             int: Number of items saved.
         """
+        with self._operator_session() as session:
+            saved = self.persist_candidates_in_session(session, candidates, session_id=session_id)
+            # Updates and deduplication can change rows without inserting any.
+            session.commit()
+        return saved
+
+    def persist_candidates_in_session(
+        self, session: Session, candidates: Iterable[MemoryCandidate], session_id: str | None = None,
+    ) -> int:
+        """Apply approved candidates inside the authority's transaction without committing."""
+        StateAuthority.require_transaction(session)
         if not settings.memory_enabled or settings.memory_write_mode == "off":
             return 0
         saved = 0
-        with Session(self._engine) as session:
-            for candidate in candidates:
-                if candidate.type in {"profile", "fact", "preference", "project", "boundary"}:
-                    saved += self._upsert_profile_fact(session, candidate)
-                elif candidate.type == "episodic":
-                    saved += self._upsert_episodic_memory(session, candidate, session_id=session_id)
-                session.flush()
-            if saved:
-                session.commit()
+        for candidate in candidates:
+            if candidate.type in {"profile", "fact", "preference", "project", "boundary"}:
+                saved += self._upsert_profile_fact(session, candidate)
+            elif candidate.type == "episodic":
+                saved += self._upsert_episodic_memory(session, candidate, session_id=session_id)
+            session.flush()
         return saved
 
     def _upsert_profile_fact(self, session: Session, candidate: MemoryCandidate) -> int:
@@ -559,7 +577,7 @@ class MemoryService:
         return 1
 
     def get_known_people(self, limit: int = 20) -> list[dict[str, object]]:
-        with Session(self._engine) as session:
+        with self._authority.transaction() as session:
             self._materialize_people_from_facts(session)
             stored_people = list(session.exec(select(KnownPerson).order_by(KnownPerson.name.asc(), KnownPerson.id.asc())))[:limit]
             identities = list(session.exec(select(PersonIdentity).order_by(PersonIdentity.platform.asc())))
@@ -593,6 +611,7 @@ class MemoryService:
         )
 
     def _materialize_people_from_facts(self, session: Session) -> None:
+        StateAuthority.require_transaction(session)
         existing = {person.name.casefold() for person in session.exec(select(KnownPerson))}
         statement = (
             select(ProfileFact)
@@ -603,6 +622,7 @@ class MemoryService:
             name = _normalize_subject_name(fact.subject_name)
             if not name or name.casefold() in existing:
                 continue
+            self._authority.invalidate(session)
             session.add(
                 KnownPerson(
                     name=name,
@@ -624,7 +644,7 @@ class MemoryService:
         accounts = payload.get("accounts", [])
         if not isinstance(accounts, list):
             raise ValueError("accounts must be a list")
-        with Session(self._engine) as session:
+        with self._operator_session() as session:
             person_id = int(payload.get("id") or 0)
             person = session.get(KnownPerson, person_id) if person_id else None
             if person is None:
@@ -661,7 +681,7 @@ class MemoryService:
         return next(person for person in self.get_known_people(limit=1000) if person["id"] == saved_id)
 
     def delete_known_person(self, person_id: int) -> bool:
-        with Session(self._engine) as session:
+        with self._operator_session() as session:
             person = session.get(KnownPerson, person_id)
             if person is None:
                 return False
@@ -711,7 +731,7 @@ class MemoryService:
         subject_name = _normalize_subject_name(str(payload.get("subject_name") or ""))
         relationship = _normalize_subject_name(str(payload.get("relationship_to_user") or ""))
 
-        with Session(self._engine) as session:
+        with self._operator_session() as session:
             if kind == "profile_fact":
                 item = ProfileFact(
                     category=_normalize_identity(payload.get("category"), limit=80) or "manual",
@@ -740,7 +760,7 @@ class MemoryService:
         return next(row for row in self.recent_items(limit=1000) if row["kind"] == kind and row["id"] == item_id)
 
     def update_item(self, kind: str, item_id: int, payload: dict[str, object]) -> dict[str, object]:
-        with Session(self._engine) as session:
+        with self._operator_session() as session:
             if kind == "profile_fact":
                 item = session.get(ProfileFact, item_id)
                 if item is None:
@@ -810,7 +830,7 @@ class MemoryService:
         return items[:limit]
 
     def clear_all(self) -> dict[str, int]:
-        with Session(self._engine) as session:
+        with self._operator_session() as session:
             profile_count = len(list(session.exec(select(ProfileFact))))
             episodic_count = len(list(session.exec(select(EpisodicMemory))))
             session.exec(delete(ProfileFact))
@@ -825,7 +845,7 @@ class MemoryService:
     def clear_recent(self, minutes: int = 10) -> dict[str, int]:
         safe_minutes = max(1, minutes)
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=safe_minutes)
-        with Session(self._engine) as session:
+        with self._operator_session() as session:
             recent_facts = list(session.exec(select(ProfileFact).where(ProfileFact.created_at >= cutoff)))
             recent_episodic = list(session.exec(select(EpisodicMemory).where(EpisodicMemory.created_at >= cutoff)))
             for fact in recent_facts:
@@ -857,7 +877,7 @@ class MemoryService:
                 profile_ids.add(raw_id)
             elif kind == "episodic":
                 episodic_ids.add(raw_id)
-        with Session(self._engine) as session:
+        with self._operator_session() as session:
             removed_profile = 0
             removed_episodic = 0
             if profile_ids:
@@ -877,7 +897,7 @@ class MemoryService:
 
     def stats(self) -> dict[str, str | int]:
         db_path = _sqlite_path_from_url(settings.database_url)
-        with Session(self._engine) as session:
+        with self._authority.transaction() as session:
             self._materialize_people_from_facts(session)
             profile_count = int(session.exec(select(func.count()).select_from(ProfileFact)).one())
             episodic_count = int(session.exec(select(func.count()).select_from(EpisodicMemory)).one())

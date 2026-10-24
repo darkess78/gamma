@@ -114,14 +114,16 @@ class ExpressiveTextTest(unittest.TestCase):
 
 
 class SpeechSafetyFilterTest(unittest.TestCase):
+    # These cases cover deterministic rules. Required-review integration and
+    # denial are exercised independently in test_required_delivery_review.py.
     def test_strict_filter_blocks_harsh_content(self) -> None:
-        result = SpeechSafetyFilter("strict").apply("You are an idiot.")
+        result = SpeechSafetyFilter("strict").apply("You are an idiot.", include_llm=False)
         self.assertTrue(result.blocked)
         self.assertIn("safe and respectful", result.spoken_text)
 
     def test_light_filter_allows_mild_content_but_blocks_severe_content(self) -> None:
-        mild = SpeechSafetyFilter("light").apply("That was stupid.")
-        severe = SpeechSafetyFilter("light").apply("kys")
+        mild = SpeechSafetyFilter("light").apply("That was stupid.", include_llm=False)
+        severe = SpeechSafetyFilter("light").apply("kys", include_llm=False)
         self.assertFalse(mild.blocked)
         self.assertTrue(severe.blocked)
         self.assertEqual(severe.action, "block")
@@ -146,7 +148,7 @@ class SpeechSafetyFilterTest(unittest.TestCase):
         self.assertFalse(result.blocked)
 
     def test_speech_filter_redacts_private_info_output(self) -> None:
-        result = SpeechSafetyFilter("strict").apply("My IP address is 98.51.100.22.")
+        result = SpeechSafetyFilter("strict").apply("My IP address is 98.51.100.22.", include_llm=False)
         self.assertTrue(result.blocked)
         self.assertEqual(result.action, "privacy_refusal")
         self.assertEqual(result.spoken_text, PRIVACY_REFUSAL)

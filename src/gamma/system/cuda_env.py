@@ -28,6 +28,12 @@ def candidate_cuda_library_paths() -> list[Path]:
             if candidate.exists() and candidate not in seen:
                 paths.append(candidate)
                 seen.add(candidate)
+    # Existing Linux launch scripts use Ollama's CUDA 12 bundle for CTranslate2.
+    # Newer Python environments may contain only CUDA 13 wheels.
+    if sys.platform.startswith("linux"):
+        candidate = Path("/usr/local/lib/ollama/cuda_v12")
+        if candidate.is_dir() and candidate not in seen:
+            paths.append(candidate)
     return paths
 
 

@@ -358,6 +358,9 @@ class RouterLLMAdapter(LLMAdapter):
                                 prompt_metrics={**overflow_metrics, "overflow_retry_budget": retry_budget},
                             )
                         except Exception as retry_exc:
+                            from ..resources.shared_execution import is_uncertain, is_busy
+                            if is_uncertain(retry_exc) or is_busy(retry_exc):
+                                raise
                             last_exc = retry_exc
                             self._mark_provider_failure(
                                 decision.provider,
@@ -378,6 +381,9 @@ class RouterLLMAdapter(LLMAdapter):
                                 prompt_metrics={**overflow_metrics, "overflow_retry_budget": retry_budget},
                             )
             except Exception as exc:
+                from ..resources.shared_execution import is_uncertain, is_busy
+                if is_uncertain(exc) or is_busy(exc):
+                    raise
                 last_exc = exc
                 duration_ms = round((time.perf_counter() - started_at) * 1000, 1)
                 self._mark_provider_failure(
@@ -1068,6 +1074,9 @@ class RouterLLMAdapter(LLMAdapter):
         Returns:
             LLMAdapter: Built adapter instance.
         """
+        if settings.brain_model_runtime == "worker":
+            from ..brain.model_runtime import RoutedModelAdapter
+            return RoutedModelAdapter(provider)
         if provider == "openai":
             from .openai_adapter import OpenAIAdapter
 

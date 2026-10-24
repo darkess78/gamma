@@ -6,6 +6,7 @@ import sys
 import webbrowser
 
 from .manager import ProcessManager
+from .workers import WorkerRuntime
 
 
 IMPROVEMENT_WORKER_SERVICE = "improvement-worker"
@@ -46,28 +47,13 @@ def run(argv: list[str] | None = None) -> int:
     results: dict[str, object] = {}
     for name in services:
         if name == IMPROVEMENT_WORKER_SERVICE:
+            runtime = WorkerRuntime(manager)
             if args.command == "start":
-                results[name] = manager.start_module(
-                    IMPROVEMENT_WORKER_PROCESS_NAME,
-                    IMPROVEMENT_WORKER_MODULE,
-                    ["--idle-timeout-seconds", "300"],
-                )
+                results[name] = runtime.control(IMPROVEMENT_WORKER_PROCESS_NAME, "start")
             elif args.command == "stop":
-                results[name] = manager.stop_module(
-                    IMPROVEMENT_WORKER_PROCESS_NAME,
-                    IMPROVEMENT_WORKER_MODULE,
-                )
+                results[name] = runtime.control(IMPROVEMENT_WORKER_PROCESS_NAME, "stop")
             elif args.command == "restart":
-                stopped = manager.stop_module(
-                    IMPROVEMENT_WORKER_PROCESS_NAME,
-                    IMPROVEMENT_WORKER_MODULE,
-                )
-                started = manager.start_module(
-                    IMPROVEMENT_WORKER_PROCESS_NAME,
-                    IMPROVEMENT_WORKER_MODULE,
-                    ["--idle-timeout-seconds", "300"],
-                )
-                results[name] = {"ok": True, "detail": "restarted", "stop": stopped, "start": started}
+                results[name] = runtime.control(IMPROVEMENT_WORKER_PROCESS_NAME, "restart")
             else:
                 results[name] = manager.module_status(
                     IMPROVEMENT_WORKER_PROCESS_NAME,

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shana workers</title><link rel="stylesheet" href="/static/dashboard.css">
+<style>
+body {font-family:system-ui,sans-serif} h1 {font-size:2rem} a {color:#9ecbff}
+.panel {min-width:0;overflow-wrap:anywhere} .panel h2 {font-size:1.1rem}
+.panel button {margin:0.2rem} button:disabled {background:#303640;color:#9298a2;cursor:not-allowed;box-shadow:none}
+#filters {display:flex;gap:1rem;flex-wrap:wrap;align-items:end} #filters label {display:grid;gap:0.3rem}
+</style>
+<script type="module" src="/static/workers.js"></script></head>
+<body><main class="wrap">
+<header><a href="/dashboard">Dashboard</a><h1>Workers &amp; logs</h1></header>
+<p>Control independent workers and inspect their activity. Existing application and integration controls remain on their dashboard pages.</p>
+<p id="message" role="status" aria-live="polite"></p>
+<button id="refresh" type="button">Refresh workers</button>
+<section class="panel"><h2>Brain execution</h2>
+<p id="brain-status" role="status">Loading brain status...</p>
+<p>Pause holds queued decisions and lets active work finish. Stop invalidates unfinished decisions and ends the brain process. Start creates a new generation.</p>
+<button id="brain-start" type="button">Start brain</button>
+<button id="brain-stop" type="button">Stop brain</button>
+<button id="brain-pause" type="button">Pause brain</button>
+<button id="brain-resume" type="button">Resume brain</button>
+</section>
+<div id="workers" class="grid"></div>
+<section class="panel"><h2>Silent activity</h2>
+<p id="silent-status" role="status">Loading silent activity...</p>
+<p>Run one internal context check while Awake or Live. It records a bounded activity summary without tools, speech or public messages. Sleep, Break and brain pause still apply. Restart leaves this disabled.</p>
+<button id="silent-enable" type="button">Run one silent cycle</button>
+<button id="silent-disable" type="button">Disable silent cycles</button>
+</section>
+<section class="panel"><h2>Speech synthesis</h2>
+<p id="tts-status" role="status">Loading TTS status...</p>
+<p>Stop disables synthesis while text and recognition remain available. An unresolved resource lease blocks Start and Restart. Starting the adapter does not confirm remote model readiness.</p>
+<button id="tts-start" type="button">Start TTS</button>
+<button id="tts-stop" type="button">Stop TTS</button>
+<button id="tts-restart" type="button">Restart TTS</button>
+<button id="tts-reconcile" type="button">Check TTS completion</button>
+<p>Check completion releases an occupied resource only when the recorded worker and provider evidence prove it has finished. Unknown jobs and unresolved post-processing stay blocked. Start remains a separate action.</p>
+<form id="tts-filters">
+<label>TTS event type <select id="tts-type"><option value="">All types</option><option>lifecycle</option><option>job</option></select></label>
+<label>TTS severity <select id="tts-severity"><option value="">All severities</option><option>info</option><option>error</option></select></label>
+<label>TTS trace <input id="tts-trace" maxlength="128"></label>
+<button type="submit">Filter TTS logs</button>
+</form>
+<p id="tts-log-status" role="status"></p>
+<pre id="tts-logs" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:20rem;overflow:auto"></pre>
+</section>
+<section class="panel"><h2>Shared model admission</h2>
+<p id="admission-status" role="status">Loading shared allocations...</p>
+<button id="admission-reconcile" type="button">Check completion evidence</button>
+<pre id="admission-details" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:20rem;overflow:auto"></pre>
+</section>
+<section class="panel"><h2>Text inference</h2>
+<p id="model-status" role="status">Loading Model status...</p>
+<p>Start connects the inference process. Stop disables new text inference. Busy controls reject without waiting. An uncertain provider job blocks Start and Restart until completion can be proven.</p>
+<button id="model-start" type="button">Start Model</button>
+<button id="model-stop" type="button">Stop Model</button>
+<button id="model-restart" type="button">Restart Model</button>
+<form id="model-filters">
+<label>Model event type <select id="model-type"><option value="">All types</option><option>lifecycle</option><option>job</option></select></label>
+<label>Model trace <input id="model-trace" maxlength="128"></label>
+<button type="submit">Filter Model logs</button>
+</form>
+<p id="model-log-status" role="status"></p>
+<pre id="model-logs" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:20rem;overflow:auto"></pre>
+</section>
+<section class="panel"><h2>Speech recognition</h2>
+<p id="stt-status" role="status">Loading STT status...</p>
+<p>Start connects the worker process. The recognition model loads on its first job. Stop disables transcription until Start. Controls are unavailable during active recognition.</p>
+<button id="stt-start" type="button">Start STT</button>
+<button id="stt-stop" type="button">Stop STT</button>
+<button id="stt-restart" type="button">Restart STT</button>
+<form id="stt-filters">
+<label>STT event type <select id="stt-type"><option value="">All types</option><option>lifecycle</option><option>job</option></select></label>
+<label>STT trace <input id="stt-trace" maxlength="128"></label>
+<button type="submit">Filter STT logs</button>
+</form>
+<pre id="stt-logs" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:20rem;overflow:auto"></pre>
+</section>
+<section class="panel"><h2>Logs</h2>
+<form id="filters">
+<label>Workers <select id="worker-filter" multiple size="4" aria-label="Workers, leave empty for all"></select></label>
+<label>Type <select id="type"><option value="">All types</option><option>lifecycle</option><option>job</option><option>errors</option></select></label>
+<label>Severity <select id="severity"><option value="">All severities</option><option>info</option><option>warning</option><option>error</option></select></label>
+<label>Trace <input id="trace" maxlength="128"></label>
+<label>Since <input id="since" type="datetime-local"></label>
+<button type="submit">Apply filters</button>
+</form>
+<p id="log-status" role="status"></p>
+<pre id="logs" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:36rem;overflow:auto"></pre>
+<button id="older" type="button" disabled>Older events</button>
+</section></main></body></html>

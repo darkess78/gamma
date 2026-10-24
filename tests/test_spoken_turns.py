@@ -49,10 +49,45 @@ class SpokenTurnStoreTest(unittest.TestCase):
         store.apply_event(PerformerOutputEvent(type="speech_chunk_ready", turn_id="turn-1", payload={"chunk_index": 2}))
         turn = store.apply_event(PerformerOutputEvent(type="speech_ended", turn_id="turn-1"))
 
-        self.assertEqual(turn.status, "completed")
+        self.assertEqual(turn.status, "ready")
         self.assertEqual(turn.subtitle, "Hello.")
         self.assertEqual(turn.chunk_count, 2)
         self.assertEqual(turn.actor["source"], "twitch")
+
+    def test_producer_events_cannot_claim_playback(self) -> None:
+        cases = [
+            ("turn_started", {"status": "speaking"}, "synthesizing"),
+            ("turn_state_changed", {"state": "speaking"}, "synthesizing"),
+            ("turn_state_changed", {"state": "completed"}, "ready"),
+            ("turn_started", {"status": "completed"}, "ready"),
+            ("speech_started", {}, "ready"),
+            ("speech_chunk_ready", {"chunk_index": 1}, "ready"),
+            ("speech_ended", {}, "ready"),
+        ]
+        for event_type, payload, expected in cases:
+            with self.subTest(event_type=event_type, payload=payload):
+                store = SpokenTurnStore()
+                turn = store.apply_event(PerformerOutputEvent(
+                    type=event_type, turn_id="no-listener", payload=payload))
+                self.assertEqual(turn.status, expected)
+
+    def test_late_producer_events_do_not_resurrect_cleared_turn(self) -> None:
+        for terminal in ("cancelled", "interrupted", "failed"):
+            with self.subTest(terminal=terminal):
+                store = SpokenTurnStore()
+                store.apply_event(PerformerOutputEvent(type="output_cleared", turn_id="turn",
+                    payload={"status": terminal, "reason": "operator_stop"}))
+                for event_type, payload in [
+                    ("turn_started", {"status": "generating"}),
+                    ("turn_state_changed", {"state": "speaking"}),
+                    ("speech_chunk_ready", {"chunk_index": 2}),
+                    ("speech_ended", {}),
+                ]:
+                    turn = store.apply_event(PerformerOutputEvent(
+                        type=event_type, turn_id="turn", payload=payload))
+                    self.assertEqual(turn.status, terminal)
+                    self.assertEqual(turn.cancellation_reason, "operator_stop")
+                self.assertEqual(turn.chunk_count, 2)
 
 
 if __name__ == "__main__":

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from sqlmodel import Session, select
 
-from gamma.memory.continuity import ContinuityService
+from gamma.memory.continuity import ContinuityService, ConversationJournalEntry
 
 
 def _database_url(path: Path) -> str:
@@ -118,7 +119,7 @@ def test_silent_exchange_updates_working_state_without_fake_assistant_turn() -> 
     assert snapshot["summary"]["completed_exchanges"] == 1
 
 
-def test_pending_turn_is_marked_interrupted_after_reconstruction() -> None:
+def test_pending_turn_remains_pending_after_reconstruction() -> None:
     with TemporaryDirectory() as temp_dir:
         url = _database_url(Path(temp_dir) / "interrupted.db")
         first = ContinuityService(database_url=url)
@@ -131,6 +132,8 @@ def test_pending_turn_is_marked_interrupted_after_reconstruction() -> None:
         )
 
         reconstructed = ContinuityService(database_url=url)
+        with Session(reconstructed._engine) as session:
+            assert session.exec(select(ConversationJournalEntry)).one().completion_status == "pending"
         completed = reconstructed.recent_turns(
             "session-b",
             privacy_scopes={"local_private"},
@@ -146,16 +149,29 @@ def test_durable_output_restores_text_without_replay_instruction() -> None:
     with TemporaryDirectory() as temp_dir:
         url = _database_url(Path(temp_dir) / "output.db")
         first = ContinuityService(database_url=url)
+        from gamma.delivery.authority import DeliveryAuthority
+        from gamma.schemas.response import AssistantResponse
+        exchange = first.begin_exchange(session_id="wake", text="Wake", speaker_name="Fixture",
+            input_source="test", privacy_scope="local_private")
+        first.complete_exchange(exchange_id=exchange, session_id="wake", assistant_text="Good morning.",
+            trace_id=exchange, output_target="dashboard_monitor", privacy_scope="local_private")
+        delivery = DeliveryAuthority(database_url=url)
+        response = AssistantResponse(spoken_text="Good morning.", route_trace_id=exchange)
+        context = dict(target="dashboard_monitor", audience="local_private", policy="fixture")
+        grant = delivery.issue(response, **context)
+        delivery.dispatch(grant, response, **context)
         first.record_output(
             target_policy="dashboard_monitor",
             turn_id="wake-1",
             text="Good morning.",
             status="completed",
-            spoken=True,
+            spoken=False,
+            decision_id=exchange,
+            grant_id=grant,
         )
 
         output = ContinuityService(database_url=url).last_output("dashboard_monitor")
 
     assert output["text"] == "Good morning."
-    assert output["status"] == "completed"
+    assert output["status"] == "ready"
     assert "audio" not in output

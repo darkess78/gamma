@@ -21,5 +21,13 @@ class ContextBudgetError(ConfigurationError):
     """Raised when mandatory prompt layers cannot fit a model budget."""
 
 
+class CompletedContextOverflowError(ContextOverflowError):
+    """A received provider HTTP rejection proves this request has completed."""
+
+
+class CapabilityMismatchError(ConfigurationError):
+    """The provider request was not submitted because a required capability is absent."""
+
+
 class ConversationError(GammaError):
     """Raised when the conversation pipeline cannot complete a response."""

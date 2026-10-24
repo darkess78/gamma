@@ -1,6 +1,84 @@
 // live.js - Live voice functionality for Gamma dashboard
 (function () {
   var liveSocket = null;
+  var liveReceiver = null;
+  var liveLease = null;
+  var liveHeartbeat = null;
+  var livePlaybackWait = null;
+  var liveRequests = new PlaybackRequests(function (message) {
+    if (!liveReceiver || liveReceiver.readyState !== WebSocket.OPEN) throw new Error('Playback disconnected');
+    liveReceiver.send(JSON.stringify(message));
+  });
+  var liveOffers = new LiveOffers(function (event) {
+    if (event.playback.lease_id !== liveLease || liveSpeakerMuted) return;
+    clearTimeout(livePlaybackWait); livePlaybackWait = null;
+    queueLiveReplyChunk(Object.assign({}, event.payload, {playback: event.playback}), event.turn_id);
+  });
+
+  function liveReceipt(chunk, status) {
+    if (!chunk || !chunk.playback || chunk.playback.lease_id !== liveLease) return;
+    try { liveReceiver.send(JSON.stringify({type: 'playback_ack', schema_version: 1,
+      lease_id: liveLease, event_id: chunk.playback.event_id, status: status})); } catch (_) {}
+  }
+
+  function releaseLiveChunk(chunk) {
+    if (!chunk) return;
+    if (chunk.controller) chunk.controller.abort();
+    if (chunk.objectUrl) URL.revokeObjectURL(chunk.objectUrl);
+    if (chunk.playback) liveRequests.cancelReceipt(chunk.playback.lease_id, chunk.playback.event_id);
+  }
+
+  function closeLiveReceiver() {
+    clearInterval(liveHeartbeat); liveHeartbeat = null;
+    liveRequests.cancelAll(); liveOffers.clear();
+    if (liveReceiver) { liveReceiver.onclose = null; liveReceiver.close(); }
+    liveReceiver = null; liveLease = null;
+    if (window.setLiveReceiverOwnsAudio) window.setLiveReceiverOwnsAudio(false);
+  }
+
+  function connectLiveReceiver() {
+    if (window.setLiveReceiverOwnsAudio) window.setLiveReceiverOwnsAudio(true);
+    return new Promise(function (resolve, reject) {
+      var socket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/playback/events');
+      liveReceiver = socket;
+      var timer = setTimeout(function () { reject(new Error('Playback connection timed out')); socket.close(); }, 10000);
+      socket.onmessage = function (event) {
+        if (socket !== liveReceiver) return;
+        try {
+          var message = JSON.parse(event.data);
+          if (message.type === 'ready') {
+            liveLease = message.playback_lease && message.playback_lease.lease_id;
+            if (!liveLease) throw new Error('Playback lease missing');
+            socket.send(JSON.stringify({type: 'subscriber_capabilities', text_ready: true, audio_ready: !liveSpeakerMuted}));
+            liveHeartbeat = setInterval(function () {
+              if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type: 'playback_heartbeat', schema_version: 1, lease_id: liveLease}));
+            }, 15000);
+            clearTimeout(timer); resolve(); return;
+          }
+          if (liveRequests.receive(message)) return;
+          if (message.type === 'playback_revoked' && message.lease_id === liveLease) {
+            liveRequests.cancelReceipt(liveLease, message.event_id);
+            livePlaybackQueue = livePlaybackQueue.filter(function (chunk) {
+              if (chunk.playback && chunk.playback.event_id === message.event_id) { releaseLiveChunk(chunk); return false; }
+              return true;
+            });
+            if (liveCurrentChunk && liveCurrentChunk.playback && liveCurrentChunk.playback.event_id === message.event_id) {
+              var audio = document.getElementById('voicePlayback');
+              if (audio) { audio.pause(); audio.removeAttribute('src'); audio.load(); }
+              finishCurrentChunkAndContinue('Playback revoked.', 'interrupted');
+            }
+            return;
+          }
+          if (!message.replay) liveOffers.receive(message);
+        } catch (error) { clearTimeout(timer); reject(error); socket.close(); }
+      };
+      socket.onclose = function () {
+        clearTimeout(timer); reject(new Error('Playback disconnected'));
+        if (socket === liveReceiver) { resetLivePlayback(true); closeLiveReceiver(); stopLiveVoice(); }
+      };
+      socket.onerror = function () { clearTimeout(timer); reject(new Error('Playback connection failed')); socket.close(); };
+    });
+  }
   var liveAudioContext = null;
   var liveMediaStream = null;
   var liveSourceNode = null;
@@ -70,6 +148,8 @@
 
   function toggleLiveSpeakerMuted() {
     liveSpeakerMuted = !liveSpeakerMuted;
+    if (liveSpeakerMuted) { resetLivePlayback(true); liveAwaitingReply = false; }
+    if (liveReceiver && liveReceiver.readyState === WebSocket.OPEN) liveReceiver.send(JSON.stringify({type: 'subscriber_capabilities', text_ready: true, audio_ready: !liveSpeakerMuted}));
     syncLivePlaybackMute();
     updateLiveStatus(liveSpeakerMuted ? 'Speaker muted.' : 'Speaker unmuted.');
   }
@@ -154,6 +234,7 @@
     if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN || liveTurnOpen || liveAwaitingReply) {
       return;
     }
+    resetLivePlayback(true);
     liveTurnOpen = true;
     liveTurnStartedAt = nowMs;
     liveLastSpeechAt = nowMs;
@@ -210,6 +291,10 @@
   }
 
   function resetLivePlayback(stopAudio) {
+    clearTimeout(livePlaybackWait); livePlaybackWait = null;
+    liveOffers.clear();
+    livePlaybackQueue.forEach(function (chunk) { liveReceipt(chunk, 'interrupted'); releaseLiveChunk(chunk); });
+    liveReceipt(liveCurrentChunk, 'interrupted'); releaseLiveChunk(liveCurrentChunk);
     livePlaybackQueue = [];
     livePlaybackSeenChunks = {};
     livePlaybackActive = false;
@@ -243,7 +328,11 @@
     }
   }
 
-  function finishCurrentChunkAndContinue(message) {
+  function finishCurrentChunkAndContinue(message, status) {
+    var audio = document.getElementById('voicePlayback');
+    if (audio) { audio.onended = null; audio.onerror = null; audio.onplaying = null; audio.pause(); audio.removeAttribute('src'); }
+    liveReceipt(liveCurrentChunk, status || 'completed');
+    releaseLiveChunk(liveCurrentChunk);
     clearLiveChunkWatchdog();
     livePlaybackActive = false;
     liveCurrentChunk = null;
@@ -267,12 +356,12 @@
       if (!livePlaybackActive || !liveCurrentChunk || liveCurrentChunk !== chunk) {
         return;
       }
-      finishCurrentChunkAndContinue('Chunk playback watchdog fired. Advancing to next chunk.');
+      finishCurrentChunkAndContinue('Chunk playback timed out.', 'failed');
     }, durationMs + 4000);
   }
 
   function queueLiveReplyChunk(chunk, turnId) {
-    if (!chunk || !chunk.chunk_index || !chunk.audio_base64 || !chunk.audio_content_type) {
+    if (!chunk || !chunk.chunk_index || (!chunk.playback || !chunk.playback.grant_id)) {
       return;
     }
     var chunkIndex = Number(chunk.chunk_index);
@@ -289,14 +378,14 @@
   }
 
   function finishLiveReplyIfIdle() {
-    if (livePlaybackActive || livePlaybackQueue.length) {
+    if (livePlaybackActive || livePlaybackQueue.length || livePlaybackWait) {
       return;
     }
     liveAwaitingReply = false;
     updateLiveStatus('Live voice is armed. Start speaking.');
   }
 
-  function playNextLiveReplyChunk() {
+  async function playNextLiveReplyChunk() {
     if (livePlaybackActive || !livePlaybackQueue.length) {
       if (liveReplyCompleted) {
         finishLiveReplyIfIdle();
@@ -320,26 +409,37 @@
     playback.oncanplay = function () {
       armLiveChunkWatchdog(playback, chunk);
     };
-    playback.src = 'data:' + chunk.audio_content_type + ';base64,' + chunk.audio_base64;
+    playback.onplaying = function () { if (liveCurrentChunk === chunk) liveReceipt(chunk, 'started'); };
     playback.muted = liveSpeakerMuted;
     updateLiveStatus('Speaking chunk ' + chunk.chunk_index + (chunk.interruptible === false ? ' (protected)...' : '...'));
     playback.onended = function () {
-      finishCurrentChunkAndContinue('');
+      if (liveCurrentChunk === chunk) finishCurrentChunkAndContinue('');
     };
     playback.onerror = function () {
-      finishCurrentChunkAndContinue('Chunk playback error. Skipping to next chunk.');
+      if (liveCurrentChunk === chunk) finishCurrentChunkAndContinue('Chunk playback error.', 'failed');
     };
     playback.onstalled = function () {
       updateLiveStatus('Chunk playback stalled. Waiting for audio to resume...');
     };
     playback.onsuspend = function () {
-      if (playback.ended) {
+      if (playback.ended && liveCurrentChunk === chunk) {
         finishCurrentChunkAndContinue('');
       }
     };
-    playback.play().catch(function () {
-      finishCurrentChunkAndContinue('Chunk playback rejected. Skipping to next chunk.');
-    });
+    try {
+      if (chunk.playback) {
+        chunk.controller = new AbortController();
+        var objectUrl = await PlaybackRequests.loadDashboardAudio(chunk.playback, chunk.controller.signal);
+        if (liveCurrentChunk !== chunk) { URL.revokeObjectURL(objectUrl); return; }
+        chunk.objectUrl = objectUrl;
+        var permit = await liveRequests.request(chunk.playback);
+        if (liveCurrentChunk !== chunk || liveSpeakerMuted || chunk.playback.lease_id !== liveLease || permit.expires_at * 1000 <= Date.now()) throw new Error('Playback context changed');
+        playback.src = objectUrl;
+      } else { throw new Error('Live playback requires an approved delivery offer'); }
+      await playback.play();
+    } catch (_) {
+      if (liveCurrentChunk === chunk) finishCurrentChunkAndContinue('Chunk playback rejected.', 'failed');
+    }
   }
 
   function liveCanInterruptCurrentReply() {
@@ -605,7 +705,9 @@
 
   function handleLiveMessage(payload) {
     liveLastEvent = payload.type + (payload.state ? ': ' + payload.state : '');
-    if (payload.type === 'state') {
+    if (payload.type === 'turn_submitting') {
+      liveOffers.own(payload.turn_id);
+    } else if (payload.type === 'state') {
       if (payload.detail) updateLiveStatus(payload.detail);
       renderLiveMeta(payload.job || null);
       if (['cancelled', 'interrupted', 'failed'].indexOf(payload.state) >= 0) {
@@ -644,9 +746,16 @@
       liveHistory.push(payload);
       renderLiveHistory();
       liveReplyCompleted = true;
+      if (payload.job && payload.job.playback_expected && !liveSpeakerMuted && !livePlaybackSeenChunks[String(payload.turn_id) + ':1']) {
+        livePlaybackWait = setTimeout(function () {
+          livePlaybackWait = null; liveOffers.clear(); finishLiveReplyIfIdle();
+          updateLiveStatus('Approved audio did not arrive. Live voice is armed.');
+        }, 5000);
+      }
       (payload.reply_chunks || []).forEach(function (chunk) { queueLiveReplyChunk(chunk, payload.turn_id || ''); });
       finishLiveReplyIfIdle();
     } else if (payload.type === 'error') {
+      resetLivePlayback(true);
       liveAwaitingReply = false;
       liveTurnOpen = false;
       updateLiveStatus(payload.detail || 'Live voice returned an error.');
@@ -662,6 +771,8 @@
       return;
     }
     updateLiveStatus('Connecting live voice socket...');
+    try { await connectLiveReceiver(); }
+    catch (error) { closeLiveReceiver(); updateLiveStatus(String(error)); return; }
     liveSocket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/voice/live');
     liveSocket.onopen = async function () {
       try {
@@ -692,6 +803,7 @@
     liveSocket.onclose = function () {
       cleanupLiveAudio();
       resetLivePlayback(true);
+      closeLiveReceiver();
       liveSocket = null;
       liveTurnOpen = false;
       liveAwaitingReply = false;
@@ -716,6 +828,7 @@
     else {
       cleanupLiveAudio();
       resetLivePlayback(true);
+      closeLiveReceiver();
       updateLiveButton();
       updateLiveStatus('Live voice session stopped.');
       renderLiveDebug();
@@ -723,7 +836,7 @@
   }
 
   function toggleLiveVoice() {
-    if (liveSocket) stopLiveVoice();
+    if (liveSocket || liveReceiver) stopLiveVoice();
     else startLiveVoice();
   }
 

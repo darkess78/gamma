@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from ..config import settings
+from ..resources.shared_execution import admitted, execution
 from ..errors import ConfigurationError
 from ..observability import configure_logging, log_event
 from ..schemas.voice import AudioEvent, SpeakerAffect, VoiceInputContext
@@ -74,6 +75,7 @@ class HuggingFaceSpeakerEmotionBackend(SpeakerEmotionBackend):
         self._feature_extractor: Any = None
         self._model: Any = None
 
+    @admitted("perception", local=True)
     def analyze(
         self,
         audio: NormalizedAudio,
@@ -139,6 +141,7 @@ class HuggingFaceAudioEventBackend(AudioEventBackend):
         self._feature_extractor: Any = None
         self._model: Any = None
 
+    @admitted("perception", local=True)
     def detect(self, audio: NormalizedAudio, *, transcript: str) -> list[AudioEvent]:
         import numpy as np
 
@@ -390,12 +393,13 @@ class AudioUnderstandingService:
         started_at = time.perf_counter()
         try:
             with path.open("rb") as audio_file:
-                response = httpx.post(
-                    str(settings.audio_understanding_endpoint),
-                    files={"audio_file": (path.name, audio_file, "application/octet-stream")},
-                    data={"transcript": transcript},
-                    timeout=max(1, settings.audio_understanding_request_timeout_seconds),
-                )
+                with execution(str(settings.audio_understanding_endpoint), workload="perception"):
+                    response = httpx.post(
+                        str(settings.audio_understanding_endpoint),
+                        files={"audio_file": (path.name, audio_file, "application/octet-stream")},
+                        data={"transcript": transcript},
+                        timeout=max(1, settings.audio_understanding_request_timeout_seconds),
+                    )
             response.raise_for_status()
             return VoiceInputContext.model_validate(response.json())
         except Exception as exc:

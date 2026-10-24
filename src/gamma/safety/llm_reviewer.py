@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
-from urllib import request
 
 from ..config import settings
 
@@ -53,8 +53,10 @@ class SpeechLLMReviewer:
         Returns:
             LLMReviewDecision: Review decision.
         """
-        if not settings.speech_filter_llm_enabled or not self._model:
+        if not settings.speech_filter_llm_enabled:
             return LLMReviewDecision(action="allow", reason="llm-disabled", confidence=0.0)
+        if not self._model:
+            return LLMReviewDecision(action="block", reason="llm-reviewer-unavailable", confidence=0.0)
         prompt = (
             "Classify proposed livestream assistant speech for safety.\n"
             "Return JSON only: {\"action\":\"allow|soften|block\",\"reason\":\"short\",\"confidence\":0-1}.\n"
@@ -70,34 +72,30 @@ class SpeechLLMReviewer:
             "Now classify the provided text.\n"
         )
         temperature = max(0.0, min(1.0, float(settings.speech_filter_llm_temperature or 0.0)))
-        payload = {
-            "model": self._model,
-            "system": prompt,
-            "prompt": text,
-            "stream": False,
-            "options": {"temperature": temperature},
-        }
-        req = request.Request(
-            settings.local_llm_endpoint.rstrip("/") + "/api/generate",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
         try:
-            with request.urlopen(req, timeout=min(settings.local_llm_timeout_seconds, 20)) as resp:
-                raw = json.loads(resp.read().decode("utf-8")).get("response", "")
+            if settings.brain_model_runtime == "worker":
+                from ..brain.model_runtime import get_model_worker
+                raw = get_model_worker().review_text(prompt, text, model=self._model, temperature=temperature)
+            else:
+                from .review_provider import generate_review
+                raw = generate_review(prompt, text, self._model, temperature,
+                                      settings.local_llm_endpoint, settings.local_llm_timeout_seconds)
             parsed = self._parse_json_object(str(raw))
-            action = str(parsed.get("action", "allow")).strip().lower()
+            if not isinstance(parsed, dict) or not {"action", "reason", "confidence"}.issubset(parsed):
+                return LLMReviewDecision(action="block", reason="llm-reviewer-invalid", confidence=0.0)
+            action = str(parsed.get("action", "")).strip().lower()
             if action not in {"allow", "soften", "block"}:
-                action = "allow"
+                return LLMReviewDecision(action="block", reason="llm-reviewer-invalid", confidence=0.0)
             confidence = float(parsed.get("confidence", 0.0) or 0.0)
+            if not math.isfinite(confidence) or not 0 <= confidence <= 1 or not isinstance(parsed["reason"], str):
+                return LLMReviewDecision(action="block", reason="llm-reviewer-invalid", confidence=0.0)
             return LLMReviewDecision(
                 action=action,
                 reason=str(parsed.get("reason", "") or "")[:120],
                 confidence=max(0.0, min(1.0, confidence)),
             )
         except Exception:
-            return LLMReviewDecision(action="soften", reason="llm-reviewer-unavailable", confidence=0.0)
+            return LLMReviewDecision(action="block", reason="llm-reviewer-unavailable", confidence=0.0)
 
     def _parse_json_object(self, raw: str) -> dict:
         """Parse JSON from response.

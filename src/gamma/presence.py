@@ -235,6 +235,23 @@ def apply_presence_to_stream_event(
     metadata["presence_mode"] = mode
     metadata["presence"] = public_presence_payload(presence)
 
+    if event.actor.source == "discord":
+        from .integrations.discord.runtime import DiscordRuntimeConfig
+
+        config = DiscordRuntimeConfig.from_app_config()
+        expected_channel = config.voice_channel_id if event.kind == "mic_transcript" else config.text_channel_id
+        allowed = (
+            mode in {"wake", "go_live"} and config.enabled and config.output_enabled
+            and metadata.get("guild_id") == config.guild_id
+            and bool(expected_channel) and metadata.get("channel_id") == expected_channel
+            and event.kind in {"chat_message", "mic_transcript"}
+            and (event.kind != "mic_transcript" or config.voice_enabled)
+        )
+        metadata["public_output"] = True
+        metadata["output_target_policy"] = "discord_call"
+        metadata["presence_suppressed"] = not allowed
+        return event.model_copy(update={"metadata": metadata}), bool(allowed and synthesize_speech)
+
     if event.kind == "conversation_lull":
         authorized = bool(metadata.get("scheduler_authorized"))
         if mode == "wake" and authorized:

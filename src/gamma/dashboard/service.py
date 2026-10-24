@@ -23,6 +23,9 @@ from ..integrations.twitch.eventsub import TwitchEventSubConfig, read_twitch_eve
 from ..integrations.twitch.replay import replay_jsonl_text
 from ..integrations.twitch.worker import TwitchWorkerConfig, read_twitch_worker_state
 from ..improvement.work_queue import ImprovementWorkStore
+from ..coding.practice import capability_summary
+from ..coding.lessons import LessonStore
+from ..coding.worker import read_policy, write_policy
 from ..presence import load_presence_state
 from ..resources import MachineResourceMonitor
 from ..resources.allocations import recent_sidecar_allocation_entries
@@ -37,6 +40,7 @@ from .shana_client import ShanaApiClient, ShanaClientError
 
 
 class DashboardService:
+    SHANA_SYSTEMD_USER_UNIT = "gamma-shana.service"
     IMPROVEMENT_WORKER_SERVICE = "improvement_worker"
     IMPROVEMENT_WORKER_MODULE = "gamma.improvement.worker"
     TWITCH_WORKER_SERVICE = "twitch_worker"
@@ -90,6 +94,9 @@ class DashboardService:
     def build_improvement_status(self) -> dict[str, Any]:
         """Return sanitized improvement activity, queue, and worker state."""
         payload = self._improvement_status.build()
+        payload["coding_practice"] = capability_summary(settings.data_dir / "coding" / "practice")
+        payload["coding_practice"]["lessons"] = LessonStore(settings.data_dir / "coding" / "lessons").list()
+        payload["coding_practice"]["idle_policy"] = read_policy(settings.data_dir / "coding")
         requests = self._improvement_work.list(limit=20)
         worker = self._process_manager.module_status(
             self.IMPROVEMENT_WORKER_SERVICE,
@@ -140,6 +147,54 @@ class DashboardService:
                     }
                 )
         return payload
+
+    def start_coding_project(self, goal: str, model: str, checker_model: str = 'gpt-oss:20b', checker_parent: str | None = None) -> dict[str, Any]:
+        from ..coding.repository import submission_lock
+        with submission_lock(settings.data_dir/'coding'/'projects'):
+            return self._start_coding_project_unlocked(goal,model,checker_model,checker_parent)
+
+    def _start_coding_project_unlocked(self, goal: str, model: str, checker_model: str, checker_parent: str | None) -> dict[str, Any]:
+        from ..coding.repository import create_job, list_jobs, job_path, write_json
+        root = settings.data_dir / "coding" / "projects"
+        if any(j["status"] in {"queued", "running"} for j in list_jobs(root)):
+            raise ValueError("A repository coding job is already pending")
+        record = create_job(root, goal, model, checker_model)
+        if checker_parent:
+            record['checker_parent'] = checker_parent
+            write_json(job_path(root,record['id'])/'state.json',record)
+        process = self._process_manager.start_module("coding_project", "gamma.coding.repository", ["--request-id", record["id"]])
+        if not process.get("ok"):
+            record.update(status="blocked", error="WorkerStartFailed")
+            write_json(job_path(root,record["id"])/"state.json",record)
+        return {"job":record,"process":process}
+
+    def continue_coding_with_checker(self, identifier: str) -> dict[str, Any]:
+        from ..coding.repository import job_path
+        path = job_path(settings.data_dir/'coding'/'projects', identifier)/'state.json'
+        record = json.loads(path.read_text(encoding='utf-8'))
+        if record.get('status') != 'needs_checker': raise ValueError('Job is not awaiting a checker')
+        return self.start_coding_project(record['goal'],record['model'],record.get('checker_model','gpt-oss:20b'),identifier)
+
+    def start_coding_practice(self, *, model: str, maximum_attempts: int, budget_seconds: int) -> dict[str, Any]:
+        """Start one bounded fictional exercise, never edit the project or train weights."""
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/+-]{0,199}", model):
+            raise ValueError("invalid local practice model")
+        if not 1 <= maximum_attempts <= 10 or not 30 <= budget_seconds <= 1800:
+            raise ValueError("invalid coding practice limits")
+        return self._process_manager.start_module(
+            "coding_practice", "gamma.coding.cli",
+            ["practice", "--model", model, "--maximum-attempts", str(maximum_attempts),
+             "--budget-seconds", str(budget_seconds)],
+        )
+
+    def edit_coding_lesson(self, lesson_id: str, *, text: str, active: bool) -> dict[str, Any]:
+        return LessonStore(settings.data_dir / "coding" / "lessons").edit(lesson_id, text=text, active=active)
+
+    def set_coding_idle_policy(self, policy: dict[str, Any]) -> dict[str, Any]:
+        saved = write_policy(settings.data_dir / "coding", policy)
+        if saved["enabled"]:
+            self._process_manager.start_module("coding_idle", "gamma.coding.worker")
+        return saved
 
     def create_improvement_work(
         self,
@@ -708,35 +763,73 @@ class DashboardService:
         return "Presence set to Go Live. Public stream output is enabled for this Shana backend session."
 
     def start_shana(self) -> dict[str, Any]:
+        if self._uses_systemd_user_lifecycle():
+            return self._run_systemd_user_shana_action("start")
         return self._process_manager.start("shana")
 
     def stop_shana(self) -> dict[str, Any]:
+        if self._uses_systemd_user_lifecycle():
+            return self._run_systemd_user_shana_action("stop")
         return self._process_manager.stop("shana")
 
     def restart_shana(self) -> dict[str, Any]:
+        if self._uses_systemd_user_lifecycle():
+            return self._run_systemd_user_shana_action("restart")
         return self._process_manager.restart("shana")
 
     def stop_dashboard(self) -> dict[str, Any]:
+        if self._uses_systemd_user_lifecycle():
+            return {
+                "ok": False,
+                "detail": "Dashboard is configured as an always-on systemd user service and was not stopped.",
+                "url": settings.dashboard_base_url,
+            }
         self._schedule_stop("dashboard")
         return {"ok": True, "detail": "dashboard-stop-scheduled", "url": settings.dashboard_base_url}
 
     def stop_all(self) -> dict[str, Any]:
-        shana_result = self._process_manager.stop("shana")
+        shana_result = self.stop_shana()
         twitch_result = self.stop_twitch_worker()
         eventsub_result = self.stop_twitch_eventsub_worker()
         discord_result = self.stop_discord_text_worker()
         tts_results = self._stop_all_tts_servers()
-        self._schedule_stop("dashboard")
+        preserve_dashboard = self._uses_systemd_user_lifecycle()
+        if not preserve_dashboard:
+            self._schedule_stop("dashboard")
         tts_ok = all(bool(result.get("ok")) for result in tts_results.values())
         return {
             "ok": bool(shana_result.get("ok", False)) and bool(twitch_result.get("ok", False)) and bool(eventsub_result.get("ok", False)) and bool(discord_result.get("ok", False)) and tts_ok,
-            "detail": "all-stop-scheduled",
+            "detail": "runtime-services-stop-requested" if preserve_dashboard else "all-stop-scheduled",
             "shana": shana_result,
             "twitch_worker": twitch_result,
             "twitch_eventsub": eventsub_result,
             "discord_text": discord_result,
             "tts": tts_results,
             "dashboard_url": settings.dashboard_base_url,
+            "dashboard_preserved": preserve_dashboard,
+        }
+
+    @staticmethod
+    def _uses_systemd_user_lifecycle() -> bool:
+        return os.environ.get("GAMMA_LIFECYCLE_MANAGER", "").strip().lower() == "systemd-user"
+
+    def _run_systemd_user_shana_action(self, action: str) -> dict[str, Any]:
+        completed = subprocess.run(
+            ["systemctl", "--user", action, self.SHANA_SYSTEMD_USER_UNIT],
+            cwd=settings.project_root,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "systemctl command failed").strip()
+            return {"ok": False, "detail": detail, "service": self.SHANA_SYSTEMD_USER_UNIT}
+        return {
+            "ok": True,
+            "detail": f"shana-systemd-{action}-completed",
+            "service": self.SHANA_SYSTEMD_USER_UNIT,
+            "url": settings.shana_base_url,
         }
 
     def start_twitch_worker(self) -> dict[str, Any]:
@@ -806,18 +899,35 @@ class DashboardService:
     def discord_text_worker_status(self) -> dict[str, Any]:
         config = DiscordRuntimeConfig.from_app_config()
         missing = self._missing_discord_text_config(config)
+        process = self._process_manager.module_status(self.DISCORD_TEXT_SERVICE, self.DISCORD_TEXT_MODULE)
+        state = read_discord_worker_state()
+        from ..coding.repository import status_summary
+        from ..config import PROJECT_ROOT
+        summary, digest = status_summary(process.get("process", {}), state, time.time(), PROJECT_ROOT)
         return {
-            **self._process_manager.module_status(self.DISCORD_TEXT_SERVICE, self.DISCORD_TEXT_MODULE),
+            **process,
+            "summary": summary,
+            "summary_source_sha256": digest,
             "configured": not missing,
             "missing_config": missing,
             "enabled": config.enabled,
             "guild_id": config.guild_id or None,
             "text_channel_id": config.text_channel_id or None,
             "worker": "discord_text",
-            "output_enabled": False,
-            "voice_enabled": False,
+            "output_enabled": config.output_enabled,
+            "voice_enabled": config.voice_enabled,
             "state": read_discord_worker_state(),
         }
+
+    def discord_voice_control(self, command: str) -> dict[str, Any]:
+        from ..integrations.discord.control import ControlMailbox
+        if not self.discord_text_worker_status().get("process", {}).get("running"):
+            raise ValueError("Shana Discord bot is not running")
+        return ControlMailbox(settings.data_dir / "runtime" / "discord_text" / "controls").submit(command)
+
+    def discord_voice_command_status(self, command_id: str) -> dict[str, Any]:
+        from ..integrations.discord.control import ControlMailbox
+        return ControlMailbox(settings.data_dir / "runtime" / "discord_text" / "controls").read(command_id)
 
     def twitch_eventsub_status(self) -> dict[str, Any]:
         status = self._process_manager.module_status(self.TWITCH_EVENTSUB_SERVICE, self.TWITCH_EVENTSUB_MODULE)

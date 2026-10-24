@@ -5,6 +5,11 @@ Last verified: 2026-08-28
 
 ## Purpose
 
+The initial coding-practice and assessment extension is documented in
+[`coding_improvement.md`](coding_improvement.md). It measures fictional tasks,
+records editable practice lessons, and supports bounded idle practice. It does
+not yet train LoRA adapters or grant general project-coding authority.
+
 Gamma may continuously observe its own reliability, latency, quality, safety,
 and resource behavior. It may create isolated improvement candidates only
 after the evaluation foundation can establish a representative baseline and

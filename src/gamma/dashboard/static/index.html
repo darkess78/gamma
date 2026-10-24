@@ -85,6 +85,45 @@
           <div class="mini-card mini-card-wide"><span>Warnings</span><strong id="overviewWarningsMini">Waiting for health report</strong></div>
         </div>
       </section>
+      <section class="panel full-width" data-dashboard-tab="improvement">
+        <h2>Autonomous repository coding</h2>
+        <p>Give Gamma a concrete improvement goal. It inspects source, makes a task list, writes code, runs independent acceptance and regression checks, and applies verified changes with rollback.</p>
+        <form id="autonomousCodingForm" class="improvement-work-form">
+          <label>Goal <textarea id="autonomousCodingGoal" class="text-input" required minlength="12" maxlength="2000" placeholder="Describe the result you want and any rough notes"></textarea></label>
+          <label>Local coding model <input id="autonomousCodingModel" value="qwen3.8:27b" required></label>
+          <label>Independent checker <input id="autonomousCodingChecker" value="gpt-oss:20b" required></label>
+          <label>Time budget <select id="autonomousCodingBudget"><option value="1800">30 minutes</option><option value="7200">2 hours</option><option value="28800">Overnight, 8 hours</option></select></label>
+          <button type="submit">Give Gamma this improvement goal</button>
+        </form>
+        <p id="autonomousCodingMessage" role="status"></p>
+        <div id="autonomousCodingJobs"></div>
+      </section>
+      <section class="panel full-width" data-dashboard-tab="improvement">
+        <h2>Repository coding</h2>
+        <p>Gamma plans, edits, checks and applies changes within the registered Discord status scope. Failed checks feed repair attempts. Installed changes retain a rollback copy. This does not train model weights.</p>
+        <form id="codingProjectForm" class="improvement-work-form">
+          <label>Goal <textarea id="codingProjectGoal" class="text-input" required minlength="12" maxlength="1200">Make Shana Discord status accurate when stopped, reconnecting, listening or paused, including stale and malformed state.</textarea></label>
+          <label>Local model <input id="codingProjectModel" value="qwen3.8:27b" required></label>
+          <label>Independent local checker <input id="codingProjectCheckerModel" value="gpt-oss:20b" required></label>
+          <button type="submit">Give Gamma this coding task</button>
+        </form>
+        <p id="codingProjectMessage" role="status"></p>
+        <div id="codingProjectJobs"></div>
+      </section>
+      <section class="panel full-width" data-dashboard-tab="improvement">
+        <h2>Coding practice</h2>
+        <p>Measure local coding on fictional Discord exercises. New results require regression, feature, and withheld generated-case checks. These results apply to the exercises only.</p>
+        <div id="codingPracticeSummary">No assessment loaded.</div>
+        <div id="codingPracticeSkills" class="improvement-detail-grid"></div>
+        <label><input id="codingIdleEnabled" type="checkbox"> Practice while Gamma is asleep and has no assigned work</label>
+        <button id="codingIdleSave" type="button" class="secondary">Save idle practice setting</button>
+        <form id="codingPracticeForm" class="improvement-work-form">
+          <label>Local model <input class="text-input" id="codingPracticeModel" required maxlength="200" value="qwen3.8:27b"></label>
+          <button id="codingPracticeStart" type="submit">Run bounded practice</button>
+        </form>
+        <p id="codingPracticeMessage">Up to five attempts per task, with a five-minute budget. Practice defers if the model endpoint is occupied.</p>
+        <div id="codingLessons"></div>
+      </section>
       <section class="panel full-width improvement-hero" data-dashboard-tab="improvement">
         <div class="panel-head">
           <div>
@@ -108,7 +147,7 @@
       <section class="panel full-width panel-fill" data-dashboard-tab="improvement">
         <div class="panel-head">
           <div>
-            <h2>Give Gamma Work</h2>
+            <h2>Broader isolated investigation</h2>
             <p class="improvement-item-meta">Gamma may investigate, edit detached candidates, and test them. It cannot promote or deploy them.</p>
           </div>
           <span class="improvement-read-only">Owner bounded</span>
@@ -186,11 +225,24 @@
       </section>
       <section class="panel full-width panel-fill" data-dashboard-tab="improvement">
         <div class="panel-head">
-          <h2>Safety Boundaries</h2>
+          <h2>Broader experiment safety boundaries</h2>
           <span class="improvement-read-only">No automatic promotion</span>
         </div>
         <div class="improvement-safeguard-grid" id="improvementSafeguards">Safeguards have not loaded.</div>
       </section>
+      <section class="panel full-width" data-dashboard-tab="presence">
+          <h2>Shana Discord bot</h2>
+          <p id="discordBotStatus">Loading bot status...</p>
+          <div id="discordBotControls" class="action-buttons">
+            <button data-bot-action="start">Start bot</button>
+            <button data-bot-action="stop" class="secondary">Stop bot</button>
+            <button data-voice-command="join">Join voice</button>
+            <button data-voice-command="leave" class="secondary">Leave voice</button>
+            <button data-voice-command="pause" class="secondary">Pause listening</button>
+            <button data-voice-command="resume">Resume listening</button>
+          </div>
+          <p id="discordBotMessage" role="status">Controls use the configured server and voice channel.</p>
+        </section>
       <section class="panel full-width" data-dashboard-tab="presence">
         <div class="panel-head">
           <h2>Shana Presence</h2>
@@ -265,8 +317,7 @@
           <button class="secondary" onclick="action('/api/shana/start')">Start Shana</button>
           <button onclick="action('/api/shana/restart')">Restart Shana</button>
           <button class="danger" onclick="action('/api/shana/stop')">Stop Shana Process</button>
-          <button class="ghost" onclick="action('/api/dashboard/stop', { redirectUrl: null })">Stop Dashboard</button>
-          <button class="ghost danger-outline" onclick="action('/api/all/stop', { redirectUrl: null })">Stop All Services</button>
+          <button class="ghost danger-outline" onclick="action('/api/all/stop', { redirectUrl: null })">Stop Shana + Workers</button>
         </div>
       </section>
       <section class="panel" data-dashboard-tab="status">
@@ -876,6 +927,11 @@
   <script src="/static/render.js?v=20260529"></script>
   <script src="/static/controls.js?v=20260611a"></script>
   <script src="/static/status.js?v=20260623c"></script>
-  <script type="module" src="/static/improvement.mjs?v=20260828b"></script>
+    <script type="module" src="/static/discord.mjs?v=20261005a"></script>
+  <script type="module" src="/static/coding-projects.mjs?v=20261005d"></script>
+  <script type="module" src="/static/improvement.mjs?v=20261004b"></script>
+  <script type="module" src="/static/autonomous-coding.mjs?v=20261004a"></script>
+  <script type="module" src="/static/lesson-history.mjs?v=20261004a"></script>
+<script type="module" src="/static/coding-candidates.mjs?v=20261004a"></script>
 </body>
 </html>

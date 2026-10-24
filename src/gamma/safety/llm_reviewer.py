@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from urllib import request
 
@@ -70,12 +71,17 @@ class SpeechLLMReviewer:
             "Now classify the provided text.\n"
         )
         temperature = max(0.0, min(1.0, float(settings.speech_filter_llm_temperature or 0.0)))
+        if not isinstance(text, str) or len((prompt + text).encode("utf-8")) > 6000:
+            return LLMReviewDecision(action="soften", reason="llm-review-input-too-large", confidence=0.0)
         payload = {
             "model": self._model,
             "system": prompt,
             "prompt": text,
             "stream": False,
-            "options": {"temperature": temperature},
+            "think": False,
+            "format": "json",
+            "keep_alive": 0,
+            "options": {"temperature": temperature, "num_ctx": 8192, "num_predict": 128},
         }
         req = request.Request(
             settings.local_llm_endpoint.rstrip("/") + "/api/generate",
@@ -87,10 +93,14 @@ class SpeechLLMReviewer:
             with request.urlopen(req, timeout=min(settings.local_llm_timeout_seconds, 20)) as resp:
                 raw = json.loads(resp.read().decode("utf-8")).get("response", "")
             parsed = self._parse_json_object(str(raw))
-            action = str(parsed.get("action", "allow")).strip().lower()
+            if not isinstance(parsed, dict) or type(parsed.get("confidence")) not in {int, float}:
+                raise ValueError("invalid review")
+            action = str(parsed.get("action", "")).strip().lower()
             if action not in {"allow", "soften", "block"}:
-                action = "allow"
-            confidence = float(parsed.get("confidence", 0.0) or 0.0)
+                raise ValueError("invalid review action")
+            confidence = float(parsed["confidence"])
+            if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+                raise ValueError("invalid review confidence")
             return LLMReviewDecision(
                 action=action,
                 reason=str(parsed.get("reason", "") or "")[:120],

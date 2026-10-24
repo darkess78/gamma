@@ -14,6 +14,11 @@ specs own detailed contracts; target documents own future work.
 - Separate internal bind and browser-facing public URLs.
 - Optional bearer authentication for Shana and session authentication for the dashboard.
 - Supervisor-managed Shana, dashboard, Qwen TTS, Twitch, Discord, and audio-understanding processes.
+- The production Linux host uses lingering systemd user units for boot-time
+  Shana and dashboard ownership. In `systemd-user` lifecycle mode, dashboard
+  Shana controls delegate to `gamma-shana.service`, dependency hooks restore
+  configured local voice sidecars, and runtime stop controls preserve the
+  always-on dashboard.
 - Structured rotating logs and request correlation.
 - Disabled-by-default Shana-owned Minecraft coordinator wiring and authenticated
   loopback WebSocket control transport at `/v1/minecraft/control`.
@@ -131,6 +136,8 @@ specs own detailed contracts; target documents own future work.
 - Lightweight header polling avoids full provider, memory, log, and machine-status work on interaction and operations pages.
 - Status, Settings, and Memory use separate bounded status contracts rather than transferring the legacy full diagnostics payload.
 - Service lifecycle and provider smoke-test controls.
+- Systemd-aware Shana lifecycle controls with no dashboard self-stop control
+  on the operator page.
 - TTS profile selection/editor and generated-audio controls.
 - Memory and known-person management.
 - Twitch/EventSub/Discord worker controls and stream operations.
@@ -154,6 +161,19 @@ specs own detailed contracts; target documents own future work.
 - Automatic model eviction/loading remains unimplemented.
 
 ## Tooling And Platform
+
+- Initial coding-practice foundation in `src/gamma/coding`: dependency-aware
+  fictional exercises, local-only bounded proposals, protected regression and
+  feature checks in a Linux sandbox, honest blocked/checker states, bounded
+  capability summaries, a withheld generated-case verification gate, retained
+  review-only candidate solutions, editable observed lessons, and optional idle-only
+  practice. The Improvement dashboard exposes authenticated controls and
+  evidence. A separate owner-directed executor now discovers ordinary Python
+  source, plans bounded dependent tasks, repairs executed failures, independently
+  reviews and applies verified source with rollback. A separate isolated QLoRA
+  trial trains candidate adapters and evaluates held-out tasks; production model
+  activation remains unavailable. See
+  `coding_improvement.md` for implemented boundaries and outstanding work.
 
 - Linux-first runtime with Windows development/smoke-test compatibility.
 - Local proxy, Nginx templates, systemd templates, platform launchers.
@@ -186,3 +206,33 @@ specs own detailed contracts; target documents own future work.
 - Browser live capture still uses deprecated `ScriptProcessorNode` rather than `AudioWorkletNode`.
 - Conversation reliability and latency have an aggregate comparison foundation,
   but representative fixtures and an owner-facing soak/evaluation gate remain incomplete.
+# Registered repository coding and Shana controls
+
+The Improvement dashboard can run local-model repository coding on the registered
+Discord status helper. Gamma produces a plan and edits, repairs failed protected
+checks, requests another local model's diagnosis after five failures, verifies
+withheld cases and applies the helper with baseline conflict protection and a
+rollback copy. This narrow scope does not establish general project autonomy or
+change model weights. Evidence and candidate examples remain in ignored runtime
+storage; successful lessons are editable in the Improvement dashboard.
+
+The Presence dashboard controls Shana's Discord bot lifecycle and voice join,
+leave, pause and resume. Commands are serialized with live bot receipts. Status
+executes the installed Gamma-authored pure helper and includes its source hash.
+Existing dashboard authentication and proxy access policies apply.
+
+## Autonomous coding and candidate learning
+
+The Improvement page accepts owner goals and exposes pause/resume/stop, executed
+test receipts, installed-source application evidence and editable learning.
+Successful work retains frozen feature tests in the protected regression suite.
+Lesson revisions preserve provenance and owner edits. The runtime uses local
+Qwen3.8:27b for coding and GPT-OSS:20b for independent review. Protected controller,
+identity, safety and authentication code cannot be changed by the learner.
+
+The local candidate pilot uses the pinned Qwen3-4B-Instruct-2507 checkpoint in a
+separate training environment. A real 12-step NF4 LoRA trial changed adapter
+parameters, preserved the base model and scored 1/8 held-out tasks versus 0/8 for
+its base. It was rejected by the 80 percent pilot floor. This is hardware and
+pipeline proof, not a successful quality upgrade. No production adapter was
+activated; incumbent comparison and serving validation remain required.

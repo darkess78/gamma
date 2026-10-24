@@ -314,7 +314,8 @@ class StreamBrain:
                 "safe_output": "filtered",
                 "playback_approved": False,
             }
-        fast_review = _fast_stream_safety_review(response.speech_text or "")
+        output_text = response.speech_text or response.display_text or ""
+        fast_review = _fast_stream_safety_review(output_text)
         if fast_review["blocked"]:
             return {
                 "action": "filtered",
@@ -327,7 +328,7 @@ class StreamBrain:
                 "safe_output": "filtered",
                 "playback_approved": False,
             }
-        llm_decision = self._review_stream_output_with_llm(event, response.speech_text or "") if include_llm and response.speech_text else None
+        llm_decision = self._review_stream_output_with_llm(event, output_text) if include_llm and output_text else None
         if llm_decision is not None:
             return llm_decision
         return {
@@ -434,6 +435,10 @@ class StreamBrain:
         if not settings.speech_filter_llm_enabled:
             return None
         timeout_seconds = max(0.05, float(settings.stream_safety_review_timeout_seconds or 2.0))
+        if event.actor.source == "discord":
+            # Discord delivery waits for approval instead of broadcasting a pending turn.
+            # Allow the local review request's bounded cold-start window.
+            timeout_seconds = max(timeout_seconds, 20.0)
         started_at = time.perf_counter()
         executor = ThreadPoolExecutor(max_workers=1)
         future = executor.submit(self._safety_reviewer.review, text)

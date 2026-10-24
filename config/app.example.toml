@@ -265,3 +265,5 @@ guild_id = ""
 text_channel_id = ""
 voice_channel_id = ""
 output_enabled = false
+voice_enabled = false
+owner_user_id = ""

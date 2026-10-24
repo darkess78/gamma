@@ -250,7 +250,7 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('src="/static/memory.js?v=20260611e"', dashboard.body.decode("utf-8"))
         self.assertIn('href="/static/dashboard.css?v=20260828b"', dashboard.body.decode("utf-8"))
         self.assertIn('src="/static/status.js?v=20260623c"', dashboard.body.decode("utf-8"))
-        self.assertIn('src="/static/improvement.mjs?v=20260828b"', dashboard.body.decode("utf-8"))
+        self.assertIn('src="/static/improvement.mjs?v=20261004b"', dashboard.body.decode("utf-8"))
         self.assertEqual(talk.status_code, 307)
         self.assertEqual(talk.headers["location"], "/dashboard/monitor")
         self.assertEqual(monitor_redirect.status_code, 307)

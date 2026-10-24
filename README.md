@@ -18,9 +18,9 @@ Browser clients call the dashboard, and the dashboard calls Shana through her
 HTTP API. The dashboard does not construct Shana's conversation, memory, or
 voice services.
 
-The authoritative deployment and proxy contract is
+The deployment and proxy reference is
 [`specs/LOCKED_GAMMA_NETWORK_DEPLOYMENT.md`](specs/LOCKED_GAMMA_NETWORK_DEPLOYMENT.md).
-Do not change deployment routing based only on this overview.
+Read that reference before changing deployment routing.
 
 ## Install
 
@@ -213,5 +213,14 @@ Key directories:
 
 Start with [`specs/README.md`](specs/README.md), then read
 [`specs/current_implementations.md`](specs/current_implementations.md) and the
-relevant domain spec. Future work is ordered in
-[`specs/roadmap.md`](specs/roadmap.md).
+relevant domain spec. The fresh-foundation discussion is recorded in
+[`specs/shana_foundation_direction.md`](specs/shana_foundation_direction.md).
+Proposed next steps are in [`specs/roadmap.md`](specs/roadmap.md); earlier plans
+are preserved in [`specs/archive/README.md`](specs/archive/README.md).
+
+The Improvement dashboard can assign repository coding work within the registered
+Discord status scope. Gamma plans, edits, tests, repairs and applies that helper,
+with protected checks, independent checker help, evidence and rollback copies.
+The Presence dashboard controls Shana's Discord bot and voice connection.
+See [`specs/coding_improvement.md`](specs/coding_improvement.md) for the current
+scope and remaining model-training work.

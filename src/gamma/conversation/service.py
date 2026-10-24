@@ -10,7 +10,7 @@ from ..config import settings
 from ..errors import ConversationError, GammaError
 from ..identity.profile import SpeakerProfile
 from ..identity.resolver import IdentityResolver
-from ..llm.base import LLMCallContext
+from ..llm.base import LLMCallContext, LLMReply
 from ..llm.capabilities import estimate_text_tokens
 from ..llm.context_budget import ContextBudgetManager, prompt_layers_from_system_prompt
 from ..llm.factory import build_llm_adapter
@@ -564,7 +564,15 @@ class ConversationService:
                 1,
             )
             draft_llm_started = time.perf_counter()
-            draft_reply = self._llm_adapter().generate_reply(
+            owner_coding_receipt = (len(inferred_tool_calls) == 1 and inferred_tool_calls[0].tool == 'coding_goal'
+                                    and speaker is not None and speaker.is_owner is True and speaker.trust == 'owner')
+            if owner_coding_receipt:
+                draft_reply = LLMReply(text=ConversationTurnDraft(
+                    action='reply', requested_delivery=legacy_delivery,
+                    final_text='Checking that coding request.', reason_code='owner_coding_control',
+                ).model_dump_json())
+            else:
+                draft_reply = self._llm_adapter().generate_reply(
                 system_prompt=system_prompt,
                 user_text=draft_user_text,
                 image_inputs=[image.to_llm_input()] if image is not None else None,
@@ -580,7 +588,7 @@ class ConversationService:
                     minimum_context_tokens=4096,
                     prompt_builder=build_conversation_prompt,
                 ),
-            )
+                )
             timing["draft_llm_ms"] = round(
                 (time.perf_counter() - draft_llm_started) * 1000,
                 1,
@@ -609,7 +617,7 @@ class ConversationService:
             # Authorized tool calls always run synchronously and their raw output
             # never becomes communicable text.
             tool_started = time.perf_counter()
-            inferred_results = self._execute_tool_calls(primary_tool_calls)
+            inferred_results = self._execute_tool_calls(primary_tool_calls, speaker=speaker)
             timing["tool_exec_ms"] = round((time.perf_counter() - tool_started) * 1000, 1)
 
             final_reply_text = turn_draft.final_text
@@ -764,7 +772,7 @@ class ConversationService:
 
             # Merge any additional tool calls the LLM suggested via metadata
             extra_tool_calls = self._merge_tool_calls(extracted["tool_calls"], []) if tools_ok and not parsed_turn.structured else []
-            extra_results = self._execute_tool_calls(extra_tool_calls)
+            extra_results = self._execute_tool_calls(extra_tool_calls, speaker=speaker)
             if extra_results:
                 direct_reply = self._render_direct_tool_reply(user_text=stripped, tool_results=extra_results)
                 if direct_reply is not None:
@@ -1019,7 +1027,7 @@ class ConversationService:
             "memory_candidates: array of up to 3 objects with keys type, text, importance, tags, subject_type, subject_name, relationship_to_user.\n"
             "Available safe tools:\n"
             f"{tool_help}\n"
-            "Only emit tool_calls when the user is explicitly asking for current system, provider, artifact, or memory state that these tools can answer.\n"
+            "Only emit tool_calls for an explicit request these tools can fulfill. coding_goal is for an owner's concrete repository coding or improvement instruction, never brainstorming. coding_status and coding_control read or control that work.\n"
             "Use search_memory when the user asks what you remember, asks you to recall prior context, or asks about a known person/project.\n"
             "Use save_memory only for durable facts, reminders, recurring preferences, named people, important plans, or corrections the assistant should intentionally keep.\n"
             "Do not use save_memory for casual chatter, acknowledgements, or one-off small talk.\n"
@@ -1089,9 +1097,13 @@ class ConversationService:
             return True
         return len(user_text.split()) >= 12
 
-    def _execute_tool_calls(self, tool_calls: list[ToolCall]) -> list[ToolExecutionResult]:
+    def _execute_tool_calls(self, tool_calls: list[ToolCall], *, speaker: SpeakerProfile | None = None) -> list[ToolExecutionResult]:
         results: list[ToolExecutionResult] = []
         for call in tool_calls[:3]:
+            from ..tools.coding import CODING_TOOLS
+            if call.tool in CODING_TOOLS and not (speaker is not None and speaker.is_owner is True and speaker.trust == 'owner'):
+                results.append(ToolExecutionResult(tool=call.tool,ok=False,output='Only the verified owner can control coding work.',metadata={'reason':'owner_required'}))
+                continue
             tool = self._tools.get(call.tool)
             if tool is None:
                 results.append(
@@ -1104,7 +1116,8 @@ class ConversationService:
                 )
                 continue
             try:
-                result = tool.run(**call.args)
+                args = {k:v for k,v in call.args.items() if k not in {'is_owner','speaker','trust','resolved_via'}} if call.tool in CODING_TOOLS else call.args
+                result = tool.run(**args)
                 results.append(
                     ToolExecutionResult(
                         tool=call.tool,
@@ -1128,6 +1141,11 @@ class ConversationService:
         lowered = user_text.lower()
         inferred: list[ToolCall] = []
         is_owner = speaker is None or speaker.is_owner
+
+        if speaker is not None and speaker.is_owner is True and speaker.trust == 'owner' and lowered.startswith('coding goal:'):
+            goal = user_text[len('coding goal:'):].strip()
+            if len(goal) >= 12:
+                return [ToolCall(tool='coding_goal',args={'goal':goal})]
 
         if any(term in lowered for term in ["provider", "providers", "ollama", "qwen", "stt", "tts", "llm"]):
             if any(term in lowered for term in ["status", "using", "use", "configured", "running", "right now", "current"]):
@@ -1287,6 +1305,13 @@ class ConversationService:
             return None
         if len(tool_results) == 1:
             result = tool_results[0]
+            if result.tool == 'coding_goal':
+                return "I've queued that coding goal. I'll work through the tasks and record the checks in Improvement."
+            if result.tool == 'coding_control':
+                return 'The coding control is requested for the next safe boundary.'
+            if result.tool == 'coding_status':
+                jobs = result.metadata.get('jobs', [])
+                return 'No coding goals are recorded yet.' if not jobs else 'The latest coding goal is ' + str(jobs[0].get('status','unknown')) + '.'
             if result.tool == "provider_status":
                 return self._format_provider_status_reply(result.metadata)
             if result.tool == "search_memory":

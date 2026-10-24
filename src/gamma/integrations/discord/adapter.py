@@ -144,7 +144,9 @@ def _roles(raw_roles: list[str], *, is_owner: bool, trust: str) -> list[str]:
     Returns:
         list[str]: Normalized role list.
     """
-    roles = [str(role).strip().lower() for role in raw_roles if str(role).strip()]
+    reserved = {"owner", "trusted", "guest", "public", "admin", "administrator"}
+    roles = [str(role).strip().lower() for role in raw_roles
+             if str(role).strip() and str(role).strip().lower() not in reserved]
     if is_owner and "owner" not in roles:
         roles.insert(0, "owner")
     if trust in {"trusted", "guest"} and trust not in roles:

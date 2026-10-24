@@ -1,0 +1,3351 @@
+{
+  "kind": "windows_source_and_discussion_snapshot",
+  "source_head": "0da6caa6d33c8cc9ba8c7169981c18762da6ff9f",
+  "files": {
+    ".env.example": {
+      "sha256": "e067bf2b7a68ef55fbf755c7a73412ce3ac2af80326735a46433ed94e1b279c2",
+      "size": 3761,
+      "git_blob_sha256": "9a26a542de06ab2eb0f72c6a0c3d23cbce80a859dbf2f5b31359ed2b2d7483d7"
+    },
+    ".gitignore": {
+      "sha256": "9bad4630530560db0ff82774b5e50ccd0b74943f73394b4c6d7d0b95f436d814",
+      "size": 1055,
+      "git_blob_sha256": "128b9204c249f5f7a2d1dbb44b25e8571b557f9d5176ee2abce1d37c822d78e6"
+    },
+    "AGENTS.md": {
+      "sha256": "8ae3c88b11cb009a9dd256bbb56a7b373e746695258dfe9346ec522432d64a28",
+      "size": 8408,
+      "git_blob_sha256": "19739957fc7a83326298e8c28e851e7d6dfca92cd579cac62c5d5fe4a2549f4e"
+    },
+    "README.md": {
+      "sha256": "6e9810a9429268931cc2df2fb452da4a202e73425848ec120f68a2d70acb0ffc",
+      "size": 9299,
+      "git_blob_sha256": "30ece750e5debc826bff60a64d9fbcbb2bd7e1230e23d3aebe6f375cfebc6221"
+    },
+    "assets/README.md": {
+      "sha256": "8c998f329138d504b1152193efc2d6e2eb9a60125619e0679dae98cb48b759cf",
+      "size": 626,
+      "git_blob_sha256": "22ecf044688c6d06f04390fd764f830fca7f0bcd0149ff8ed4500e123690e22f"
+    },
+    "assets/audio/system/filtered.wav": {
+      "sha256": "ed2e00c855dd9f132460f0a4c38adfa115b6b967ed8f40cf82df932df8caa408",
+      "size": 86444,
+      "git_blob_sha256": "ed2e00c855dd9f132460f0a4c38adfa115b6b967ed8f40cf82df932df8caa408"
+    },
+    "assets/voice_datasets/shana/README.md": {
+      "sha256": "1da01e8d1b4c9c7ab154af20798ae4902a17f0230f44bdc96185efc9c546698d",
+      "size": 1128,
+      "git_blob_sha256": "4075192a634a05c59ab20816c6f56052111668189ccd0d8e20be770ff94adca2"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_11_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0006_trim_000000_001500.wav": {
+      "sha256": "709183d6b6af0c57e7ec0a4e59f3b2d889f6f049343af326c620a52bcacc7b8e",
+      "size": 48078,
+      "git_blob_sha256": "709183d6b6af0c57e7ec0a4e59f3b2d889f6f049343af326c620a52bcacc7b8e"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_11_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0020_trim_002500_003760.wav": {
+      "sha256": "883dd7f0b4fd7d9ae90ddea8b614e37458dadfd65f326bac27a53ccce80574c9",
+      "size": 40398,
+      "git_blob_sha256": "883dd7f0b4fd7d9ae90ddea8b614e37458dadfd65f326bac27a53ccce80574c9"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_11_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0024_trim_001600_002720.wav": {
+      "sha256": "fe20890d59935aefd4e63c453ff836d25b1557c33fda7348b9c19dd1d61ae656",
+      "size": 35918,
+      "git_blob_sha256": "fe20890d59935aefd4e63c453ff836d25b1557c33fda7348b9c19dd1d61ae656"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_11_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0027_trim_007300_008480.wav": {
+      "sha256": "fb44685e6cab3b02d10bb53eaf65dca2763e9a72c537bdde740cb3c1246863eb",
+      "size": 37838,
+      "git_blob_sha256": "fb44685e6cab3b02d10bb53eaf65dca2763e9a72c537bdde740cb3c1246863eb"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_13_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0005.wav": {
+      "sha256": "5fd0f8a6381ebcb442a9c58ef302accdae251fd4df619669000ce47f7223013b",
+      "size": 48078,
+      "git_blob_sha256": "5fd0f8a6381ebcb442a9c58ef302accdae251fd4df619669000ce47f7223013b"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_13_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0009_trim_004000_006100.wav": {
+      "sha256": "43ad4ad5aeb33cfe9f5ec42c8adc9f582dbf9a4c7b3dc41b3144b06fbd8bc253",
+      "size": 67278,
+      "git_blob_sha256": "43ad4ad5aeb33cfe9f5ec42c8adc9f582dbf9a4c7b3dc41b3144b06fbd8bc253"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_13_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0036.wav": {
+      "sha256": "59ea8dc46cb23aed1c9ea7c659e24eed5ef8e07d8ead6227eeb12697c2b7f769",
+      "size": 208078,
+      "git_blob_sha256": "59ea8dc46cb23aed1c9ea7c659e24eed5ef8e07d8ead6227eeb12697c2b7f769"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_15_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0013.wav": {
+      "sha256": "1e90bbdd94e9a2cc2cd87d55298166b5ed5e0928f5d197af91a3544a7db737cb",
+      "size": 150478,
+      "git_blob_sha256": "1e90bbdd94e9a2cc2cd87d55298166b5ed5e0928f5d197af91a3544a7db737cb"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_15_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0014.wav": {
+      "sha256": "97fd2a6dd43aec5e258a3c8e14a7cd5ad79cb53ee30608e1fc25823254bf744f",
+      "size": 96078,
+      "git_blob_sha256": "97fd2a6dd43aec5e258a3c8e14a7cd5ad79cb53ee30608e1fc25823254bf744f"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_16_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0017_trim_000000_001300.wav": {
+      "sha256": "7acae1adc9b57ced30d576b7e625a023529670d5c9fa686ba02897b61d078118",
+      "size": 41678,
+      "git_blob_sha256": "7acae1adc9b57ced30d576b7e625a023529670d5c9fa686ba02897b61d078118"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_16_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0017_trim_003000_004600.wav": {
+      "sha256": "2cffe31d34591ca11c559b375b10d03d0eb7103b16727a090ff1cdfdb55c6113",
+      "size": 51278,
+      "git_blob_sha256": "2cffe31d34591ca11c559b375b10d03d0eb7103b16727a090ff1cdfdb55c6113"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_17_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0008_trim_003000_005500.wav": {
+      "sha256": "40807565db97d674b5089d19a1c6a8738aac425f435b251ec6ab143c4ab41908",
+      "size": 80078,
+      "git_blob_sha256": "40807565db97d674b5089d19a1c6a8738aac425f435b251ec6ab143c4ab41908"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_17_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0008_trim_008800_009500.wav": {
+      "sha256": "2c87966090ae2ac219f72ff106f7af2abfdcb2aef68b6e9f2cc2b1b0b716f1f0",
+      "size": 22478,
+      "git_blob_sha256": "2c87966090ae2ac219f72ff106f7af2abfdcb2aef68b6e9f2cc2b1b0b716f1f0"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_17_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0030.wav": {
+      "sha256": "d42d5c711a689f728720393f5676bcf1bf92b334b6090009360346966dcf6bc8",
+      "size": 86478,
+      "git_blob_sha256": "d42d5c711a689f728720393f5676bcf1bf92b334b6090009360346966dcf6bc8"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_17_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0032.wav": {
+      "sha256": "cff5dc66474bcdce634837f5b0645e0af09024002f9b08869b617a9d58c3a084",
+      "size": 48078,
+      "git_blob_sha256": "cff5dc66474bcdce634837f5b0645e0af09024002f9b08869b617a9d58c3a084"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_17_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0033_trim_000900_002200.wav": {
+      "sha256": "a1c80fbef697d94d6c58ad766e33ce95ec4224b088ec4fa31dc0e8e482cab389",
+      "size": 41678,
+      "git_blob_sha256": "a1c80fbef697d94d6c58ad766e33ce95ec4224b088ec4fa31dc0e8e482cab389"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_18_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0004.wav": {
+      "sha256": "4f758cb9a49d00430168cd71bf70e2169b333d022026cf0ad0dd5136700db293",
+      "size": 201678,
+      "git_blob_sha256": "4f758cb9a49d00430168cd71bf70e2169b333d022026cf0ad0dd5136700db293"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_18_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0005.wav": {
+      "sha256": "7d8a9c62ad73711429924da49ba3029ed0c335f035836f6a2179bd443ecca2e7",
+      "size": 131278,
+      "git_blob_sha256": "7d8a9c62ad73711429924da49ba3029ed0c335f035836f6a2179bd443ecca2e7"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_19_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0009_trim_000000_001300.wav": {
+      "sha256": "c488867a073d81dd446b26fa805017e3ec38b252dc3696e27a31ae7c6aabcc14",
+      "size": 41678,
+      "git_blob_sha256": "c488867a073d81dd446b26fa805017e3ec38b252dc3696e27a31ae7c6aabcc14"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_21_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0019_trim_005600_007500_trim_000000_000800.wav": {
+      "sha256": "4be6fafaac2c3358ebd15946a2da3cc9c3fc3710a96e3ba62e784783f73fe192",
+      "size": 25678,
+      "git_blob_sha256": "4be6fafaac2c3358ebd15946a2da3cc9c3fc3710a96e3ba62e784783f73fe192"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_23_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0036.wav": {
+      "sha256": "43748f2efc71a3af21d058d5778333d24f120d7963a82994caced60d8ab1cea4",
+      "size": 44878,
+      "git_blob_sha256": "43748f2efc71a3af21d058d5778333d24f120d7963a82994caced60d8ab1cea4"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_23_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0039.wav": {
+      "sha256": "5debac0908566c32cf3bdafe9466b9857283b89f69a61e5ed0660f1e5f714044",
+      "size": 213198,
+      "git_blob_sha256": "5debac0908566c32cf3bdafe9466b9857283b89f69a61e5ed0660f1e5f714044"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_23_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0040.wav": {
+      "sha256": "d088f296119b9fc4b6dabd4cafda6cf4609c97a89d284eeead6f3029d600a78a",
+      "size": 54478,
+      "git_blob_sha256": "d088f296119b9fc4b6dabd4cafda6cf4609c97a89d284eeead6f3029d600a78a"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_23_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0041.wav": {
+      "sha256": "8ea569c496c1cff61c60361d064b8a5e8796c559bfd0cc02f91cf415efc780a7",
+      "size": 44878,
+      "git_blob_sha256": "8ea569c496c1cff61c60361d064b8a5e8796c559bfd0cc02f91cf415efc780a7"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_24_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0033_trim_006900_009430.wav": {
+      "sha256": "9fc0ed62a764de1e669597e9c8444ca530349e7a6e558cd06bed9eaad8db0787",
+      "size": 81038,
+      "git_blob_sha256": "9fc0ed62a764de1e669597e9c8444ca530349e7a6e558cd06bed9eaad8db0787"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_24_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0038_trim_000000_001100.wav": {
+      "sha256": "d983bd27dd36287567a47c6664e523b5e90e7edbd74991b9b64f9df2803a0969",
+      "size": 35278,
+      "git_blob_sha256": "d983bd27dd36287567a47c6664e523b5e90e7edbd74991b9b64f9df2803a0969"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0009.wav": {
+      "sha256": "e3a1663c85044cc86fef9da0948f81a647ef0034b4f980c1f6f8e12e9ee7e4b3",
+      "size": 125518,
+      "git_blob_sha256": "e3a1663c85044cc86fef9da0948f81a647ef0034b4f980c1f6f8e12e9ee7e4b3"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0024.wav": {
+      "sha256": "bb75d7c09d89405c4f853cba6cb1cb21db3d5aa1176152c4ee458873e331e9d8",
+      "size": 111438,
+      "git_blob_sha256": "bb75d7c09d89405c4f853cba6cb1cb21db3d5aa1176152c4ee458873e331e9d8"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0027_trim_000000_007300.wav": {
+      "sha256": "c5d366108370ad889e14bef186ce27bc36964caddd898d0aa9afb7c9ae37fd2d",
+      "size": 233678,
+      "git_blob_sha256": "c5d366108370ad889e14bef186ce27bc36964caddd898d0aa9afb7c9ae37fd2d"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0032.wav": {
+      "sha256": "5071ec29b1f023a2a1ed38052298fb1c7b5c05e7346724141c57200550a7a137",
+      "size": 108878,
+      "git_blob_sha256": "5071ec29b1f023a2a1ed38052298fb1c7b5c05e7346724141c57200550a7a137"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0034_trim_000000_003000.wav": {
+      "sha256": "cbaf220ad4e5dc7b419b2c3b305ed79a990755cd94bf3de040452750e9c4f707",
+      "size": 96078,
+      "git_blob_sha256": "cbaf220ad4e5dc7b419b2c3b305ed79a990755cd94bf3de040452750e9c4f707"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0039_trim_001300_005640.wav": {
+      "sha256": "6c69831d337972cdafafb4255635ce771cb21bfe27b91ef60679bdb7639c0694",
+      "size": 138958,
+      "git_blob_sha256": "6c69831d337972cdafafb4255635ce771cb21bfe27b91ef60679bdb7639c0694"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0040.wav": {
+      "sha256": "b9819720ec1dc324ed85059fe890060944c3e90356f33cc204963d91b73c0766",
+      "size": 52558,
+      "git_blob_sha256": "b9819720ec1dc324ed85059fe890060944c3e90356f33cc204963d91b73c0766"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e02_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0005_trim_005500_006700.wav": {
+      "sha256": "74939a308fbea56e847935c52b41b62173ec22236b1d3a3a91843c25f8967f69",
+      "size": 38478,
+      "git_blob_sha256": "74939a308fbea56e847935c52b41b62173ec22236b1d3a3a91843c25f8967f69"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e02_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0006.wav": {
+      "sha256": "307a10ea0f3b4b051fa5b6214ed42d25dd8056aaa59611a982a12888a4b578c6",
+      "size": 96078,
+      "git_blob_sha256": "307a10ea0f3b4b051fa5b6214ed42d25dd8056aaa59611a982a12888a4b578c6"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e02_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0007.wav": {
+      "sha256": "1b5690059ddf8ba9c703cf4f19a4a07a9be22bdbf0565859ad75d6e6efa053d2",
+      "size": 64078,
+      "git_blob_sha256": "1b5690059ddf8ba9c703cf4f19a4a07a9be22bdbf0565859ad75d6e6efa053d2"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e02_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0015_trim_000000_001250.wav": {
+      "sha256": "47d6dabdac4456eb1be80bab81ae0796d42480242d1a0ffc7482b4c7ebd3fb1d",
+      "size": 40078,
+      "git_blob_sha256": "47d6dabdac4456eb1be80bab81ae0796d42480242d1a0ffc7482b4c7ebd3fb1d"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e02_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0018.wav": {
+      "sha256": "4f9777f749874e9c55b701109256d6d230b74372d51fa29a32deba98ec44bac8",
+      "size": 96078,
+      "git_blob_sha256": "4f9777f749874e9c55b701109256d6d230b74372d51fa29a32deba98ec44bac8"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e02_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0019_trim_005200_009200.wav": {
+      "sha256": "456abec4f32a1b9cbc7d3d0f1573928f12f3bdc65b81ef56ee8bcf0a8cf5e4cc",
+      "size": 128078,
+      "git_blob_sha256": "456abec4f32a1b9cbc7d3d0f1573928f12f3bdc65b81ef56ee8bcf0a8cf5e4cc"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e02_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0023.wav": {
+      "sha256": "cc9020ce38b2706eeea316ca414fcb42699f6c24fb9b288112f527434b016b3c",
+      "size": 64078,
+      "git_blob_sha256": "cc9020ce38b2706eeea316ca414fcb42699f6c24fb9b288112f527434b016b3c"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e03_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0037.wav": {
+      "sha256": "a182b9c470976b65dbf8a8befdc03253a58a1e5ed764cc29f99b58bdd53aabcf",
+      "size": 41678,
+      "git_blob_sha256": "a182b9c470976b65dbf8a8befdc03253a58a1e5ed764cc29f99b58bdd53aabcf"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e04_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0007.wav": {
+      "sha256": "0662c841cc3a6789b9ef907969758bf0ace7ce080a4465419f1d72c46135362c",
+      "size": 76878,
+      "git_blob_sha256": "0662c841cc3a6789b9ef907969758bf0ace7ce080a4465419f1d72c46135362c"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e04_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0020_trim_003700_005300.wav": {
+      "sha256": "4fe2d1b9df2fa4512be4dbb024926e0e6dffab3bb9ead3155b0db9a28a635e8f",
+      "size": 51278,
+      "git_blob_sha256": "4fe2d1b9df2fa4512be4dbb024926e0e6dffab3bb9ead3155b0db9a28a635e8f"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e06_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0008_trim_001900_003920.wav": {
+      "sha256": "9734975b72647f4d8db8bfde8b2e80c21e01620877caebdd5bdc0ac6649aca67",
+      "size": 64718,
+      "git_blob_sha256": "9734975b72647f4d8db8bfde8b2e80c21e01620877caebdd5bdc0ac6649aca67"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e06_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0018_trim_000000_002400.wav": {
+      "sha256": "19e0ef33a9670d3eb4aeb4aee6d761fe9507d5fcc410582b269f1ddd3eb11820",
+      "size": 76878,
+      "git_blob_sha256": "19e0ef33a9670d3eb4aeb4aee6d761fe9507d5fcc410582b269f1ddd3eb11820"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e06_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0024_trim_002100_004000.wav": {
+      "sha256": "7d03e0cce9034a3b11cd1e632a15843569c7cd6348a09393269cab180d74c131",
+      "size": 60878,
+      "git_blob_sha256": "7d03e0cce9034a3b11cd1e632a15843569c7cd6348a09393269cab180d74c131"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e10_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0019.wav": {
+      "sha256": "9fea59e65818dd3b59fa451b7b1801d9a8801a6b7ae1a44d94ae922bb73c1a80",
+      "size": 64078,
+      "git_blob_sha256": "9fea59e65818dd3b59fa451b7b1801d9a8801a6b7ae1a44d94ae922bb73c1a80"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e10_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0024.wav": {
+      "sha256": "cd282f3ac27a134b96c03a601a580d4f73024335e72c344b029369bb94e69f1f",
+      "size": 96078,
+      "git_blob_sha256": "cd282f3ac27a134b96c03a601a580d4f73024335e72c344b029369bb94e69f1f"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e10_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0028_trim_005900_006800.wav": {
+      "sha256": "d913a8b08550f265eb231a04234ca78c4ee0ddfe40ade01a71a9ee4bce5fe8d0",
+      "size": 28878,
+      "git_blob_sha256": "d913a8b08550f265eb231a04234ca78c4ee0ddfe40ade01a71a9ee4bce5fe8d0"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e11_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0024.wav": {
+      "sha256": "cc053a93007ff91625bdca4055d6c0d500866744f35e529d130e0b3ac8bb59e1",
+      "size": 96078,
+      "git_blob_sha256": "cc053a93007ff91625bdca4055d6c0d500866744f35e529d130e0b3ac8bb59e1"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e11_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0047.wav": {
+      "sha256": "e13a6f84d972e4433e92d311bf1dcfba5fa4fcbc00ae33aa73371bad1a92cec8",
+      "size": 44878,
+      "git_blob_sha256": "e13a6f84d972e4433e92d311bf1dcfba5fa4fcbc00ae33aa73371bad1a92cec8"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e11_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0048.wav": {
+      "sha256": "e77892c756c68a5a21b747daab27b0885d3d9e8d8e96b3ef205ebee601c23479",
+      "size": 64078,
+      "git_blob_sha256": "e77892c756c68a5a21b747daab27b0885d3d9e8d8e96b3ef205ebee601c23479"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e12_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0038.wav": {
+      "sha256": "65639834062bc7ed884d717b2c280d54708d3e130334e4200dd40783ba7d48f4",
+      "size": 64078,
+      "git_blob_sha256": "65639834062bc7ed884d717b2c280d54708d3e130334e4200dd40783ba7d48f4"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e16_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0034.wav": {
+      "sha256": "b4bfbbdba5b436092cf84372428eb64d06894a5c5879ebba43a5f238c9c2fb73",
+      "size": 172238,
+      "git_blob_sha256": "b4bfbbdba5b436092cf84372428eb64d06894a5c5879ebba43a5f238c9c2fb73"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e18_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0023.wav": {
+      "sha256": "00f6d955228f9c95e90a537365261015e7124feb243096dbc76a329c3f8ab05d",
+      "size": 57678,
+      "git_blob_sha256": "00f6d955228f9c95e90a537365261015e7124feb243096dbc76a329c3f8ab05d"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e19_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0006_trim_000000_002300.wav": {
+      "sha256": "566af3b70e1bcff1b1780bd9eee4c24812622deb478a6b351db4745de688c507",
+      "size": 73678,
+      "git_blob_sha256": "566af3b70e1bcff1b1780bd9eee4c24812622deb478a6b351db4745de688c507"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e20_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0014.wav": {
+      "sha256": "605130214704205751b8895ff03bd561c85888a7830345b24424529b1887b7b5",
+      "size": 41678,
+      "git_blob_sha256": "605130214704205751b8895ff03bd561c85888a7830345b24424529b1887b7b5"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e20_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0015.wav": {
+      "sha256": "21813eebff13f6bc993fffbe6790a72fde18d5aaed5bf978a71d6fbb77dd49d7",
+      "size": 69838,
+      "git_blob_sha256": "21813eebff13f6bc993fffbe6790a72fde18d5aaed5bf978a71d6fbb77dd49d7"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e20_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0018.wav": {
+      "sha256": "08c6ef12022663587a50b89e900b4165a8455fc4337ab1caa248ed64b5ddbded",
+      "size": 46798,
+      "git_blob_sha256": "08c6ef12022663587a50b89e900b4165a8455fc4337ab1caa248ed64b5ddbded"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e20_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0019.wav": {
+      "sha256": "1c2c74a0c36eeef29acad0344c8b90b1f84fd6af85381e1f6a2bfda8976872de",
+      "size": 57678,
+      "git_blob_sha256": "1c2c74a0c36eeef29acad0344c8b90b1f84fd6af85381e1f6a2bfda8976872de"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e21_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0055_trim_003100_006400.wav": {
+      "sha256": "2e40e57f69f7d9cccec1c145b23a396bcc4b7755b64ef5da3322770d7e039cf9",
+      "size": 105678,
+      "git_blob_sha256": "2e40e57f69f7d9cccec1c145b23a396bcc4b7755b64ef5da3322770d7e039cf9"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e22_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0015_trim_001200_002400.wav": {
+      "sha256": "aa0deb4559e2839b5c343b424315a5744b0b02acb93bd4a2db16c66146de192a",
+      "size": 38478,
+      "git_blob_sha256": "aa0deb4559e2839b5c343b424315a5744b0b02acb93bd4a2db16c66146de192a"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e22_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0033_trim_001100_004000_trim_000000_002700.wav": {
+      "sha256": "4ef171dd43cebfdb0f5a4c3a1e8064f2a45367e2dae110f26e01645b6aa7e843",
+      "size": 86478,
+      "git_blob_sha256": "4ef171dd43cebfdb0f5a4c3a1e8064f2a45367e2dae110f26e01645b6aa7e843"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e22_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0037.wav": {
+      "sha256": "95562133c5332e3d662fb967b0af64f0fec16fefebbc76280796f9f624dd9e4b",
+      "size": 48078,
+      "git_blob_sha256": "95562133c5332e3d662fb967b0af64f0fec16fefebbc76280796f9f624dd9e4b"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e22_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0040.wav": {
+      "sha256": "43b027ce1a6906e04fe231564387f6395aae745734ca64f8d3f134583d6e35a9",
+      "size": 64078,
+      "git_blob_sha256": "43b027ce1a6906e04fe231564387f6395aae745734ca64f8d3f134583d6e35a9"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e22_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0041_trim_000000_003000.wav": {
+      "sha256": "25251b9c9b2a0306cc56006510c3454f1ada029f98284222ef60e2e3119609c2",
+      "size": 96078,
+      "git_blob_sha256": "25251b9c9b2a0306cc56006510c3454f1ada029f98284222ef60e2e3119609c2"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e22_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0042_trim_001600_011000_trim_000000_004300.wav": {
+      "sha256": "8574c16b418ed79974d1eb744c96eaf3e5aab4f4fa1f13ceac8ead5a907a959f",
+      "size": 137678,
+      "git_blob_sha256": "8574c16b418ed79974d1eb744c96eaf3e5aab4f4fa1f13ceac8ead5a907a959f"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_ii_s2e22_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0057_trim_000000_002100.wav": {
+      "sha256": "193c2ca519ee6162a258ba29ec6d12090841e6923a4c3d94a9ba4c8246e34954",
+      "size": 67278,
+      "git_blob_sha256": "193c2ca519ee6162a258ba29ec6d12090841e6923a4c3d94a9ba4c8246e34954"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0031.wav": {
+      "sha256": "c86414db44a00e12c6c86aa9cee9683a31cd8c50ac6509499ddb2bc9d3c94878",
+      "size": 174158,
+      "git_blob_sha256": "c86414db44a00e12c6c86aa9cee9683a31cd8c50ac6509499ddb2bc9d3c94878"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0032.wav": {
+      "sha256": "06af40deb72ec5e9a1e4a884e0d5f7077fd727f24b224b38931da3e447cc3d59",
+      "size": 203598,
+      "git_blob_sha256": "06af40deb72ec5e9a1e4a884e0d5f7077fd727f24b224b38931da3e447cc3d59"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e02_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0018.wav": {
+      "sha256": "e8b8cb5b52823778c2e6345f05171b9a8a83e30af0f28d63f6169a8efd780fc6",
+      "size": 51278,
+      "git_blob_sha256": "e8b8cb5b52823778c2e6345f05171b9a8a83e30af0f28d63f6169a8efd780fc6"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e02_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0026_trim_001200_004680.wav": {
+      "sha256": "7bd090229d653309be521a42a3e27b64c7347a15c1325b71b9a752e1d528a3a3",
+      "size": 111438,
+      "git_blob_sha256": "7bd090229d653309be521a42a3e27b64c7347a15c1325b71b9a752e1d528a3a3"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e03_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0013.wav": {
+      "sha256": "37e71bcb5a059b3dd3e34055a9a2451f971d078dc8b9c47d583f6adf524a9488",
+      "size": 121038,
+      "git_blob_sha256": "37e71bcb5a059b3dd3e34055a9a2451f971d078dc8b9c47d583f6adf524a9488"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e03_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0025.wav": {
+      "sha256": "cc027ed01bd12f4f179ef6553abec2ebc7651ca9e855a423b15d6bb2a03f7af9",
+      "size": 80078,
+      "git_blob_sha256": "cc027ed01bd12f4f179ef6553abec2ebc7651ca9e855a423b15d6bb2a03f7af9"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e04_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0002.wav": {
+      "sha256": "67ac5afc48a5f25c9e742f3c674770c554bec622cd6ea690de4c386e20b4ef74",
+      "size": 51278,
+      "git_blob_sha256": "67ac5afc48a5f25c9e742f3c674770c554bec622cd6ea690de4c386e20b4ef74"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e04_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0028_trim_003200_003980.wav": {
+      "sha256": "d756d38fb751b4d99ceb93c8ad7cde011e8875bdceb2ca7b2760d4d9976436ad",
+      "size": 25038,
+      "git_blob_sha256": "d756d38fb751b4d99ceb93c8ad7cde011e8875bdceb2ca7b2760d4d9976436ad"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e05_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0007.wav": {
+      "sha256": "aa8395c85b97ff2b058bfe69f9ba2672175108280f39ac4614eec5908a8dcf90",
+      "size": 57678,
+      "git_blob_sha256": "aa8395c85b97ff2b058bfe69f9ba2672175108280f39ac4614eec5908a8dcf90"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e05_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0010_trim_000000_000600.wav": {
+      "sha256": "caddc5bf0906bdfe2da97a3eeda50709769f1babd284cb9252d9105ca0bb08c9",
+      "size": 19278,
+      "git_blob_sha256": "caddc5bf0906bdfe2da97a3eeda50709769f1babd284cb9252d9105ca0bb08c9"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e07_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0025_trim_002900_004700.wav": {
+      "sha256": "98066a1f2279c0cb28f1892fef9fc1eb9e3637bfd99857939a0ad685c760e962",
+      "size": 57678,
+      "git_blob_sha256": "98066a1f2279c0cb28f1892fef9fc1eb9e3637bfd99857939a0ad685c760e962"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e09_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0020_trim_000000_001800.wav": {
+      "sha256": "7cc7d942b86423501b635f283bde5abd9e311374a96a5db121dff4ca97311153",
+      "size": 57678,
+      "git_blob_sha256": "7cc7d942b86423501b635f283bde5abd9e311374a96a5db121dff4ca97311153"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e09_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0021_trim_004400_005000.wav": {
+      "sha256": "d0528e972e24334037c2591ba6d82a1bc86566adc9028a6a6c65577669e5e4a0",
+      "size": 19278,
+      "git_blob_sha256": "d0528e972e24334037c2591ba6d82a1bc86566adc9028a6a6c65577669e5e4a0"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e09_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0026_trim_004800_005500.wav": {
+      "sha256": "292e60d7661a515a2f214acc5fd237705839a1d5bf2f5532fc6777b5d1d54931",
+      "size": 22478,
+      "git_blob_sha256": "292e60d7661a515a2f214acc5fd237705839a1d5bf2f5532fc6777b5d1d54931"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e09_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0032_trim_001900_004100_trim_000000_001600.wav": {
+      "sha256": "8eda2f00c048aba7432f339fea7bb42e6e5751e5e593ce6616a59ae9fb00ad6e",
+      "size": 51278,
+      "git_blob_sha256": "8eda2f00c048aba7432f339fea7bb42e6e5751e5e593ce6616a59ae9fb00ad6e"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e09_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0032_trim_009400_011530.wav": {
+      "sha256": "98089e17848cdf987f27a7ac00c2d73ee3249655e7b6d3a1ea3483b6776f8b97",
+      "size": 68238,
+      "git_blob_sha256": "98089e17848cdf987f27a7ac00c2d73ee3249655e7b6d3a1ea3483b6776f8b97"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s01e09_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0033_trim_000000_001200.wav": {
+      "sha256": "b64255026f78df92ec930ef3fb1036617df5341eeb6c8a921567eb7cbe3b7f49",
+      "size": 38478,
+      "git_blob_sha256": "b64255026f78df92ec930ef3fb1036617df5341eeb6c8a921567eb7cbe3b7f49"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s1e10_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0004_trim_003100_006000.wav": {
+      "sha256": "3a90a9c711439d320c9c74b4980af20839e8921ff53edb7c750acc5e61209648",
+      "size": 92878,
+      "git_blob_sha256": "3a90a9c711439d320c9c74b4980af20839e8921ff53edb7c750acc5e61209648"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s1e10_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0005_trim_004900_006000.wav": {
+      "sha256": "38df25589074dc5f98234884e25f9f085af493a2239737bff8ff6c72bc9b34a1",
+      "size": 35278,
+      "git_blob_sha256": "38df25589074dc5f98234884e25f9f085af493a2239737bff8ff6c72bc9b34a1"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s1e10_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0011_trim_000000_000900.wav": {
+      "sha256": "e424a5a720d2043a7ac37ff9e3350c85170cd7b12508ce921efe3f75ba90b39c",
+      "size": 28878,
+      "git_blob_sha256": "e424a5a720d2043a7ac37ff9e3350c85170cd7b12508ce921efe3f75ba90b39c"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s1e10_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0032_trim_000000_003600.wav": {
+      "sha256": "ce211dd1e0c0063747489e23aae4af4b131b59cb76247659f4a08768cd6a3ac9",
+      "size": 115278,
+      "git_blob_sha256": "ce211dd1e0c0063747489e23aae4af4b131b59cb76247659f4a08768cd6a3ac9"
+    },
+    "assets/voice_datasets/shana/clean/kopimi_commie_shakugan_no_shana_s1e10_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0033_trim_004800_005400.wav": {
+      "sha256": "326b6b80f371a98243d5beb17c8bca9b2f26e8bdf80b02550e0ca81b74d8d210",
+      "size": 19278,
+      "git_blob_sha256": "326b6b80f371a98243d5beb17c8bca9b2f26e8bdf80b02550e0ca81b74d8d210"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_11_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0019_trim_004700_007800.wav": {
+      "sha256": "d584cc3e268e057fdb263602ab2e03312762db5e5545d960a8b58a9e1013f1b6",
+      "size": 99278,
+      "git_blob_sha256": "d584cc3e268e057fdb263602ab2e03312762db5e5545d960a8b58a9e1013f1b6"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_12_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0023_trim_000000_005000.wav": {
+      "sha256": "30f5b5a74f1797f3e16375033ff5a8e33b615ce483ec2e496e9ff6db356ac2a6",
+      "size": 160078,
+      "git_blob_sha256": "30f5b5a74f1797f3e16375033ff5a8e33b615ce483ec2e496e9ff6db356ac2a6"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_13_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0035_trim_000000_002900.wav": {
+      "sha256": "6919c96e39058f19f190a73f3c648ca81cf5ebcfe1ee967926e647d0b89ead0a",
+      "size": 92878,
+      "git_blob_sha256": "6919c96e39058f19f190a73f3c648ca81cf5ebcfe1ee967926e647d0b89ead0a"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_13_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0035_trim_006300_007880.wav": {
+      "sha256": "471c665f11170e8eb3c272d16d2616dc67616ff7ca887ab47f34fa83ff40940f",
+      "size": 50638,
+      "git_blob_sha256": "471c665f11170e8eb3c272d16d2616dc67616ff7ca887ab47f34fa83ff40940f"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_17_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0009_trim_003500_004300.wav": {
+      "sha256": "7a5311c1651c39cc87a6a2dae52277bb8ac1f31cf803cd55a0142a796fee37ee",
+      "size": 25678,
+      "git_blob_sha256": "7a5311c1651c39cc87a6a2dae52277bb8ac1f31cf803cd55a0142a796fee37ee"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_18_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0018.wav": {
+      "sha256": "38900d4cc852877c22b16d4694ff0e447bbda98fc5b8f80e4f46eeebd45cc290",
+      "size": 127118,
+      "git_blob_sha256": "38900d4cc852877c22b16d4694ff0e447bbda98fc5b8f80e4f46eeebd45cc290"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_18_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0021.wav": {
+      "sha256": "feebdcc6d2b289b2c50cf72278d8e646b8be335f5d4b6577d0d4ce83e42eaa67",
+      "size": 51278,
+      "git_blob_sha256": "feebdcc6d2b289b2c50cf72278d8e646b8be335f5d4b6577d0d4ce83e42eaa67"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_19_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0024.wav": {
+      "sha256": "d5f1eba1e8c6a4b7eec6b8fcec03bf88b2222d995fbc9d37e471dd199a15e47a",
+      "size": 54478,
+      "git_blob_sha256": "d5f1eba1e8c6a4b7eec6b8fcec03bf88b2222d995fbc9d37e471dd199a15e47a"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_23_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0038.wav": {
+      "sha256": "7f11324454eb2a53cd64ddd98bf85aad6329e7dbd17ad5a6f26e73e076cb29c7",
+      "size": 60878,
+      "git_blob_sha256": "7f11324454eb2a53cd64ddd98bf85aad6329e7dbd17ad5a6f26e73e076cb29c7"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_ii_s2e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0026_trim_004900_007700.wav": {
+      "sha256": "a543f8f4d568eebdde735aec3ab54d849554ce42c20aa112a9c39fb8bd0d9f18",
+      "size": 89678,
+      "git_blob_sha256": "a543f8f4d568eebdde735aec3ab54d849554ce42c20aa112a9c39fb8bd0d9f18"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_ii_s2e12_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0003_trim_000000_001000.wav": {
+      "sha256": "9937d18f276d85f2cd568404d2213f8f3c477a22c3141fd04b4f769a2243a9e7",
+      "size": 32078,
+      "git_blob_sha256": "9937d18f276d85f2cd568404d2213f8f3c477a22c3141fd04b4f769a2243a9e7"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_ii_s2e12_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0010_trim_000000_004700.wav": {
+      "sha256": "499174270648c07a9a6c5d9e2a428f270290402ac9b7c07ddf890f6d19323b4e",
+      "size": 150478,
+      "git_blob_sha256": "499174270648c07a9a6c5d9e2a428f270290402ac9b7c07ddf890f6d19323b4e"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_ii_s2e19_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0021_trim_006200_010270.wav": {
+      "sha256": "c8bcf492af4280a5bd50ffa4e6a1a6a326dd0ee865e1264f8f254debfa645d6c",
+      "size": 130318,
+      "git_blob_sha256": "c8bcf492af4280a5bd50ffa4e6a1a6a326dd0ee865e1264f8f254debfa645d6c"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_ii_s2e21_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0057_trim_008400_010400.wav": {
+      "sha256": "236418e560007b81802079f3a74f6aeac2d157819db7f7deaf73ae96292f0d6e",
+      "size": 64078,
+      "git_blob_sha256": "236418e560007b81802079f3a74f6aeac2d157819db7f7deaf73ae96292f0d6e"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_ii_s2e24_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0005.wav": {
+      "sha256": "600ab3026531fd178ccf5a2af3a21a31b4e89b4e04639aa13a6e10e067015e27",
+      "size": 108878,
+      "git_blob_sha256": "600ab3026531fd178ccf5a2af3a21a31b4e89b4e04639aa13a6e10e067015e27"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_s01e07_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0026_trim_000000_001500.wav": {
+      "sha256": "9e5d0fc1206614e204db8428d7f7aff2cd0f712c36efcdb8ba4ee5c9f8e753f7",
+      "size": 48078,
+      "git_blob_sha256": "9e5d0fc1206614e204db8428d7f7aff2cd0f712c36efcdb8ba4ee5c9f8e753f7"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_s01e07_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0026_trim_002520_003000.wav": {
+      "sha256": "22b3292b991f1ed2a9293d827224f6453f29312bc76d31cd2b730bb56309cdc7",
+      "size": 15438,
+      "git_blob_sha256": "22b3292b991f1ed2a9293d827224f6453f29312bc76d31cd2b730bb56309cdc7"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_s01e09_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0052.wav": {
+      "sha256": "2eba719c9976b5572afe226fb0faace784b3f53b157d3271afe90e0c47729544",
+      "size": 64078,
+      "git_blob_sha256": "2eba719c9976b5572afe226fb0faace784b3f53b157d3271afe90e0c47729544"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_s1e10_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0019.wav": {
+      "sha256": "63a164b9f04a055ae40984d737bdc6b9166fb71a0211bd3c29f0c7e9c5c8a7c2",
+      "size": 172878,
+      "git_blob_sha256": "63a164b9f04a055ae40984d737bdc6b9166fb71a0211bd3c29f0c7e9c5c8a7c2"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_s1e10_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0024.wav": {
+      "sha256": "2261c6dd1c33f2cdcbb8147ea09c4c76dba4d8d7bc664caa242da126a9a5da77",
+      "size": 64078,
+      "git_blob_sha256": "2261c6dd1c33f2cdcbb8147ea09c4c76dba4d8d7bc664caa242da126a9a5da77"
+    },
+    "assets/voice_datasets/shana/heavy_noise/kopimi_commie_shakugan_no_shana_s1e10_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0026_trim_006300_007900.wav": {
+      "sha256": "c55a7df3cb6c0e968e56e9aeeeaffb128a78cb4ff98c17eeec855e2a2bdeae1e",
+      "size": 51278,
+      "git_blob_sha256": "c55a7df3cb6c0e968e56e9aeeeaffb128a78cb4ff98c17eeec855e2a2bdeae1e"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_12_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0018.wav": {
+      "sha256": "f9f4f52328e195df5064cdc4ec0806280df12a509d0e52a3ce0879b18515ea36",
+      "size": 64078,
+      "git_blob_sha256": "f9f4f52328e195df5064cdc4ec0806280df12a509d0e52a3ce0879b18515ea36"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_12_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0029_trim_000000_001300.wav": {
+      "sha256": "e8d4967c87716018ae60786bd96579f36ae569b0073b8ea320463dd7b835a60b",
+      "size": 41678,
+      "git_blob_sha256": "e8d4967c87716018ae60786bd96579f36ae569b0073b8ea320463dd7b835a60b"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_12_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0034.wav": {
+      "sha256": "47dd87ced4346e19d3b9e171571a9e2adb6b5adfc816a1d3cd6a11476d3fc433",
+      "size": 118478,
+      "git_blob_sha256": "47dd87ced4346e19d3b9e171571a9e2adb6b5adfc816a1d3cd6a11476d3fc433"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_14_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0003_trim_000000_003500.wav": {
+      "sha256": "fb7d493a92fd089d87744ae6fbd521fad811bd9a221109ae0c7716c032490bef",
+      "size": 112078,
+      "git_blob_sha256": "fb7d493a92fd089d87744ae6fbd521fad811bd9a221109ae0c7716c032490bef"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_17_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0041_trim_002800_005200.wav": {
+      "sha256": "10270eb133655ac66eec9475b21188a3f9dd689836c40190a43357434254b085",
+      "size": 76878,
+      "git_blob_sha256": "10270eb133655ac66eec9475b21188a3f9dd689836c40190a43357434254b085"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_18_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0020.wav": {
+      "sha256": "f0fa8ac70d5b840fb0ac424160d2415c9a13c4d0c2d6cd0a730cb274689a5dfe",
+      "size": 108878,
+      "git_blob_sha256": "f0fa8ac70d5b840fb0ac424160d2415c9a13c4d0c2d6cd0a730cb274689a5dfe"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_19_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0006.wav": {
+      "sha256": "4cc3a4c4731ab7abb801f2698c9c4a40d71de8bb34e6f75255f0d344fa79818d",
+      "size": 66638,
+      "git_blob_sha256": "4cc3a4c4731ab7abb801f2698c9c4a40d71de8bb34e6f75255f0d344fa79818d"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_21_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0018_trim_001300_004000.wav": {
+      "sha256": "055c903a99972f7daab392ae8a19e894bdcab50946975d5e1130c9518a6f168c",
+      "size": 86478,
+      "git_blob_sha256": "055c903a99972f7daab392ae8a19e894bdcab50946975d5e1130c9518a6f168c"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_23_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0033.wav": {
+      "sha256": "3576fd14393d31b3b7bafb282923855260e93e744e063833e7ef2fbb7d00d88c",
+      "size": 70478,
+      "git_blob_sha256": "3576fd14393d31b3b7bafb282923855260e93e744e063833e7ef2fbb7d00d88c"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_24_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0030_trim_008500_009850.wav": {
+      "sha256": "f0e5c16e5f0afa570d642b1f579fbf54795e7acd6e098a0b7d8220fee22031d8",
+      "size": 43278,
+      "git_blob_sha256": "f0e5c16e5f0afa570d642b1f579fbf54795e7acd6e098a0b7d8220fee22031d8"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_24_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0039_trim_000000_001300_trim_000000_001100.wav": {
+      "sha256": "2c4c579bd569aa6bc3b429a4cbdff2512409225c96118ff2745f6092b23f06c5",
+      "size": 35278,
+      "git_blob_sha256": "2c4c579bd569aa6bc3b429a4cbdff2512409225c96118ff2745f6092b23f06c5"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0022.wav": {
+      "sha256": "b57f2c562feb4bdbb83f45948e7ec5ff95475ad03f17f5992cc3784b17065ba0",
+      "size": 254478,
+      "git_blob_sha256": "b57f2c562feb4bdbb83f45948e7ec5ff95475ad03f17f5992cc3784b17065ba0"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0023.wav": {
+      "sha256": "bea11f6026fdf6a858685bcf63c65ab774ffa67180610a3b1fc746060a51c14b",
+      "size": 48718,
+      "git_blob_sha256": "bea11f6026fdf6a858685bcf63c65ab774ffa67180610a3b1fc746060a51c14b"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0026_trim_001500_008000.wav": {
+      "sha256": "00025d24a1e829a0e9b1a28fbadd3d33dd1d07f9dd915c63fa9277e46fc194eb",
+      "size": 208078,
+      "git_blob_sha256": "00025d24a1e829a0e9b1a28fbadd3d33dd1d07f9dd915c63fa9277e46fc194eb"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0038_trim_001500_008000.wav": {
+      "sha256": "1afa7098b33fdcd7a0ba8c4f33e9aa68cc078dba8ef23157fd7193a959a8d348",
+      "size": 208078,
+      "git_blob_sha256": "1afa7098b33fdcd7a0ba8c4f33e9aa68cc078dba8ef23157fd7193a959a8d348"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0040_trim_004700_006500.wav": {
+      "sha256": "0d0a2441a59056a2ace48853a7cbaa1126178ebf7babde31378526ed933b5218",
+      "size": 57678,
+      "git_blob_sha256": "0d0a2441a59056a2ace48853a7cbaa1126178ebf7babde31378526ed933b5218"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0041_trim_003000_004750.wav": {
+      "sha256": "c56a176b1274ebe22dcc7f7750a28179ea1be8915f01f24a41b35cc910a28a8b",
+      "size": 56078,
+      "git_blob_sha256": "c56a176b1274ebe22dcc7f7750a28179ea1be8915f01f24a41b35cc910a28a8b"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e02_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0044.wav": {
+      "sha256": "e2ce59505216c0899c43e68f4b17b5d3eec1e720bb73bb8657c6f18e94b6f2ef",
+      "size": 38478,
+      "git_blob_sha256": "e2ce59505216c0899c43e68f4b17b5d3eec1e720bb73bb8657c6f18e94b6f2ef"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e03_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0029.wav": {
+      "sha256": "e6af011da3b1f973b6244ab556b36a62c15c95c185053322cf32a5c79339226f",
+      "size": 73678,
+      "git_blob_sha256": "e6af011da3b1f973b6244ab556b36a62c15c95c185053322cf32a5c79339226f"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e03_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0030.wav": {
+      "sha256": "40ade2a26b501fe6eab7deccfefad9f42d892bcd4450cc2ba220843a61c2f897",
+      "size": 64078,
+      "git_blob_sha256": "40ade2a26b501fe6eab7deccfefad9f42d892bcd4450cc2ba220843a61c2f897"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e03_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0034_trim_002800_006900_trim_000000_003700.wav": {
+      "sha256": "c161f7a76ce0d9c45e52a7d416ba10aa25f23a402ba8656e04074f5dc93c7a1d",
+      "size": 118478,
+      "git_blob_sha256": "c161f7a76ce0d9c45e52a7d416ba10aa25f23a402ba8656e04074f5dc93c7a1d"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e06_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0009.wav": {
+      "sha256": "0518b2874315c74e4f69bd0c47615c79e00878c287fe49897ea60d3b9576496e",
+      "size": 92238,
+      "git_blob_sha256": "0518b2874315c74e4f69bd0c47615c79e00878c287fe49897ea60d3b9576496e"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e06_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0041_trim_001500_003100.wav": {
+      "sha256": "1b26a2d041add50efa35485a2e7b03c7a843053e33135326655a5191cdcd1243",
+      "size": 51278,
+      "git_blob_sha256": "1b26a2d041add50efa35485a2e7b03c7a843053e33135326655a5191cdcd1243"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e10_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0023.wav": {
+      "sha256": "ef31ee8aa94fa679f3e89fb209f3639c6cdb9def12399791713c2f1c8cec2f3e",
+      "size": 297998,
+      "git_blob_sha256": "ef31ee8aa94fa679f3e89fb209f3639c6cdb9def12399791713c2f1c8cec2f3e"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e16_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0010.wav": {
+      "sha256": "4d7e99307261fad7e540e203fa103f4770f4a0da9dac391bb275ef23770c7d5e",
+      "size": 156878,
+      "git_blob_sha256": "4d7e99307261fad7e540e203fa103f4770f4a0da9dac391bb275ef23770c7d5e"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e16_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0011.wav": {
+      "sha256": "f74a5e854c75d14dd7cbb20333b07378a4c7de58c70b489bb207289873208c0d",
+      "size": 51278,
+      "git_blob_sha256": "f74a5e854c75d14dd7cbb20333b07378a4c7de58c70b489bb207289873208c0d"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e16_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0012.wav": {
+      "sha256": "db8cd10d3dbc3a157ec910b4971d0f2789f2819c888d0f6b7fc7c15e014c1dd4",
+      "size": 76878,
+      "git_blob_sha256": "db8cd10d3dbc3a157ec910b4971d0f2789f2819c888d0f6b7fc7c15e014c1dd4"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e17_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0013_trim_000000_004500.wav": {
+      "sha256": "19b6722ccc5350e7018da773acfdfc05a3f3237a51d5617591f253ad57230ce3",
+      "size": 144078,
+      "git_blob_sha256": "19b6722ccc5350e7018da773acfdfc05a3f3237a51d5617591f253ad57230ce3"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e18_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0018_trim_002200_004000.wav": {
+      "sha256": "6106636a43e6601c60ed891a0b047efafca9b3f3ddc6f7980d67cac5ad4954bd",
+      "size": 57678,
+      "git_blob_sha256": "6106636a43e6601c60ed891a0b047efafca9b3f3ddc6f7980d67cac5ad4954bd"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e21_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0057_trim_005600_007200.wav": {
+      "sha256": "fd14db572afeecbe7dca6ebdac6cfa6afdb3c3e1451c070b4e99a7e0d6cc2799",
+      "size": 51278,
+      "git_blob_sha256": "fd14db572afeecbe7dca6ebdac6cfa6afdb3c3e1451c070b4e99a7e0d6cc2799"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e22_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0014.wav": {
+      "sha256": "f4e424582413b2dcb2e693fd45450b4147932ea0617b03eade92a0255408ae39",
+      "size": 153678,
+      "git_blob_sha256": "f4e424582413b2dcb2e693fd45450b4147932ea0617b03eade92a0255408ae39"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e22_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0036.wav": {
+      "sha256": "7574d5826dafe248baa4b730fe98c3e9edaa2758a595d546cc49a01cdae14fa7",
+      "size": 96078,
+      "git_blob_sha256": "7574d5826dafe248baa4b730fe98c3e9edaa2758a595d546cc49a01cdae14fa7"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e22_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0042_trim_001600_011000_trim_005200_009400.wav": {
+      "sha256": "ec42efbf15017f1f764ee59c0e25699c598e174190e867d9640f023f041995e3",
+      "size": 134478,
+      "git_blob_sha256": "ec42efbf15017f1f764ee59c0e25699c598e174190e867d9640f023f041995e3"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e22_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0049.wav": {
+      "sha256": "e3fb0844b4a0d764f48475ab9d48f68183470f53f6337510e35bdbdc555a8655",
+      "size": 137038,
+      "git_blob_sha256": "e3fb0844b4a0d764f48475ab9d48f68183470f53f6337510e35bdbdc555a8655"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_ii_s2e23_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0014_trim_002000_006000.wav": {
+      "sha256": "0efe6370c94f0b48a228ad3145c6349b2615fab16989a04414ad2d1a48e3e712",
+      "size": 128078,
+      "git_blob_sha256": "0efe6370c94f0b48a228ad3145c6349b2615fab16989a04414ad2d1a48e3e712"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_s01e01_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0030_trim_003500_007000.wav": {
+      "sha256": "c4de6088820c9f95401cb9b5b052fb17016d3ac09d08ff5e8b24d802774eb75b",
+      "size": 112078,
+      "git_blob_sha256": "c4de6088820c9f95401cb9b5b052fb17016d3ac09d08ff5e8b24d802774eb75b"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_s01e03_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0004_trim_007300_010620.wav": {
+      "sha256": "3fd20eede0ca04423093a0274731364a5751eb57678418194abe1f71b62a2b65",
+      "size": 106318,
+      "git_blob_sha256": "3fd20eede0ca04423093a0274731364a5751eb57678418194abe1f71b62a2b65"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_s01e04_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0034.wav": {
+      "sha256": "a800cacdc60737c8e30cf103707f5af2f4bd460b0a3551b33501c1b94e1cc4c4",
+      "size": 64078,
+      "git_blob_sha256": "a800cacdc60737c8e30cf103707f5af2f4bd460b0a3551b33501c1b94e1cc4c4"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_s01e08_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0019_trim_002000_003000.wav": {
+      "sha256": "e661a46e42d3509ad45b3a85d619075e72cf3d5f10faa20474d906a1c16868f7",
+      "size": 32078,
+      "git_blob_sha256": "e661a46e42d3509ad45b3a85d619075e72cf3d5f10faa20474d906a1c16868f7"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_s1e10_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0007_trim_001700_006000.wav": {
+      "sha256": "ee871d55b218a672a1dc20465c0925c13d67814420315d1cacc315d7264fc02d",
+      "size": 137678,
+      "git_blob_sha256": "ee871d55b218a672a1dc20465c0925c13d67814420315d1cacc315d7264fc02d"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_s1e10_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0008_trim_003200_005000.wav": {
+      "sha256": "4c7681b26c0674538056ad861531821b3335101ba0cfc6a30ecc600e76b8769a",
+      "size": 57678,
+      "git_blob_sha256": "4c7681b26c0674538056ad861531821b3335101ba0cfc6a30ecc600e76b8769a"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_s1e10_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0009.wav": {
+      "sha256": "673b374e54df1d103c502157114cf82bc353b7c22a53981bc24fe5cb4c86fec6",
+      "size": 64078,
+      "git_blob_sha256": "673b374e54df1d103c502157114cf82bc353b7c22a53981bc24fe5cb4c86fec6"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_s1e10_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0013.wav": {
+      "sha256": "4689525264d8b219cf50c387ed4bc98839b3a2921bf3d52a11e8893fedc83033",
+      "size": 64078,
+      "git_blob_sha256": "4689525264d8b219cf50c387ed4bc98839b3a2921bf3d52a11e8893fedc83033"
+    },
+    "assets/voice_datasets/shana/light_noise/kopimi_commie_shakugan_no_shana_s1e10_bdrip_hevc_hi10p_aac_dual_audio_1920x1080_0032_trim_007800_011070.wav": {
+      "sha256": "d03fc9fd498943b09ef378667f5177684f72961318ea64933afb55dbc2134c4e",
+      "size": 104718,
+      "git_blob_sha256": "d03fc9fd498943b09ef378667f5177684f72961318ea64933afb55dbc2134c4e"
+    },
+    "assets/voice_datasets/shana/manifests/clean.jsonl": {
+      "sha256": "d8632cbf652bf5e467c9661805e3a249aabf4ebe9272cf00ffe382d7baea013e",
+      "size": 68751,
+      "git_blob_sha256": "fcaf5e8c091dfb5c0ffd799e4b5848b9b67c376b768eb68321c32c535c70b6ca"
+    },
+    "assets/voice_datasets/shana/manifests/heavy_noise.jsonl": {
+      "sha256": "1882e5187184cbdb34e1fb46ca9ab9a028bca868648afde3551a079ce86ba7bc",
+      "size": 16580,
+      "git_blob_sha256": "055b79aa84eedc4470abfbbcc8f320f6e9c678494205a374ded2965ecb689d95"
+    },
+    "assets/voice_datasets/shana/manifests/light_noise.jsonl": {
+      "sha256": "6eff77af2e1c9fecf5b3dca70f00d324ae6ca6349f86d708b01fa936be438535",
+      "size": 35437,
+      "git_blob_sha256": "1eb5a4027738a3cb7b58775a2713f32430031225c698c7a0e68a8e703d09e93a"
+    },
+    "assets/voice_datasets/shana/manifests/missing.jsonl": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0,
+      "git_blob_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "assets/voice_datasets/shana/manifests/shana_all.jsonl": {
+      "sha256": "8ef06be0f1c0235e8163d91df98919f09d14c0fcb9fff432e66cebc6783bea01",
+      "size": 120768,
+      "git_blob_sha256": "c9da13e2de2beaec39f421418412e7a2f3a4a3d2b3696ae06b277296be7b46be"
+    },
+    "assets/voice_references/shana/shana_clean_reference_montage_20s.json": {
+      "sha256": "b5427f261129ef3e7fe51bd925f84c3a36cbe171e1d5b0e14393e39fec0a3a47",
+      "size": 2794,
+      "git_blob_sha256": "0bcae512dadb83688745803121a2785b686f8e9099679c9386b0b5caedaee08c"
+    },
+    "assets/voice_references/shana/shana_clean_reference_montage_20s.txt": {
+      "sha256": "df3d8ca3576f567dc4a1561a50b1f3c4678289accb1218089e3e95b9f97424d6",
+      "size": 419,
+      "git_blob_sha256": "1ec51583ac0256ae74979f7d2351fc59639952eec54572a6013174dda923cff4"
+    },
+    "assets/voice_references/shana/shana_clean_reference_montage_20s.wav": {
+      "sha256": "a844295d9e13f7aafe403e08caba761bd7b3047c19e58b313aeabfac354b6e41",
+      "size": 685484,
+      "git_blob_sha256": "a844295d9e13f7aafe403e08caba761bd7b3047c19e58b313aeabfac354b6e41"
+    },
+    "assets/voice_references/shana/shana_dataset_ref_22s.json": {
+      "sha256": "22d5404df9f1b46921e6b9cdfcc6e9e965ef7f3673cfc1d33c436a5daa685178",
+      "size": 4594,
+      "git_blob_sha256": "07d3fe1e9cfc9922095beae16ddcb1ac643f4e0018975b53517d6f013e3100b3"
+    },
+    "assets/voice_references/shana/shana_dataset_ref_22s.txt": {
+      "sha256": "3f5cd17c124631fdfe05677a8150742e6be03637ee24e83db13041e26f752fcc",
+      "size": 383,
+      "git_blob_sha256": "8370167f65dbf0820e7d888e687eeebbc62eb9986f05118cd860475db36d8e06"
+    },
+    "assets/voice_references/shana/shana_dataset_ref_22s.wav": {
+      "sha256": "b00ed74629d994d3b2d85185476a61827cb8ce665a6502c5a2b29c4265b1b3d5",
+      "size": 766764,
+      "git_blob_sha256": "b00ed74629d994d3b2d85185476a61827cb8ce665a6502c5a2b29c4265b1b3d5"
+    },
+    "assets/voice_references/shana/shana_qwen_ref_clean.json": {
+      "sha256": "d48a13c62086164b94cf8e3c8836652a0b5acc2dacdecc5a05e0b4d5d3c0553b",
+      "size": 720,
+      "git_blob_sha256": "7d92525ea37cd1d6069103c395181faf237c46b8405e0ade4b0c57314861cc5c"
+    },
+    "assets/voice_references/shana/shana_qwen_ref_clean.txt": {
+      "sha256": "ecd450de7eb9f361028a7488aabfecd8e5d70f81f1962028630e885b7d9ebf14",
+      "size": 72,
+      "git_blob_sha256": "ecd450de7eb9f361028a7488aabfecd8e5d70f81f1962028630e885b7d9ebf14"
+    },
+    "assets/voice_references/shana/shana_qwen_ref_clean.wav": {
+      "sha256": "e3a1663c85044cc86fef9da0948f81a647ef0034b4f980c1f6f8e12e9ee7e4b3",
+      "size": 125518,
+      "git_blob_sha256": "e3a1663c85044cc86fef9da0948f81a647ef0034b4f980c1f6f8e12e9ee7e4b3"
+    },
+    "config/app.example.toml": {
+      "sha256": "e7450de283adc070ec01da2fd74a85412873160ddbe6b87d5204a164826c60e6",
+      "size": 8440,
+      "git_blob_sha256": "8a2a0b33ede838217fafe88f16324be8687b0accabd39aadc0c20089c30c712f"
+    },
+    "config/app.toml": {
+      "sha256": "2d86cc1c344f726597574bde50e49eba5cd999ffe124cff2d28987fed4941ce7",
+      "size": 373,
+      "git_blob_sha256": "a902564aee9bd6ae1ceee5236bd21efef5dc77d80fd6e6be1f8e182d9a115e70"
+    },
+    "config/improvement.toml": {
+      "sha256": "6a65f76c45c7056637afc1479bd8c39a375c27f196c8799ac42778ebde45d6ff",
+      "size": 6514,
+      "git_blob_sha256": "6a65f76c45c7056637afc1479bd8c39a375c27f196c8799ac42778ebde45d6ff"
+    },
+    "config/memory.toml": {
+      "sha256": "d2a78fcb6ae72d998bbcc944c52b44470b339fbc75e30d10435bce6e6b9aad39",
+      "size": 140,
+      "git_blob_sha256": "9bf9346eda5f6c9930477caa88be236f432b71972ef9a591e0cc6570d61a9671"
+    },
+    "config/models.toml": {
+      "sha256": "4dc87474a43595176f724e72c9f6a60a64109731f8f093ab0dde51a6faf4d2ef",
+      "size": 1126,
+      "git_blob_sha256": "c481c98df48eedd9a8d35d1dc25c432094d5007a0ea5b0dbaaea1538be05fcda"
+    },
+    "config/persona.yaml": {
+      "sha256": "babd21456ecd127795333f26b4c7e35163f186e8480c5e53ccd27e0e779f0255",
+      "size": 6228,
+      "git_blob_sha256": "d523c3c9931c040f33d6f328c951a0e502c49c8114aa0212714410d8b02b3e68"
+    },
+    "config/safety_banned_words.txt": {
+      "sha256": "d272bc1c0b7a47156a0f1d6c930768f713798e8cd86ca8f8d27358e0796d12b1",
+      "size": 273,
+      "git_blob_sha256": "bbdda6b69701b0ad70aaa7b1e4fdc6b8f81c880c98ca907f7b46141b750c1c90"
+    },
+    "config/users.toml": {
+      "sha256": "e7afd569f6a6c5b4760fe23fd0088458f6a2b6844018d38059426214d78d7cac",
+      "size": 1221,
+      "git_blob_sha256": "e7afd569f6a6c5b4760fe23fd0088458f6a2b6844018d38059426214d78d7cac"
+    },
+    "config/voices.example.toml": {
+      "sha256": "720fcdea669faba7e61609eeec3c57124d994f7edeb0a1a2d23e27c1ea052af4",
+      "size": 821,
+      "git_blob_sha256": "b7b12593b976f9112efe7b59c64ebf60b352d9d9c18b353bc48afad6c3fa4c52"
+    },
+    "config/voices.presets.toml": {
+      "sha256": "9cbfed151af59ab23c9f23e158e4191a55fdb5b18c95f4ac8185f755c4b831b5",
+      "size": 7220,
+      "git_blob_sha256": "7ee5b12c77d2c68c9c58b1f31cb4ace694fbecf460f2a1b4c4ae0b86e0548199"
+    },
+    "config/voices.toml": {
+      "sha256": "89cae6f4ad302cef671f0c4b372fc7bf748ed2a6a352a4a72dae0c8b20bf814e",
+      "size": 273,
+      "git_blob_sha256": "9ce6cb3be6cde2834df6b9f10aff12f75e76754f3f691d1e906ab3d358828b12"
+    },
+    "data/README.md": {
+      "sha256": "6be0b196eab96ddfc4036fa5f3ba2dd93ca690f53e190cc759dacac3b09b8b82",
+      "size": 674,
+      "git_blob_sha256": "2731ef7fef1ab99c90ef40b0c4effca97b9edbcfaf9aca8a0cae04f980c50b5c"
+    },
+    "deploy/gamma-coding-autonomous.service": {
+      "sha256": "3235cb7c246089e563eb43552a2309d7a2f86d9fc8aea4f68c17778bb84d8bf5",
+      "size": 306,
+      "git_blob_sha256": "3235cb7c246089e563eb43552a2309d7a2f86d9fc8aea4f68c17778bb84d8bf5"
+    },
+    "deploy/gamma-coding-idle.service": {
+      "sha256": "2fc49c4b047f3dfe3fe584e3d50524dc86b87e0839d81f87b5cce7203235bee4",
+      "size": 290,
+      "git_blob_sha256": "2fc49c4b047f3dfe3fe584e3d50524dc86b87e0839d81f87b5cce7203235bee4"
+    },
+    "deploy/nginx/deploy.sh": {
+      "sha256": "ab035326ab1b4a809f1e420b83a6b2b38dba22d9a0c9dbe13df7f322cf222aaf",
+      "size": 2401,
+      "git_blob_sha256": "edf465a0f65fed4031a49454edd74d814d257ada30ab59f49eec9847c6cb3c74"
+    },
+    "deploy/nginx/gamma-direct-https.conf": {
+      "sha256": "2f815119e7dfec54086741c6a40845a68a2c1d843c5d659724d7342753853489",
+      "size": 2864,
+      "git_blob_sha256": "38c667c980d2a1d9c097805360fe7bf7dab59f25d5cfde009911d924c095f687"
+    },
+    "deploy/nginx/gamma-proxy.conf": {
+      "sha256": "0c16aa9008b560e0ab3a618ffe1ac50e21c44175eb0361f76294dc9b42fedb62",
+      "size": 2879,
+      "git_blob_sha256": "2f08c317e5cb2578d60d199644cfc214ddf0c8fac135f5d7fa4d0b59c21d69b5"
+    },
+    "deploy/nginx/nginx.conf": {
+      "sha256": "98fed8c554ffcf1ceb63436170e24b4fe7d4bb533b8cb997356c69ab2677ab39",
+      "size": 332,
+      "git_blob_sha256": "45aa98b56a8ac1859d899956327f31150a933d715642ab76e0a6cb5fdbf238fe"
+    },
+    "deploy/nginx/restart.nginx.sh": {
+      "sha256": "ddb6f5c999f012edf6292ece901c115e20e3239aad9404fe072cd750777dadc7",
+      "size": 96,
+      "git_blob_sha256": "af64f54059b3ef67c1d3de7a3dfec990bf4872d13c2d994af2b9a7e12614e2db"
+    },
+    "deploy/nginx/restart.sh": {
+      "sha256": "387598d4ddab1f6eb8deea5d0dd5ff3b7cbaa28b41d215b43beb9c2a445dd61e",
+      "size": 203,
+      "git_blob_sha256": "f12b82c3a6e3fe30469b06150d1fb2dd453d896688c825efdad5eec47be834e5"
+    },
+    "deploy/nginx/setup.sh": {
+      "sha256": "b7722f6fb3a361781eb241eeebdef0f78a3641786050f977625831ebb9491d5e",
+      "size": 3164,
+      "git_blob_sha256": "a397645a334ebc2e8577c34552a4215786b4348ea86d389fd4bc4a14ebfcb993"
+    },
+    "deploy/systemd/gamma-dashboard.service": {
+      "sha256": "214fbcf9a74b0522ee683472f223f528581e8e7250f054740460adba51f6ee33",
+      "size": 390,
+      "git_blob_sha256": "655127b1cdaf1130acb08c9eec0a410205e2f1a69370c7cec6a944dd50b54ab6"
+    },
+    "deploy/systemd/gamma-shana.service": {
+      "sha256": "294fd7a17f63d5fe6d19ecda9af65e46c0f0904e6e1e81696e6b4000c831f0f5",
+      "size": 360,
+      "git_blob_sha256": "8ad5c5a79798a768802f6ec6b8f22d1a22412f0a1419c15c62ffc9d26cb16db1"
+    },
+    "desktop/gamma-dashboard.desktop": {
+      "sha256": "6c90a3feab411623f3b89bdea77c0ba8feea8c3dd2d63eb1a4b7fba43670d735",
+      "size": 249,
+      "git_blob_sha256": "e0b29060b2e0feb3180d98d1ab4eef3904908e14c30c37bc3fcf54d5feec345a"
+    },
+    "docs/git-branch-policy.md": {
+      "sha256": "7a458f90f19247bc00d9a0c66a1b70087db2480a26b2de6638cf587a2cc605ca",
+      "size": 831,
+      "git_blob_sha256": "7a458f90f19247bc00d9a0c66a1b70087db2480a26b2de6638cf587a2cc605ca"
+    },
+    "evaluations/improvement/conversation.toml": {
+      "sha256": "ab34e0ad983544f97bd041672e098cc6d34003cdb2c8041e7e6ade54459a6870",
+      "size": 1791,
+      "git_blob_sha256": "ab34e0ad983544f97bd041672e098cc6d34003cdb2c8041e7e6ade54459a6870"
+    },
+    "gamma.db.backup-20260424-022634": {
+      "sha256": "701752bd6e722762f960164906bf7a82d98cb9b9241141ab844f6cae6fa3710d",
+      "size": 53248,
+      "git_blob_sha256": "701752bd6e722762f960164906bf7a82d98cb9b9241141ab844f6cae6fa3710d"
+    },
+    "helper_projects/GammaTTSDataPrep/README.md": {
+      "sha256": "513c25310e579e878cd9ddf921b48f30eff95a63102bf193ca398fdf627e87ec",
+      "size": 1492,
+      "git_blob_sha256": "a6cb364a16f1908e2d1942d2985da018455b0fe32fee3166f20ba3993fc162b4"
+    },
+    "helper_projects/GammaTTSDataPrep/packaging/build.bat": {
+      "sha256": "81cb7ea3ddabe667ecbc3c6dd5944e4f0e6df37fc89b695678819b27c7780109",
+      "size": 399,
+      "git_blob_sha256": "a470173194b7e5b237591bfb6a311afc274cb0bc65f6eb2ab789fe0dcd3ba4a3"
+    },
+    "helper_projects/GammaTTSDataPrep/packaging/build.sh": {
+      "sha256": "fbd81b256931df963b9cf8deb0334753efefd26ec02110dc66afdc4b33cab7d3",
+      "size": 295,
+      "git_blob_sha256": "8df4fa1fe576a3498ff6e5083dbf6506ac6c9ae8c65dc8158ee8feafef1fc357"
+    },
+    "helper_projects/GammaTTSDataPrep/packaging/tts_dataset_gui.spec": {
+      "sha256": "edbdac2bb0829f840a9046e8c330cd03ebe6fea3b040f7fc230603c824193c70",
+      "size": 1753,
+      "git_blob_sha256": "f7a42db394c0e1e75ee49cf04888f4161fae78a24d6f07bade885db6408ee1dd"
+    },
+    "helper_projects/GammaTTSDataPrep/scripts/build_exe.py": {
+      "sha256": "d79292f012f70745f4426a69490e3578f402c23efaecad038dfe00a63332f829",
+      "size": 2183,
+      "git_blob_sha256": "dfadf132bd7a35744e680aaa72b57ff22e8705ef80d73b54739bae84172d69cc"
+    },
+    "helper_projects/GammaTTSDataPrep/scripts/export_shana_tts_assets.py": {
+      "sha256": "e4cc666ac16f7239ca3437fabba4f38b210c53277ba463ccb01e8b35f797bae7",
+      "size": 9279,
+      "git_blob_sha256": "e0a453e541d9c34610b17f811c04bcb5f8704ed943b9740b1e8966ad713c10bb"
+    },
+    "helper_projects/GammaTTSDataPrep/scripts/transcribe_shana_tts_assets.py": {
+      "sha256": "82629fd8fded42f8fa70908a3b38808c8c82bcef4ad99715338239e1f02ad7ec",
+      "size": 4726,
+      "git_blob_sha256": "32f29e7b6411dff497840a4d8623d485b6e0cb3a7c442b149c3837b04ad947e4"
+    },
+    "helper_projects/GammaTTSDataPrep/scripts/validate_shana_tts_transcripts.py": {
+      "sha256": "67a7e405b4a24ed32b2613197af4975dec2d10a475d316e5e51b746085520f39",
+      "size": 7405,
+      "git_blob_sha256": "604754f23852e1a1cf7ecec1329aeca77f5d9532680d4760c19f0f375b5d1135"
+    },
+    "helper_projects/README.md": {
+      "sha256": "6dd74bd891cec1ad72a6ec4b15ed9ed2759682246890f17f73ea0ab059c81346",
+      "size": 556,
+      "git_blob_sha256": "fd277029e8f72ace11218de12f54f4c8648475ffbec79fddfebd0f817c6f30f5"
+    },
+    "images/clean_Photoroom name.bat": {
+      "sha256": "a2e5c3e62945f9c633922ccb422a2c682fc57f0613a8683907622cdbc6c6938e",
+      "size": 793,
+      "git_blob_sha256": "c6f0e448e21acc452e91131ce488d3b288980efe20f35c2d9b4eada66ee0a64e"
+    },
+    "images/me/me.veado": {
+      "sha256": "55343b76a67b565a597b0bd258d042deed0fa259aacbf12a0c3ada7ced95a55d",
+      "size": 2245935,
+      "git_blob_sha256": "55343b76a67b565a597b0bd258d042deed0fa259aacbf12a0c3ada7ced95a55d"
+    },
+    "images/me/mouth closed eyes closed.png": {
+      "sha256": "030b3ead2426e37792bcb92e93ddd5817519162b153c8f76c08553dcf624ef92",
+      "size": 644911,
+      "git_blob_sha256": "030b3ead2426e37792bcb92e93ddd5817519162b153c8f76c08553dcf624ef92"
+    },
+    "images/me/mouth closed eyes open.png": {
+      "sha256": "1746210ef502f7257a8cc78bfa242a40077a0238daede1ed92af2aaeb04c0acc",
+      "size": 668617,
+      "git_blob_sha256": "1746210ef502f7257a8cc78bfa242a40077a0238daede1ed92af2aaeb04c0acc"
+    },
+    "images/me/mouth open eyes closed.png": {
+      "sha256": "ffb40710c5e1a4ca4b93c75117d8c4bfd1251e429bb8e02aeb8c056de29fc8d1",
+      "size": 650760,
+      "git_blob_sha256": "ffb40710c5e1a4ca4b93c75117d8c4bfd1251e429bb8e02aeb8c056de29fc8d1"
+    },
+    "images/me/mouth open eyes open.png": {
+      "sha256": "967b17c49f218e5e237b2f8a8ae4f080ddbb4bd7c720c1cfe9d22f1572a3c219",
+      "size": 647425,
+      "git_blob_sha256": "967b17c49f218e5e237b2f8a8ae4f080ddbb4bd7c720c1cfe9d22f1572a3c219"
+    },
+    "images/shana/jacket shana mouth closed eyes closed.png": {
+      "sha256": "5fe6f848736ee5fdd31f71c9c2310fd6c2d0b8af644254fa4220a1c21c971c61",
+      "size": 730131,
+      "git_blob_sha256": "5fe6f848736ee5fdd31f71c9c2310fd6c2d0b8af644254fa4220a1c21c971c61"
+    },
+    "images/shana/jacket shana mouth closed eyes open.png": {
+      "sha256": "1e3fff7a7d023a234287c32074a50fc68f68b7640fc9c2113635f287563ac0d6",
+      "size": 727783,
+      "git_blob_sha256": "1e3fff7a7d023a234287c32074a50fc68f68b7640fc9c2113635f287563ac0d6"
+    },
+    "images/shana/jacket shana mouth open eyes closed.png": {
+      "sha256": "dd7beee3b89a143ca53a756bf8817547235d19055f04ded052d1392e202a6bf2",
+      "size": 706989,
+      "git_blob_sha256": "dd7beee3b89a143ca53a756bf8817547235d19055f04ded052d1392e202a6bf2"
+    },
+    "images/shana/jacket shana mouth open eyes open.png": {
+      "sha256": "5ea28def9da111ada53094f955b3ca6c0a90cd9d9a52f5cbde861ebdd901a0e4",
+      "size": 722059,
+      "git_blob_sha256": "5ea28def9da111ada53094f955b3ca6c0a90cd9d9a52f5cbde861ebdd901a0e4"
+    },
+    "images/shana/no jacket shana mouth closed eyes closed.png": {
+      "sha256": "d2c947751d34fca560f4c5c745c780c89b125c4f2c516e56ccf9e0434ec4b81e",
+      "size": 811300,
+      "git_blob_sha256": "d2c947751d34fca560f4c5c745c780c89b125c4f2c516e56ccf9e0434ec4b81e"
+    },
+    "images/shana/no jacket shana mouth closed eyes open.png": {
+      "sha256": "4b94a10f4bdfd6c3ec3183672b119ac4fddfdb2aa2a9cc0c5bef13df1555179c",
+      "size": 756303,
+      "git_blob_sha256": "4b94a10f4bdfd6c3ec3183672b119ac4fddfdb2aa2a9cc0c5bef13df1555179c"
+    },
+    "images/shana/no jacket shana mouth open eyes closed.png": {
+      "sha256": "5e83c5634e0b89305084b49e5385e012d0e22e16b8d6ac01daa968dc31684905",
+      "size": 831246,
+      "git_blob_sha256": "5e83c5634e0b89305084b49e5385e012d0e22e16b8d6ac01daa968dc31684905"
+    },
+    "images/shana/no jacket shana mouth open eyes open.png": {
+      "sha256": "d20363fa1d7bb394a802b4df223ac2b88028ef9ede79394d209fd1a78622b591",
+      "size": 844219,
+      "git_blob_sha256": "d20363fa1d7bb394a802b4df223ac2b88028ef9ede79394d209fd1a78622b591"
+    },
+    "pyproject.toml": {
+      "sha256": "4eb856e8dba622726035dc8ffa41a0d8497b6ae6946ed868ac952b1e99741081",
+      "size": 1222,
+      "git_blob_sha256": "bc56dc2348871266d1db4c82dfd0f13b3e079f2b69cf48b811fbd15f437c76cd"
+    },
+    "scripts/install_gamma_linux.sh": {
+      "sha256": "7841d4c44174d8627209a862c73c35db6aa54f38d982720a2fbd3c438f14606e",
+      "size": 1137,
+      "git_blob_sha256": "7841d4c44174d8627209a862c73c35db6aa54f38d982720a2fbd3c438f14606e"
+    },
+    "scripts/install_rvc_linux.sh": {
+      "sha256": "5923f6f587e26353907511e1769e2a12be75f7596d74403ba6f5522887f9b248",
+      "size": 2895,
+      "git_blob_sha256": "5923f6f587e26353907511e1769e2a12be75f7596d74403ba6f5522887f9b248"
+    },
+    "scripts/launch_gpu.sh": {
+      "sha256": "40b9b20fc3e98fe12b8b5a975d875bbf171b6d1d6a1df83ceba602eaf18c8206",
+      "size": 450,
+      "git_blob_sha256": "4c822a0eb7dbdbc535dfe76795984041222af649c16d86b4535dfa6801bd5848"
+    },
+    "scripts/launch_qwen_tts.sh": {
+      "sha256": "55c9509bfa5d4d869473926a81665851c94b428dc6d195b58761578674d53a0a",
+      "size": 657,
+      "git_blob_sha256": "bf5acc2525a1f4805435b9d38150872a83ea8f4c55f9eb35205a9d05c0b9f423"
+    },
+    "scripts/open_gamma.py": {
+      "sha256": "5fb803b6dee40ff1d520b391ad377bd5e42879f26f4bd99cb678605075d2c149",
+      "size": 895,
+      "git_blob_sha256": "5fb803b6dee40ff1d520b391ad377bd5e42879f26f4bd99cb678605075d2c149"
+    },
+    "scripts/open_gamma_linux.sh": {
+      "sha256": "4ad696f42a68be92e09c36a9a32fdff1b204e7967298a76ad418e7ad30273629",
+      "size": 380,
+      "git_blob_sha256": "4ad696f42a68be92e09c36a9a32fdff1b204e7967298a76ad418e7ad30273629"
+    },
+    "scripts/open_gamma_windows.cmd": {
+      "sha256": "48ab2366dcbf6e5bdba864ddc852e54c9035429123386208c9435db2f433538f",
+      "size": 362,
+      "git_blob_sha256": "efaccd29f66139dbcc97892ded2dfdde7f052d1c7b5961808790eaaab2c3fe2e"
+    },
+    "scripts/patch_rvc_for_gamma.py": {
+      "sha256": "fd0cb49e43b8174ecad6312048c0505faeefa1b8b2973be93999f4597ce707e8",
+      "size": 5966,
+      "git_blob_sha256": "fd0cb49e43b8174ecad6312048c0505faeefa1b8b2973be93999f4597ce707e8"
+    },
+    "scripts/probe_audio_gpu_placement.py": {
+      "sha256": "a44293d05607e17b11c8d1a6713b70cec9fb673c328bcd1c6eaea0f48a4110fd",
+      "size": 9059,
+      "git_blob_sha256": "0e20b87c781494ae5798b76554a415e6e265f4fa06f430914be12cf48164d570"
+    },
+    "scripts/qwen_tts_server.py": {
+      "sha256": "efa43e621b6c930bb85a01362a89b758a3835f5f04e2ad351995fe99327444f5",
+      "size": 14095,
+      "git_blob_sha256": "8f18c42ac41ef8aa7e185ea151776a567d0f423412e4606070e5518b4ef983b1"
+    },
+    "scripts/setup_audio_understanding_env.py": {
+      "sha256": "b9be7b97e5e89dacdc88bf644af626b0193c8cdbbe747aa7842b918b71340510",
+      "size": 2472,
+      "git_blob_sha256": "dccb5598cbbe14dcbcfc164521d6cee3ee4d76957bd56f8fb111e1b269566e68"
+    },
+    "scripts/start_all.sh": {
+      "sha256": "3b464feba2266994a0064e5ac380e1125f2850c27e7f0c03eae0e3fb96de0c84",
+      "size": 1708,
+      "git_blob_sha256": "3b464feba2266994a0064e5ac380e1125f2850c27e7f0c03eae0e3fb96de0c84"
+    },
+    "scripts/start_audio_understanding_server.py": {
+      "sha256": "5b5654dc7f2b9624c801918b101d9c9e000b43619ad362c5db372819c9cce639",
+      "size": 4463,
+      "git_blob_sha256": "9585c82173c488a1fa59b38f66f280106647543195ec15f02b54533874b1421c"
+    },
+    "scripts/start_dashboard.py": {
+      "sha256": "224cd4ad5ebb53b75aa8e06d988e5f0c55e6f75ec6955635feb3ded00188222a",
+      "size": 1258,
+      "git_blob_sha256": "e75d3d65011e69c16ce2a1dea5dc5fc88e4ea79a8b4bc29d48c632188262a242"
+    },
+    "scripts/start_dashboard.sh": {
+      "sha256": "e1cf72c1fdd4b9bc68cfb5269bbd266f13e1ab902ceee2b52789599cc7efb49a",
+      "size": 920,
+      "git_blob_sha256": "36d6e557d66cf9b2da1c0bcf0fa123a4b2a6f6d9e04696d1e1301a07a72b2b35"
+    },
+    "scripts/start_dashboard_linux.sh": {
+      "sha256": "7892f3b5f7c19a0be9f4f88ba6f665cdada90dae5a1fc3103d977f438ca62432",
+      "size": 382,
+      "git_blob_sha256": "a5d65d46b61d8eef072795530d41e89d2597d4424a81a38851c06e931a86fe57"
+    },
+    "scripts/start_local_proxy.sh": {
+      "sha256": "fe4ea5e77e27c4c1a70b7513266ee8d724eebe1b7970aa6f8fd0f242b2311b65",
+      "size": 821,
+      "git_blob_sha256": "90a25d5c13a22c5612bd76783f39225cf96168f0585f7f6eeb515d2690f800a7"
+    },
+    "scripts/start_qwen_tts_server.py": {
+      "sha256": "ba26c9805d3413a2e924709948e789df24ae4fa1386f1f0be5400ad13ed2306a",
+      "size": 6492,
+      "git_blob_sha256": "2a332545418d88d7ce57d32f4084de7bb41c26966a3c1a77049066574ea61e2c"
+    },
+    "scripts/start_shana.py": {
+      "sha256": "9aeedd9466395089633e2a67a683adc1ee0fae80d5716cde88282dd7d7a7f2fa",
+      "size": 1113,
+      "git_blob_sha256": "7f23b28b9cd26a22154f91ba5df7ff3c9a8d44d94ea62b2ee7e4f291aa05390e"
+    },
+    "scripts/start_shana_linux.sh": {
+      "sha256": "26c327b9643c455b3edd9c2e70e6c6ffa3e60657b811955a8da1849e985184d1",
+      "size": 378,
+      "git_blob_sha256": "682b46b0521cf04ae7d5fb981b08387413fc4329df36c87f1fd76802bd9a74f4"
+    },
+    "scripts/start_shana_stream_stack.py": {
+      "sha256": "8b7cc18d52912a86416c1faf57de7a5e328faaa3761cda3b7b6bb9a0764042b6",
+      "size": 2543,
+      "git_blob_sha256": "9b076758bfbcde880d4a67b589609fafc5075ecb68a18b4cba44e57936d4029a"
+    },
+    "scripts/start_shana_stream_stack_linux.sh": {
+      "sha256": "fae2c05cebb828ac99f8a5cd0908775753942ed4013f58118e68dcef84afcb48",
+      "size": 410,
+      "git_blob_sha256": "e291a3dea1fea6f7b128cb1b5ee095ea4e9df424d9834584267edcba4ab6a293"
+    },
+    "scripts/start_shana_voice_stack.py": {
+      "sha256": "b1e30b805c4db7e7c59c5a5a97f07587f8e81d4cfd3af1e984799a273d2edc9b",
+      "size": 8563,
+      "git_blob_sha256": "d6fe74833753546fc93b0a0fa22c80f414fbb9419a75531ed6d137bcd5294365"
+    },
+    "scripts/start_shana_voice_stack_linux.sh": {
+      "sha256": "b36dfd599e3fb5421df619e9b30a9980a514c0519bd71d405649ba66f7287d74",
+      "size": 409,
+      "git_blob_sha256": "054c7f3416b4fbb8ab972848d3628c95940d1a3486b741e57da76c74ef19d52b"
+    },
+    "scripts/start_with_gpu_isolation.sh": {
+      "sha256": "83142fc8ff234ea5433dae46ff9582b873012721f84c6658504e2000f0647811",
+      "size": 1860,
+      "git_blob_sha256": "7aaf14d6c3f151ef5ab7ea974d608362bc037e8808107491d45f01466da19e30"
+    },
+    "scripts/startup.sh": {
+      "sha256": "41f7749c0171c5fd2bc7fc2d9ed57969d38fd7e5250b3cc9f070ac33715f4a43",
+      "size": 863,
+      "git_blob_sha256": "518597971e0e5f099e397a5331db6d46342adac400998ae7b1144abced3f7ffa"
+    },
+    "scripts/stop_audio_understanding_server.py": {
+      "sha256": "5c612c41661961b777c6ed21124ce2d63279a932a11483d670cb2b2a1c95f75b",
+      "size": 982,
+      "git_blob_sha256": "1562346b9d14c81b63f605103667260fc81b625b77faefb19483f425386c1934"
+    },
+    "scripts/stop_local_proxy.sh": {
+      "sha256": "1f1ad11b984eb2b3251268a0f92230a7ad8f444966860d43b154909747faff1c",
+      "size": 655,
+      "git_blob_sha256": "628526da2f6cf65b2fff47fcd35eb8f3e8d25a33d252e16db1218e9c5761a3b8"
+    },
+    "scripts/stop_qwen_tts_server.py": {
+      "sha256": "a800304bf18b6003c38b97f740c4898660c733a596557040fce50722d81291de",
+      "size": 1126,
+      "git_blob_sha256": "a800304bf18b6003c38b97f740c4898660c733a596557040fce50722d81291de"
+    },
+    "scripts/stop_services.py": {
+      "sha256": "c87f9987d15b93dac7ed04abb2ec7de69618ea77a41a1def207636e4a1cce129",
+      "size": 344,
+      "git_blob_sha256": "c87f9987d15b93dac7ed04abb2ec7de69618ea77a41a1def207636e4a1cce129"
+    },
+    "scripts/stop_services_linux.sh": {
+      "sha256": "3785013903108346f8ddc43048b32f921aa1141d039a8c2b58645601d8fb58f0",
+      "size": 383,
+      "git_blob_sha256": "3785013903108346f8ddc43048b32f921aa1141d039a8c2b58645601d8fb58f0"
+    },
+    "sidecars/minecraft/README.md": {
+      "sha256": "016c1458ce0b1f1bba4a9ff4eb4e8eb9e80c5c6fa8bc35bb66da80b82f47fb0d",
+      "size": 9460,
+      "git_blob_sha256": "200de14fae2799afae3e1e7b4b29a0dfc69f138e61b8f80116b38c81715d7e0b"
+    },
+    "sidecars/minecraft/package-lock.json": {
+      "sha256": "bf92768a2198f57869d9e0d8d41814f1b441fcabefa42005f1a5335845f860cc",
+      "size": 52072,
+      "git_blob_sha256": "6bd8594106e67d64fa82cb9b09fe6da04219a23fee08764bb9d22337159f81c2"
+    },
+    "sidecars/minecraft/package.json": {
+      "sha256": "33fbe52b7ffba971cc4df2bc6932db8d22cc753fafaf3b5e9e0041e875fb92a7",
+      "size": 894,
+      "git_blob_sha256": "2fef0bfb7ee62bbfcf0c15442b242970e21bce8935db015a205b15e88e4bcd54"
+    },
+    "sidecars/minecraft/src/command-dispatcher.ts": {
+      "sha256": "a6cb7992bea0772cb59708e548ade03d78a0c4e6eaf427194370e4456981528d",
+      "size": 43854,
+      "git_blob_sha256": "3936e84a3c5de53b8c7e2dc197691a46aa8a5ee4275b0ce662aabf05125315b5"
+    },
+    "sidecars/minecraft/src/companion-executor.ts": {
+      "sha256": "7f0dffbc6e0775f8cf7628b22c35798c9fdfc44eb84dd13efc68caddf2d361a3",
+      "size": 29668,
+      "git_blob_sha256": "f8fe8da730b0ef584547eda536331e1423cdc8da78eb496afcb5e2d3ea1a97f1"
+    },
+    "sidecars/minecraft/src/companion-state.ts": {
+      "sha256": "5de36390830b23719f322957522205bd4aa3fc059576a577c70542f259e004b9",
+      "size": 2558,
+      "git_blob_sha256": "05e722aa8d9001a69574cc8307ce6a5b7edafab75a6f412d817f6f82276d7730"
+    },
+    "sidecars/minecraft/src/config.ts": {
+      "sha256": "a6e59610af9763c70b4829726de5095f62287e3b066ab0bf26068bdfce4414ba",
+      "size": 7939,
+      "git_blob_sha256": "68817dc00109b2d7e9ab4d911e926f9ca27f69463f6e188c0bf74f6a203c01a1"
+    },
+    "sidecars/minecraft/src/control-client.ts": {
+      "sha256": "7726b58a1a9be1c6863116e7834527e8e39e72e5c35299c5c068a76b29357094",
+      "size": 30491,
+      "git_blob_sha256": "da0f54c9a54d56f288643c67af5769b86aaaa285c6769127ce5d4501e97968b4"
+    },
+    "sidecars/minecraft/src/index.ts": {
+      "sha256": "bd0b26e7d00e58dded141ed019740506a1b8d2d808a99a68b8ec170a3bc0ee7d",
+      "size": 3745,
+      "git_blob_sha256": "10cdd691b66f083574faa46d8d7a84c30e8db612111b249d3c7833e1d5aad09a"
+    },
+    "sidecars/minecraft/src/local-smoke.ts": {
+      "sha256": "44fd19e00ba78f5f26b83cfab3a79d17ad8a0e4b557aa03a63a6692b41c62bc2",
+      "size": 60034,
+      "git_blob_sha256": "3a6e30853185578d0aa007b6b289aa75361ac4b863bd5f85abadb933b4ea2cde"
+    },
+    "sidecars/minecraft/src/minecraft-adapter.ts": {
+      "sha256": "e91fb77b5057cc77b9158aa9698d07e476a4adceb98e741370c61b567cb8a1c1",
+      "size": 4389,
+      "git_blob_sha256": "f117285efc6dd7d78624240e2cbe6447ed33def0e042adb2ce6155f2a571116a"
+    },
+    "sidecars/minecraft/src/mineflayer-runtime.ts": {
+      "sha256": "f875b68909fb5ff198a9efadc43de6ba555e86c898ec171866a90e94d413e856",
+      "size": 25456,
+      "git_blob_sha256": "2bc4ef342006c585a4c33c8db838ce3f0fab4204ea59cff4dcc58267b81ddd25"
+    },
+    "sidecars/minecraft/src/protocol.ts": {
+      "sha256": "1112d9c1a208495fae6eec2ea41d8cbfcd7410205fafb10764a4b2341ba20817",
+      "size": 17260,
+      "git_blob_sha256": "e1f898ad36505f457a433ab93dc5b9f72666e4d68f7a1d3be5540ee7a65e7377"
+    },
+    "sidecars/minecraft/src/runtime.ts": {
+      "sha256": "77d3b821df917b9647b1d6d6cb7baaf41efac8c2a3fa66c17cd68eb82fb17d8a",
+      "size": 17478,
+      "git_blob_sha256": "1a51d3df1db715fef72988383f851e578854fb187eceee19948a3f6d37329773"
+    },
+    "sidecars/minecraft/src/safety.ts": {
+      "sha256": "c47046eddd86c678a9e4702928ba92ebf40c2e98e9ba473229fe66c4a59aaa00",
+      "size": 3075,
+      "git_blob_sha256": "380ebc0112659d70b38a86acbdf2cb447a47fefd739200aa20c4e740670d1cad"
+    },
+    "sidecars/minecraft/src/status.ts": {
+      "sha256": "54b095f59e054d7ba16835bebd53c95c18dd1a5602dc54d9db95b8e3ab5cce5f",
+      "size": 3836,
+      "git_blob_sha256": "f710e6a1a16237a7241bd235320db209aea372f9aedd9df832c75ae5734a3f53"
+    },
+    "sidecars/minecraft/test/command-dispatcher.test.ts": {
+      "sha256": "322af088370240dee1ada8f14cd10bfe6a73c76ce35cc8dd268b073898e698fd",
+      "size": 41827,
+      "git_blob_sha256": "e68fc82ebcfb5c2637355b8833c05088593086f7377a762257e85a341f7afb61"
+    },
+    "sidecars/minecraft/test/companion-e2e.test.ts": {
+      "sha256": "7d67dfc4b9746e9b6d2ccf15583557cec85dec8eaa08649a0414c8ccfdbed232",
+      "size": 30793,
+      "git_blob_sha256": "d0999d24133fbf4de13d68ee5260a7c34c8c8df6812d1e1bf067704693c95227"
+    },
+    "sidecars/minecraft/test/companion-executor.test.ts": {
+      "sha256": "104198751e291999c2b9f4c93293d326b1267f9e2774e5e4c15dbf41c50a5371",
+      "size": 57459,
+      "git_blob_sha256": "781596547f4cc9e1ccadb19ab2caa3cd2dc7f180a5388b669e8f3534d5fa477c"
+    },
+    "sidecars/minecraft/test/companion-state.test.ts": {
+      "sha256": "f4c11a474edc7e8270bfe03fabed4b52738d8b2938fda4c98749d2cc94e1a4dc",
+      "size": 5175,
+      "git_blob_sha256": "472b7252619ef2bfd175e71755a4d2087e9971c38f708620140fd0142342f527"
+    },
+    "sidecars/minecraft/test/config.test.ts": {
+      "sha256": "ac81003c0e3eb131463cfe9c8d69c737936f518619bf84f7248bc5c439ca17de",
+      "size": 3997,
+      "git_blob_sha256": "949a023f99dc603da0e26752471b4aa48487c03af9b171644adce1ceb68a39a2"
+    },
+    "sidecars/minecraft/test/control-client.test.ts": {
+      "sha256": "6b3ee150e1b1b4425f92a5afe06c2edef81c42830a44dbaa94ed69421ce977d0",
+      "size": 32407,
+      "git_blob_sha256": "92af02601414765fd6e0b3d2c1313346a2d7b9ff73ad3a8215cd5ed793caa904"
+    },
+    "sidecars/minecraft/test/local-smoke.test.ts": {
+      "sha256": "f84dec78aadf3a2c0d719a2ad532885c9d3ea84aa76eb090f58564daf07dc71b",
+      "size": 22446,
+      "git_blob_sha256": "cbc08dbb1f52bee7b36b5804a0d2b4861a15843bc4dc65c71ddaaade4e843c43"
+    },
+    "sidecars/minecraft/test/minecraft-adapter.test.ts": {
+      "sha256": "dee14d9f04c9f39840bb3e5f10f082df82fff074a051af0475ddf8e65d000119",
+      "size": 9702,
+      "git_blob_sha256": "7b5cebb3d3a4ef58ee8c780fd2ef009dbec541fe9f88f437eff64161a0d9e746"
+    },
+    "sidecars/minecraft/test/protocol.test.ts": {
+      "sha256": "d85e031e403eb66a975c63590cd5e43949e3f52d19a0296659ca5ae735b4a153",
+      "size": 14365,
+      "git_blob_sha256": "c66aa58687b43523ede202c45589cd3da648bfef6e60bf11b08aa88adc25f386"
+    },
+    "sidecars/minecraft/test/runtime-safety-trap.test.ts": {
+      "sha256": "732bb881d93def6fdc676a2824fb4e3b37ac3f3d0135e883ae7224ba239164a7",
+      "size": 30030,
+      "git_blob_sha256": "69c05e188061838b1bf131c5750b763c3dae02b171cfe24990e0bb784a360d20"
+    },
+    "sidecars/minecraft/test/runtime.test.ts": {
+      "sha256": "bce45aa8b66f982838d336d8bd4a58df4567a46f364f568962bf3fd0630f74b5",
+      "size": 18584,
+      "git_blob_sha256": "3a1ffbb93fc5bf17c355bd95d245e868d2c999c75cab1998c25efa4ec0312191"
+    },
+    "sidecars/minecraft/test/safety.test.ts": {
+      "sha256": "e8b54999b7d36776c7bdb26ca988feef9508add171fd75fbdbb0b52a6317bbb9",
+      "size": 42137,
+      "git_blob_sha256": "48b4e76cffd93d55d59f11b967360ef3a05572b5344375bb8b347feb8317c09e"
+    },
+    "sidecars/minecraft/tsconfig.json": {
+      "sha256": "0a7ac9e437808da88159a21c0e9bdaf0c4b5cc97592e34f059249824195b5ba2",
+      "size": 627,
+      "git_blob_sha256": "dfa8f43bf6248a2953f545d16791fab4e177bcbfe145548090a8a420b0896145"
+    },
+    "specs/LOCKED_GAMMA_NETWORK_DEPLOYMENT.md": {
+      "sha256": "f9522a860073a7be95dc127730f6311543593d87a2eb7974548d7215e163cdb3",
+      "size": 10481,
+      "git_blob_sha256": "24ec4602845d5650c3e3ccc9044b828c668ceea2c7f755022f85e59a6243bc59"
+    },
+    "specs/Neuro-sama Deep Research Report.pdf": {
+      "sha256": "a7c8ecbe8c9095aa7fee483600378dc3f496bd685615424346483d8d4c3c1339",
+      "size": 249200,
+      "git_blob_sha256": "a7c8ecbe8c9095aa7fee483600378dc3f496bd685615424346483d8d4c3c1339"
+    },
+    "specs/README.md": {
+      "sha256": "e1892286010a5c503bd702a2bdd71c926cce93c245c80550d2261a92d6dbbce5",
+      "size": 3242,
+      "git_blob_sha256": "0709199ec5074c5f3334c7b7e0f297fe8b65a6fa61858d8e541df9929e7b504d"
+    },
+    "specs/architecture.md": {
+      "sha256": "4852ff9dc91f385e6ec0fa73749eecccad62e907becb4709c511cae6b5d57a3d",
+      "size": 4117,
+      "git_blob_sha256": "420364277007aced5dd6692f27253c4237b95a6e65c487ff77623267f51997f9"
+    },
+    "specs/archive/2026-10-23/README.md": {
+      "sha256": "06b7e789b796c332a263267af09d4188b8f653aeb74ba84743e45444382fa462",
+      "size": 2617,
+      "git_blob_sha256": "06b7e789b796c332a263267af09d4188b8f653aeb74ba84743e45444382fa462"
+    },
+    "specs/archive/2026-10-23/minecraft_companion_implementation_plan.md": {
+      "sha256": "a617b2ba9fdcecdf0ce527b8dfe4ed105783dc2d253a577a4c3cead5591ea693",
+      "size": 65465,
+      "git_blob_sha256": "c43ca0466835b3c5c260892c1d36545caa677400326ae6a9b3446f754fc117fe"
+    },
+    "specs/archive/2026-10-23/modular_worker_runtime_audit.md": {
+      "sha256": "5f7d4cf3f8a6b8964cbd4f0301a32ab582e0f2fd48f30f4e709de0364a75f9b2",
+      "size": 11055,
+      "git_blob_sha256": "bf7eac96a2487cf5beaebe95f13d03d91f82d86c5ad42225a9b91e8bdcd78338"
+    },
+    "specs/archive/2026-10-23/modular_worker_runtime_proposal.md": {
+      "sha256": "e583b9687a9174b52ad2253e925a68db72987a2f3f8f5ae1557382a8fcd41b02",
+      "size": 30965,
+      "git_blob_sha256": "b5a4934580c8eb63634749cd5649d0d328ea96c0101304dbaddff6e2bfbe90bd"
+    },
+    "specs/archive/2026-10-23/product.md": {
+      "sha256": "5f697034751e7149f24bf4c2a03a47abc13a7bc8b2eaec1d28fca098b87117e6",
+      "size": 2436,
+      "git_blob_sha256": "1d2012e50cf189a946851df34fbfb27c6621415662cf7323680a3e74dc8a015a"
+    },
+    "specs/archive/2026-10-23/roadmap.md": {
+      "sha256": "68f3d516833aab0655aeebe6d954876edc4423bf3d60c12f65008ec0f95efb0b",
+      "size": 3441,
+      "git_blob_sha256": "7f9095a35bdaa6e78581092200eeef23b0f1314cd60142f65918d1d8b342009c"
+    },
+    "specs/archive/2026-10-23/streamer_plan/neuro_architecture_review.md": {
+      "sha256": "c95ba99d06674a44292cf055d361c4fa87abc76ed74919a9ab3477f4b818f475",
+      "size": 3855,
+      "git_blob_sha256": "5cebc603dd8e227ec17d3b45b1ebb4ec6b4c116b68b767475db306e6d804e923"
+    },
+    "specs/archive/2026-10-23/streamer_plan/roadmap.md": {
+      "sha256": "16dad2e64c21da2dc54e8888a7ec5c3f919bd00b27b042ebbc16af618ad780d9",
+      "size": 2547,
+      "git_blob_sha256": "af23e3b13746eecd69e8f59d248dcf986868a0dea3e6bfee21ebcb1d0363c077"
+    },
+    "specs/archive/README.md": {
+      "sha256": "789e866034b6982931a0471c130dccb8b2e5fc4f58a90af99ad38f6be86307b8",
+      "size": 675,
+      "git_blob_sha256": "789e866034b6982931a0471c130dccb8b2e5fc4f58a90af99ad38f6be86307b8"
+    },
+    "specs/audio_understanding.md": {
+      "sha256": "abfe6cec358202196eced0372466bba7bb62f5f894e3ed7aed719711bec9068b",
+      "size": 1362,
+      "git_blob_sha256": "86a23a9b99307257933c8dba742a16cbb396b2a857db7bcc0b460eecadecaa32"
+    },
+    "specs/class-projects/README.md": {
+      "sha256": "051050b62c2033f94a5b2dc247e15943bde081322e774085e6de1d66a340c3fa",
+      "size": 1440,
+      "git_blob_sha256": "d2afc630154160b46c468dc2a5b02fc9ca7561e42e1df94d82a2403bbed0b5cc"
+    },
+    "specs/class-projects/cs4700-memory-triage.md": {
+      "sha256": "1b0169cf9566fb6a49e9eec9ad0c9bde89770c413a71bb8120768eb0c88f359e",
+      "size": 16182,
+      "git_blob_sha256": "8f50ed634ae7ab2f1e5f0efcf9bf7b1d3502274e38a7e14627b94837abaa49f8"
+    },
+    "specs/class-projects/cs4710-osrs-screen-recognition.md": {
+      "sha256": "bcf5a389ca5ca64d7ee1fda14f3311b4689a549b1c63aa20a1edabf97c6675ca",
+      "size": 25530,
+      "git_blob_sha256": "a88b02323ef079624b4450e0a843b221a60e6ccb4a82038476d88c8d6eb331f6"
+    },
+    "specs/coding_improvement.md": {
+      "sha256": "3d35f06395c128f0bfa0d537449ff32864147b6b96d96bbfa65fa04b410d5a4b",
+      "size": 16440,
+      "git_blob_sha256": "3d35f06395c128f0bfa0d537449ff32864147b6b96d96bbfa65fa04b410d5a4b"
+    },
+    "specs/current_implementations.md": {
+      "sha256": "02f9e4f0b63a7f81ebc70bc06b7b8923735a530c9e2baa69ff32fc37fd6ccc32",
+      "size": 15003,
+      "git_blob_sha256": "02f9e4f0b63a7f81ebc70bc06b7b8923735a530c9e2baa69ff32fc37fd6ccc32"
+    },
+    "specs/improvement.md": {
+      "sha256": "5152b2207fc836cc271d2965bcbd2d3e80e5e914d4bcddb0d77929278d993f19",
+      "size": 24072,
+      "git_blob_sha256": "5152b2207fc836cc271d2965bcbd2d3e80e5e914d4bcddb0d77929278d993f19"
+    },
+    "specs/integrations.md": {
+      "sha256": "e0bcd1ca758355215aa8375a32d4f9c89392749a806b01e4e3c7a08b5823aac7",
+      "size": 2761,
+      "git_blob_sha256": "e1b775e726dad2af5d6496ce33bf87d51945dc775332e1aef7f05fd6e0044f5a"
+    },
+    "specs/linux_portability.md": {
+      "sha256": "cd8d8c203ad503f6a6f4256bcedc98e3e3d88653996c8abdf825e66fd5e577f9",
+      "size": 1624,
+      "git_blob_sha256": "7829e24c38c0d4de5af44d8c2666304bcbafa7741170630aed6a4d4a8b779155"
+    },
+    "specs/live_voice.md": {
+      "sha256": "3bde7230dddd5a76b80345cffffa5ac5c9c6d3236d2118da48d991822a7ff36c",
+      "size": 2476,
+      "git_blob_sha256": "3b1f4323c7928ab58440bff028050249bc21bf43242f3f57e87d3164438f4cd6"
+    },
+    "specs/llm_router.md": {
+      "sha256": "7636cba2684508ea3672e2e765dba9981e836b117f263f38a800250c51625f97",
+      "size": 2817,
+      "git_blob_sha256": "3563be4a8ce8ae4329c89216fe12f76a5c80cb8175026991b2eef2c1fe02090c"
+    },
+    "specs/memory.md": {
+      "sha256": "6586e78bc6fbf777b676237ff1f2c815fde09ee516b676c1e599a86c5f41e5c9",
+      "size": 2094,
+      "git_blob_sha256": "367141da7ed9921b908afb70d30aea045ccace0b13f88aaf9a3f2876289610ba"
+    },
+    "specs/minecraft_companion.md": {
+      "sha256": "2902487b428f151591eb8a007da8a9c567824bed5b24f399bee81839f09623e9",
+      "size": 21672,
+      "git_blob_sha256": "de27d3ca8b5ccc7b1d241d1bb3e17b9a183396944bbc53a6ea260c396a3c2b78"
+    },
+    "specs/persona.md": {
+      "sha256": "5eddea53f6bd7eab61e485476d404180c0f5fae0825fbcb43ca557ef5e66690b",
+      "size": 1094,
+      "git_blob_sha256": "bacbfb849a50686de4288a8fa14c3421e819c6802e34c612cc03655ab78889cf"
+    },
+    "specs/product.md": {
+      "sha256": "99050cf41bbf1719b587e5f881773966504eb59a3fb5e58147b8f1f8d45705b3",
+      "size": 782,
+      "git_blob_sha256": "99050cf41bbf1719b587e5f881773966504eb59a3fb5e58147b8f1f8d45705b3"
+    },
+    "specs/resource_routing.md": {
+      "sha256": "2087ad6e9f1f70fe84764a6d2b0e5fbd37b15ebc71b3e0b42bb234b369a52e5a",
+      "size": 1109,
+      "git_blob_sha256": "f27a0b4260b5c3af79a10292e16f13a2923221af6e9d33582ca8c4074ce9ec7e"
+    },
+    "specs/roadmap.md": {
+      "sha256": "e8f6f85e993502fb7b6e40bfd97ea53db9201e1d78d7282875817eb6c6036a05",
+      "size": 1189,
+      "git_blob_sha256": "e8f6f85e993502fb7b6e40bfd97ea53db9201e1d78d7282875817eb6c6036a05"
+    },
+    "specs/shana_foundation_direction.md": {
+      "sha256": "192652b432bdbc3711e1f5dea9725ae1b52623abf62149193fc1bb6563cd2ccf",
+      "size": 14710,
+      "git_blob_sha256": "192652b432bdbc3711e1f5dea9725ae1b52623abf62149193fc1bb6563cd2ccf"
+    },
+    "specs/shana_foundation_review.md": {
+      "sha256": "38bc0adeacb1cabe8217a72498b55bb465e1de377dd64c1ea81ad0f29aca4a72",
+      "size": 30335,
+      "git_blob_sha256": "38bc0adeacb1cabe8217a72498b55bb465e1de377dd64c1ea81ad0f29aca4a72"
+    },
+    "specs/shana_output_bus.md": {
+      "sha256": "55657db0f9c7b1b05930f3f887609b87fc60efc6ab4f982c9ea09480ada2c979",
+      "size": 17067,
+      "git_blob_sha256": "2e6c264e4720e3b137884971b1848a96868517de5ae4f81ed826f941d15ef7a5"
+    },
+    "specs/shana_presence.md": {
+      "sha256": "a57532a795102cbccea242b072d23ec3f2593f935f2cdc8ef347bd5e7aec8f51",
+      "size": 3410,
+      "git_blob_sha256": "f134d69cda755726663a3ca248faeb6a9522a6f7da22f0629af12c615f423c16"
+    },
+    "specs/streamer_plan/Neuro-sama Reverse-Engineering Report.pdf": {
+      "sha256": "676c34c310570096c98c317921da3899196a80eaa75dfcd62ea741e47a896d33",
+      "size": 75629,
+      "git_blob_sha256": "676c34c310570096c98c317921da3899196a80eaa75dfcd62ea741e47a896d33"
+    },
+    "specs/streamer_plan/shana_reference_research_2026-10-23.html": {
+      "sha256": "648d0424193df8e85e701bf73d4c8f35b4bbf1bb261d741f3e70417220136f26",
+      "size": 44942,
+      "git_blob_sha256": "648d0424193df8e85e701bf73d4c8f35b4bbf1bb261d741f3e70417220136f26"
+    },
+    "specs/streamer_plan/twitch_operator_setup.md": {
+      "sha256": "55c2c3eaffa1437ab3c7bda5054fc9d3a67b46eff0a054c3a871fd350e93cf87",
+      "size": 4876,
+      "git_blob_sha256": "2b3497521f9eaa4e4fba620965fd70474d23a3f3ba520f6d9eaff78f0c5e7968"
+    },
+    "specs/streamer_plan/twitch_stream_module.md": {
+      "sha256": "036426aa0ec85c0d2a6f5ae4dfdaf025e014fa07178217f98ccc392be399f49f",
+      "size": 16233,
+      "git_blob_sha256": "e87bff8f87497d2052de0aa14aa334b056891ac3cdaabb759bc18d320cac0b3d"
+    },
+    "specs/voice.md": {
+      "sha256": "c987cc84e85308482120b6ba5ec3601b3d6b21bc55da8670f75d47d36b2c556b",
+      "size": 2050,
+      "git_blob_sha256": "6a3eb06994b5bdd3e34931fcc0ed4c22c55c35ca930e9cfe2f719b7d5a1e42f2"
+    },
+    "specs/voice_dataset.md": {
+      "sha256": "2a1c8da7945b05e76933ed5a8cdf71dff404e312e7045e92175d0f127e76a943",
+      "size": 8063,
+      "git_blob_sha256": "2d3d34c100dce80afc1e43b54d26eed92497f9ffa8df4c7b370ffa4bd30fb526"
+    },
+    "src/gamma/__init__.py": {
+      "sha256": "127a5f97f45a9e1402447fe8665792502c0c87f880e7737b1374e4a4796e17db",
+      "size": 50,
+      "git_blob_sha256": "b576d15ec3b4344fd45759081e26534d0407d1f8f45362a8c7136eb2efe0ceb3"
+    },
+    "src/gamma/api/__init__.py": {
+      "sha256": "4bc669a55e9e131cdf72209f4b2da61ae5f26c99fe4f0d2930abc33ae8b24b5a",
+      "size": 15,
+      "git_blob_sha256": "f874f0009f0ee34d4a4d23e6f196236b67744519faa23d7f48e157ef9c3e993d"
+    },
+    "src/gamma/api/routes.py": {
+      "sha256": "b4daded85e469171e4f88e93c322e00e1c1dd0bc74c7ea8ad7fee52821d7e04f",
+      "size": 40956,
+      "git_blob_sha256": "ccb781d428de1f2c04403af4f6132de1ccb89021fe9452a7bc03a64c149eb613"
+    },
+    "src/gamma/audio_understanding_server.py": {
+      "sha256": "b55bc1fd5dc273a2a366c83fe027d300c9a96035dc7920c5a3a35909c7ee1fb4",
+      "size": 5783,
+      "git_blob_sha256": "c4c8cdd8270ff8deab9cd5cbfdbe5690df82d6672a15ed8f508caa3d80ae0d04"
+    },
+    "src/gamma/avatar_events/__init__.py": {
+      "sha256": "2c54dd0177ec8610829b058aada8137a622f6dfdd4dc1c00c131fab3fad1f2de",
+      "size": 25,
+      "git_blob_sha256": "70ffad02ba87962923ad30f0a85750d00def9dc207890403a48211f3184c35f5"
+    },
+    "src/gamma/avatar_events/models.py": {
+      "sha256": "c6d492879fb62a66efad481456183f3dbfc7bd4060555f3da64417c9a5bfe70b",
+      "size": 336,
+      "git_blob_sha256": "495ef7960108aeeb8e1b77bfcc8dc10faad8ec6b0129dcd0a352ffd5d6b5fb18"
+    },
+    "src/gamma/coding/__init__.py": {
+      "sha256": "7726397a407260d07c717133ea63c1953cabbaf38e9e214df4882317f9695394",
+      "size": 73,
+      "git_blob_sha256": "7726397a407260d07c717133ea63c1953cabbaf38e9e214df4882317f9695394"
+    },
+    "src/gamma/coding/acceptance_retention.py": {
+      "sha256": "e081a1deb33398c650c93a7464229234a12b848a1755793d1d14a7e7b2ed36aa",
+      "size": 2914,
+      "git_blob_sha256": "e081a1deb33398c650c93a7464229234a12b848a1755793d1d14a7e7b2ed36aa"
+    },
+    "src/gamma/coding/autonomous.py": {
+      "sha256": "5705195fb002384dad005cddfc52bb0d99728c2de6898057804a0747da404be3",
+      "size": 30620,
+      "git_blob_sha256": "5705195fb002384dad005cddfc52bb0d99728c2de6898057804a0747da404be3"
+    },
+    "src/gamma/coding/autonomous_learning.py": {
+      "sha256": "8d58bf467a03b15c6c6e1b4051caae8ea38511acf5a2959ffa5947d72e7a26a5",
+      "size": 693,
+      "git_blob_sha256": "8d58bf467a03b15c6c6e1b4051caae8ea38511acf5a2959ffa5947d72e7a26a5"
+    },
+    "src/gamma/coding/autonomous_store.py": {
+      "sha256": "69abea27b0a3a3d37eed4dc60c8d8d0e43a9503eedb9ad2573c13315ef1581fc",
+      "size": 5824,
+      "git_blob_sha256": "69abea27b0a3a3d37eed4dc60c8d8d0e43a9503eedb9ad2573c13315ef1581fc"
+    },
+    "src/gamma/coding/candidate_data.py": {
+      "sha256": "74f9cbc8486ca2a6092fb36435e23967ec95ddedde8686c68530266df4f33099",
+      "size": 4141,
+      "git_blob_sha256": "74f9cbc8486ca2a6092fb36435e23967ec95ddedde8686c68530266df4f33099"
+    },
+    "src/gamma/coding/candidate_download.py": {
+      "sha256": "1454465dceaaa44738c9748ba218cc276baec15f9dfcc59d90f9d2f89f7fd526",
+      "size": 2251,
+      "git_blob_sha256": "1454465dceaaa44738c9748ba218cc276baec15f9dfcc59d90f9d2f89f7fd526"
+    },
+    "src/gamma/coding/candidate_evaluation.py": {
+      "sha256": "3464cdd0eff06478687b702981803c2746dd252749b17c203168e0e2076d2545",
+      "size": 5295,
+      "git_blob_sha256": "3464cdd0eff06478687b702981803c2746dd252749b17c203168e0e2076d2545"
+    },
+    "src/gamma/coding/candidate_operator.py": {
+      "sha256": "6e3be15a0f7b6c57b8620e0806e5ccbad9b902aa6b8e6c6488977729bf64f7fd",
+      "size": 1884,
+      "git_blob_sha256": "6e3be15a0f7b6c57b8620e0806e5ccbad9b902aa6b8e6c6488977729bf64f7fd"
+    },
+    "src/gamma/coding/candidate_policy.py": {
+      "sha256": "9cf83f984d1cc0b43b6d7aea80a512abf8a20a14c6db1f2fa5d66443fb643166",
+      "size": 2837,
+      "git_blob_sha256": "9cf83f984d1cc0b43b6d7aea80a512abf8a20a14c6db1f2fa5d66443fb643166"
+    },
+    "src/gamma/coding/candidate_resources.py": {
+      "sha256": "2dac7b4062b1fab7bfcfcbb88fd9b04df180e5441040ffbf93fb7e4b012be6f4",
+      "size": 290,
+      "git_blob_sha256": "2dac7b4062b1fab7bfcfcbb88fd9b04df180e5441040ffbf93fb7e4b012be6f4"
+    },
+    "src/gamma/coding/candidate_trial.py": {
+      "sha256": "64d9ada03d49c8cba9bf938ac28c7a68fefda4083cc04c18e7abc2ad84af8dcb",
+      "size": 9167,
+      "git_blob_sha256": "64d9ada03d49c8cba9bf938ac28c7a68fefda4083cc04c18e7abc2ad84af8dcb"
+    },
+    "src/gamma/coding/cli.py": {
+      "sha256": "a3b9bbaa444bca800eef1948374acd2ea181dabbf34fbc258cf68075202cbeca",
+      "size": 6118,
+      "git_blob_sha256": "a3b9bbaa444bca800eef1948374acd2ea181dabbf34fbc258cf68075202cbeca"
+    },
+    "src/gamma/coding/curriculum.py": {
+      "sha256": "aa2a7eaf810ab15d0d83e7cd88efe955c5ed6faf511622d267576d17170327a5",
+      "size": 5626,
+      "git_blob_sha256": "aa2a7eaf810ab15d0d83e7cd88efe955c5ed6faf511622d267576d17170327a5"
+    },
+    "src/gamma/coding/evaluation.py": {
+      "sha256": "10fa625669bf0faa8c56a92c7563379d07683f10e3f1c9444fae163a22b2124a",
+      "size": 5872,
+      "git_blob_sha256": "10fa625669bf0faa8c56a92c7563379d07683f10e3f1c9444fae163a22b2124a"
+    },
+    "src/gamma/coding/learner.py": {
+      "sha256": "f9c2d0b4b9619c35fd2f2fa7706943d117304f6600731bdd0a79421c36e85e8a",
+      "size": 4529,
+      "git_blob_sha256": "f9c2d0b4b9619c35fd2f2fa7706943d117304f6600731bdd0a79421c36e85e8a"
+    },
+    "src/gamma/coding/lessons.py": {
+      "sha256": "13a32407d0e1bbf52ef639c6d762ac071f83bb4b349f143d89a44128361aef31",
+      "size": 14745,
+      "git_blob_sha256": "13a32407d0e1bbf52ef639c6d762ac071f83bb4b349f143d89a44128361aef31"
+    },
+    "src/gamma/coding/operator.py": {
+      "sha256": "244ab3b3311f2904119aaa56283eda6552b7c2b07fea40ae9a29c1ba896720ed",
+      "size": 1007,
+      "git_blob_sha256": "244ab3b3311f2904119aaa56283eda6552b7c2b07fea40ae9a29c1ba896720ed"
+    },
+    "src/gamma/coding/practice.py": {
+      "sha256": "2e63f11c6ff527109f0b9aa29baa357f8b993580c5685eaeb71693365dbdfcdf",
+      "size": 16573,
+      "git_blob_sha256": "2e63f11c6ff527109f0b9aa29baa357f8b993580c5685eaeb71693365dbdfcdf"
+    },
+    "src/gamma/coding/practice_priority.py": {
+      "sha256": "1c03d38d976557d3e45053aa1580cc7427930c2be809b2fc4285e2a6c7683b69",
+      "size": 548,
+      "git_blob_sha256": "1c03d38d976557d3e45053aa1580cc7427930c2be809b2fc4285e2a6c7683b69"
+    },
+    "src/gamma/coding/project_activation.py": {
+      "sha256": "942c99dc00d072ce6caa7b73814e4d18bab5c2b25e0c7c271400fb4468cf14ba",
+      "size": 2311,
+      "git_blob_sha256": "942c99dc00d072ce6caa7b73814e4d18bab5c2b25e0c7c271400fb4468cf14ba"
+    },
+    "src/gamma/coding/project_checks.py": {
+      "sha256": "b2bf5226e27a15e31fabd2a2d5a16fed89bcfa9297e44144d528d08cf3861822",
+      "size": 3948,
+      "git_blob_sha256": "b2bf5226e27a15e31fabd2a2d5a16fed89bcfa9297e44144d528d08cf3861822"
+    },
+    "src/gamma/coding/project_loop.py": {
+      "sha256": "f033d04d24803ce90709b88c02f56fa3eca19865bea1e9939dbee13e3d4e68f4",
+      "size": 6041,
+      "git_blob_sha256": "f033d04d24803ce90709b88c02f56fa3eca19865bea1e9939dbee13e3d4e68f4"
+    },
+    "src/gamma/coding/project_policy.py": {
+      "sha256": "18ec2d57f2e3a543cce9387bbe5c80119ece0720986dd4f70ce9e9eb878728d0",
+      "size": 4537,
+      "git_blob_sha256": "18ec2d57f2e3a543cce9387bbe5c80119ece0720986dd4f70ce9e9eb878728d0"
+    },
+    "src/gamma/coding/project_transaction.py": {
+      "sha256": "6aff4e7ec498b544fc9d9c55c23d624c448ce5edb4846d0025ff63ec19bb9ac0",
+      "size": 4063,
+      "git_blob_sha256": "6aff4e7ec498b544fc9d9c55c23d624c448ce5edb4846d0025ff63ec19bb9ac0"
+    },
+    "src/gamma/coding/project_verification.py": {
+      "sha256": "3f3dd9cbb168021c93cf0b5b2b7759b7369585e36143e63beef788376fe2341f",
+      "size": 7617,
+      "git_blob_sha256": "3f3dd9cbb168021c93cf0b5b2b7759b7369585e36143e63beef788376fe2341f"
+    },
+    "src/gamma/coding/repository.py": {
+      "sha256": "6612a7fd995f0abfc61099100704bc712f849d6445b9d75aa6b8605c5317650c",
+      "size": 17276,
+      "git_blob_sha256": "6612a7fd995f0abfc61099100704bc712f849d6445b9d75aa6b8605c5317650c"
+    },
+    "src/gamma/coding/sandbox.py": {
+      "sha256": "80a7c457431d6105f2bf1b1a7f731e863656eee5dd9bcf5d3448bc41c580ab4e",
+      "size": 5404,
+      "git_blob_sha256": "80a7c457431d6105f2bf1b1a7f731e863656eee5dd9bcf5d3448bc41c580ab4e"
+    },
+    "src/gamma/coding/worker.py": {
+      "sha256": "46942c67b4a42ceea31d9d0aee82431f0106fe92c6bf2520657e9e911426d8a8",
+      "size": 6490,
+      "git_blob_sha256": "46942c67b4a42ceea31d9d0aee82431f0106fe92c6bf2520657e9e911426d8a8"
+    },
+    "src/gamma/config.py": {
+      "sha256": "4e9b901b6acc3b33c8a081628ab97a962b6ebf2a0a60b22d39750a3c4f5717ee",
+      "size": 45063,
+      "git_blob_sha256": "8f7aba84b221aca768ba64a647f04e0e01237bc0e2d0cf9e6ff24cae6f64cc90"
+    },
+    "src/gamma/conversation/__init__.py": {
+      "sha256": "deeb431c50f3abe182e050ed8961f96e488c19c91f974cf9da1df7fdd59d594c",
+      "size": 24,
+      "git_blob_sha256": "97ccbc2834922ea10065b1177e6fa23d0039d42130b43965532e9b64790f859d"
+    },
+    "src/gamma/conversation/service.py": {
+      "sha256": "003249d474d05c9a5f9cef61245a1f8d096d7df6871e9faed72744d692790613",
+      "size": 84626,
+      "git_blob_sha256": "3736167a8a256d33ae647c13c4c04178eaee6212946e53ad3f81b1fd6cbbd19b"
+    },
+    "src/gamma/conversation/turn_contract.py": {
+      "sha256": "0149d485feb20debba6589034fa2fd7982964fe128066a217d2fcdfea0170713",
+      "size": 7438,
+      "git_blob_sha256": "0149d485feb20debba6589034fa2fd7982964fe128066a217d2fcdfea0170713"
+    },
+    "src/gamma/dashboard/__init__.py": {
+      "sha256": "6c515513d8d129cccdcb81e199e816a02e8a38bfcdade8fe6a0dfb0c0203cda0",
+      "size": 36,
+      "git_blob_sha256": "5384bfdb2df380b6557cc7a71d16891415bccaa87699406e236f752c6415389f"
+    },
+    "src/gamma/dashboard/auth.py": {
+      "sha256": "5a071e081de805738a38078d864c088d465f44084ec05853feb2960cfaa7c411",
+      "size": 2439,
+      "git_blob_sha256": "2447c037e52e49a666418e4518d2fc7700c83be57bb007f6a7b9bfef79d14777"
+    },
+    "src/gamma/dashboard/coding_routes.py": {
+      "sha256": "1eed8852cef0c7ad32f25e143ef2060f9024693cb19c1f8301efcb98f64657ea",
+      "size": 3412,
+      "git_blob_sha256": "1eed8852cef0c7ad32f25e143ef2060f9024693cb19c1f8301efcb98f64657ea"
+    },
+    "src/gamma/dashboard/improvement_status.py": {
+      "sha256": "814d687eda298cbf6564d989a5f5e65ed8078b81a16eb1ca43a70357a177795c",
+      "size": 15667,
+      "git_blob_sha256": "814d687eda298cbf6564d989a5f5e65ed8078b81a16eb1ca43a70357a177795c"
+    },
+    "src/gamma/dashboard/main.py": {
+      "sha256": "3dce7a12c9aca1fe0402962e44ce8c7f605b3ac2f567c9b755621344c11b1f1a",
+      "size": 52840,
+      "git_blob_sha256": "3dce7a12c9aca1fe0402962e44ce8c7f605b3ac2f567c9b755621344c11b1f1a"
+    },
+    "src/gamma/dashboard/service.py": {
+      "sha256": "8965c73229845d73a8c5a1fd5faba2817049b0c2cb988f49bcd35aed7c33d63c",
+      "size": 140637,
+      "git_blob_sha256": "8965c73229845d73a8c5a1fd5faba2817049b0c2cb988f49bcd35aed7c33d63c"
+    },
+    "src/gamma/dashboard/shana_client.py": {
+      "sha256": "38afa203a9f5e801277672c440f814c1b0132fdab394209e48ada9606628e9d8",
+      "size": 4441,
+      "git_blob_sha256": "2c5419c9453e233cbc6bef50cf609a345a7204115a6a746a85c36f58be2dc7f1"
+    },
+    "src/gamma/dashboard/static/REFACTORING_COMPARISON.md": {
+      "sha256": "85a08acda500575745e2769e958706a58b9776675c878e1fb5e6b305703341a7",
+      "size": 9377,
+      "git_blob_sha256": "e1fea1cda87270646fbdf423ad566b0309bbd0e9481daf112d60dbdbe6205444"
+    },
+    "src/gamma/dashboard/static/api.js": {
+      "sha256": "7f5bd2217d7015a0e45937038c126ce5e89426435678c6b6a5b1d7c84454a4cf",
+      "size": 21095,
+      "git_blob_sha256": "48b1212111a591af98152daa6c29f45de7d145b06f92b579d589f099d6d9ec23"
+    },
+    "src/gamma/dashboard/static/autonomous-coding.mjs": {
+      "sha256": "814ac986795dd6c0608bd82e8750d7dd8e58470cf9977910579914488d514d7e",
+      "size": 3802,
+      "git_blob_sha256": "814ac986795dd6c0608bd82e8750d7dd8e58470cf9977910579914488d514d7e"
+    },
+    "src/gamma/dashboard/static/coding-candidates.mjs": {
+      "sha256": "9b03c9b3eeec15ba6fc1e4296518934ca65bcb9e4f7a3e84e8f2fa4e0039b821",
+      "size": 2431,
+      "git_blob_sha256": "9b03c9b3eeec15ba6fc1e4296518934ca65bcb9e4f7a3e84e8f2fa4e0039b821"
+    },
+    "src/gamma/dashboard/static/coding-projects.mjs": {
+      "sha256": "16a2c1d51bd6fa8156d3fa49b187e4c2d1e6d480357f66cdc81de57a73755782",
+      "size": 3840,
+      "git_blob_sha256": "16a2c1d51bd6fa8156d3fa49b187e4c2d1e6d480357f66cdc81de57a73755782"
+    },
+    "src/gamma/dashboard/static/controls.js": {
+      "sha256": "1cceeb42bcc7f75a8089b8ecebd55e65d32b22d3341402ac23ebc4148cf6c496",
+      "size": 9444,
+      "git_blob_sha256": "b88557f3fdf38b0c3a3d316c3103532e7c57ad361093bd525aa334061bb5877f"
+    },
+    "src/gamma/dashboard/static/core.mjs": {
+      "sha256": "74864f64d822ae0a63a9ae0c2802656f0f84fdbbfa1eb0c2b0f945ff3007e2c7",
+      "size": 601,
+      "git_blob_sha256": "7cd166c10f16e636ec11e47b6d1e491c0b9b34ba28dd88b069023372c2d11424"
+    },
+    "src/gamma/dashboard/static/dashboard.css": {
+      "sha256": "3dde7f295128ac5acac102c80330db36d94785d0c14373d27a800e5c6c4239f7",
+      "size": 40367,
+      "git_blob_sha256": "4612d30f724853ca1a3d23207c69309f48b7228e0eb456480c2ce5acf863ac2d"
+    },
+    "src/gamma/dashboard/static/discord.mjs": {
+      "sha256": "2b62de6457fcd6bf3313996565c09ecdbe6afeb2347baa0a7d8529fcd214a9f7",
+      "size": 2482,
+      "git_blob_sha256": "2b62de6457fcd6bf3313996565c09ecdbe6afeb2347baa0a7d8529fcd214a9f7"
+    },
+    "src/gamma/dashboard/static/favicon.svg": {
+      "sha256": "78e0cd807d678ef92ffa4d120cf9a97931d402188889d277ccfe3ac88ac037db",
+      "size": 290,
+      "git_blob_sha256": "830c991e6bd68fb73a99161c8f9b6ef5dfa96751f8b88799307654566830028f"
+    },
+    "src/gamma/dashboard/static/improvement.mjs": {
+      "sha256": "1be450d2d88465912e667efe0a0a5f0813878699e3ff728cf7b6044212dd43f8",
+      "size": 22839,
+      "git_blob_sha256": "1be450d2d88465912e667efe0a0a5f0813878699e3ff728cf7b6044212dd43f8"
+    },
+    "src/gamma/dashboard/static/index.html": {
+      "sha256": "0550138285c1aa7efe8bab88b0d2cc32d8ad0001f8f14b5441eef679a6cd75e9",
+      "size": 63599,
+      "git_blob_sha256": "0550138285c1aa7efe8bab88b0d2cc32d8ad0001f8f14b5441eef679a6cd75e9"
+    },
+    "src/gamma/dashboard/static/lesson-history.mjs": {
+      "sha256": "d133dcb154a3a796be178ad431c32cbc780891908208cd94ad9a2c194a7befec",
+      "size": 2020,
+      "git_blob_sha256": "d133dcb154a3a796be178ad431c32cbc780891908208cd94ad9a2c194a7befec"
+    },
+    "src/gamma/dashboard/static/live.js": {
+      "sha256": "71acdb47bea1417a8949613cdee5651e090d83437cc954c5d10fa02da17b9bf5",
+      "size": 32075,
+      "git_blob_sha256": "181e4cf3db241df176d1e2889f64d557dbd71bb4eccce82abd530ab6d300a856"
+    },
+    "src/gamma/dashboard/static/live_voice_panel.html": {
+      "sha256": "0f991fdd84e10cb14d08372b34bbd62e629cc1ee0845a2fe9bbb7e29fa06acb6",
+      "size": 8388,
+      "git_blob_sha256": "57349c7718c319739646ad43e75b890b854ae2699e7a5439111da42b04c50d4f"
+    },
+    "src/gamma/dashboard/static/memory.js": {
+      "sha256": "5c8b23a1fe2a22cce8e3ff28059dfdd3b23a1a2681f00cd54e43d19606ba5efa",
+      "size": 26610,
+      "git_blob_sha256": "fe7a806e87b5521924bc0ca7862dd26552f372c71b4521e202f8a9ef8b5f3cf7"
+    },
+    "src/gamma/dashboard/static/monitor.html": {
+      "sha256": "bc1cc169fd9beffa170c9853542a2ef6cff978d05595c5516a4b5fbd6f9e823c",
+      "size": 16838,
+      "git_blob_sha256": "ecec1672e5a4725d9c96187760791d6328e57646a33a62a63e02d7f5d908aa2a"
+    },
+    "src/gamma/dashboard/static/monitor.js": {
+      "sha256": "890cb90244bd1e90861878e92b4aef10719479a9f57a6ead38d5bcc762568f5b",
+      "size": 27009,
+      "git_blob_sha256": "2c326ae46085895be4680f7e1057db6d7dd53d556d4700d0ac2709406efc2f30"
+    },
+    "src/gamma/dashboard/static/nav.js": {
+      "sha256": "11e14866eabb8778625280ef8c3bb59e5febe2c909493817e6d797d0dc90dc52",
+      "size": 25280,
+      "git_blob_sha256": "731eeb0717549bec4cd149310bd67631b7bb0b7585ceba5b9998d55aba5f2622"
+    },
+    "src/gamma/dashboard/static/overlay.html": {
+      "sha256": "33fd22a3fa858c23caded3f9a4a9f2f8eeee87ae781be977c1696ade6d5c8e2b",
+      "size": 9810,
+      "git_blob_sha256": "926f7863dcddc2f5c93d8a510e7731027eae3ed381cda0db9d448ab839464c63"
+    },
+    "src/gamma/dashboard/static/presence.mjs": {
+      "sha256": "77644307a3dd7f6d88d197ef4517c633bf49704c851324340726bd54214d4c43",
+      "size": 7757,
+      "git_blob_sha256": "2982b5a0750bbbb4d3a1db1c55b0a283ed08fbc170dc87680f9a9cab999d60fa"
+    },
+    "src/gamma/dashboard/static/providers.js": {
+      "sha256": "b7df32df3cc9f8c1bcc425d941230d802ee620644410a35d841ed7bbc38e3375",
+      "size": 18731,
+      "git_blob_sha256": "6d6b477b48030cd29429dbb82cb7b67ca390b835f5838fe3dd99947fd42c2ad8"
+    },
+    "src/gamma/dashboard/static/render.js": {
+      "sha256": "9720afc113aa452678675f9b419a71f8afc32082d1fe54359b5639f756a1afb1",
+      "size": 22387,
+      "git_blob_sha256": "5fbd3c2c5a90aa1e74f5c29b1f19edd6d45763fd06369a0a2ae3ae538dcc5184"
+    },
+    "src/gamma/dashboard/static/status.js": {
+      "sha256": "ba640958de8a2ae04ab1f962194102222690fb1a566e7abeaf6107eb334eca60",
+      "size": 36376,
+      "git_blob_sha256": "c5ebfbc6291535b7ee6b5218f9e60ebe8ed1d363fae06776dc343ba6e9ebc3d9"
+    },
+    "src/gamma/dashboard/static/stream.js": {
+      "sha256": "6f34bfadbc36710a377f174fc0f1da2c990fbd5f3bf7599fbde7c045603d1d97",
+      "size": 26389,
+      "git_blob_sha256": "030a4e20801c08366441c71c8a72953dd3729af8f4f0ab5051db7b280d453f49"
+    },
+    "src/gamma/errors.py": {
+      "sha256": "646ff826b37ff13692ff45a784cc67afa4da3f9bbbee726ea637504cfaec79a2",
+      "size": 733,
+      "git_blob_sha256": "2069c509140d8750220838104645b2cbea2bae23e3fc7eb3897610187d22869f"
+    },
+    "src/gamma/identity/__init__.py": {
+      "sha256": "4f8e9c024faa7750baa1ef0ee836fc59a19ed7d5dce9fa713010c80b6ebe56d6",
+      "size": 155,
+      "git_blob_sha256": "345bdeb1724a6b0e5e6ea7ec586ad9931598c4e4e1eca95d34fc12c32c008e79"
+    },
+    "src/gamma/identity/profile.py": {
+      "sha256": "eff390c371d6cd4deb7fad00caefa3d20e3b6b5514a24fb9a53752747085e550",
+      "size": 2165,
+      "git_blob_sha256": "3e5ba70a56e639823a7c3b4e3dc36fb0fe7abc31a396a0c5c2863c6ed8f2ef13"
+    },
+    "src/gamma/identity/resolver.py": {
+      "sha256": "1d13df381f08c9d390efa858dcab2676564203e799aafaab1ca4372f52b00f10",
+      "size": 6204,
+      "git_blob_sha256": "abe247e5847d47f13849b444bfeb212a66eaff1f3468b3d8e43da01c273ecfa7"
+    },
+    "src/gamma/improvement/__init__.py": {
+      "sha256": "5e5db416e1d4e4f1036d98680d20eb38c61ec4821bf4aff8c9c67cb5c778022f",
+      "size": 273,
+      "git_blob_sha256": "5e5db416e1d4e4f1036d98680d20eb38c61ec4821bf4aff8c9c67cb5c778022f"
+    },
+    "src/gamma/improvement/candidates.py": {
+      "sha256": "89ff8064c6bd0408dfbf4a39194ac9aa09706f2209809bd95b2d94d4d0ce5947",
+      "size": 25275,
+      "git_blob_sha256": "89ff8064c6bd0408dfbf4a39194ac9aa09706f2209809bd95b2d94d4d0ce5947"
+    },
+    "src/gamma/improvement/cli.py": {
+      "sha256": "01aab42b0d794fc9284a1d282c7d8e24f476a5bf46cc50c54005507766707081",
+      "size": 31320,
+      "git_blob_sha256": "01aab42b0d794fc9284a1d282c7d8e24f476a5bf46cc50c54005507766707081"
+    },
+    "src/gamma/improvement/contract.py": {
+      "sha256": "59009ff14286eb33154a24d99b48ec0f6c94279626f69415b4559bdd1fe1faed",
+      "size": 2704,
+      "git_blob_sha256": "59009ff14286eb33154a24d99b48ec0f6c94279626f69415b4559bdd1fe1faed"
+    },
+    "src/gamma/improvement/coordinator.py": {
+      "sha256": "9a2cdf4786fa9e316fcb9dc155b1fab1903c3266210f0277d85fa41419914b0b",
+      "size": 37520,
+      "git_blob_sha256": "9a2cdf4786fa9e316fcb9dc155b1fab1903c3266210f0277d85fa41419914b0b"
+    },
+    "src/gamma/improvement/evaluator.py": {
+      "sha256": "ab416d398fa51998b018133ae85f04dc5329c5db2f25eddff7c897a95088c624",
+      "size": 28933,
+      "git_blob_sha256": "ab416d398fa51998b018133ae85f04dc5329c5db2f25eddff7c897a95088c624"
+    },
+    "src/gamma/improvement/experiments.py": {
+      "sha256": "5379a4abd7d1afbd75d2c319b202de5f962a7d7be67dfc6fa4956b80ebd8bcbc",
+      "size": 12171,
+      "git_blob_sha256": "5379a4abd7d1afbd75d2c319b202de5f962a7d7be67dfc6fa4956b80ebd8bcbc"
+    },
+    "src/gamma/improvement/fixtures.py": {
+      "sha256": "958c5f4fb7763d11df515025fdcea4f95a37b865a3a7e2b8c988340712aa91a7",
+      "size": 14931,
+      "git_blob_sha256": "958c5f4fb7763d11df515025fdcea4f95a37b865a3a7e2b8c988340712aa91a7"
+    },
+    "src/gamma/improvement/grounded_plans.py": {
+      "sha256": "2776349963c4d0afc7508804a39c50a5099ae1cab70f107111a6897676d7d777",
+      "size": 22712,
+      "git_blob_sha256": "2776349963c4d0afc7508804a39c50a5099ae1cab70f107111a6897676d7d777"
+    },
+    "src/gamma/improvement/grounding.py": {
+      "sha256": "cb269ab58fdc88d3b48601d3ec5d5d006542ca37bc5ee918491ae7172b6e256a",
+      "size": 8920,
+      "git_blob_sha256": "cb269ab58fdc88d3b48601d3ec5d5d006542ca37bc5ee918491ae7172b6e256a"
+    },
+    "src/gamma/improvement/models.py": {
+      "sha256": "9ab21dac37ed550412f031edab61191e61a40f9da4c71bc878caa1c1622c8be4",
+      "size": 2899,
+      "git_blob_sha256": "9ab21dac37ed550412f031edab61191e61a40f9da4c71bc878caa1c1622c8be4"
+    },
+    "src/gamma/improvement/proposals.py": {
+      "sha256": "7f9ad06b7c50330f647f9521ae30b2ad2e1626f712d5c06262dd8f16968aafa3",
+      "size": 28807,
+      "git_blob_sha256": "7f9ad06b7c50330f647f9521ae30b2ad2e1626f712d5c06262dd8f16968aafa3"
+    },
+    "src/gamma/improvement/review.py": {
+      "sha256": "e39b58a4994562f463bdc4c537120e39582f66a82bb4d8b06621c5099071b9a1",
+      "size": 7965,
+      "git_blob_sha256": "e39b58a4994562f463bdc4c537120e39582f66a82bb4d8b06621c5099071b9a1"
+    },
+    "src/gamma/improvement/semantic_review.py": {
+      "sha256": "324fe0b4248b04aa2a66d27556569be19771a2862ce235c3801b066b5ba8c17b",
+      "size": 8871,
+      "git_blob_sha256": "324fe0b4248b04aa2a66d27556569be19771a2862ce235c3801b066b5ba8c17b"
+    },
+    "src/gamma/improvement/validation.py": {
+      "sha256": "fa93a1d8ae5f1a119c446ca7f4777489f52799a3cdfd82b8a8921fa370330761",
+      "size": 10893,
+      "git_blob_sha256": "fa93a1d8ae5f1a119c446ca7f4777489f52799a3cdfd82b8a8921fa370330761"
+    },
+    "src/gamma/improvement/work_queue.py": {
+      "sha256": "e4cfadc10a1c7f2b88ffa7b0897c41ef30b4198c7b8be46e771f88e5b01212be",
+      "size": 12950,
+      "git_blob_sha256": "e4cfadc10a1c7f2b88ffa7b0897c41ef30b4198c7b8be46e771f88e5b01212be"
+    },
+    "src/gamma/improvement/worker.py": {
+      "sha256": "5870e54e6b97cfddcc4195cbc802d3db65c30a211c009661a1c7718de1486970",
+      "size": 30761,
+      "git_blob_sha256": "5870e54e6b97cfddcc4195cbc802d3db65c30a211c009661a1c7718de1486970"
+    },
+    "src/gamma/integrations/__init__.py": {
+      "sha256": "01e6d844bdcf81451b99439afa9d2078e282b4396f18e3a92a7da079c426bb07",
+      "size": 24,
+      "git_blob_sha256": "d4cc87aba3f68d8f27372edeea7e48db9b1cf48e54ec623e533e7bf1da5bcac6"
+    },
+    "src/gamma/integrations/discord/__init__.py": {
+      "sha256": "3b49d9d0e8482ab1541b370fc5eb91e58a3a4b047975761693afc3923d71b8cb",
+      "size": 486,
+      "git_blob_sha256": "c6e161675ed3aa96d9aee6859b6348c1dbc60327cbebd136d76f6491772916dc"
+    },
+    "src/gamma/integrations/discord/adapter.py": {
+      "sha256": "b07a86810bb0b483e54a566553af26ffa04be8b8c8f7c28b6ca359ee352f2d9a",
+      "size": 6157,
+      "git_blob_sha256": "7505500019fcc3dca069a5676e3a2d920f4931f661c61e96cd4ce84754353c27"
+    },
+    "src/gamma/integrations/discord/audio_buffer.py": {
+      "sha256": "6a26df7bf017813a187151cf22dce26c1a72eba7833b3346af7643777b54e93f",
+      "size": 4156,
+      "git_blob_sha256": "6a26df7bf017813a187151cf22dce26c1a72eba7833b3346af7643777b54e93f"
+    },
+    "src/gamma/integrations/discord/bot_status.py": {
+      "sha256": "fe8d855ccd0a1abfdc03d7d6fba8b58bee3bbf6629a22c2a6dfaeac28f605913",
+      "size": 2598,
+      "git_blob_sha256": "fe8d855ccd0a1abfdc03d7d6fba8b58bee3bbf6629a22c2a6dfaeac28f605913"
+    },
+    "src/gamma/integrations/discord/control.py": {
+      "sha256": "c0b560335df2db2d82383653e251cb535759c0f2f3d2e9e1c9c7835bb0f53394",
+      "size": 3865,
+      "git_blob_sha256": "c0b560335df2db2d82383653e251cb535759c0f2f3d2e9e1c9c7835bb0f53394"
+    },
+    "src/gamma/integrations/discord/delivery.py": {
+      "sha256": "43aed669be0405e6452da5b72b1432b679f819029ff8909999803808b8442865",
+      "size": 2600,
+      "git_blob_sha256": "43aed669be0405e6452da5b72b1432b679f819029ff8909999803808b8442865"
+    },
+    "src/gamma/integrations/discord/receive_gate.py": {
+      "sha256": "f078594472dc4c7df9f3504d9b2562e8528c2469ab2e933802c3caace0b8658b",
+      "size": 1899,
+      "git_blob_sha256": "f078594472dc4c7df9f3504d9b2562e8528c2469ab2e933802c3caace0b8658b"
+    },
+    "src/gamma/integrations/discord/runtime.py": {
+      "sha256": "0edac13fd3e1fc13b4abc4cdd9b7b9c2803a4234026bf403ee7b16d343a3d91f",
+      "size": 6041,
+      "git_blob_sha256": "960b878ea0c49939dd5b1f9caf921163fb006d54b9adb87b70b7a58c80e2f366"
+    },
+    "src/gamma/integrations/discord/secure_receive.py": {
+      "sha256": "8def471a303cfa3e2373d72f244db540bddb4570266590b23f0a4d9c286022fe",
+      "size": 2439,
+      "git_blob_sha256": "8def471a303cfa3e2373d72f244db540bddb4570266590b23f0a4d9c286022fe"
+    },
+    "src/gamma/integrations/discord/session.py": {
+      "sha256": "2e9dadfd0e55eed0ad94e93ad59d901b1fc406167fd922bfd1a8e6440aad48dd",
+      "size": 7245,
+      "git_blob_sha256": "2e9dadfd0e55eed0ad94e93ad59d901b1fc406167fd922bfd1a8e6440aad48dd"
+    },
+    "src/gamma/integrations/discord/voice_controls.py": {
+      "sha256": "1f8cd0d5ec5feb7e11bbd0e791872f43148fabfbbad5963fd02694da5f30afe9",
+      "size": 6222,
+      "git_blob_sha256": "1f8cd0d5ec5feb7e11bbd0e791872f43148fabfbbad5963fd02694da5f30afe9"
+    },
+    "src/gamma/integrations/discord/voice_session.py": {
+      "sha256": "1a4e70e798f827f767ff7c52001123001ef2e3c9e4e7cf78d6f7d38c00eb7f3f",
+      "size": 8576,
+      "git_blob_sha256": "1a4e70e798f827f767ff7c52001123001ef2e3c9e4e7cf78d6f7d38c00eb7f3f"
+    },
+    "src/gamma/integrations/discord/worker.py": {
+      "sha256": "c9787123ac0a6e43d29cea8d9a4ae1795dae96448db9f923fd1095005350b603",
+      "size": 16171,
+      "git_blob_sha256": "c9787123ac0a6e43d29cea8d9a4ae1795dae96448db9f923fd1095005350b603"
+    },
+    "src/gamma/integrations/minecraft/__init__.py": {
+      "sha256": "7c3a9e119283674206b9002da8a423d000d5fbff28a51a6ea851954d56c1db32",
+      "size": 327,
+      "git_blob_sha256": "fa6428df58bea53ad836927a1d969ecf3fe89989a2429da3ec7e9bbc2e70496b"
+    },
+    "src/gamma/integrations/minecraft/coordinator.py": {
+      "sha256": "2e03567c492d525eaefd48d8e551c8478be46f399c49bbfa56fa3b6def765e79",
+      "size": 42091,
+      "git_blob_sha256": "1668e36d4b120c220ece2c88d43b9507d377cfe73663c8f42b83048794c42ff6"
+    },
+    "src/gamma/integrations/minecraft/protocol.py": {
+      "sha256": "8220fc29c6cdf1da2f8fa39884ddd91ec0bc74dd2f266065fe85a5af35775043",
+      "size": 16336,
+      "git_blob_sha256": "3b3eac4edb36c21d288c6d9e129f1f9127ccbf3cbda89a496cd140774f8085ab"
+    },
+    "src/gamma/integrations/minecraft/transport.py": {
+      "sha256": "e7a0b46e6f7f90c78ee5c502534370daf406324a32d5505018569d35bb61feae",
+      "size": 464,
+      "git_blob_sha256": "d560b62f3c9df591b7f4622c7281d5093fc8558f1b897338226e9fc865fc3231"
+    },
+    "src/gamma/integrations/minecraft/websocket.py": {
+      "sha256": "fb200e41c8c71fb638b4817a7dafa4945c589e7fc34c03ccadf42678a54e72e6",
+      "size": 10183,
+      "git_blob_sha256": "d3dc6ac65bb60c9314ff36c3793d8247cdf5b89530a01c7e8d243b0833a02955"
+    },
+    "src/gamma/integrations/twitch/__init__.py": {
+      "sha256": "f79a1b2b64830d4fda7cef662087cedc3fb529234ea2c5a82e6364e90384b164",
+      "size": 43,
+      "git_blob_sha256": "9475b5bafb2f1d99ca9e6a8ddc866c835d8c07df470988a204bdf023a17f1793"
+    },
+    "src/gamma/integrations/twitch/client.py": {
+      "sha256": "65fb9951196100908327a7348e40fd5f14e39550e8e83084a1975d10c45da393",
+      "size": 2510,
+      "git_blob_sha256": "9564c684b849fa877601af81469c3735ac5309d56af822752e7c7e92638aab73"
+    },
+    "src/gamma/integrations/twitch/eventsub.py": {
+      "sha256": "2cc1e0dec6e82f03f00bf69efacfaa71bd11af33fb32c4ca7acc905cbc7b8fdf",
+      "size": 35785,
+      "git_blob_sha256": "118425fe91e3117be309d6f98ebe694182e5e6e5146612b05288a69dcab377a5"
+    },
+    "src/gamma/integrations/twitch/irc.py": {
+      "sha256": "5c97ba3914108f8db332e7689c3b1afb3aca2fe887978f1a2ec39322238f40b6",
+      "size": 2755,
+      "git_blob_sha256": "3702a7c918e93537e1b1bfbe6fc14b0c657bc85f3aae439602c70f37da9765f5"
+    },
+    "src/gamma/integrations/twitch/models.py": {
+      "sha256": "d420b4e70c55721812bdf3d86fbd1497b9dafb9a94d0fc2850eb2b8e9cb93a2b",
+      "size": 2734,
+      "git_blob_sha256": "f31d34d37c29cabbaf4d148b269ad2d73fcbe7103250a9a220c48c2c466f9d51"
+    },
+    "src/gamma/integrations/twitch/normalize.py": {
+      "sha256": "e2ff19d5452861b672f3b81559527d6ae4c90f6ffb137b01a74f54dc8de97067",
+      "size": 8823,
+      "git_blob_sha256": "de0eada27666c7bfbc781847e785d5204ae8ba55835174bbee2617cbd7727401"
+    },
+    "src/gamma/integrations/twitch/replay.py": {
+      "sha256": "e11d8c4e6d7c0981be36b9bd9d7e0f36d041ecb7820cefb51800b6c84327afba",
+      "size": 3682,
+      "git_blob_sha256": "36deb72b2ad7ec28e942c9edd85cf3ec20f78b86915385c3c90f971b0ed94634"
+    },
+    "src/gamma/integrations/twitch/sanitize.py": {
+      "sha256": "e37c629d57d76272aeb21ea161edce0ec78d3f1066739be2f7685f783fac2dbd",
+      "size": 6212,
+      "git_blob_sha256": "7b63f120f3e54809dc9debc739630804115a846d94e53b3d86f7cb3f052cffb0"
+    },
+    "src/gamma/integrations/twitch/trust.py": {
+      "sha256": "90aa31a93a68de3ccea8c54b13e0f77aff537a72c4c60f71f3e92119d9258c54",
+      "size": 9709,
+      "git_blob_sha256": "097b24e163d02391837490cb24f54471a5e55fcf479e4454e2251aa9d4c7e3a4"
+    },
+    "src/gamma/integrations/twitch/worker.py": {
+      "sha256": "967351f92d4cbbf3388be66b2290b105dd94665966c0efa98fb623e72350769f",
+      "size": 19823,
+      "git_blob_sha256": "3d6fbd59188809015af3bb439c7f6a862c532b896a1c4db136a6c921f8cc624c"
+    },
+    "src/gamma/llm/__init__.py": {
+      "sha256": "1e2beca22e434db40062eb3ea97b2d9058174b16b16ad34850c8ea0ff5344e61",
+      "size": 15,
+      "git_blob_sha256": "83cece3ddc658c59ab3d5468d3a2da9fe6581d5e1cdb33eb4ffd480bb3b963ce"
+    },
+    "src/gamma/llm/base.py": {
+      "sha256": "7744a6419c99cedcd6f26df34bb4cca341da6c4eeb3c88dc15594145db3cc7b1",
+      "size": 3241,
+      "git_blob_sha256": "6a8555e08e5885172cb524e059c70253ee8a9efa3c2e3cddd7b1d599e5b9612f"
+    },
+    "src/gamma/llm/capabilities.py": {
+      "sha256": "af989340904ec4043588aed65878d1bb844116b1fd481b2c3512144ab1d379dd",
+      "size": 2609,
+      "git_blob_sha256": "6275ecc12043d7e5bde85d4099adcd5722feb42c9b5190da1cf1b7d72f59b098"
+    },
+    "src/gamma/llm/context_budget.py": {
+      "sha256": "1dd50cf1647ebe80fe9db3ea36b0d4a21ca8fa8f272c62f247d258e71c6b7a67",
+      "size": 5539,
+      "git_blob_sha256": "5a6cf19e056acbd11151d76d20c9fdca88a2275bf1cba95f17b58304a2b8304e"
+    },
+    "src/gamma/llm/factory.py": {
+      "sha256": "9083022b5a9472ca5abda3acca0fd0bca416b57f14fd470ba951abde5c05b9aa",
+      "size": 1050,
+      "git_blob_sha256": "015dd7bc3f02190790bd2e08b147aa6cb33ed7b0eb1eb22cc48f9e3dcd8dfc31"
+    },
+    "src/gamma/llm/local_adapter.py": {
+      "sha256": "6f4c615c1eb56e712033390f056a458b26adc8a196f6da8294ebf6b503af7b5d",
+      "size": 8255,
+      "git_blob_sha256": "4dd8ec4a224536504662f4556c66361766a32370259a88f33a92055479e3b616"
+    },
+    "src/gamma/llm/mock_adapter.py": {
+      "sha256": "2cc15c40cac1446d5a3c6d280d6fb7a4f80aadc29c5fac1cc48b895adfc48a3d",
+      "size": 1640,
+      "git_blob_sha256": "c3143def596c7fcd775d4392c209ef329b0c093f972fc452113e236095528506"
+    },
+    "src/gamma/llm/ollama_probe.py": {
+      "sha256": "3e90769f088c063954d035ad81f169ba6c329720f1032a8c4cb0bed5900c9098",
+      "size": 2165,
+      "git_blob_sha256": "e18180ef1fb2f6edb0b224292204e3d003843a7c1787b0e2f2f2e59ba92639e9"
+    },
+    "src/gamma/llm/openai_adapter.py": {
+      "sha256": "a74d4db1cd7776c7e2998bec42e29977a139dca359050714715c18cdbb91a005",
+      "size": 3699,
+      "git_blob_sha256": "a570946727891c8584527b0927b5855c3348e74df7f796d1cfa3f9b4b4a43ee0"
+    },
+    "src/gamma/llm/router_adapter.py": {
+      "sha256": "6180f45e804f04bc4c35bccc8a6aca4f5e43f5e67e47e628ba05e0d493652b0c",
+      "size": 52688,
+      "git_blob_sha256": "ea3609e84d28e291a27962d5e26887019c557e2c6b12493d8ed0efe7be72f888"
+    },
+    "src/gamma/main.py": {
+      "sha256": "0d6f0cea4737d147448bb2034d0096602bfa191d6e3f73e249cb29dcf692d0f5",
+      "size": 1819,
+      "git_blob_sha256": "d1cd6a2983857bba67e4f961870588ee045351402dcbba3facbbdf54c9c64bbc"
+    },
+    "src/gamma/memory/__init__.py": {
+      "sha256": "1744a234a572e80889ac56c8bb20cba1d2613ee6e14c88f90cac99e01af01ae3",
+      "size": 18,
+      "git_blob_sha256": "4c4dca9878cf10f4ba03aa524d15cf488c4d6ea73fbab5c7dac912098c8530eb"
+    },
+    "src/gamma/memory/continuity.py": {
+      "sha256": "6613449d293c4879fbc02b8b9e9ab2c95c5cbe4145ac967ae98189315b1ce41c",
+      "size": 20092,
+      "git_blob_sha256": "452ebe37ec23e28762a7800757d1686a099b2f1d4bae74c5669a83b097ac1b82"
+    },
+    "src/gamma/memory/models.py": {
+      "sha256": "ed011ee8829183baacf0b925d25b9b843b303276962d24422a44e22362212f62",
+      "size": 3605,
+      "git_blob_sha256": "6cfb9b13d89681cd874a6529a903f2f54d2c7a88b9d0fdeb57c550e9771e2b1a"
+    },
+    "src/gamma/memory/service.py": {
+      "sha256": "0aca41651a800d43560e88eb798f9d32dcf6fd0636453dfda22268a3ca0ef447",
+      "size": 40738,
+      "git_blob_sha256": "5ac3923eb707d429e03633336597ef4c3b826e6d3a7ccb0ecbf979738f6e7d9c"
+    },
+    "src/gamma/observability.py": {
+      "sha256": "16c01720321229fd3b9fe820414089daf6bc035a11543dcbabfb457b290141aa",
+      "size": 8344,
+      "git_blob_sha256": "b2e8f1a22a7ca2531ec6aa4f952c19fbac44107ba91113b8ca418e1607a0dd3e"
+    },
+    "src/gamma/performer/__init__.py": {
+      "sha256": "35c7b2c5b4758e2a379ea8ff50d85b1824fbc19cf8deeef674e5984532dd10f9",
+      "size": 702,
+      "git_blob_sha256": "ae6b16bebe2b27fd124415af729c00399d3f5b49a51f47802cc344a892ebb579"
+    },
+    "src/gamma/performer/bus.py": {
+      "sha256": "0f95ba792a64440d53c2e74fd6ef9be6c45f461d3ab4ccf87416e734474c9875",
+      "size": 13596,
+      "git_blob_sha256": "5c7e4716666d420075ee675dc430bd1b442bb8b7682a243c11650daf0ae6afbc"
+    },
+    "src/gamma/performer/models.py": {
+      "sha256": "e268ff03fb0fc16b9511a402da8cbdda42d0c1b65d1e5754f817f420992d127d",
+      "size": 5410,
+      "git_blob_sha256": "b46a85edb41c30fe5331deab06f7cd3dc026097c0aa19ad4429d364fbfa95175"
+    },
+    "src/gamma/performer/static/performer.html": {
+      "sha256": "1a1c4566922bdaf80883b43c7d054d9a70d98b7bd71823d2f14118876f576c3f",
+      "size": 18523,
+      "git_blob_sha256": "42a72bf43d78e014752060683b3e8476039ab1ec852f705eab828818d6dbfb50"
+    },
+    "src/gamma/performer/turns.py": {
+      "sha256": "19ca7652ebc87cb54140e4ce753223f18ded17ef5abf23da685fb3c698c73c26",
+      "size": 5178,
+      "git_blob_sha256": "9f2b564447f4de4a0bbff7fd3c8411f30b42537c4238389a688481eae1501e4c"
+    },
+    "src/gamma/performer/vtube_studio.py": {
+      "sha256": "789d6e488c79fa0adbc6280969061b4fc9015398196d9762ad3ea92a66321394",
+      "size": 22702,
+      "git_blob_sha256": "6f33e401714d84141cc713a68071f27462a964b9fef784da505afc48895ba69b"
+    },
+    "src/gamma/persona/assistant_state.py": {
+      "sha256": "3d3371f60f5362ee1e0eadd811491624a71e335712dc3c2aa55d77ac2a746d2d",
+      "size": 5313,
+      "git_blob_sha256": "80141510ad51f6c503f8b20c04417bb519f6fc24f6124398cce721e1e003e7d4"
+    },
+    "src/gamma/persona/boundaries.md": {
+      "sha256": "86d6c1db6b152a7bd7658bd56e6c3808c27d568206e01acb0d846569a8e8a678",
+      "size": 438,
+      "git_blob_sha256": "b1aaf9fa56030abb2aca6659f09fe56bf88f7749becf2dd8c2071443176c7e3a"
+    },
+    "src/gamma/persona/core.md": {
+      "sha256": "5ad3e3ac25c06e118d7f7f63d8149712983fa61518dc8ff24a3ce83344948926",
+      "size": 6342,
+      "git_blob_sha256": "4f035abc8de24e4452ed2ee6919b4db531275294c4ff28aa1c87eeca9eb70456"
+    },
+    "src/gamma/persona/emotion_extractor.py": {
+      "sha256": "b46ee1b82c88efb391ee7d5f078c889aa2ad7d59df8236bb84182980ccba3889",
+      "size": 3330,
+      "git_blob_sha256": "ad538b90b983cf5080f5ac3e6195124c815de3474d59b45acfe2d1e591bb4e05"
+    },
+    "src/gamma/persona/emotion_models.py": {
+      "sha256": "50aa7ce1e1a737a23b91388e49e5e950ce7fcb50c70d171da20d2521b4c6bed0",
+      "size": 3768,
+      "git_blob_sha256": "c1859fd6e14f16a5210dc99bcc75d5bdcec1103cf94b36f3c0526f5429a2de97"
+    },
+    "src/gamma/persona/emotion_service.py": {
+      "sha256": "bc4cb08cf3186b8541d21ef48a746309c774acf1a042cf7b8df83f89f3cd8637",
+      "size": 8013,
+      "git_blob_sha256": "3d7ff4463ccab43750669dbb03bbe3f5ef3358ca770a5e0c47740ce7e42c09ad"
+    },
+    "src/gamma/persona/loader.py": {
+      "sha256": "be077d985e324c82dba646a70606898d8e7b667872c934de634f7131d36e8d6e",
+      "size": 9997,
+      "git_blob_sha256": "d56ca191f3fa0bace134a73be4b541322c6c7b4413b9de003cb48b7704a35df5"
+    },
+    "src/gamma/persona/relationship_state.json": {
+      "sha256": "14733ea901c4ac82e2c7462b7b75cc0bcd4f3b6656eefff7642248a2f5f1f9cd",
+      "size": 69,
+      "git_blob_sha256": "46b084660242fdf5460f4cefba13bdff6d2b93da5e2f844d3bee237c09ae64e9"
+    },
+    "src/gamma/persona/style.json": {
+      "sha256": "7458d2150ed7f9617b6019ce3e123f9b6ce3f51525a5d1e9c7c60eddbe90c4b1",
+      "size": 134,
+      "git_blob_sha256": "dbbe6d8e6e4bf86f5859dc5ea1747e4ede8a254e4df868e45de779676a3b517f"
+    },
+    "src/gamma/presence.py": {
+      "sha256": "3fffb2fea6539da82aa9ab6b7214ca8ffab72960cc346ed6c62b3f7ac8a4c5c9",
+      "size": 23576,
+      "git_blob_sha256": "4a5929f36797b3111d154abb8c537d476936a41b703689226ca3fbe4f64088d9"
+    },
+    "src/gamma/proactive.py": {
+      "sha256": "c1df5be83032f87532ad010a5025c42a2ded2343bed821efdf271a935b229d1f",
+      "size": 9615,
+      "git_blob_sha256": "b74a39f5c64151386ea4932b54bdcd303fb1f251b99822272bcc2087c0d04ce1"
+    },
+    "src/gamma/resources/__init__.py": {
+      "sha256": "93e64a2778d60fbe07d915cda93f8b8cb324e3c8c610968a480f12a3d6b794d5",
+      "size": 600,
+      "git_blob_sha256": "f2692f565117540b09770a6dcc1ae19358c39a2b7798a1693d36566629bfd2f8"
+    },
+    "src/gamma/resources/allocations.py": {
+      "sha256": "67de6d121d500a91e8542a874b1ff37ff3affd9a09cf2781f3eb71b9472e45e2",
+      "size": 6797,
+      "git_blob_sha256": "f2a637338f74b099c2b58e521f57ebcc40774b1b8555567321101e6ac1778da5"
+    },
+    "src/gamma/resources/coordinator.py": {
+      "sha256": "92226f39fc80413e7e905b70e94cb26cd5f54589eee17d5e1a4ddb7845463f49",
+      "size": 6082,
+      "git_blob_sha256": "040f07184decc3a340eaa8aab2c2d96def3a86be0b7d57b2df811399b09ef83f"
+    },
+    "src/gamma/resources/models.py": {
+      "sha256": "bf302c799cf6fbf74d887410292e3a1a9afa8759e02e0d451c15d2777d613e09",
+      "size": 3201,
+      "git_blob_sha256": "7b472a8a5beabd29af91b5fba713334a1f13e1a16d9922c2c2dac5daa477cee1"
+    },
+    "src/gamma/resources/policy.py": {
+      "sha256": "ef1b069404152db72659330048107f5184a74f2acb3945a921bc1a400a34a328",
+      "size": 6043,
+      "git_blob_sha256": "e36e32f762ad6109d79f4ebc6716259af389e9a16216292f832fd97015a1f687"
+    },
+    "src/gamma/resources/probe.py": {
+      "sha256": "98bdb40118b4a6559731153479e09bcd3b74e7cfd0c85a081b0b9a144002d7e1",
+      "size": 7360,
+      "git_blob_sha256": "4a6dba9278e4e790d15c2ef90c677ea9d4e24b43390c1c3677626afd54bb0273"
+    },
+    "src/gamma/resources/runtime_registry.py": {
+      "sha256": "3a3e375c8f0a5ba30cd631fd4cbc55743f3087edba21b8c31d64ce7a5ebebc99",
+      "size": 8710,
+      "git_blob_sha256": "221ca0b97374e24a1514d55b7e46a518c3ee4a7ce5a02c45330005815d423eb2"
+    },
+    "src/gamma/run_audio_understanding_test.py": {
+      "sha256": "90ddd3401e84a8af516a8636eb568eda2d61e2307f07b3393eed88d5b54dc4bf",
+      "size": 1159,
+      "git_blob_sha256": "52ece4754cf4776b0be4c04f58f827d7b60d8f2f58ba434ce15e3187b509f43a"
+    },
+    "src/gamma/run_live_voice_worker.py": {
+      "sha256": "f1de1c612d1c34ac341e8e178aa78f308b0c1db1b09f1b24ae6471d564a34dd4",
+      "size": 34992,
+      "git_blob_sha256": "9dbf4927362a149e9939ff75c61f1db7f6070f4ff9462529ed059f192ffdb9fd"
+    },
+    "src/gamma/run_llm_test.py": {
+      "sha256": "54d05b3559e90b9386134189efd0c97d1e02fc752425d52a81e2e6110924eed0",
+      "size": 972,
+      "git_blob_sha256": "5fff1f7d79e5a195eac37327ff6105fb83dcce6d72f0db6862f331a38dea53f0"
+    },
+    "src/gamma/run_prepare_tts_dataset.py": {
+      "sha256": "b01a100752b70600f0325d198a6f69ef68b66c808973578a269d1e98d95c9ce8",
+      "size": 26191,
+      "git_blob_sha256": "ffc05b2ad831f71c8fd756a9e9f2fb507315e47e50cbb70d509998116192e769"
+    },
+    "src/gamma/run_stage_and_prepare_tts_dataset.py": {
+      "sha256": "621185b1e6c70ba23d203a65c36361b2fb8bdd236c8e4c15b4597fcca2b6fbbe",
+      "size": 5896,
+      "git_blob_sha256": "c812ba32949356b605638efab0aa95bcb7723fd8b67e009183107a307236fd55"
+    },
+    "src/gamma/run_stt_test.py": {
+      "sha256": "d07ce0361cefd7829eff0c065de47c4a7dcb5bdd2661fed54bde2e2f309f3cb3",
+      "size": 528,
+      "git_blob_sha256": "2b3f3bf4065ca22b982086cfb168b334b76efa4e4d04b6b1a2d37f877b88d200"
+    },
+    "src/gamma/run_transcribe.py": {
+      "sha256": "694436ed70c8e7734378f4c35c1d1e9d66ce6be460c0e34c03f1c05b340826d6",
+      "size": 7176,
+      "git_blob_sha256": "598bd47084add77a4134ff15ec893f48f5748867a32376801b5e487948dcdd9e"
+    },
+    "src/gamma/run_tts_dataset_gui.py": {
+      "sha256": "3963a1ad1a65fdf22779adf307d54679aa627b168665870bd10a74630e825003",
+      "size": 115216,
+      "git_blob_sha256": "b0b06c8d1c5508dd4207cc37e5c2481a0cc61e7581523f6ef503504f7e4db415"
+    },
+    "src/gamma/run_tts_test.py": {
+      "sha256": "dce70b11af88cbb4a4f5cdec707bd308200f5c896bb4e1134728e48e883208d6",
+      "size": 4291,
+      "git_blob_sha256": "360c5fc8d96249f9e827bd4da3159c668b9c68ce30afa49d5014f244baf24851"
+    },
+    "src/gamma/run_voice_mode.py": {
+      "sha256": "284f649a912f0ad836b280fde915822986071307636fa779ed670857122224a3",
+      "size": 3440,
+      "git_blob_sha256": "017ee87eba21c134389200a41b74bd02192f0e3e28755d37b1127bb298dbacd3"
+    },
+    "src/gamma/run_voice_roundtrip.py": {
+      "sha256": "64392a35dca05d8d07cf7a2cd00dcc4ddd6a56458c30acbabe7af752489eb91d",
+      "size": 2597,
+      "git_blob_sha256": "9e12a0c86a648cd7551eccfcd944e00c06eb2964660ab232e4aa84d14fbd1354"
+    },
+    "src/gamma/safety/__init__.py": {
+      "sha256": "035883aa125717471c452e5f1e3863cf824e0570f1fd334d7f936c7537d09510",
+      "size": 56,
+      "git_blob_sha256": "50a3b29cc0910cda6681ec148217772547821abfeeb32876b2ca97aee50ac523"
+    },
+    "src/gamma/safety/hard_blocklist.py": {
+      "sha256": "72f2e05fecc6bfcaa65942cdab6fa7e0d39fc491e9f15bb9bbf2ed70b92f86ca",
+      "size": 1621,
+      "git_blob_sha256": "41769af44e91d36f678395438445f8e52886f598633eeac96d4e0eba97153220"
+    },
+    "src/gamma/safety/heuristic_filter.py": {
+      "sha256": "ccdefcd7262b7a92401134594230bdb1782325b8506b17c805672e9cd09d1f69",
+      "size": 1797,
+      "git_blob_sha256": "bce74a39f9bb55fa69d044d7825c978f6298974a540a85a287045118eca522ed"
+    },
+    "src/gamma/safety/llm_reviewer.py": {
+      "sha256": "492dd6b92a4565c7be39a8f3718bc6cdcf55b7ed8a0471ec2b704a88c88e46f2",
+      "size": 5494,
+      "git_blob_sha256": "c3656a14e1a739a8099b597d64fb5c3a6c12f1b878df8c3ae410b9660e842d8c"
+    },
+    "src/gamma/safety/policy.py": {
+      "sha256": "e93ff3bb3fe24164a047497fa7ade903b653d0200a582770c74cf96ea2cf21ec",
+      "size": 3815,
+      "git_blob_sha256": "a239382b850695d13499b6e7bebec1122bec452bf291a1d95a48b4f1a96899fb"
+    },
+    "src/gamma/safety/privacy_guard.py": {
+      "sha256": "8d13c5541a8f4de67a27936197bf6116ab41c6e236f58aa11295fcc619378843",
+      "size": 4257,
+      "git_blob_sha256": "05ccceb934b4a7e2a1e4a259fef1053f1580ac94b1fb522ab62d1d83b58ebc6e"
+    },
+    "src/gamma/safety/rewrite_guard.py": {
+      "sha256": "5c2fcfb9e7a4bd5e1aa9b3251920e818b78f99bd62d475530897f600e3ac8ad9",
+      "size": 434,
+      "git_blob_sha256": "9875c2b39851dfa4996d1212ef9c2b68b83a23db6cce8de35e17d88e16c02ae2"
+    },
+    "src/gamma/safety/speech_filter.py": {
+      "sha256": "c1963362c0919c20643ccbeec272f4df3cdbf5e02af430f2e285fd632a782302",
+      "size": 1774,
+      "git_blob_sha256": "530ef583513d9c81c0a363c285fa4cf6916f61adce97433549a709397eac422f"
+    },
+    "src/gamma/schemas/__init__.py": {
+      "sha256": "a0dba95e84c1df2bda02120b71d5712c48dbe5a2dd3f6a90e3b1035e4d1a3458",
+      "size": 19,
+      "git_blob_sha256": "7cd5688441a82abcca61eda136c29d767a8043bb0a3f7d9f0696a6443f675372"
+    },
+    "src/gamma/schemas/conversation.py": {
+      "sha256": "2db5449476dd9553e6eddb7d0831676177ecdffe26bbb33d225cbf9568672188",
+      "size": 728,
+      "git_blob_sha256": "68a5ce189b911e30fe1052175d902136cd90de3a040cf84080c8f01b5cce933c"
+    },
+    "src/gamma/schemas/memory.py": {
+      "sha256": "1f3e4952ae9d50084243b4bc5a907d8472839c46ce87ac89d734b755e84f4aa1",
+      "size": 1869,
+      "git_blob_sha256": "0b3db1fe4660c79586eef406bb3f40aa1588cbeab7cba8ebc7157e9a59fee9e3"
+    },
+    "src/gamma/schemas/presence.py": {
+      "sha256": "d6f54dc00b883ad554c5269a475f02e7d1df1ec84e67d2474aaf873e64fc4f94",
+      "size": 1073,
+      "git_blob_sha256": "ab7ed282726656e50e82eee704ecc3e69219236220a2e4b39ed1381e79c74c07"
+    },
+    "src/gamma/schemas/response.py": {
+      "sha256": "b751180ad895d056637173d147584e1f5d5666a96d70f3137146efc3fb74e70a",
+      "size": 5227,
+      "git_blob_sha256": "d3f2d3a3e850d7eb234fee2394142431ada3abfd6c92a69e7e0d6849771d7ba2"
+    },
+    "src/gamma/schemas/voice.py": {
+      "sha256": "6646665e3327777b5ed0cb20579a7f2d09de723888a99b8b8d7abf093984fc3b",
+      "size": 2552,
+      "git_blob_sha256": "95564b14d1c3282a865a2f6db20225d68e2f382e12ee89983521ef996682cf30"
+    },
+    "src/gamma/stream/__init__.py": {
+      "sha256": "c8af453c5aadad967b60f9227237b3cfc65ab30af3b6f1f5293c85a180e7127f",
+      "size": 1103,
+      "git_blob_sha256": "38d4a28ca79b62bee0e76d3f7659f61f4ea3f235036959c85b44e381228e9d7b"
+    },
+    "src/gamma/stream/actions.py": {
+      "sha256": "4db24fef801f5943047eb7d5aab023a1bcd2b3abf9e526450fd23e9117528cae",
+      "size": 2810,
+      "git_blob_sha256": "3b921183745b63abb007c15c696d317158b5b3ffe48e554810bdc5b59bc7178c"
+    },
+    "src/gamma/stream/brain.py": {
+      "sha256": "ddd3342ac11514f3b2bca1416e937ca0ab0121c2299d2452359dd303f83154eb",
+      "size": 54863,
+      "git_blob_sha256": "3473d406cdbbb9dcc47fcf1b49c654c5f0776f0c16b6e094b6654adf0ffbbbd8"
+    },
+    "src/gamma/stream/models.py": {
+      "sha256": "b5b471a70798bd05ca9cc38821f91fbd47a101a0c1984b4a9bf407f7192b2c06",
+      "size": 7109,
+      "git_blob_sha256": "b0f84166f5fcf8f93fe0cd7726c133798bcd2fe12264ed53dffbd01eeab0a751"
+    },
+    "src/gamma/stream/output.py": {
+      "sha256": "fa5cbd8e713bc3c7badc14bff8d2b13b378ac93ab209366241026bd0aea830a0",
+      "size": 9127,
+      "git_blob_sha256": "391c895a575b1c0ffea0c12479b93ae16d7eb5c56e2559f5f60d08b7ceac0f46"
+    },
+    "src/gamma/stream/replay.py": {
+      "sha256": "d148d8d242f6ab972c5bcc461355c37130981953fa1288c349b02c05edc1980f",
+      "size": 5921,
+      "git_blob_sha256": "e2bc3ceeb2cd27250b9a3c6b4afab9637a8918b2911b36e24089c5ecd5861c01"
+    },
+    "src/gamma/stream/self_goals.py": {
+      "sha256": "9d80ea3224b6fda1a68fd7561dd743003b26f5106751ebaf461805f1fb8864cd",
+      "size": 9744,
+      "git_blob_sha256": "8512d24f8a7baecda4e119335c387d56820df0e1fdb8746a89f0870df0cb56d5"
+    },
+    "src/gamma/stream/temp_memory.py": {
+      "sha256": "c6167713291655fec29022a6c3fa85be5f2596f0e3cf4af574318d4e55acd334",
+      "size": 17465,
+      "git_blob_sha256": "86d08f57c843f62f40cd1f48eb155bb2eb5a360654e7707ccb30c4846ac89683"
+    },
+    "src/gamma/stream/trace.py": {
+      "sha256": "3a6c9c563817443bbfa58571cc752e01b60388b71e7d0defef6c79df3864ae9e",
+      "size": 2991,
+      "git_blob_sha256": "1ee32153c03a2daab3b2c19e4d17bd7f0d7af3cb008e347a23b290ce7f048fdd"
+    },
+    "src/gamma/supervisor/__init__.py": {
+      "sha256": "6c515513d8d129cccdcb81e199e816a02e8a38bfcdade8fe6a0dfb0c0203cda0",
+      "size": 36,
+      "git_blob_sha256": "5384bfdb2df380b6557cc7a71d16891415bccaa87699406e236f752c6415389f"
+    },
+    "src/gamma/supervisor/cli.py": {
+      "sha256": "0d5e1502724c721b306889a772a53249c9826cd27f1e53638d383e308e7e966a",
+      "size": 3261,
+      "git_blob_sha256": "7e145fcbc1cd804cfadcc8ae8ffe7e96c4ee82701810b55a5d7f1bac4d41b877"
+    },
+    "src/gamma/supervisor/manager.py": {
+      "sha256": "6acfec84c2e4a391c821a9e0750970dff09424192ec9b111c9afe5d2f295f297",
+      "size": 39877,
+      "git_blob_sha256": "7ae412e4df1e31ec0b653a6203c5b94eab8e45fd6e0fff93dca0709f964319c3"
+    },
+    "src/gamma/system/__init__.py": {
+      "sha256": "6c515513d8d129cccdcb81e199e816a02e8a38bfcdade8fe6a0dfb0c0203cda0",
+      "size": 36,
+      "git_blob_sha256": "5384bfdb2df380b6557cc7a71d16891415bccaa87699406e236f752c6415389f"
+    },
+    "src/gamma/system/cuda_env.py": {
+      "sha256": "5a7c238291a826cab46d98d9a087787ea76d51abfd6aac2a2902a348913ba381",
+      "size": 1559,
+      "git_blob_sha256": "ce2bab03a11f5c9f96e8c2dca91be375942b81314d60d1078d2366a232e87468"
+    },
+    "src/gamma/system/lazy_singleton.py": {
+      "sha256": "562703d30488879c4118d33c0df5b3faf7a3c88891f1b1817b35d567af950b18",
+      "size": 542,
+      "git_blob_sha256": "386fa5a7c695d7c9641a2cd2105823f12a177305146a86808b648d35e29a4d3f"
+    },
+    "src/gamma/system/python_runtime.py": {
+      "sha256": "c293b168f55d39067f9c9385ec698e2cbe7cafdb20fed02489fbe7315b127afd",
+      "size": 2076,
+      "git_blob_sha256": "633554143a8d3738f21fcc6695c92afa923a3eea9d80e0650dcce02937a09ffb"
+    },
+    "src/gamma/system/status.py": {
+      "sha256": "3fd6cdc29b2cc99482e6d7fdd42921a6af5aca1029f224af6d5aa379d82d027c",
+      "size": 16041,
+      "git_blob_sha256": "6b392cdbc4926cdd00064840c76298ef4fdd7b87f2dedccd4381f0549fd03dab"
+    },
+    "src/gamma/system/torch_devices.py": {
+      "sha256": "98ca328ef09230f94e03ce91f286ebaac8b76cd9fbe4bec2c20e43cb5f166ae7",
+      "size": 3050,
+      "git_blob_sha256": "d5f02a5b7e0c44b0c7fcc545ebe131653383e907605ecd653ae5eacabd46dea3"
+    },
+    "src/gamma/task_board.py": {
+      "sha256": "365b8419cbe9b1651809ce017f2993fad55fc3bcac4cfbd8f3bd8aeb1039e66c",
+      "size": 3678,
+      "git_blob_sha256": "365b8419cbe9b1651809ce017f2993fad55fc3bcac4cfbd8f3bd8aeb1039e66c"
+    },
+    "src/gamma/tools/__init__.py": {
+      "sha256": "e5071fd5a1e67c9d82a190559af1dd1442a248b11e2768e7609e5916c315c5b8",
+      "size": 17,
+      "git_blob_sha256": "2de5d2fe638fda5d5c7ec3f073c4722736f8ff9d648ac7b6421645037f904025"
+    },
+    "src/gamma/tools/base.py": {
+      "sha256": "db348996e8a838e237d11c5c2e53dd2c77e783a721cf6cb3ec044a3eed768dbf",
+      "size": 794,
+      "git_blob_sha256": "104ba9fced83d6a52429f4418c46df7c39d084e92fba89ca45ec6387812eefcf"
+    },
+    "src/gamma/tools/builtin.py": {
+      "sha256": "16dcbe0b06f70202537485dbc45c90c5f38b33041d40dfaa49d3f0169f10423c",
+      "size": 10448,
+      "git_blob_sha256": "06800fd75590570dfb1b2bcabc1c0b8123be1c73141711d666f859b439ba53f0"
+    },
+    "src/gamma/tools/coding.py": {
+      "sha256": "01493961f3317957206fc0e0d7305d0a6c983e5c6c104b058509af73c99615a2",
+      "size": 2041,
+      "git_blob_sha256": "01493961f3317957206fc0e0d7305d0a6c983e5c6c104b058509af73c99615a2"
+    },
+    "src/gamma/tools/registry.py": {
+      "sha256": "7ac25f1fd237cc7ca7356bcd4c85cf90f97e6ef33f8afd8ece5b01aa4b1aec2e",
+      "size": 2479,
+      "git_blob_sha256": "c9412edc918f55caec19b8826a26b2acc0f4872cd71744c4c74685372ed39af7"
+    },
+    "src/gamma/vision/__init__.py": {
+      "sha256": "7e788c9236c42afc54a9d026648342c1619718df09a583987cbe122459b34292",
+      "size": 95,
+      "git_blob_sha256": "ba2821057a90fbb0d784ff538822e58dc75cb0c2dfd04de6a8311a693888068e"
+    },
+    "src/gamma/vision/service.py": {
+      "sha256": "8b4ef034745bfca26d73a323bfac39a4a3b1ee25e71bee7c795b53b78c08ca0f",
+      "size": 15604,
+      "git_blob_sha256": "48a667be553db1ce9a5712f17d3436bc8780e98ac1d24fa87d1cb16d557a2469"
+    },
+    "src/gamma/voice/__init__.py": {
+      "sha256": "aa9db6265ce65a46b55c75cf5f5802ea2e4a05a9ccf5027053f12d0460a1ed8b",
+      "size": 17,
+      "git_blob_sha256": "2cebc4840865fde85df1180953420e813041543daadbb3ca4c22ae10405d743a"
+    },
+    "src/gamma/voice/affect.py": {
+      "sha256": "af1a6bd033a6e0a5c2b4b79efc905a2b522f26d829c0f5e18d9a26371c675079",
+      "size": 5955,
+      "git_blob_sha256": "981543b54cb5e994d819c0f2ea42af856c31d17ff9b187ce3754c8b365cf67a2"
+    },
+    "src/gamma/voice/audio_events.py": {
+      "sha256": "2bcc92355d1cba464dbfc9ddfb9f9f96ed80e36c21c46c2bd69d0475443a3b67",
+      "size": 3602,
+      "git_blob_sha256": "7ee00be998a324260f04d6b0bbbcd3e216a1c13ca964ea745405c5aa493d54fa"
+    },
+    "src/gamma/voice/audio_input.py": {
+      "sha256": "4752f06ef4e8e673197cc3b20ad2a569ad96f462527b736831834f65cda665c6",
+      "size": 6332,
+      "git_blob_sha256": "2177f1e8b7a8261f405874d584d4489fee1b4b65c121f92a9772618e54b5a0f2"
+    },
+    "src/gamma/voice/audio_understanding.py": {
+      "sha256": "e91ed82e9286dd40c52e099568b3c24c74a00fc9e85235f6848a7f8eca78c1e8",
+      "size": 19161,
+      "git_blob_sha256": "89ae1285273ed813910cb87702551b332667f6d7ee507ba0303910b01c80c547"
+    },
+    "src/gamma/voice/controller.py": {
+      "sha256": "0c23e522ef15391492cee5d9df73c8980874f3d445132a8f20fb0b71dc51d6ed",
+      "size": 20534,
+      "git_blob_sha256": "01d792c6fb1ef05a18d2930b3e0acbda1cbf67ac22f61e4b6c84a43b8f38b2ec"
+    },
+    "src/gamma/voice/expressive_text.py": {
+      "sha256": "6615df31cb15aa81412d7057c3e58c6e487612b8467b9b893d6b598acfc5058a",
+      "size": 4491,
+      "git_blob_sha256": "c785ad2dfc69810063b79998019e522ea3bf76dc435141a55a7ee183058e75be"
+    },
+    "src/gamma/voice/idle_policy.py": {
+      "sha256": "bd509d94878e27ca8a945bb83a15b803af0de2f9d253ab940e0356d4ec235804",
+      "size": 3271,
+      "git_blob_sha256": "f7079b0c9f439fbd196f412edaf1dbd6f8a0de72353c8b281675e9942be13ee3"
+    },
+    "src/gamma/voice/live.py": {
+      "sha256": "2930e7282ca1bb8961e5cbb9730f84fa6d9f9572c514b74fd1722a96440dda3f",
+      "size": 28266,
+      "git_blob_sha256": "b2335f2004d31312df73b33ec288d639073ce47089c1fb452148eae4fc27a782"
+    },
+    "src/gamma/voice/live_jobs.py": {
+      "sha256": "3823f3b455df30f222644068b391f55f7fb42d29bd33ca275635970dfe9563fe",
+      "size": 28921,
+      "git_blob_sha256": "97fdafd27533a870fa06323f0f3ff620e6a7913b7fdfcb48c21ab72b39cf7ebb"
+    },
+    "src/gamma/voice/live_runtime.py": {
+      "sha256": "e87028ca364a50048be6e61a44e2b0b847a235d95776a057475156e736a909d5",
+      "size": 2727,
+      "git_blob_sha256": "92cd57ac82a27b308496a3a96dc2afa200dd3178472010f6baeae593d9a3fc95"
+    },
+    "src/gamma/voice/reply_chunking.py": {
+      "sha256": "4a41a40f252e64d6dd48ebbafa62fa3d198ddf714b6bcfc03db8104f85f80ea1",
+      "size": 4529,
+      "git_blob_sha256": "6b08c3a4d892bdfb5546ae7cd24438dcf17437d3be0c82a6b6959ff533ffe613"
+    },
+    "src/gamma/voice/reply_interruptibility.py": {
+      "sha256": "2f8c33c14974c6a218f8c765a05fd5bb0809e0ef61876b537adf6e0a712b5f0a",
+      "size": 992,
+      "git_blob_sha256": "d657e746220c5fc087a225d2a97bfe66fb9931d119e12cc1b4249fc8c7b790b0"
+    },
+    "src/gamma/voice/reply_planner.py": {
+      "sha256": "6e1a9ba50a26d0237e0513a66b235c2112c9246f3b28d64708863070add848c9",
+      "size": 2392,
+      "git_blob_sha256": "ea3047dd6d034a06da33f5c1278d2e901f5dcfdb2e4114118a553389e717d236"
+    },
+    "src/gamma/voice/reply_state.py": {
+      "sha256": "d5c901dfdfec14da76d638afde3855541e33a828ea3c89a56524fa0c8c9baa08",
+      "size": 1362,
+      "git_blob_sha256": "bcb8a2d449e4f91ccef53b328e6775fc0dfb0578a8835f26d6ae11a2ad9f5917"
+    },
+    "src/gamma/voice/roundtrip.py": {
+      "sha256": "54ab96838076d8c4822329deb6cf7e29f58b8aa600001ea35e9b32a5627ed3d0",
+      "size": 5661,
+      "git_blob_sha256": "23a1569bdad7b588d7d80d31f9c3a591d28d50307277027effdf2ff234aafb59"
+    },
+    "src/gamma/voice/rvc_support.py": {
+      "sha256": "3587c0aa41e9728c781b492cab6af401d208f02c7d3004f9bd4c01c1393ffe8d",
+      "size": 5162,
+      "git_blob_sha256": "88cf32029bd7d720093bcc00af4872b69f195ca0da7f0f2f382a62f55d47cb3e"
+    },
+    "src/gamma/voice/sentence_generator.py": {
+      "sha256": "a34dc2b33f5ad3591226963094d20dd52e1e2667825f324f9a8e38fc45515153",
+      "size": 3290,
+      "git_blob_sha256": "d20d41fee77417aa7fff9bf902a3b0e322b6be5404aff6c818cfb4c37b811195"
+    },
+    "src/gamma/voice/stt.py": {
+      "sha256": "29ff69d8b720019033a210784adcb140854a859fb33b3310e6261c71f53cef6d",
+      "size": 10062,
+      "git_blob_sha256": "6e519f9d4bf52538d1387899d1a50f885442f35456ceb04fda8d8698e4400a8c"
+    },
+    "src/gamma/voice/tts.py": {
+      "sha256": "6d91618a3862bf2d3005f43bc293b0d421ebb043d6a7d38eabd9ad06671c9b34",
+      "size": 41749,
+      "git_blob_sha256": "e5c4cb5c808f386c4fe16d1da05dc0615f9bd6360e4b9903ec0174fd7c51e250"
+    },
+    "src/gamma/voice/voice_profiles.py": {
+      "sha256": "9194759645b5a6cad26ee8c32793845732eabe2cdab31e16baf2676a0546cf3a",
+      "size": 11067,
+      "git_blob_sha256": "7fa3cfd64edb0bb33da9c4f1cf8fa3d41dc57371777c859e1607b4748658abe7"
+    },
+    "test_audio/jfk.flac": {
+      "sha256": "63a4b1e4c1dc655ac70961ffbf518acd249df237e5a0152faae9a4a836949715",
+      "size": 1152693,
+      "git_blob_sha256": "63a4b1e4c1dc655ac70961ffbf518acd249df237e5a0152faae9a4a836949715"
+    },
+    "tests/fixtures/minecraft_protocol/v1/cancel-command.json": {
+      "sha256": "110c74db2cc47c72ebe6b0ceb1a20738995ee059179f97ebe3661e9d10f64fe5",
+      "size": 361,
+      "git_blob_sha256": "a374652e1bfbd45762d51bdb4d6661695dfbedbe35aa72d635e28b28fcd95a48"
+    },
+    "tests/fixtures/minecraft_protocol/v1/command-ack.json": {
+      "sha256": "8d7ebf43e87d58953d49e16988347d279dd98e1bff735a62b21e9249371deb0d",
+      "size": 402,
+      "git_blob_sha256": "e192b09c095203ce295effefe0a3e014f5f5efcc5469ff5155c8c1e79ef31a7c"
+    },
+    "tests/fixtures/minecraft_protocol/v1/command-follow-owner.json": {
+      "sha256": "ad9b954cf5b0f0106b076c66caefa5b02145ed00873867b4aa4e786f4aa1af2b",
+      "size": 481,
+      "git_blob_sha256": "6c77a846c79878f5c0370c3ba945c7a61469b3d2ab8ffa944b4c8e80f3ffdbb8"
+    },
+    "tests/fixtures/minecraft_protocol/v1/command-progress.json": {
+      "sha256": "81fa96f16bd6b4aa755ddef09c8c8045e24d3ab45be6d821041c504d15a01722",
+      "size": 467,
+      "git_blob_sha256": "e3c30472205d2c7538d262c825b4a5264d3f4fbd8d87db47d3e2d974f5999df6"
+    },
+    "tests/fixtures/minecraft_protocol/v1/emergency-stop.json": {
+      "sha256": "4868c6745410b026c9d3dc2a43f32c7290ef863793b93f9e0b2e60978b46c9b4",
+      "size": 369,
+      "git_blob_sha256": "bd583003685a0cb65e988c4037bd4451f53944bcdee7e4c81f96cf090befacbc"
+    },
+    "tests/fixtures/minecraft_protocol/v1/heartbeat.json": {
+      "sha256": "45e5f26b7af12153d85c986429c07a7b2483c44b132bc251c2d27bbc1e33deb7",
+      "size": 305,
+      "git_blob_sha256": "a38ce68390cca0eb5aaeda062672d33699cde4c5807bf1e0c6ab66f3a390d89b"
+    },
+    "tests/fixtures/minecraft_protocol/v1/hello.json": {
+      "sha256": "6d8e8f37cffb7a1a7fed044c7cc9a0d83d2caf464ee884520283222e8424650d",
+      "size": 487,
+      "git_blob_sha256": "44457bc7d9592e9fb2bd9b720997a88169bed99a4d2735f93252ea87d9a6794d"
+    },
+    "tests/fixtures/minecraft_protocol/v1/minecraft-status.json": {
+      "sha256": "6374c82f533b4cdb15f4c59b8b26e7c5a7f1ed7966a96a6d6b3582a0fab3c4b2",
+      "size": 402,
+      "git_blob_sha256": "9375e06ef119e4e8b4219dca9cece21740a1e747d2b827f3ef3e5aea83395871"
+    },
+    "tests/fixtures/minecraft_protocol/v1/protocol-error.json": {
+      "sha256": "2c582d8f6441cdbe6addd4119b1cab9f216efee92deb4ce7079462925c0d5218",
+      "size": 490,
+      "git_blob_sha256": "da56d29f11028b32320715823ca10ee291905c6f29a0163b5aacb04d421c8053"
+    },
+    "tests/fixtures/minecraft_protocol/v1/shutdown.json": {
+      "sha256": "63a36eab4b40201da8694a999a7c1f3d0aa3d1a100fab6894d62c17365be9620",
+      "size": 358,
+      "git_blob_sha256": "a1a27814c9cb7d08104ebd28bb3a90836770d1621d9cd8bc6c827fc29293e139"
+    },
+    "tests/fixtures/minecraft_protocol/v1/sidecar-status.json": {
+      "sha256": "44ae10be737b462b92e460c9b313556ffd2a63e297234117e23f3bfef8d2d6ce",
+      "size": 373,
+      "git_blob_sha256": "1b218315c7fe3441c6db23a62370c3271576da17bcd31ac7ea5f14e67fd8c272"
+    },
+    "tests/fixtures/minecraft_protocol/v1/state-snapshot.json": {
+      "sha256": "8b2d585c85c2918d0789d0cdf4425a0aa5ddfb3a13a46939168557cc640cd12d",
+      "size": 918,
+      "git_blob_sha256": "3aa4a53a3618f8419082c66b25da9c50cafcde9dbbc02a7721680865779b9571"
+    },
+    "tests/fixtures/minecraft_protocol/v1/terminal-result.json": {
+      "sha256": "5f977c873fec5697e050d52d7aa62f7c23f92f4c690d54bbc2aad6769370ca31",
+      "size": 483,
+      "git_blob_sha256": "ac3be936fa2d7f60a0c97239d8fce227d5bf1cfcbbdbfdac31173b959ece2eed"
+    },
+    "tests/fixtures/minecraft_protocol/v1/welcome.json": {
+      "sha256": "6ff26264586cd7e0ec178d382a8d0c5bb6bff5102fffa1d22ec9ea738dc98c26",
+      "size": 503,
+      "git_blob_sha256": "1578f832bd6de9f7b89f2745fc438fee3c9ef081e5de475902b6827b0087caa3"
+    },
+    "tests/integration/automated_live_voice_test.py": {
+      "sha256": "2260213090259f80b2905d93fb6db893ce10575a2fd6c0b92a850ab84daf7cf8",
+      "size": 6034,
+      "git_blob_sha256": "36da6287a09c87b01fc23c13c7f652ccebf3b883d858b6f6866e795c35387a7e"
+    },
+    "tests/integration/live_voice_test.py": {
+      "sha256": "3a23e453f340b18a265a3acea05dcba22fca3dc9bcb23757f8f49c5994cd689e",
+      "size": 5010,
+      "git_blob_sha256": "b90c35fc6a2bcbc940be8f2e0a5f749b6e9cd751c0b33442ee8f155289b2481b"
+    },
+    "tests/integration/test_final.py": {
+      "sha256": "0765ca9c8a51fd66dea4f78c5bd52308221847305302d351d87cde113037b0fd",
+      "size": 2065,
+      "git_blob_sha256": "e8c5334b2ae9e7aea5ee4485a06dd3ed0f61f041870784da44096290bf6d44ed"
+    },
+    "tests/integration/test_gpu_live.py": {
+      "sha256": "9f17166723ae43ce7d660f855e3c67b4997f920279de0597581cb4b26eb024d8",
+      "size": 745,
+      "git_blob_sha256": "184b68ce60da58b40d56fbc406ec10ec4ada02628a337651004bf8506b178590"
+    },
+    "tests/integration/test_live_voice_connection.py": {
+      "sha256": "5044438b9f69577346e938a3f9acf738ac8f59c4901d43c767451ae47dea49d0",
+      "size": 3521,
+      "git_blob_sha256": "8786c351f3814ff0dbe6f527c433ddda2ca23e5e04174c185661d1bef9b2a8cb"
+    },
+    "tests/integration/test_live_voice_jsf.py": {
+      "sha256": "5b710a15d70d9e9231bc19d085c50fbcb3bcf1d57f14669d6b0fd74283d73377",
+      "size": 6322,
+      "git_blob_sha256": "a14958699ed6feae3840ef3a61a3c3bcab1b68f23c58a52332200af29bd79a23"
+    },
+    "tests/integration/test_live_voice_simple.py": {
+      "sha256": "412e3946f290d5d2019643de25c4244aacfe94599beb463af967f1016b72dd62",
+      "size": 2988,
+      "git_blob_sha256": "50971339fa2f0b727b29d61367b6d1aaa56f586436c2411f525ed4c991ff84a4"
+    },
+    "tests/integration/test_live_voice_with_audio.py": {
+      "sha256": "c01976b817c0f639cdbd584615b8cc37481b5d645cc2dd11c34e416b88befe4f",
+      "size": 6277,
+      "git_blob_sha256": "8a065ea348a84fcaafcd6e6df5745ecc6c08e69458579a8247f564c636a57502"
+    },
+    "tests/integration/test_start_all.py": {
+      "sha256": "8cd8b8398772d580023debb7ac82a3edb9c13b4bcd6a88f53649b127468f9b14",
+      "size": 3004,
+      "git_blob_sha256": "d4fbc1c5bdf3e8690d7d306e270d1a243b7e1ac8daa083ffa18d9afd448708bf"
+    },
+    "tests/integration/test_tts_synthesis.py": {
+      "sha256": "c79f9d78a564a8ddad5a562d9f32d282c10c078dc7ae7e41619f98dacaef1449",
+      "size": 1398,
+      "git_blob_sha256": "8868b91b76d4f2b6341ed55f7b1f0230a2e3e5093f301c8a699d63d672168de4"
+    },
+    "tests/test_acceptance_retention.py": {
+      "sha256": "68e3672c93eb03bcd70263e10e6a68d3ae029c201237c820896f41876654f995",
+      "size": 1832,
+      "git_blob_sha256": "68e3672c93eb03bcd70263e10e6a68d3ae029c201237c820896f41876654f995"
+    },
+    "tests/test_api_routes.py": {
+      "sha256": "837be71fdc13d588cf8049e86079609cdb5877da18fc2f11232316b48cd91382",
+      "size": 10141,
+      "git_blob_sha256": "440a4c3317d7df57e29459d2865cc53d41841c8867702c1d3811158ba819d0e4"
+    },
+    "tests/test_audio_events.py": {
+      "sha256": "2615086e7c25e617d304a3d8f24e6722e6802ded657a5437220a491f12a5c035",
+      "size": 1890,
+      "git_blob_sha256": "11bfac938e61924bce9a59fe25a9398c3f11002c3120ab4578d8ea5dddcb401c"
+    },
+    "tests/test_audio_input.py": {
+      "sha256": "769c794231ea13ac9718665cced81505fc499a1d831648e1c1e815b352ac6b4f",
+      "size": 3273,
+      "git_blob_sha256": "b2b309c61af70b9fa20dca1b0efbc4abd28bee8c16bc58e7984d1c26ed5cf616"
+    },
+    "tests/test_audio_sidecar_runtime.py": {
+      "sha256": "e02fae997fd971456edc1c6efc51628639cbeccd1ce4a751ac7a13b7bf8eb134",
+      "size": 17342,
+      "git_blob_sha256": "06cd2c0b752a4e67c6e38b35b95517215860cd6cd513d790a91514950d889020"
+    },
+    "tests/test_audio_understanding.py": {
+      "sha256": "586aa1346ff1b0683f432cb8a8f63c7e2b7c87770b68aaabf2d851274a90b5f7",
+      "size": 13216,
+      "git_blob_sha256": "b0f0faf2c6068e71949124ca436ec5a346c144da3accde39d9c8a64e55582e2c"
+    },
+    "tests/test_audio_understanding_server.py": {
+      "sha256": "3e918095c510b85c454ba84ad58098719faf0f63800682c59491ed5e43e14f75",
+      "size": 5323,
+      "git_blob_sha256": "f5877f8010f3bb84a84ce6db8b7c92e8c79f78364e8701179421868ac75f624a"
+    },
+    "tests/test_autonomous_controls.py": {
+      "sha256": "2d19b363d29201a4061861b8149da2732afd62e3fb467d9c76f52891c5f5e19f",
+      "size": 2741,
+      "git_blob_sha256": "2d19b363d29201a4061861b8149da2732afd62e3fb467d9c76f52891c5f5e19f"
+    },
+    "tests/test_autonomous_learning.py": {
+      "sha256": "47585dfb6aca0b95eed3c5484346c0a54433cdd946d11b2d5903cb6500af8929",
+      "size": 839,
+      "git_blob_sha256": "47585dfb6aca0b95eed3c5484346c0a54433cdd946d11b2d5903cb6500af8929"
+    },
+    "tests/test_autonomous_repository.py": {
+      "sha256": "7ff96d47ea0d4cd0fc20fd626f4d860f198a8d9425762d55b42fbf1225777a43",
+      "size": 15381,
+      "git_blob_sha256": "7ff96d47ea0d4cd0fc20fd626f4d860f198a8d9425762d55b42fbf1225777a43"
+    },
+    "tests/test_candidate_data.py": {
+      "sha256": "5cf8879b94c0059e03f01a49d05b6cde46a39926b7c0581e007f247022df2d38",
+      "size": 2341,
+      "git_blob_sha256": "5cf8879b94c0059e03f01a49d05b6cde46a39926b7c0581e007f247022df2d38"
+    },
+    "tests/test_candidate_policy.py": {
+      "sha256": "ba3172867f5f00cb4d34b3f26e5384fb00d6f872903b84332ab770d9bbaa804c",
+      "size": 2035,
+      "git_blob_sha256": "ba3172867f5f00cb4d34b3f26e5384fb00d6f872903b84332ab770d9bbaa804c"
+    },
+    "tests/test_coding_dashboard.py": {
+      "sha256": "5c7cd33131750f3a1a9ca5c5a46b038e91dcbc46b9f0c4d4a8fb5410392a3783",
+      "size": 3232,
+      "git_blob_sha256": "5c7cd33131750f3a1a9ca5c5a46b038e91dcbc46b9f0c4d4a8fb5410392a3783"
+    },
+    "tests/test_coding_evaluation.py": {
+      "sha256": "d0013caa1af832a9d0962db21fe6ba609bf35c70502fe76999d0ea800f20d652",
+      "size": 4613,
+      "git_blob_sha256": "d0013caa1af832a9d0962db21fe6ba609bf35c70502fe76999d0ea800f20d652"
+    },
+    "tests/test_coding_fast_handoff.py": {
+      "sha256": "f6fe9161afb4b8579b3cf153bc6c40acac6cc4c5601cc42f0fa2818d01989124",
+      "size": 2102,
+      "git_blob_sha256": "f6fe9161afb4b8579b3cf153bc6c40acac6cc4c5601cc42f0fa2818d01989124"
+    },
+    "tests/test_coding_idle.py": {
+      "sha256": "ef5b23975e7902e50da1884434ac15dab52554fcf1aa7cda7974eff97b5e792d",
+      "size": 1332,
+      "git_blob_sha256": "ef5b23975e7902e50da1884434ac15dab52554fcf1aa7cda7974eff97b5e792d"
+    },
+    "tests/test_coding_learner.py": {
+      "sha256": "84e21cff57e40c140e08d5fa39482b84efcf546d18bcf57db708b3701db2c302",
+      "size": 1463,
+      "git_blob_sha256": "84e21cff57e40c140e08d5fa39482b84efcf546d18bcf57db708b3701db2c302"
+    },
+    "tests/test_coding_lessons.py": {
+      "sha256": "dd79faa9d841a04679e6028e7f947ea32068ca459335e11f7b1eb30f1ec61e66",
+      "size": 2352,
+      "git_blob_sha256": "dd79faa9d841a04679e6028e7f947ea32068ca459335e11f7b1eb30f1ec61e66"
+    },
+    "tests/test_coding_owner_tools.py": {
+      "sha256": "7eab0f00c37be688a85bf0ff9940f9ee770460841e3e24fb4ba3b9163a291492",
+      "size": 1658,
+      "git_blob_sha256": "7eab0f00c37be688a85bf0ff9940f9ee770460841e3e24fb4ba3b9163a291492"
+    },
+    "tests/test_coding_practice.py": {
+      "sha256": "a86a02c1560c7fd6e66c4c3144eb19af5e4bf12dbfd0ff343ea5f7a1b28fc634",
+      "size": 8317,
+      "git_blob_sha256": "a86a02c1560c7fd6e66c4c3144eb19af5e4bf12dbfd0ff343ea5f7a1b28fc634"
+    },
+    "tests/test_coding_project_loop_worker.py": {
+      "sha256": "31dee53a24260554d03c717aeadc0d368d30c8ba4daa36c435a24ed04f88d428",
+      "size": 5864,
+      "git_blob_sha256": "31dee53a24260554d03c717aeadc0d368d30c8ba4daa36c435a24ed04f88d428"
+    },
+    "tests/test_coding_sandbox.py": {
+      "sha256": "c0affd4219815ef0007c1af72809606bbe4c83528b7ff10e8b182868c9d58259",
+      "size": 1949,
+      "git_blob_sha256": "c0affd4219815ef0007c1af72809606bbe4c83528b7ff10e8b182868c9d58259"
+    },
+    "tests/test_context_budget.py": {
+      "sha256": "bfbfa6d794120a7fa721a9502d344f3ec01b5b11ac8b44eb460808705b8d2fdc",
+      "size": 1477,
+      "git_blob_sha256": "10de4e5c64bbee58abb09345046c7e18e885c84dc47157d41f6d14d8f9d336a3"
+    },
+    "tests/test_conversation_continuity.py": {
+      "sha256": "5e057b0fe3579204ccd5f106243ed80528f66a0831d5fd945bf1a1229c8105ca",
+      "size": 6031,
+      "git_blob_sha256": "d14edd4a8eb57b5aa6c6b9393d129e2a85479b499c49b0f8a60c55fec8f09d0f"
+    },
+    "tests/test_conversation_pipeline.py": {
+      "sha256": "f10d0cfb6b5629cf59647dfd45dd979ff48dbaa858b88093e564d5a3b3a44499",
+      "size": 28970,
+      "git_blob_sha256": "1c407b7de7dd538d0fe6e7b3bfe0811466234c45ecfb1516332145c31c129e96"
+    },
+    "tests/test_dashboard_boundary.py": {
+      "sha256": "2a7f461c66de4f19c3d841fcbbc15353e5bbaba4bdd05a75eb623881661ae13c",
+      "size": 1597,
+      "git_blob_sha256": "6b535da72e75a8ccc35b3911d4757a6a8e881360deeabcd3e8d532b67c4c0e71"
+    },
+    "tests/test_dashboard_routes.py": {
+      "sha256": "87bd63a79b45d28ef9d05da3336fa5326bab5ce49fee442d1a7bf718049a9784",
+      "size": 99804,
+      "git_blob_sha256": "8c7388e9f3329ebf6f3a21fd1aa418a9a8ba37a205a0510b94373d7dc7fd32da"
+    },
+    "tests/test_discord_adapter.py": {
+      "sha256": "cdcefeccfb87b7d18ffa3beae2cc1e7969d4d155238363d4406c690adf5d1a8e",
+      "size": 13055,
+      "git_blob_sha256": "776bfd89b482c9a927b4d08b6331aed9f1c23445c2a280b34bf534581d338c61"
+    },
+    "tests/test_discord_audio_buffer_worker.py": {
+      "sha256": "7b86a3dac119c2860ee3180aacf9e399c2e5beedff8870bf2f9a65a216ed951c",
+      "size": 3397,
+      "git_blob_sha256": "7b86a3dac119c2860ee3180aacf9e399c2e5beedff8870bf2f9a65a216ed951c"
+    },
+    "tests/test_discord_control_worker.py": {
+      "sha256": "26455d96bbf01bd1b456b0169cb3dac9dfcfc40ca40e9a438e932af239478683",
+      "size": 3052,
+      "git_blob_sha256": "26455d96bbf01bd1b456b0169cb3dac9dfcfc40ca40e9a438e932af239478683"
+    },
+    "tests/test_discord_dashboard_controls.py": {
+      "sha256": "7a79c3a9b56ad37afb2dd7792d27561215fab3cdfaaaf110cb14d4d4b6050e2d",
+      "size": 995,
+      "git_blob_sha256": "7a79c3a9b56ad37afb2dd7792d27561215fab3cdfaaaf110cb14d4d4b6050e2d"
+    },
+    "tests/test_discord_delivery_worker.py": {
+      "sha256": "3529c6abea74498ec31e65781ee4841ad72b3494d477bc9ebcfc1159a8d035e2",
+      "size": 3239,
+      "git_blob_sha256": "3529c6abea74498ec31e65781ee4841ad72b3494d477bc9ebcfc1159a8d035e2"
+    },
+    "tests/test_discord_presence.py": {
+      "sha256": "44e8b2628606d4efa5de423ba1c13ae829b31cf8c07990243a346b222f4e7210",
+      "size": 1972,
+      "git_blob_sha256": "44e8b2628606d4efa5de423ba1c13ae829b31cf8c07990243a346b222f4e7210"
+    },
+    "tests/test_discord_receive_gate_worker.py": {
+      "sha256": "b23f65461662c539e73a807fc8c3b3fdbbece449623c07aabc5268e08233490f",
+      "size": 2814,
+      "git_blob_sha256": "b23f65461662c539e73a807fc8c3b3fdbbece449623c07aabc5268e08233490f"
+    },
+    "tests/test_discord_review_deadline.py": {
+      "sha256": "56a02c5a52bddd6a654a264e597bb9ada99497a322bb3ce2a5458fde7d3510db",
+      "size": 1524,
+      "git_blob_sha256": "56a02c5a52bddd6a654a264e597bb9ada99497a322bb3ce2a5458fde7d3510db"
+    },
+    "tests/test_discord_reviewer_worker.py": {
+      "sha256": "bd3add675911ce1d0302b0a013a5a06f9099fc8fdf0fa36ff9940d7baca994c8",
+      "size": 3100,
+      "git_blob_sha256": "bd3add675911ce1d0302b0a013a5a06f9099fc8fdf0fa36ff9940d7baca994c8"
+    },
+    "tests/test_discord_secure_receive.py": {
+      "sha256": "6c049521af444132fc3293748b6da73c609bae0d5d8f6ab7e4c36bcd89e3fc0f",
+      "size": 2467,
+      "git_blob_sha256": "6c049521af444132fc3293748b6da73c609bae0d5d8f6ab7e4c36bcd89e3fc0f"
+    },
+    "tests/test_discord_session_worker.py": {
+      "sha256": "64af11c0b947302bad2b156ca3976558aecd88ff5236856f8828d61c2623b293",
+      "size": 6857,
+      "git_blob_sha256": "64af11c0b947302bad2b156ca3976558aecd88ff5236856f8828d61c2623b293"
+    },
+    "tests/test_discord_text_privacy.py": {
+      "sha256": "bac74b6760d4df3fe8dd29dab3e302099108b50de227c12beabe7b8082e0e277",
+      "size": 856,
+      "git_blob_sha256": "bac74b6760d4df3fe8dd29dab3e302099108b50de227c12beabe7b8082e0e277"
+    },
+    "tests/test_discord_voice_controls_worker.py": {
+      "sha256": "0180ca53dd6f200154a800b38cbea612d704b23be66b28d4e6bd0d7ace24d677",
+      "size": 9754,
+      "git_blob_sha256": "0180ca53dd6f200154a800b38cbea612d704b23be66b28d4e6bd0d7ace24d677"
+    },
+    "tests/test_discord_worker_heartbeat.py": {
+      "sha256": "c3bdcf663f25e3469cbfde2d0bb43e7424e7a4a4961759bacdaccf51d9c18058",
+      "size": 764,
+      "git_blob_sha256": "c3bdcf663f25e3469cbfde2d0bb43e7424e7a4a4961759bacdaccf51d9c18058"
+    },
+    "tests/test_expression_and_routing.py": {
+      "sha256": "7aecae807b2bfc6803940cd2e807e2ff6ffdfeef2df47e96ab5ff5470f5b8dcb",
+      "size": 12645,
+      "git_blob_sha256": "e2b418b024855ec55a1ad780250b03d0eb9ccf3c8164868760a676c8d5bf9acf"
+    },
+    "tests/test_improvement.py": {
+      "sha256": "38c5cd20303e46e57d5571542e92dc9949ad935a6fc4a0698f114ed9dd8c9182",
+      "size": 81526,
+      "git_blob_sha256": "38c5cd20303e46e57d5571542e92dc9949ad935a6fc4a0698f114ed9dd8c9182"
+    },
+    "tests/test_improvement_dashboard.py": {
+      "sha256": "c38bb7a40ea8060def4a5dba74ff53a4b57a469e959fb2765fecf79802830a2c",
+      "size": 7906,
+      "git_blob_sha256": "c38bb7a40ea8060def4a5dba74ff53a4b57a469e959fb2765fecf79802830a2c"
+    },
+    "tests/test_improvement_work_queue.py": {
+      "sha256": "26fb80d3ca9fcb5bddbaea1dc1ac0c2613ce5a229cb30f0c6ccba3fb2f59ad17",
+      "size": 10911,
+      "git_blob_sha256": "26fb80d3ca9fcb5bddbaea1dc1ac0c2613ce5a229cb30f0c6ccba3fb2f59ad17"
+    },
+    "tests/test_lesson_history.py": {
+      "sha256": "e71a7a0b237ad7618586bf8c4b59f33acf94ba0bf8164187c647c4c3684d89fb",
+      "size": 3410,
+      "git_blob_sha256": "e71a7a0b237ad7618586bf8c4b59f33acf94ba0bf8164187c647c4c3684d89fb"
+    },
+    "tests/test_live_idle_policy.py": {
+      "sha256": "6e9874eab10d3fe1e1ce6c5f29d0afc8dd2f53158707ec3d0a4b74f6a0e4fb59",
+      "size": 2807,
+      "git_blob_sha256": "de6ac129197a0008db466bd7abc425b2318927801110001a000d0a9d7e332ab8"
+    },
+    "tests/test_live_voice_runtime.py": {
+      "sha256": "476878843c478c440161dc75f58ea4384baac171fece4a4f0943f4cd1c8bf89f",
+      "size": 20442,
+      "git_blob_sha256": "e197f96bdf5632e6f20a23e70af527e557b38283eeb206880953d40cfcdc8ab8"
+    },
+    "tests/test_llm_router.py": {
+      "sha256": "5978dd2b8d0965deafee9ee05d33c34e8b247e586481274a0ddb324f5d473991",
+      "size": 32749,
+      "git_blob_sha256": "c38d464ea67a1052e12585a73e451a1b451d925cd8a3dd220faab76febd91389"
+    },
+    "tests/test_memory_service.py": {
+      "sha256": "6a5eb2b218cdd06ea57f0b552cb5498983191cafc8d31048d283b8779ba77d99",
+      "size": 6166,
+      "git_blob_sha256": "ead2e5b74b3c23dfed0599c15d13e9a4dfe0173d17ddf3a85364121e3f8ec515"
+    },
+    "tests/test_minecraft_app_wiring.py": {
+      "sha256": "51ef61bfdc86aea9016a274488da23f8a9ef989f258a7be5da5330c3f11ff8ff",
+      "size": 13174,
+      "git_blob_sha256": "269f5cbe0f5fb3e6af78f73504edcdbb3786766af1cab6ad0fb872e1f7dc550a"
+    },
+    "tests/test_minecraft_coordinator.py": {
+      "sha256": "afd1084f8880c654ff0dd981de0d0f5f01a6136d7006005326d8de709220fcc6",
+      "size": 52574,
+      "git_blob_sha256": "e57c053f5af92d702b209432ca9aa20f08f08797ad4ebe92d10817970b034714"
+    },
+    "tests/test_minecraft_protocol.py": {
+      "sha256": "7d0f365c2f2498f065759268f1c2c757768bd4ad6aa4d3050ddacd4632a551dd",
+      "size": 12566,
+      "git_blob_sha256": "acfe41593b1c0f97ede46840352aff269014aa56ca4c8373eec4f2da2dd1f778"
+    },
+    "tests/test_minecraft_websocket.py": {
+      "sha256": "d03185b2b5de3dfece4057250b55aec42bf82638ced7094d633dd836a921a0a1",
+      "size": 36043,
+      "git_blob_sha256": "1b51c33b830de4569629a2e642190313f4504470f0ff04f94f46ac4c63a708a6"
+    },
+    "tests/test_observability.py": {
+      "sha256": "8a4ed6f76872533f9f0477913e2bdb649a7caa1db9c1ec1e7dc30e4550c04a05",
+      "size": 5328,
+      "git_blob_sha256": "b931a55717414ed44a3cce46488b2c1e608f336c7532c7edd091150f2cdbe3ca"
+    },
+    "tests/test_packaging.py": {
+      "sha256": "c6d0cfd70d909f0777da1d405e534c0f41a4b00e52e5ad99a81fcd644182e723",
+      "size": 905,
+      "git_blob_sha256": "b1554335b823d331cc64d6de9fd914239a5c438659a89256dafc23adb955013e"
+    },
+    "tests/test_practice_priority.py": {
+      "sha256": "faf1f33f333d806cf0471f93a53d737d8f94a076a1ffedf32c4376b268eea9b6",
+      "size": 925,
+      "git_blob_sha256": "faf1f33f333d806cf0471f93a53d737d8f94a076a1ffedf32c4376b268eea9b6"
+    },
+    "tests/test_presence.py": {
+      "sha256": "ad4d69992cf9e1560137ae5a682e2c4006bf9739029295535598ad70e0aa0449",
+      "size": 5322,
+      "git_blob_sha256": "641f0c3fe8b5646c5613a8fa72b0d3d652a86d57fb8d97be8fda3b0a6ea09363"
+    },
+    "tests/test_proactive_scheduler.py": {
+      "sha256": "9b50b2c4f71e7af8a3551c0a2221ec01f58c1e2b7c4adf34f71fbeb0694baa34",
+      "size": 5623,
+      "git_blob_sha256": "2eb1043a06d91e492b7164e5dcc434aa2ace4a42933e08cf7b104f76680b2c77"
+    },
+    "tests/test_qwen_tts_launcher.py": {
+      "sha256": "716e3a4838deac252a14435dc1ff8a83c18585e220d069127ab1778056deff36",
+      "size": 3962,
+      "git_blob_sha256": "0c2f958dee54c91e9df48b4c1fb8cb8836c5392a4eeb86b0227a722fd7312627"
+    },
+    "tests/test_repository_coding.py": {
+      "sha256": "4ce85feab5af356dc4a60f1b061465485e6a6d64cd68e5660580b1af68fead31",
+      "size": 2378,
+      "git_blob_sha256": "4ce85feab5af356dc4a60f1b061465485e6a6d64cd68e5660580b1af68fead31"
+    },
+    "tests/test_resource_policy.py": {
+      "sha256": "992adc771f39f3ce0a55c82309e1f380c883c16bb687bad4addac6b3d601219d",
+      "size": 15342,
+      "git_blob_sha256": "3c8e5230e00399187d142bae7344f7bf05e869ce47de91b442ed2358aeb03818"
+    },
+    "tests/test_resource_probe.py": {
+      "sha256": "6ee0ddf7bf44c4ea7857a2eb0ad4489485067b1c5807ddcdf216ceb5f883381b",
+      "size": 3942,
+      "git_blob_sha256": "d2ee21849d5f02059148ef249242dc6df4af8d7ef889d2d5d6930df256327d98"
+    },
+    "tests/test_safety_filters.py": {
+      "sha256": "e8698ce3b7277d715366fe3dfee90599bda5a0a96c21d235579ed1928eb609a3",
+      "size": 1063,
+      "git_blob_sha256": "8ff0e4081b50ca4e946c588a0af6b4bb0c465b576a380d39efb27a87f57f0d45"
+    },
+    "tests/test_shana_client.py": {
+      "sha256": "e027977678584cbef352c1f29ee9a067c08475fa863baccb9f5873b5ba948830",
+      "size": 2804,
+      "git_blob_sha256": "6b0505556c3940dcf81acd87b0198b869994e797800364c2ea8bf75eb1e4cf94"
+    },
+    "tests/test_shana_domain_routes.py": {
+      "sha256": "80ea7244dda27412d5ea733cbf7cf6a2a0fa08c33daf97002f17ee638e14f0ba",
+      "size": 2942,
+      "git_blob_sha256": "f831ce548b4dcc4d93eaf5baf5e3ab3f6123127abc89aaa27338888b9bef6282"
+    },
+    "tests/test_sidecar_allocations.py": {
+      "sha256": "c7cb940295eb6dccd931e4b268af1bc8506bc0b1f47855cc66c1652e32d8c5dd",
+      "size": 3466,
+      "git_blob_sha256": "18f8ff019e569665ce85a7828d2cfdf15b1c72b00bc689c88cd39e6a76843ec1"
+    },
+    "tests/test_spec_consistency.py": {
+      "sha256": "3711f48b4f96c5f44ad57304f962230ba50ad9f3464095622c50ca3b75aadade",
+      "size": 2508,
+      "git_blob_sha256": "42b8fcdc81210c1c20282c58b1056fd3a4cb6d6c0935f3b314f3a6a5f4dcff9e"
+    },
+    "tests/test_spoken_turns.py": {
+      "sha256": "8ef72f719a9fb53abc35eb42157c342ca64a664eb7dca63a8bcefadbb6457437",
+      "size": 2320,
+      "git_blob_sha256": "6c1ae5fe689d35d4d5a6aee0f362530bdaf443fcd22e3721fa5bb71b87ba1443"
+    },
+    "tests/test_stream_brain.py": {
+      "sha256": "9cc413de71ab87f179f0f6c6361158c10a9b6c56bd164ccff20e1840fbcabfa1",
+      "size": 49172,
+      "git_blob_sha256": "fd9f29f058f92d90270018b75774dfe0a89bc005c3ec035fed002b413cd45f2f"
+    },
+    "tests/test_stream_output.py": {
+      "sha256": "4c9c6e80c46beddf638771360bb7eabc79ecf4a8d7778c85d8579258382098cc",
+      "size": 32059,
+      "git_blob_sha256": "5e4bf11c8b47a4ac480ee6aa0799a4016cb3e0a88c0344fd4b071d7bcc5339ae"
+    },
+    "tests/test_stream_replay.py": {
+      "sha256": "0a97d5b04332c36dbd83c712f58319a8d12b8ae58ece4b159eab87d3d540a39e",
+      "size": 5480,
+      "git_blob_sha256": "e723f91c61efa08e873103f3ace43d5f03e6a7a825606fb43a15bf0ae972db9d"
+    },
+    "tests/test_torch_devices.py": {
+      "sha256": "eccc8cd0c28494475081766af3b25feec0ae94c50a78fb651c091a1dce372020",
+      "size": 3164,
+      "git_blob_sha256": "c61992daadc751c28a01578b27d4df73ebca30ad37111f811efd4d859ff8634f"
+    },
+    "tests/test_tts_cli.py": {
+      "sha256": "abd20de18755b7f36c6341c6d4da4d09af7acc4bb4b61dcc3b9141b6657e4412",
+      "size": 445,
+      "git_blob_sha256": "c527f3b0310fa75b5f2371cd483d778e35ab65f9280210babc924e59eebc5d2d"
+    },
+    "tests/test_twitch_integration.py": {
+      "sha256": "d4682ea53d78ac16e59dcfa7d3db67b523da70f5ea479fead4b01b831bc25ee5",
+      "size": 56076,
+      "git_blob_sha256": "b5fbde9c8144a421e2d3666962018f705cdbe8667e7a603ba1f569a5edf1bdc0"
+    },
+    "tests/test_verified_313a30150d2e414d9035e95060e330dc_test_goal_owner_task_board_contract.py": {
+      "sha256": "182cdb57ef1f57551a26c3619f398f93b5427595be945a88c325bd86903991e7",
+      "size": 3346,
+      "git_blob_sha256": "182cdb57ef1f57551a26c3619f398f93b5427595be945a88c325bd86903991e7"
+    },
+    "tests/test_verified_313a30150d2e414d9035e95060e330dc_test_goal_task_board_transfer.py": {
+      "sha256": "fd6e357e52a16bccb45affa70806bdcbb573c936bd6a163765b3c34155009a33",
+      "size": 4461,
+      "git_blob_sha256": "fd6e357e52a16bccb45affa70806bdcbb573c936bd6a163765b3c34155009a33"
+    },
+    "tests/test_verified_8f87d42a9eb3487d880a0fc73fd94ceb_test_goal_owner_actual_work.py": {
+      "sha256": "cb2dd167706d1073b8286d26d339a6c1e5482bb9930160ecf88ea765c4f4bd02",
+      "size": 2073,
+      "git_blob_sha256": "cb2dd167706d1073b8286d26d339a6c1e5482bb9930160ecf88ea765c4f4bd02"
+    },
+    "tests/test_verified_8f87d42a9eb3487d880a0fc73fd94ceb_test_goal_owner_legacy_ingest.py": {
+      "sha256": "264c4dd58cd9e402bc5d641cbdc95dcd0e01e7d428579b6aada4251a28141c8b",
+      "size": 5873,
+      "git_blob_sha256": "264c4dd58cd9e402bc5d641cbdc95dcd0e01e7d428579b6aada4251a28141c8b"
+    },
+    "tests/test_verified_8f87d42a9eb3487d880a0fc73fd94ceb_test_goal_owner_lesson_history.py": {
+      "sha256": "621cd3fe23fcc18b6d7aafc6a9e9b1400709d04320b34037a941f2315364c9de",
+      "size": 1869,
+      "git_blob_sha256": "621cd3fe23fcc18b6d7aafc6a9e9b1400709d04320b34037a941f2315364c9de"
+    },
+    "tests/test_voice_affect.py": {
+      "sha256": "2268814477e8f372883256d787e8df7e06d5c0ded1ea6a6f837c535c4254f6a2",
+      "size": 1949,
+      "git_blob_sha256": "f3b26f81b75326a4f809ac3eec0c48053ea7013704016e51a705fab87ab5aa99"
+    },
+    "tests/test_voice_text_normalization.py": {
+      "sha256": "6fa69d695ce234a0e2079dfe55bb986bc50b939d25f50511f3bb59215addbf0b",
+      "size": 722,
+      "git_blob_sha256": "3b7e6953892cfb90b71d717a151d987a098a92400ecf3cfd1d226f3277fafb8d"
+    },
+    "tests/test_vtube_studio_adapter.py": {
+      "sha256": "6c19b4ac5cf349653e89870c7f6cdcffce2a8d4e73137768bd77d5a423f0a517",
+      "size": 10619,
+      "git_blob_sha256": "2cdb56f7819b0382f8c4a2240adbbf660901293618d8ede752d4c4f58260ee20"
+    }
+  },
+  "excluded_paths": [],
+  "line_endings": "Git-normalized; original working files untouched",
+  "case_collision_normalized_in_snapshot_only": true,
+  "tests_run_for_checkpoint": false,
+  "runtime_activation": false
+}

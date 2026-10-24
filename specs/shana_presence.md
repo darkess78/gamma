@@ -20,6 +20,13 @@ sidecar processes exist.
 - `break`: Twitch/EventSub observation may continue, but public/proactive
   output is suppressed and the public performer target is muted/cleared.
 
+Configured Discord conversations use the separate `discord_call` target in
+Wake and Go Live. Sleep and Break suppress both Discord text and voice replies.
+Discord guild and channel allowlists, output enablement, and voice enablement
+are checked before allowing that target. Go Live never redirects Discord
+conversation audio to the public stream. Discord replies still receive public
+privacy and output review, even when their speaker is the owner.
+
 ## Runtime State
 
 Presence state is runtime state stored under:

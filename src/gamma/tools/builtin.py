@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ..memory.attribution import MemoryOrigin, describe_record
+
 import json
 
 from ..config import settings
@@ -193,7 +195,7 @@ class SearchMemoryTool(Tool):
             "profile_facts": [
                 {
                     "category": fact.category,
-                    "fact_text": fact.fact_text,
+                    "fact_text": describe_record(fact),
                     "confidence": fact.confidence,
                     "subject_type": fact.subject_type,
                     "subject_name": fact.subject_name,
@@ -203,7 +205,7 @@ class SearchMemoryTool(Tool):
             ],
             "episodic_memories": [
                 {
-                    "summary": memory.summary,
+                    "summary": describe_record(memory),
                     "importance": memory.importance,
                     "tags": memory.tags,
                     "subject_type": memory.subject_type,
@@ -256,7 +258,10 @@ class SaveMemoryTool(Tool):
             subject_name=subject_name,
             relationship_to_user=relationship_to_user,
         )
-        saved = self._memory.persist_candidates([candidate], session_id=session_id)
+        origin = kwargs.get("_memory_origin")
+        if origin is None or origin.__class__ is not MemoryOrigin:
+            origin = MemoryOrigin(source="tool")
+        saved = self._memory.persist_candidates([candidate], session_id=session_id, origin=origin)
         payload = {
             "saved": saved,
             "candidate": candidate.model_dump(),

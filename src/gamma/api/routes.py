@@ -26,7 +26,7 @@ from ..integrations.minecraft.coordinator import MinecraftCoordinator
 from ..integrations.minecraft.websocket import create_minecraft_control_router
 from ..performer.bus import PerformerEventBus, get_performer_event_bus
 from ..performer.models import DEFAULT_TARGET_POLICY, KNOWN_TARGET_POLICIES
-from ..presence import PresenceService, apply_presence_to_stream_event, load_presence_state, save_presence_state
+from ..presence import PresenceService, apply_presence_to_stream_event, load_presence_state
 from ..proactive import ProactiveScheduler
 from ..performer.vtube_studio import VTubeStudioAdapter, VTubeStudioRunner
 from ..observability import current_request_id
@@ -548,8 +548,6 @@ def stream_event(event: StreamInputEvent, synthesize_speech: bool = False, fast_
         if request_id:
             event.metadata.setdefault("request_id", request_id)
         presence = load_presence_state(downgrade_stale_live=True)
-        if presence.get("requires_confirmation"):
-            save_presence_state(presence)
         event, synthesize_speech = apply_presence_to_stream_event(
             event,
             synthesize_speech=synthesize_speech,
@@ -614,13 +612,15 @@ def stream_pending_queue() -> dict:
 def performer_recent_events(limit: int = 50, target_policy: str | None = None, after_sequence: int | None = None) -> dict:
     try:
         bus = get_performer_bus()
+        if target_policy is not None:
+            target_policy = target_policy.strip().lower() or DEFAULT_TARGET_POLICY
         items = [
             event.model_dump()
             for event in bus.recent(limit=limit, target_policy=target_policy, after_sequence=after_sequence)
         ]
         return {
             "items": items,
-            "stats": bus.stats(),
+            "stats": bus.stats(target_policy=target_policy),
             "replay": {
                 **bus.replay_window(),
                 "after_sequence": after_sequence,
@@ -749,7 +749,7 @@ async def performer_events(
             "after_sequence": after_sequence,
             "replay_window": bus.replay_window(),
             "replay_gap": bus.replay_gap_after(after_sequence),
-            "stats": bus.stats(),
+            "stats": bus.stats(target_policy=subscriber_target_policy),
         }
     )
     queue_task = asyncio.create_task(queue.get())

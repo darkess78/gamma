@@ -1,6 +1,20 @@
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass, field
+
+
+_PUBLIC_EMOTIONS = frozenset({"neutral", "happy", "teasing", "concerned", "excited", "embarrassed", "annoyed"})
+
+
+def _safe_emotion(value: object) -> str:
+    return value if type(value) is str and value in _PUBLIC_EMOTIONS else "neutral"
+
+
+def _safe_intensity(value: object) -> float:
+    if type(value) not in (int, float) or (type(value) is float and not math.isfinite(value)):
+        return 0.0
+    return float(max(0, min(1, value)))
 
 
 @dataclass(slots=True)
@@ -30,12 +44,26 @@ class AssistantEmotionState:
     recent_emotions: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
-    def to_prompt_block(self) -> str:
+    def to_prompt_block(self, *, include_private: bool = True) -> str:
         """Generate prompt block.
         
         Returns:
             str: Prompt block string.
         """
+        if not include_private:
+            # Rendering never edits the learned state. Persisted hints are not
+            # trusted as enums or scalars merely because the dataclass is typed.
+            decay = min(10000, max(0, self.decay_turns_remaining)) if type(self.decay_turns_remaining) is int else 0
+            lines = [
+                f"current_emotion: {_safe_emotion(self.current_emotion)}",
+                f"intensity: {_safe_intensity(self.intensity):.2f}",
+                f"decay_turns_remaining: {decay}",
+            ]
+            recent = [value for value in self.recent_emotions[-5:]
+                      if type(value) is str and value in _PUBLIC_EMOTIONS] if type(self.recent_emotions) is list else []
+            if recent:
+                lines.append("recent_emotions: " + ", ".join(recent))
+            return "\n".join(lines)
         lines = [
             f"current_emotion: {self.current_emotion}",
             f"intensity: {self.intensity:.2f}",

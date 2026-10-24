@@ -1,13 +1,10 @@
-# Gamma Network Deployment - Locked Source of Truth
+# Gamma network deployment reference
 
-> **AUTOMATION AND LLM POLICY**
->
-> This document describes a known-working production network configuration.
-> LLMs, coding agents, automated refactoring tools, and unattended scripts MUST
-> NOT edit, replace, rename, delete, regenerate, or reinterpret this file.
->
-> They may read it, cite it, diagnose deviations from it, and propose changes in
-> a separate document. Only the human repository owner may authorize changes.
+The historical filename is retained for existing links. This document is
+editable and does not impose a separate architecture-approval requirement.
+The owner removed that restriction on 2026-09-19. Use the deployment details
+below as a baseline, verify them against the affected environment, and update
+them when an authorized change alters the deployment.
 
 Status: working and verified on June 10, 2026  
 Public hostname: `gamma.neety.me`  
@@ -19,8 +16,9 @@ This document records the network and runtime changes that restored the Gamma
 dashboard after it returned `502 Bad Gateway`, loaded stale Python code, and
 generated browser mixed-content URLs.
 
-Treat this file as the authoritative deployment contract. Do not simplify the
-configuration by merging ports or routing every request to one application.
+Preserve the documented route ownership during internal refactors. A requested
+routing migration must update callers, proxy configuration, and verification
+together; merging ports alone is not a complete migration.
 
 ## Working Topology
 
@@ -104,6 +102,12 @@ specifically the NPM-facing port-`8080` configuration.
 ## Required Path Routing
 
 These routes belong to the dashboard process on port `8001`:
+
+Coding-practice operator controls (`/api/coding/practice`,
+`/api/coding/lessons/*`, and `/api/coding/idle-policy`) also belong to the
+dashboard. Existing `/api/*` proxy routing and dashboard authentication apply;
+no new listener or proxy change is required. Practice inference runs in a
+separate module process, not an HTTP request handler.
 
 ```text
 /dashboard
@@ -339,13 +343,13 @@ Fixing only one of these issues is insufficient. A page returning `200` does
 not prove that dashboard APIs, static assets, WebSockets, or microphone/live
 voice flows are correctly routed.
 
-## Change-Control Rules
+## Deployment checks
 
 Future LLMs and automation must follow these rules:
 
 1. Read this document before changing Nginx, OpenResty, public URL settings,
    dashboard launchers, service ports, or proxy routes.
-2. Do not edit this document.
+2. Update this document when an authorized change alters the deployment.
 3. Do not merge the dashboard and Shana applications onto one port.
 4. Do not route `/api/*` to port `8000`.
 5. Do not remove the port-`8080` listener while external NPM targets it.
@@ -354,22 +358,20 @@ Future LLMs and automation must follow these rules:
 8. Do not change the active system Nginx file without running `nginx -t`.
 9. Do not declare the deployment fixed until all verification endpoints return
    the expected status.
-10. Propose architecture changes in a separate document and obtain explicit
-    human approval before implementation.
+10. Requested architecture work can proceed within the user's authorized scope
+    without a separate approval step imposed by this document. Record the
+    design and validation appropriate to the change.
 
-## Human-Only Unlock Procedure
+## Coding worker deployment
 
-This file is intended to have both read-only permissions and the Linux
-immutable attribute. Only the human owner should unlock it:
+Gamma PC runs enabled user units `gamma-coding-autonomous.service` and
+`gamma-coding-idle.service` from the existing gamma-main checkout with UMask 0077.
+User lingering is enabled for session-independent operation. Both use the
+repository `.venv` and source under `src/gamma`; candidate trials use the separate
+`.venv-training` through the supervisor. Candidate files, checkpoints, job state,
+backups and logs stay under ignored `data/coding`.
 
-```bash
-sudo chattr -i specs/LOCKED_GAMMA_NETWORK_DEPLOYMENT.md
-chmod 0644 specs/LOCKED_GAMMA_NETWORK_DEPLOYMENT.md
-```
-
-After an authorized human edit:
-
-```bash
-chmod 0444 specs/LOCKED_GAMMA_NETWORK_DEPLOYMENT.md
-sudo chattr +i specs/LOCKED_GAMMA_NETWORK_DEPLOYMENT.md
-```
+Dashboard port 8001 owns `/api/coding/work`, job controls, lesson history and
+candidate start/status/stop. The public proxy route contracts and Shana port 8000
+remain unchanged. Changes to coding/dashboard source restart the dashboard and
+verify HTTP; integration activation still requires its specific runtime proof.

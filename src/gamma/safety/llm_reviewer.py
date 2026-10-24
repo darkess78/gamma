@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from urllib import request
 
 from ..config import settings
+from ..llm.backend_admission import backend_slot
 
 
 @dataclass(slots=True)
@@ -53,8 +55,10 @@ class SpeechLLMReviewer:
         Returns:
             LLMReviewDecision: Review decision.
         """
-        if not settings.speech_filter_llm_enabled or not self._model:
+        if not settings.speech_filter_llm_enabled:
             return LLMReviewDecision(action="allow", reason="llm-disabled", confidence=0.0)
+        if not self._model:
+            return LLMReviewDecision(action="soften", reason="llm-reviewer-missing-model", confidence=0.0)
         prompt = (
             "Classify proposed livestream assistant speech for safety.\n"
             "Return JSON only: {\"action\":\"allow|soften|block\",\"reason\":\"short\",\"confidence\":0-1}.\n"
@@ -70,12 +74,17 @@ class SpeechLLMReviewer:
             "Now classify the provided text.\n"
         )
         temperature = max(0.0, min(1.0, float(settings.speech_filter_llm_temperature or 0.0)))
+        if not isinstance(text, str) or len((prompt + text).encode("utf-8")) > 6000:
+            return LLMReviewDecision(action="soften", reason="llm-review-input-too-large", confidence=0.0)
         payload = {
             "model": self._model,
             "system": prompt,
             "prompt": text,
             "stream": False,
-            "options": {"temperature": temperature},
+            "think": False,
+            "format": "json",
+            "keep_alive": 0,
+            "options": {"temperature": temperature, "num_ctx": 8192, "num_predict": 128},
         }
         req = request.Request(
             settings.local_llm_endpoint.rstrip("/") + "/api/generate",
@@ -84,13 +93,19 @@ class SpeechLLMReviewer:
             method="POST",
         )
         try:
-            with request.urlopen(req, timeout=min(settings.local_llm_timeout_seconds, 20)) as resp:
-                raw = json.loads(resp.read().decode("utf-8")).get("response", "")
+            with backend_slot(settings.local_llm_endpoint, foreground=True,
+                              timeout=min(settings.local_llm_timeout_seconds, 20)):
+                with request.urlopen(req, timeout=min(settings.local_llm_timeout_seconds, 20)) as resp:
+                    raw = json.loads(resp.read().decode("utf-8")).get("response", "")
             parsed = self._parse_json_object(str(raw))
-            action = str(parsed.get("action", "allow")).strip().lower()
+            if not isinstance(parsed, dict) or type(parsed.get("confidence")) not in {int, float}:
+                raise ValueError("invalid review")
+            action = str(parsed.get("action", "")).strip().lower()
             if action not in {"allow", "soften", "block"}:
-                action = "allow"
-            confidence = float(parsed.get("confidence", 0.0) or 0.0)
+                raise ValueError("invalid review action")
+            confidence = float(parsed["confidence"])
+            if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+                raise ValueError("invalid review confidence")
             return LLMReviewDecision(
                 action=action,
                 reason=str(parsed.get("reason", "") or "")[:120],

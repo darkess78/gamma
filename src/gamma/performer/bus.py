@@ -206,8 +206,28 @@ class PerformerEventBus:
         )
         return {"ok": True, "target_policy": target, "cleared": True, "stats": self.stats()}
 
-    def stats(self) -> dict[str, Any]:
+    def stats(self, *, target_policy: str | None = None) -> dict[str, Any]:
         with self._lock:
+            if target_policy is not None:
+                target = _normalize_target_policy(target_policy)
+                subscriber_count = sum(
+                    subscriber.target_policy == target
+                    for subscriber in self._subscribers.values()
+                )
+                history_count = sum(
+                    _subscriber_receives_event(target, event.target_policy)
+                    and _event_allowed_by_muted_targets(target, event, self._muted_targets)
+                    for event in self._history
+                )
+                return {
+                    "subscriber_count": subscriber_count,
+                    "history_count": history_count,
+                    "last_sequence": self._next_sequence - 1,
+                    "target_policies": list(KNOWN_TARGET_POLICIES),
+                    "subscribers_by_target": {target: subscriber_count} if subscriber_count else {},
+                    "subscribers": [],
+                    "muted_targets": [target] if target in self._muted_targets else [],
+                }
             subscribers_by_target: dict[str, int] = {}
             subscribers: list[dict[str, str | None]] = []
             for subscriber in self._subscribers.values():

@@ -921,7 +921,7 @@ class StreamBrainTest(unittest.TestCase):
         self.assertIsNone(result.assistant_response)
         self.assertEqual(result.output_events, [])
 
-    def test_twitch_parallel_safety_interrupts_late_blocked_speech(self) -> None:
+    def test_twitch_parallel_safety_blocks_before_speech_publication(self) -> None:
         dispatcher = _RecordingDispatcher()
         conversation = _FakeConversation()
         with (
@@ -945,19 +945,15 @@ class StreamBrainTest(unittest.TestCase):
                 ),
                 synthesize_speech=True,
             )
-            deadline = time.monotonic() + 1.0
-            while len(dispatcher.calls) < 2 and time.monotonic() < deadline:
-                time.sleep(0.01)
-
         self.assertFalse(conversation.calls[0]["synthesize_speech"])
         self.assertTrue(conversation.calls[0]["defer_llm_safety_review"])
-        self.assertTrue(result.safety_decision["review_pending"])
-        self.assertEqual(result.assistant_response.audio_path if result.assistant_response else None, "audio.wav")
-        self.assertGreaterEqual(len(dispatcher.calls), 2)
-        override = dispatcher.calls[-1]
-        self.assertTrue(any(event.payload.get("clear_pending") for event in override))
-        self.assertTrue(any(event.type == "subtitle_line" and event.payload.get("text") == "filtered" for event in override))
-        self.assertFalse(any("I heard you" in str(event.payload) for event in override))
+        self.assertFalse(result.safety_decision.get("review_pending"))
+        self.assertFalse(result.safety_decision["playback_approved"])
+        self.assertIsNone(result.assistant_response.audio_path if result.assistant_response else None)
+        self.assertEqual(len(dispatcher.calls), 1)
+        output = dispatcher.calls[0]
+        self.assertTrue(any(event.type == "subtitle_line" and event.payload.get("text") == "filtered" for event in output))
+        self.assertFalse(any("I heard you" in str(event.payload) for event in output))
 
     def test_stream_route_delegates_to_brain(self) -> None:
         from gamma.api.routes import stream_event

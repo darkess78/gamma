@@ -6,9 +6,11 @@ from urllib import error, request
 
 from ..errors import ConfigurationError
 from ..config import settings
+from ..llm.backend_admission import backend_slot
 from ..errors import ContextOverflowError, ExternalServiceError
 from .ollama_probe import probe_ollama_model_capabilities
 from .base import LLMAdapter, LLMCallContext, LLMImageInput, LLMReply
+from .capabilities import model_capability
 from .context_budget import is_context_overflow_message
 
 
@@ -81,18 +83,22 @@ class LocalLLMAdapter(LLMAdapter):
                 raise ConfigurationError(
                     f"Configured local vision model {target_model} does not report vision capability from Ollama /api/show."
                 )
+        target_model = self._model_name_for_request(
+            has_images=bool(image_inputs),
+            system_prompt=system_prompt,
+            user_text=user_text,
+            model_override=model_override,
+        )
         payload = {
-            "model": self._model_name_for_request(
-                has_images=bool(image_inputs),
-                system_prompt=system_prompt,
-                user_text=user_text,
-                model_override=model_override,
-            ),
+            "model": target_model,
             "system": system_prompt,
             "prompt": user_text,
             "stream": False,
             "keep_alive": settings.local_llm_keep_alive,
         }
+        runtime_context_tokens = model_capability("local", target_model).runtime_context_tokens
+        if runtime_context_tokens is not None:
+            payload["options"] = {"num_ctx": runtime_context_tokens}
         if image_inputs:
             payload["images"] = [base64.b64encode(item.data).decode("ascii") for item in image_inputs]
         body = json.dumps(payload).encode("utf-8")
@@ -103,8 +109,9 @@ class LocalLLMAdapter(LLMAdapter):
             method="POST",
         )
         try:
-            with request.urlopen(req, timeout=settings.local_llm_timeout_seconds) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
+            with backend_slot(endpoint, foreground=True, timeout=settings.local_llm_timeout_seconds):
+                with request.urlopen(req, timeout=settings.local_llm_timeout_seconds) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
         except error.HTTPError as exc:
             details = exc.read().decode("utf-8", errors="replace")
             if is_context_overflow_message(details):

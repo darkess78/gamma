@@ -7,7 +7,7 @@ from typing import Any
 
 from .config import settings
 from .performer.bus import PerformerEventBus, get_performer_event_bus
-from .presence import apply_presence_to_stream_event, load_presence_state, parse_utc, save_presence_state, utc_now
+from .presence import apply_presence_to_stream_event, load_presence_state, parse_utc, presence_snapshot_matches, presence_state_path, update_presence_state, utc_now
 from .stream.brain import StreamBrain
 from .stream.models import StreamActor, StreamInputEvent
 
@@ -107,20 +107,10 @@ class ProactiveScheduler:
             fast_mode=False,
             brief_mode=True,
         )
-        scheduler_state["last_emitted_at"] = now.isoformat().replace("+00:00", "Z")
-        scheduler_state["attempts_for_topic"] = int(scheduler_state.get("attempts_for_topic") or 0) + 1
-        state.setdefault("autonomy", {})["scheduler"] = scheduler_state
-        state.setdefault("activity", {})["last_autonomous_action"] = {
-            "occurred_at": scheduler_state["last_emitted_at"],
-            "event_id": event.event_id,
-            "trace_id": result.trace_id,
-            "target": target,
-        }
-        saved = save_presence_state(state)
         return self._record_status(
             "emitted",
             "bounded_scheduler_eligible",
-            state=saved,
+            state=state,
             now=now,
             extra={"event_id": event.event_id, "trace_id": result.trace_id, "target": target},
         )
@@ -193,21 +183,30 @@ class ProactiveScheduler:
         now: datetime | None = None,
         extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        state = state or load_presence_state(downgrade_stale_live=True)
         timestamp = (now or datetime.now(timezone.utc)).isoformat().replace("+00:00", "Z")
-        scheduler = dict((state.get("autonomy") or {}).get("scheduler") or {})
-        scheduler.update(
-            {
-                "status": status,
-                "reason": reason,
-                "last_checked_at": timestamp,
+
+        def mutate(current: dict[str, Any]) -> None:
+            if state is not None and not presence_snapshot_matches(
+                state, current, missing_file=not presence_state_path().resolve().exists(),
+            ):
+                return
+            scheduler = dict((current.get("autonomy") or {}).get("scheduler") or {})
+            scheduler.update({
+                "status": status, "reason": reason, "last_checked_at": timestamp,
                 "next_check_at": datetime.fromtimestamp(
                     (now or datetime.now(timezone.utc)).timestamp() + max(1, settings.proactive_idle_tick_seconds),
                     tz=timezone.utc,
                 ).isoformat().replace("+00:00", "Z"),
-            }
-        )
-        scheduler.update(extra or {})
-        state.setdefault("autonomy", {})["scheduler"] = scheduler
-        save_presence_state(state)
+            })
+            scheduler.update(extra or {})
+            if status == "emitted":
+                scheduler["last_emitted_at"] = timestamp
+                scheduler["attempts_for_topic"] = int(scheduler.get("attempts_for_topic") or 0) + 1
+                current.setdefault("activity", {})["last_autonomous_action"] = {
+                    "occurred_at": timestamp, "event_id": (extra or {}).get("event_id"),
+                    "trace_id": (extra or {}).get("trace_id"), "target": (extra or {}).get("target"),
+                }
+            current.setdefault("autonomy", {})["scheduler"] = scheduler
+
+        update_presence_state(mutate)
         return {"status": status, "reason": reason, **(extra or {})}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .base import Tool
+from .coding import CodingGoalTool, CodingStatusTool, CodingControlTool
 from .builtin import (
     KnownPeopleTool,
     MemoryStatsTool,
@@ -77,6 +78,9 @@ class ToolRegistry:
         recent_artifacts, search_memory, save_memory, save_core_memory.
         """
         for tool in (
+            CodingGoalTool(),
+            CodingStatusTool(),
+            CodingControlTool(),
             MemoryStatsTool(),
             KnownPeopleTool(),
             ProviderStatusTool(),

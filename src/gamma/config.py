@@ -499,6 +499,8 @@ class Settings:
     local_llm_model: str = str(
         _setting("SHANA_LOCAL_LLM_MODEL", _config_value(APP_CONFIG, "local_llm_model", default="gpt-oss:20b"))
     )
+    # Compatibility key: local_workers.summary_model selects the light
+    # conversational/auxiliary model, not a neural rolling-summary worker.
     local_llm_light_model: str = str(
         _setting(
             "SHANA_LOCAL_LLM_LIGHT_MODEL",

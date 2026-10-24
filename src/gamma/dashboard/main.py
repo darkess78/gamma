@@ -42,6 +42,35 @@ class ImprovementWorkCreateRequest(BaseModel):
 class ImprovementWorkControlRequest(BaseModel):
     action: str = Field(pattern=r"^(pause|resume|stop|reject)$")
 
+
+class DiscordVoiceControlRequest(BaseModel):
+    command: str = Field(pattern=r"^(join|leave|pause|resume|status)$")
+
+
+class CodingPracticeCreateRequest(BaseModel):
+    model: str = Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/+-]*$")
+    maximum_attempts: int = Field(default=5, ge=1, le=10)
+    budget_seconds: int = Field(default=300, ge=30, le=1800)
+
+
+class CodingProjectCreateRequest(BaseModel):
+    goal: str = Field(min_length=12, max_length=1200)
+    model: str = Field(default="qwen3.8:27b", pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,199}$")
+
+
+    checker_model: str = Field(default="gpt-oss:20b", pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,199}$")
+
+
+class CodingLessonEditRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    active: bool
+
+
+class CodingIdlePolicyRequest(CodingPracticeCreateRequest):
+    enabled: bool
+    interval_seconds: int = Field(default=3600, ge=600, le=86400)
+    maximum_runs_per_day: int = Field(default=2, ge=1, le=10)
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="dashboard-static")
 
 
@@ -442,7 +471,7 @@ async def login_submit(request: Request):
     password = str(form.get("password", ""))
     if not dashboard_auth_ready() or not verify_login(username, password):
         return HTMLResponse(login_page().replace("</form>", "<p style='color:#fda4af; margin-top: 14px;'>Login failed.</p></form>"), status_code=401)
-    response = RedirectResponse(url="/", status_code=303)
+    response = RedirectResponse(url="/dashboard", status_code=303)
     response.set_cookie(
         "gamma_dashboard_session",
         session_cookie_value(username),
@@ -520,6 +549,70 @@ def status_memory() -> dict:
 def improvement_status() -> dict:
     """Return bounded, sanitized improvement activity, queue, and safety state."""
     return get_dashboard_service().build_improvement_status()
+
+
+@app.get("/api/coding/projects")
+def coding_projects() -> dict:
+    from ..coding.repository import list_jobs
+    return {"scope":"discord_status", "jobs":list_jobs(_app_settings.data_dir / "coding" / "projects")}
+
+
+@app.post("/api/coding/projects")
+def create_coding_project(payload: CodingProjectCreateRequest) -> dict:
+    try:
+        return get_dashboard_service().start_coding_project(payload.goal, payload.model, payload.checker_model)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/coding/projects/{identifier}/stop")
+def stop_coding_project(identifier: str) -> dict:
+    from ..coding.repository import job_path, write_json
+    import json
+    try:
+        path = job_path(_app_settings.data_dir / "coding" / "projects", identifier) / "state.json"
+        record = json.loads(path.read_text())
+        (path.parent / "stop.requested").touch(mode=0o600)
+        record["desired_state"] = "stopped"
+        write_json(path, record)
+        return {"id":identifier,"desired_state":"stopped"}
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail="Repository job not found") from exc
+
+
+@app.post("/api/coding/projects/{identifier}/checker")
+def continue_coding_with_checker(identifier: str) -> dict:
+    try:
+        return get_dashboard_service().continue_coding_with_checker(identifier)
+    except (ValueError,FileNotFoundError) as exc:
+        raise HTTPException(status_code=409, detail="Checker continuation unavailable") from exc
+
+
+@app.post("/api/coding/practice")
+def create_coding_practice(payload: CodingPracticeCreateRequest) -> dict:
+    """Run the fixed offline curriculum under existing dashboard authentication."""
+    try:
+        return get_dashboard_service().start_coding_practice(**payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/api/coding/lessons/{lesson_id}")
+def edit_coding_lesson(lesson_id: str, payload: CodingLessonEditRequest) -> dict:
+    try:
+        return get_dashboard_service().edit_coding_lesson(lesson_id, **payload.model_dump())
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="coding lesson not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put("/api/coding/idle-policy")
+def set_coding_idle_policy(payload: CodingIdlePolicyRequest) -> dict:
+    try:
+        return get_dashboard_service().set_coding_idle_policy(payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/improvement/work")
@@ -740,6 +833,24 @@ def stop_twitch_eventsub_worker() -> dict:
         dict: Confirmation response.
     """
     return get_dashboard_service().stop_twitch_eventsub_worker()
+
+
+@app.post("/api/discord/voice/control")
+def discord_voice_control(payload: DiscordVoiceControlRequest) -> dict:
+    try:
+        return get_dashboard_service().discord_voice_control(payload.command)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/api/discord/voice/commands/{command_id}")
+def discord_voice_command_status(command_id: str) -> dict:
+    try:
+        return get_dashboard_service().discord_voice_command_status(command_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Command not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid command ID") from exc
 
 
 @app.get("/api/discord/text-worker/status")
@@ -1385,7 +1496,8 @@ async def dashboard_monitor_input(request: Request) -> dict:
     """Submit local monitor input through the stream/performer path."""
     payload = await _json_object_payload(request)
     try:
-        return get_dashboard_service().submit_monitor_stream_input(payload)
+        from starlette.concurrency import run_in_threadpool
+        return await run_in_threadpool(get_dashboard_service().submit_monitor_stream_input, payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1507,3 +1619,7 @@ async def dashboard_live_voice(websocket: WebSocket) -> None:
         await get_live_voice_session().handle(websocket)
     except WebSocketDisconnect:
         return
+
+
+from .coding_routes import router as autonomous_coding_router
+app.include_router(autonomous_coding_router)

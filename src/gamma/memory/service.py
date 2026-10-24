@@ -13,6 +13,7 @@ from sqlalchemy.pool import NullPool
 from ..config import settings
 from ..schemas.response import MemoryCandidate
 from .models import EpisodicMemory, KnownPerson, PersonIdentity, ProfileFact
+from .attribution import MemoryOrigin, prepare_candidate, source_key, merge_origin, manual_origin
 
 
 def _sqlite_path_from_url(database_url: str) -> Path | None:
@@ -257,6 +258,7 @@ class MemoryService:
         if not settings.database_url.startswith("sqlite"):
             return
         with self._engine.begin() as conn:
+            conn.exec_driver_sql("BEGIN IMMEDIATE")
             self._ensure_sqlite_columns(
                 conn,
                 "episodicmemory",
@@ -265,6 +267,7 @@ class MemoryService:
                     "subject_type": "TEXT DEFAULT 'primary_user'",
                     "subject_name": "TEXT",
                     "relationship_to_user": "TEXT",
+                    "attribution": "TEXT",
                     "created_at": "TEXT",
                 },
             )
@@ -272,9 +275,11 @@ class MemoryService:
                 conn,
                 "profilefact",
                 {
+                    "importance": "FLOAT DEFAULT 0.5",
                     "subject_type": "TEXT DEFAULT 'primary_user'",
                     "subject_name": "TEXT",
                     "relationship_to_user": "TEXT",
+                    "attribution": "TEXT",
                     "created_at": "TEXT",
                 },
             )
@@ -325,10 +330,10 @@ class MemoryService:
             subject_name: Subject name filter.
         
         Returns:
-            list[ProfileFact]: Profile facts ordered by confidence.
+            list[ProfileFact]: Profile facts ranked by importance, then confidence.
         """
         with Session(self._engine) as session:
-            statement = select(ProfileFact).order_by(ProfileFact.confidence.desc(), ProfileFact.id.desc())
+            statement = select(ProfileFact).order_by(ProfileFact.importance.desc(), ProfileFact.confidence.desc(), ProfileFact.id.desc())
             if subject_type:
                 statement = statement.where(ProfileFact.subject_type == subject_type)
             if subject_name:
@@ -394,7 +399,7 @@ class MemoryService:
         scored.sort(key=lambda item: (item[0], item[1].importance, item[1].id or 0), reverse=True)
         return [memory for _score, memory in scored[: limit or settings.memory_top_k]]
 
-    def persist_candidates(self, candidates: Iterable[MemoryCandidate], session_id: str | None = None) -> int:
+    def persist_candidates(self, candidates: Iterable[MemoryCandidate], session_id: str | None = None, *, origin: MemoryOrigin | None = None) -> int:
         """Persist memory candidates.
         
         Args:
@@ -406,22 +411,27 @@ class MemoryService:
         """
         if not settings.memory_enabled or settings.memory_write_mode == "off":
             return 0
+        if origin is not None and type(origin) is not MemoryOrigin:
+            raise TypeError("Memory origin must be internal ingress metadata")
+        if origin is not None and not origin.write_allowed:
+            return 0
         saved = 0
         with Session(self._engine) as session:
             for candidate in candidates:
+                candidate, attribution = prepare_candidate(candidate, origin)
                 if candidate.type in {"profile", "fact", "preference", "project", "boundary"}:
-                    saved += self._upsert_profile_fact(session, candidate)
+                    saved += self._upsert_profile_fact(session, candidate, attribution=attribution)
                 elif candidate.type == "episodic":
-                    saved += self._upsert_episodic_memory(session, candidate, session_id=session_id)
+                    saved += self._upsert_episodic_memory(session, candidate, session_id=session_id, attribution=attribution)
                 session.flush()
-            if saved:
-                session.commit()
+            session.commit()  # Exact repeats may update rank/provenance while saved stays zero.
         return saved
 
-    def _upsert_profile_fact(self, session: Session, candidate: MemoryCandidate) -> int:
+    def _upsert_profile_fact(self, session: Session, candidate: MemoryCandidate, *, attribution: str | None = None) -> int:
         normalized_text = _canonicalize_profile_text(candidate.text)
         category = candidate.tags[0] if candidate.tags else "general"
-        confidence = max(0.1, min(1.0, candidate.importance))
+        confidence = 0.0  # Selection strength is not evidence of truth.
+        importance = max(0.1, min(1.0, candidate.importance))
         subject_type = candidate.subject_type or "primary_user"
         subject_name = _normalize_subject_name(candidate.subject_name)
         relationship_to_user = _normalize_subject_name(candidate.relationship_to_user)
@@ -435,9 +445,11 @@ class MemoryService:
             exact_statement = exact_statement.where(ProfileFact.subject_name == subject_name)
         else:
             exact_statement = exact_statement.where(ProfileFact.subject_name.is_(None))
-        existing_exact = session.exec(exact_statement).first()
+        existing_exact = next((fact for fact in session.exec(exact_statement)
+                               if source_key(fact.attribution) == source_key(attribution)), None)
         if existing_exact:
-            existing_exact.confidence = max(existing_exact.confidence, confidence)
+            existing_exact.importance = max(existing_exact.importance, importance)
+            existing_exact.attribution = merge_origin(existing_exact.attribution, attribution)
             existing_exact.relationship_to_user = relationship_to_user or existing_exact.relationship_to_user
             session.add(existing_exact)
             return 0
@@ -455,6 +467,8 @@ class MemoryService:
             else:
                 opposite_statement = opposite_statement.where(ProfileFact.subject_name.is_(None))
             for fact in list(session.exec(opposite_statement)):
+                if source_key(fact.attribution) != source_key(attribution):
+                    continue
                 if _profile_slot(fact.category, fact.fact_text) != opposite_slot:
                     continue
                 if _extract_preference_subject(opposite_slot, fact.fact_text) == preference_subject:
@@ -476,9 +490,13 @@ class MemoryService:
                 slot_statement = slot_statement.where(ProfileFact.subject_name.is_(None))
             existing_facts = list(session.exec(slot_statement))
             for fact in existing_facts:
+                if source_key(fact.attribution) != source_key(attribution):
+                    continue
                 if _profile_slot(fact.category, fact.fact_text) == slot:
                     fact.fact_text = normalized_text
                     fact.confidence = confidence
+                    fact.importance = importance
+                    fact.attribution = merge_origin(fact.attribution, attribution)
                     fact.relationship_to_user = relationship_to_user or fact.relationship_to_user
                     session.add(fact)
                     return 0
@@ -488,6 +506,8 @@ class MemoryService:
                 category=category,
                 fact_text=normalized_text,
                 confidence=confidence,
+                importance=importance,
+                attribution=attribution,
                 subject_type=subject_type,
                 subject_name=subject_name,
                 relationship_to_user=relationship_to_user,
@@ -495,7 +515,7 @@ class MemoryService:
         )
         return 1
 
-    def _upsert_episodic_memory(self, session: Session, candidate: MemoryCandidate, session_id: str | None = None) -> int:
+    def _upsert_episodic_memory(self, session: Session, candidate: MemoryCandidate, session_id: str | None = None, *, attribution: str | None = None) -> int:
         normalized_summary = _normalize_whitespace(candidate.text.strip())
         normalized_tags = ",".join(candidate.tags)
         subject_type = candidate.subject_type or "primary_user"
@@ -513,10 +533,12 @@ class MemoryService:
             statement = statement.where(EpisodicMemory.subject_name == subject_name)
         else:
             statement = statement.where(EpisodicMemory.subject_name.is_(None))
-        existing = session.exec(statement).first()
+        existing = next((memory for memory in session.exec(statement)
+                         if source_key(memory.attribution) == source_key(attribution)), None)
         importance = max(0.1, min(1.0, candidate.importance))
         if existing:
             existing.importance = max(existing.importance, importance)
+            existing.attribution = merge_origin(existing.attribution, attribution)
             if normalized_tags:
                 merged_tags = sorted({tag for tag in (existing.tags.split(",") + candidate.tags) if tag})
                 existing.tags = ",".join(merged_tags)
@@ -535,9 +557,12 @@ class MemoryService:
             scope_statement = scope_statement.where(EpisodicMemory.subject_name.is_(None))
         signature = _episodic_signature(normalized_summary)
         for memory in list(session.exec(scope_statement.order_by(EpisodicMemory.id.desc()))):
+            if source_key(memory.attribution) != source_key(attribution):
+                continue
             if _episodic_signature(memory.summary) != signature:
                 continue
             memory.importance = max(memory.importance, importance)
+            memory.attribution = merge_origin(memory.attribution, attribution)
             if normalized_tags:
                 merged_tags = sorted({tag for tag in (memory.tags.split(",") + candidate.tags) if tag})
                 memory.tags = ",".join(merged_tags)
@@ -549,6 +574,7 @@ class MemoryService:
             EpisodicMemory(
                 session_id=session_id,
                 summary=normalized_summary,
+                attribution=attribution,
                 importance=importance,
                 tags=normalized_tags,
                 subject_type=subject_type,
@@ -714,6 +740,7 @@ class MemoryService:
         with Session(self._engine) as session:
             if kind == "profile_fact":
                 item = ProfileFact(
+                    attribution='{"kind":"manual","source":"manual"}',
                     category=_normalize_identity(payload.get("category"), limit=80) or "manual",
                     fact_text=_canonicalize_profile_text(summary),
                     confidence=max(0.0, min(1.0, float(payload.get("confidence", 0.8)))),
@@ -723,6 +750,7 @@ class MemoryService:
                 )
             elif kind == "episodic":
                 item = EpisodicMemory(
+                    attribution='{"kind":"manual","source":"manual"}',
                     session_id=_normalize_identity(payload.get("session_id"), limit=120) or None,
                     summary=summary,
                     importance=max(0.0, min(1.0, float(payload.get("confidence", 0.5)))),
@@ -767,6 +795,7 @@ class MemoryService:
                 item.relationship_to_user = _normalize_subject_name(str(payload.get("relationship_to_user") or ""))
             else:
                 raise ValueError("unsupported memory kind")
+            item.attribution = manual_origin(item.attribution)
             session.add(item)
             session.commit()
         return next(row for row in self.recent_items(limit=1000) if row["kind"] == kind and row["id"] == item_id)

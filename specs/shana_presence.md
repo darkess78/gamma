@@ -20,6 +20,13 @@ sidecar processes exist.
 - `break`: Twitch/EventSub observation may continue, but public/proactive
   output is suppressed and the public performer target is muted/cleared.
 
+Configured Discord conversations use the separate `discord_call` target in
+Wake and Go Live. Sleep and Break suppress both Discord text and voice replies.
+Discord guild and channel allowlists, output enablement, and voice enablement
+are checked before allowing that target. Go Live never redirects Discord
+conversation audio to the public stream. Discord replies still receive public
+privacy and output review, even when their speaker is the owner.
+
 ## Runtime State
 
 Presence state is runtime state stored under:
@@ -65,3 +72,42 @@ and evaluates deterministic Presence, privacy, listener, active-turn, cooldown,
 attempt, quiet-hours, resource, interruption, and operator-mute gates before
 any model call. Sleep and Break emit nothing; Wake is local/generic-safe and Go
 Live is public-safe with tools disabled.
+
+## Staged latest-owner state and atomic persistence
+
+Presence uses the existing persona per-file state lock and atomic_write_text
+helper. Short read/modify/write operations read canonical state while holding that
+lock, and publish complete JSON through a unique temporary file. Canonical paths
+are used consistently for locking, reads and writes, including symlink and lexical
+aliases. Explicit whole-state saves remain serialized replacements. Internal
+bookkeeping no longer writes a captured whole-state snapshot. The persistent lock
+sidecar is never removed while writers can contend. Failure before publication
+leaves prior canonical bytes intact; this is complete publication, not a new
+power-loss durability guarantee.
+
+Owner transitions resolve audience outside the state lock, then mutate fresh state.
+Status polling and stream routing read and conditionally persist the restart
+Go Live downgrade atomically, without later saving an old poll snapshot. Fresh
+Go Live confirmation and existing Sleep/output restrictions remain unchanged.
+Model generation, network dispatch and status callbacks run outside the lock.
+
+Late Wake, scheduler and conversation interaction bookkeeping compares captured
+control timestamps, mode, desired mode, confirmation, updated_by, audience, flags
+and activity with current persisted state. It cannot restore old controls or
+replace newer stored session/turn/work context. Unchanged-state bookkeeping still
+records results. A stale Wake opening may enter the bounded recent_openings list
+with status stale, but does not become the current result/activity or update
+interaction time. Scheduler counters and success metadata update together only
+when the captured state still matches. Unbound scheduler diagnostics mutate fresh
+state without copying old controls. Missing-file bookkeeping retains the
+existing default state behavior without treating independent default timestamps
+as a newer owner command.
+
+This is a backend state repair, not general turn ordering, cancellation or output
+revocation. It compares existing persisted fields and adds no owner/auth/identity
+semantics, routing modes, dependencies or control framework. Cooperating writers
+must use these helpers; arbitrary external whole-file edits are outside their
+serialization guarantee. API request/response schemas and capabilities are
+unchanged. Backend-only synthetic state/file checks do not establish Monitor
+consumer, producer, dispatch, audible playback or browser acceptance. Production
+activation and output-time Presence enforcement remain separate work.

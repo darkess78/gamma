@@ -1,28 +1,32 @@
 from __future__ import annotations
 
+from ..memory.attribution import MemoryOrigin
+
 import json
+import logging
 import re
 import time
 import threading
 from datetime import datetime, timezone
+from typing import Callable
 
 from ..config import settings
 from ..errors import ConversationError, GammaError
 from ..identity.profile import SpeakerProfile
 from ..identity.resolver import IdentityResolver
-from ..llm.base import LLMCallContext
+from ..llm.base import LLMCallContext, LLMReply
 from ..llm.capabilities import estimate_text_tokens
 from ..llm.context_budget import ContextBudgetManager, prompt_layers_from_system_prompt
 from ..llm.factory import build_llm_adapter
 from ..llm.router_adapter import begin_route_trace, take_route_trace
 from ..memory.service import MemoryService
-from ..memory.continuity import ContinuityService
+from ..memory.continuity import ContinuityService, JournalOwnershipError
 from ..persona.assistant_state import AssistantStateStore
 from ..persona.emotion_service import EmotionMemoryService
-from ..persona.loader import build_system_prompt
+from ..persona.loader import build_system_prompt, load_persona_config
 from ..safety.privacy_guard import review_private_info_request
 from ..safety.speech_filter import SpeechFilterResult, SpeechSafetyFilter
-from ..schemas.conversation import SpeakerContext
+from ..schemas.conversation import RecipientContext, SpeakerContext
 from ..schemas.response import (
     AssistantResponse,
     ConversationTurnDraft,
@@ -34,6 +38,7 @@ from ..schemas.response import (
     VisionAnalysis,
 )
 from ..tools.registry import ToolRegistry
+from ..tools.disclosure import disclose_tool_call, disclose_tool_result
 from ..vision.service import VisionImage, VisionService
 from ..voice.expressive_text import strip_hidden_style_tags
 from ..voice.tts import TTSService
@@ -43,6 +48,24 @@ from .turn_contract import ParsedTurn, StructuredTurnParser, TurnContractError, 
 ALLOWED_EMOTIONS: set[str] = {"neutral", "happy", "teasing", "concerned", "excited", "embarrassed", "annoyed"}
 _CODE_FENCE_RE = re.compile(r"```+")
 _INLINE_TICK_RE = re.compile(r"`([^`]*)`")
+
+
+def _recipient_context(value: RecipientContext | None, *, delivery_context: str | None = None) -> RecipientContext:
+    if value is None:
+        value = RecipientContext()
+    if type(value) is not RecipientContext:
+        raise ConversationError("recipient_context_must_be_internal")
+    if value.allows_private_memory and delivery_context == "public_stream":
+        raise ConversationError("private_recipient_conflicts_with_public_delivery")
+    return value
+
+
+def _memory_candidate_view(
+    candidates: list[MemoryCandidate], *, recipient: RecipientContext | None = None,
+) -> list[MemoryCandidate]:
+    if not _recipient_context(recipient).allows_private_memory:
+        return []
+    return [candidate.model_copy(deep=True) for candidate in candidates]
 
 
 class ConversationService:
@@ -77,6 +100,7 @@ class ConversationService:
         delivery_context: str | None = None,
         speech_allowed: bool = True,
         speech_requested: bool | None = None,
+        recipient: RecipientContext | None = None,
     ) -> AssistantResponse:
         """Respond to a user text message.
         
@@ -95,56 +119,91 @@ class ConversationService:
         Returns:
             AssistantResponse with spoken text and timing.
         """
+        recipient = _recipient_context(recipient, delivery_context=delivery_context)
         speaker = self._identity.resolve(speaker_ctx)
         exchange_id = None
-        privacy_scope = "local_private" if speaker.memory_read_allowed else "local_generic"
+        tool_checkpoint = None
+        presence_snapshot = None
         if session_id and not evaluation_mode:
-            exchange_id = self._continuity.begin_exchange(
+            try:
+                from ..presence import load_presence_state
+
+                presence_snapshot = load_presence_state()
+            except Exception:
+                pass
+        privacy_scope = recipient.privacy_scope
+        if session_id and not evaluation_mode:
+            continuity = self._continuity
+            exchange_id = continuity.begin_exchange(
                 session_id=session_id,
                 text=user_text,
                 speaker_name=speaker.name,
                 input_source=speaker_ctx.source if speaker_ctx is not None else "local",
                 privacy_scope=privacy_scope,
             )
-        try:
-            response = self._respond(
-                user_text=user_text,
-                session_id=session_id,
-                synthesize_speech=synthesize_speech,
-                speaker=speaker,
-                fast_mode=fast_mode,
-                brief_mode=brief_mode,
-                micro_mode=micro_mode,
-                defer_llm_safety_review=defer_llm_safety_review,
-                background_context=background_context,
-                persist_state=not evaluation_mode,
-                interaction_mode="evaluation" if evaluation_mode else "chat",
-                delivery_context=delivery_context or ("direct_voice" if synthesize_speech else "direct_text"),
-                speech_allowed=speech_allowed,
-                speech_requested=synthesize_speech if speech_requested is None else speech_requested,
-            )
-        except Exception:
             if exchange_id:
-                self._continuity.fail_exchange(exchange_id)
+                def tool_checkpoint() -> None:
+                    continuity.require_owned_pending_exchange(
+                        exchange_id, session_id=session_id, privacy_scope=privacy_scope,
+                    )
+        try:
+            try:
+                response = self._respond(
+                    user_text=user_text,
+                    session_id=session_id,
+                    synthesize_speech=synthesize_speech,
+                    speaker=speaker,
+                    fast_mode=fast_mode,
+                    brief_mode=brief_mode,
+                    micro_mode=micro_mode,
+                    defer_llm_safety_review=defer_llm_safety_review,
+                    background_context=background_context,
+                    persist_state=not evaluation_mode,
+                    memory_origin=MemoryOrigin.from_speaker(speaker,
+                        source=speaker_ctx.source if speaker_ctx is not None else "local",
+                        privacy_scope=privacy_scope, session_id=session_id, turn_id=exchange_id),
+                    interaction_mode="evaluation" if evaluation_mode else "chat",
+                    delivery_context=delivery_context or ("direct_voice" if synthesize_speech else "direct_text"),
+                    speech_allowed=speech_allowed,
+                    speech_requested=synthesize_speech if speech_requested is None else speech_requested,
+                    recipient=recipient,
+                    tool_checkpoint=tool_checkpoint,
+                )
+            except Exception:
+                if exchange_id:
+                    self._continuity.fail_exchange(exchange_id)
+                raise
+            if exchange_id and session_id and not evaluation_mode:
+                response.route_trace_id = exchange_id
+                self._continuity.complete_exchange(
+                    exchange_id=exchange_id,
+                    session_id=session_id,
+                    assistant_text=response.display_text or "",
+                    trace_id=response.route_trace_id,
+                    output_target=recipient.target_policy or "dashboard_monitor",
+                    privacy_scope=privacy_scope,
+                    internal_summary=response.internal_summary,
+                    state_updates=response.state_updates.model_dump(exclude_none=True),
+                    tool_metadata={
+                        "tool_calls": [item.model_dump() for item in response.tool_calls],
+                        "tool_results": [item.model_dump() for item in response.tool_results],
+                    },
+                )
+                if presence_snapshot is not None:
+                    self._record_presence_interaction(session_id, expected_state=presence_snapshot)
+            return response
+        except BaseException as interruption:
+            if isinstance(interruption, Exception):
+                raise
+            if exchange_id:
+                try:
+                    self._continuity.fail_exchange(exchange_id, status="interrupted")
+                except Exception as cleanup_error:
+                    logging.getLogger(__name__).warning(
+                        "Journal interruption cleanup failed (%s)",
+                        type(cleanup_error).__name__,
+                    )
             raise
-        if exchange_id and session_id and not evaluation_mode:
-            response.route_trace_id = exchange_id
-            self._continuity.complete_exchange(
-                exchange_id=exchange_id,
-                session_id=session_id,
-                assistant_text=response.display_text or "",
-                trace_id=response.route_trace_id,
-                output_target="dashboard_monitor",
-                privacy_scope=privacy_scope,
-                internal_summary=response.internal_summary,
-                state_updates=response.state_updates.model_dump(exclude_none=True),
-                tool_metadata={
-                    "tool_calls": [item.model_dump() for item in response.tool_calls],
-                    "tool_results": [item.model_dump() for item in response.tool_results],
-                },
-            )
-            self._record_presence_interaction(session_id)
-        return response
 
     def continuity_snapshot(self, session_id: str) -> dict:
         return self._continuity.snapshot(session_id)
@@ -173,17 +232,22 @@ class ConversationService:
         return self._continuity.last_output(target_policy)
 
     @staticmethod
-    def _record_presence_interaction(session_id: str) -> None:
+    def _record_presence_interaction(session_id: str, *, expected_state: dict | None = None) -> None:
         try:
-            from ..presence import load_presence_state, save_presence_state, utc_now
+            from ..presence import presence_snapshot_matches, presence_state_path, update_presence_state, utc_now
 
-            state = load_presence_state(downgrade_stale_live=True)
-            state.setdefault("lifecycle", {})["last_interaction_at"] = utc_now()
-            state.setdefault("activity", {})["session_id"] = session_id
-            scheduler = dict((state.setdefault("autonomy", {})).get("scheduler") or {})
-            scheduler["attempts_for_topic"] = 0
-            state["autonomy"]["scheduler"] = scheduler
-            save_presence_state(state)
+            def mutate(state: dict) -> None:
+                if expected_state is not None and not presence_snapshot_matches(
+                    expected_state, state, missing_file=not presence_state_path().resolve().exists(),
+                ):
+                    return
+                state.setdefault("lifecycle", {})["last_interaction_at"] = utc_now()
+                state.setdefault("activity", {})["session_id"] = session_id
+                scheduler = dict((state.setdefault("autonomy", {})).get("scheduler") or {})
+                scheduler["attempts_for_topic"] = 0
+                state["autonomy"]["scheduler"] = scheduler
+
+            update_presence_state(mutate)
         except Exception:
             pass
 
@@ -198,6 +262,7 @@ class ConversationService:
         session_id: str | None = None,
         synthesize_speech: bool = False,
         speaker_ctx: SpeakerContext | None = None,
+        recipient: RecipientContext | None = None,
     ) -> AssistantResponse:
         """Respond to a user message with image analysis.
         
@@ -214,6 +279,8 @@ class ConversationService:
         Returns:
             AssistantResponse with vision analysis and reply.
         """
+        recipient = _recipient_context(recipient)
+        load_persona_config(private=recipient.allows_private_memory)
         image = self._vision.prepare_image(
             image_bytes=image_bytes,
             media_type=image_media_type,
@@ -225,14 +292,19 @@ class ConversationService:
             user_text=user_text,
             mode=vision_mode,
         )
+        image_speaker = self._identity.resolve(speaker_ctx)
         return self._respond(
+            memory_origin=MemoryOrigin.from_speaker(image_speaker,
+                source=speaker_ctx.source if speaker_ctx is not None else "local",
+                privacy_scope=recipient.privacy_scope, session_id=session_id),
             user_text=user_text,
             session_id=session_id,
             synthesize_speech=synthesize_speech,
             image=image,
             vision_analysis=vision_analysis,
-            speaker=self._identity.resolve(speaker_ctx),
+            speaker=image_speaker,
             delivery_context="direct_voice" if synthesize_speech else "direct_text",
+            recipient=recipient,
         )
 
     def respond_presence_wake(
@@ -242,8 +314,11 @@ class ConversationService:
         speaker: SpeakerProfile,
         wake_context: str,
         synthesize_speech: bool,
+        recipient: RecipientContext | None = None,
     ) -> AssistantResponse:
         """Generate a dedicated Presence Wake opening without creating user memory."""
+        recipient = _recipient_context(recipient)
+        wake_context = wake_context if recipient.allows_private_memory else ""
         try:
             begin_route_trace()
             started_at = time.perf_counter()
@@ -252,6 +327,7 @@ class ConversationService:
                 user_text=None,
                 session_id=session_id,
                 speaker=speaker,
+                recipient=recipient,
             )
             wake_instruction = (
                 "\n\nBegin this session naturally as Shana using the supplied context. "
@@ -300,6 +376,7 @@ class ConversationService:
                 legacy_delivery="speech",
                 delivery_context="presence_wake",
                 image=None,
+                recipient=recipient,
             )
             turn_draft = parsed.draft
             expressive = strip_hidden_style_tags(self._cleanup_spoken_text(turn_draft.final_text), default_emotion=turn_draft.emotion)
@@ -412,13 +489,21 @@ class ConversationService:
         delivery_context: str = "direct_text",
         speech_allowed: bool = True,
         speech_requested: bool | None = None,
+        recipient: RecipientContext | None = None,
+        memory_origin: MemoryOrigin | None = None,
+        tool_checkpoint: Callable[[], None] | None = None,
     ) -> AssistantResponse:
+        recipient = _recipient_context(recipient, delivery_context=delivery_context)
+        memory_origin = memory_origin or MemoryOrigin.from_speaker(
+            speaker, privacy_scope=recipient.privacy_scope, session_id=session_id)
+        background_context = background_context if recipient.allows_private_memory else None
         stripped = user_text.strip()
         if not stripped:
             raise ConversationError("user_text must not be empty.")
         wants_speech = synthesize_speech if speech_requested is None else speech_requested
 
         try:
+            load_persona_config(private=recipient.allows_private_memory)
             privacy_decision = review_private_info_request(stripped)
             if privacy_decision.blocked:
                 started_at = time.perf_counter()
@@ -491,11 +576,12 @@ class ConversationService:
                 user_text=stripped,
                 session_id=session_id,
                 speaker=speaker,
+                recipient=recipient,
             )
-            if session_id and persist_state:
+            if session_id and persist_state and recipient.allows_private_memory:
                 continuity_context = self._continuity.prompt_context(
                     session_id,
-                    privacy_scopes=self._privacy_scopes_for_speaker(speaker),
+                    privacy_scopes={"local_private"},
                 )
                 if continuity_context:
                     system_prompt += "\n\n" + continuity_context
@@ -564,7 +650,15 @@ class ConversationService:
                 1,
             )
             draft_llm_started = time.perf_counter()
-            draft_reply = self._llm_adapter().generate_reply(
+            owner_coding_receipt = (len(inferred_tool_calls) == 1 and inferred_tool_calls[0].tool == 'coding_goal'
+                                    and speaker is not None and speaker.is_owner is True and speaker.trust == 'owner')
+            if owner_coding_receipt:
+                draft_reply = LLMReply(text=ConversationTurnDraft(
+                    action='reply', requested_delivery=legacy_delivery,
+                    final_text='Checking that coding request.', reason_code='owner_coding_control',
+                ).model_dump_json())
+            else:
+                draft_reply = self._llm_adapter().generate_reply(
                 system_prompt=system_prompt,
                 user_text=draft_user_text,
                 image_inputs=[image.to_llm_input()] if image is not None else None,
@@ -580,7 +674,7 @@ class ConversationService:
                     minimum_context_tokens=4096,
                     prompt_builder=build_conversation_prompt,
                 ),
-            )
+                )
             timing["draft_llm_ms"] = round(
                 (time.perf_counter() - draft_llm_started) * 1000,
                 1,
@@ -598,6 +692,7 @@ class ConversationService:
                 legacy_delivery=legacy_delivery,
                 delivery_context=delivery_context,
                 image=image,
+                recipient=recipient,
             )
             turn_draft = parsed_turn.draft
             timing["turn_parse_ms"] = round((time.perf_counter() - parse_started) * 1000, 1)
@@ -609,13 +704,13 @@ class ConversationService:
             # Authorized tool calls always run synchronously and their raw output
             # never becomes communicable text.
             tool_started = time.perf_counter()
-            inferred_results = self._execute_tool_calls(primary_tool_calls)
+            inferred_results = self._execute_tool_calls(primary_tool_calls, speaker=speaker, recipient=recipient, memory_origin=memory_origin, tool_checkpoint=tool_checkpoint)
             timing["tool_exec_ms"] = round((time.perf_counter() - tool_started) * 1000, 1)
 
             final_reply_text = turn_draft.final_text
             final_reply_text = self._cleanup_spoken_text(final_reply_text)
             if inferred_results:
-                direct_reply = self._render_direct_tool_reply(user_text=stripped, tool_results=inferred_results)
+                direct_reply = self._render_direct_tool_reply(user_text=stripped, tool_results=inferred_results, recipient=recipient)
                 if direct_reply is not None:
                     final_reply_text = self._cleanup_spoken_text(direct_reply)
                     timing["finalizer_ms"] = 0.0
@@ -631,6 +726,7 @@ class ConversationService:
                         draft_reply=draft_reply.text,
                         tool_results=inferred_results,
                         image=image,
+                        recipient=recipient,
                     ))
                     timing["finalizer_ms"] = round((time.perf_counter() - finalizer_started) * 1000, 1)
             else:
@@ -640,17 +736,19 @@ class ConversationService:
                 final_reply_text,
                 tool_results=inferred_results,
                 delivery_context=delivery_context,
+                recipient=recipient,
             )
 
             if fast_mode:
-                # Fast path: skip the metadata LLM call entirely.
-                # Return immediately with default emotion/motions.
-                # Memory saving and metadata extraction run in a background thread.
+                # Fast path: use draft metadata without another metadata LLM call.
+                # Persist eligible structured candidates synchronously. If none are
+                # provided and writes are allowed, save heuristic candidates in a
+                # background thread without metadata LLM extraction.
                 timing["metadata_ms"] = 0.0
                 memory_started = time.perf_counter()
                 structured_candidates = turn_draft.memory_candidates if parsed_turn.structured and memory_write_ok else []
                 saved_count = (
-                    self._memory.persist_candidates(structured_candidates, session_id=session_id)
+                    self._memory.persist_candidates(structured_candidates, session_id=session_id, origin=memory_origin)
                     if structured_candidates
                     else 0
                 )
@@ -685,9 +783,9 @@ class ConversationService:
                     voice_styles=list(dict.fromkeys([*turn_draft.voice_styles, *expressive.styles])),
                     internal_summary=turn_draft.internal_summary,
                     motions=turn_draft.motions,
-                    tool_calls=primary_tool_calls,
+                    tool_calls=[disclose_tool_call(call, recipient=recipient) for call in primary_tool_calls],
                     tool_results=inferred_results,
-                    memory_candidates=turn_draft.memory_candidates if memory_write_ok else [],
+                    memory_candidates=_memory_candidate_view(turn_draft.memory_candidates if memory_write_ok else [], recipient=recipient),
                     vision=vision_analysis,
                     state_updates=turn_draft.state_updates,
                 )
@@ -732,7 +830,7 @@ class ConversationService:
                 if memory_write_ok and not structured_candidates:
                     threading.Thread(
                         target=self._background_memory_save,
-                        args=(stripped, response.display_text or "", session_id),
+                        args=(stripped, response.display_text or "", session_id, memory_origin),
                         daemon=True,
                     ).start()
 
@@ -740,7 +838,8 @@ class ConversationService:
                     self._remember_assistant_state(user_text=stripped, reply_text=response.display_text or "", emotion=response.emotion, session_id=session_id)
                 return response
 
-            # Standard path: full metadata extraction + synchronous memory save.
+            # Standard path: use structured draft metadata directly; extract
+            # legacy metadata only when needed, then save candidates synchronously.
             metadata_started = time.perf_counter()
             if parsed_turn.structured:
                 extracted = {
@@ -764,9 +863,9 @@ class ConversationService:
 
             # Merge any additional tool calls the LLM suggested via metadata
             extra_tool_calls = self._merge_tool_calls(extracted["tool_calls"], []) if tools_ok and not parsed_turn.structured else []
-            extra_results = self._execute_tool_calls(extra_tool_calls)
+            extra_results = self._execute_tool_calls(extra_tool_calls, speaker=speaker, recipient=recipient, memory_origin=memory_origin, tool_checkpoint=tool_checkpoint)
             if extra_results:
-                direct_reply = self._render_direct_tool_reply(user_text=stripped, tool_results=extra_results)
+                direct_reply = self._render_direct_tool_reply(user_text=stripped, tool_results=extra_results, recipient=recipient)
                 if direct_reply is not None:
                     final_reply_text = direct_reply
                 else:
@@ -781,6 +880,7 @@ class ConversationService:
                         draft_reply=final_reply_text,
                         tool_results=extra_results,
                         image=image,
+                        recipient=recipient,
                     )
                     timing["finalizer_ms"] = round((time.perf_counter() - finalizer_started) * 1000, 1)
 
@@ -790,6 +890,7 @@ class ConversationService:
                 final_reply_text,
                 tool_results=all_tool_results,
                 delivery_context=delivery_context,
+                recipient=recipient,
             )
             expressive = strip_hidden_style_tags(final_reply_text, default_emotion=extracted["emotion"])
             response_emotion = self._normalize_emotion(expressive.emotion)
@@ -812,7 +913,7 @@ class ConversationService:
                 else []
             )
             memory_started = time.perf_counter()
-            saved_count = self._memory.persist_candidates(memory_candidates, session_id=session_id) if memory_write_ok else 0
+            saved_count = self._memory.persist_candidates(memory_candidates, session_id=session_id, origin=memory_origin) if memory_write_ok else 0
             timing["memory_persist_ms"] = round((time.perf_counter() - memory_started) * 1000, 1)
 
             delivery_mode = resolve_delivery(
@@ -834,9 +935,9 @@ class ConversationService:
                 voice_styles=list(dict.fromkeys([*turn_draft.voice_styles, *expressive.styles])),
                 internal_summary=extracted["internal_summary"],
                 motions=extracted["motions"],
-                tool_calls=all_tool_calls,
+                tool_calls=[disclose_tool_call(call, recipient=recipient) for call in all_tool_calls],
                 tool_results=all_tool_results,
-                memory_candidates=memory_candidates,
+                memory_candidates=_memory_candidate_view(memory_candidates, recipient=recipient),
                 vision=vision_analysis,
                 state_updates=turn_draft.state_updates,
             )
@@ -874,6 +975,8 @@ class ConversationService:
             else:
                 response.tts_metadata["evaluation_route_events"] = route_events
             return response
+        except JournalOwnershipError:
+            raise
         except GammaError:
             raise
         except Exception as exc:
@@ -888,7 +991,9 @@ class ConversationService:
         legacy_delivery: DeliveryMode,
         delivery_context: str,
         image: VisionImage | None,
+        recipient: RecipientContext | None = None,
     ) -> ParsedTurn:
+        _recipient_context(recipient, delivery_context=delivery_context)
         try:
             return self._turn_parser.parse(raw, legacy_delivery=legacy_delivery)
         except TurnContractError:
@@ -916,12 +1021,13 @@ class ConversationService:
             return self._turn_parser.parse(repaired.text, legacy_delivery=legacy_delivery)
         except Exception:
             return ParsedTurn(
-                draft=self._fallback_turn_draft(delivery_context=delivery_context),
+                draft=self._fallback_turn_draft(delivery_context=delivery_context, recipient=recipient),
                 structured=True,
             )
 
     @staticmethod
-    def _fallback_turn_draft(*, delivery_context: str) -> ConversationTurnDraft:
+    def _fallback_turn_draft(*, delivery_context: str, recipient: RecipientContext | None = None) -> ConversationTurnDraft:
+        _recipient_context(recipient, delivery_context=delivery_context)
         if delivery_context in {"public_stream", "ambient", "audio_observation", "presence_wake"}:
             return ConversationTurnDraft(
                 action="stay_silent",
@@ -932,7 +1038,7 @@ class ConversationService:
         return ConversationTurnDraft(
             action="reply",
             requested_delivery="text_only",
-            final_text="I’m having trouble forming a safe response right now. Please try again.",
+            final_text="Iâ€™m having trouble forming a safe response right now. Please try again.",
             internal_summary="The turn result failed the communication contract and used a safe direct fallback.",
             reason_code="contract_fallback_direct",
         )
@@ -943,45 +1049,47 @@ class ConversationService:
         *,
         tool_results: list[ToolExecutionResult],
         delivery_context: str,
+        recipient: RecipientContext | None = None,
     ) -> str:
         value = (text or "").strip()
+        recipient = _recipient_context(recipient, delivery_context=delivery_context)
         try:
             self._turn_parser.validate_communicable_text(value)
             raw_outputs = {item.output.strip() for item in tool_results if item.output.strip()}
-            if value and value in raw_outputs:
+            public_acknowledgments = {
+                disclose_tool_result(item, recipient=recipient).output for item in tool_results
+            } if not recipient.allows_private_memory else set()
+            if value and value in raw_outputs and value not in public_acknowledgments:
                 raise TurnContractError("raw_tool_output_selected")
             return value
         except TurnContractError:
-            return self._fallback_turn_draft(delivery_context=delivery_context).final_text
+            return self._fallback_turn_draft(delivery_context=delivery_context, recipient=recipient).final_text
 
     def _cleanup_spoken_text(self, text: str) -> str:
         cleaned = _CODE_FENCE_RE.sub("", text or "")
         cleaned = _INLINE_TICK_RE.sub(r"\1", cleaned)
         cleaned = cleaned.replace("*", " ").replace("#", " ")
-        cleaned = re.sub(r"^\s*[-•]\s+", "", cleaned, flags=re.MULTILINE)
+        cleaned = re.sub(r"^\s*[-â€¢]\s+", "", cleaned, flags=re.MULTILINE)
         cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
         return cleaned
 
-    @staticmethod
-    def _privacy_scopes_for_speaker(speaker: SpeakerProfile | None) -> set[str]:
-        if speaker is not None and speaker.memory_read_allowed:
-            return {"local_private", "local_generic", "public"}
-        return {"local_generic", "public"}
-
-    def _background_memory_save(self, user_text: str, reply_text: str, session_id: str | None) -> None:
+    def _background_memory_save(self, user_text: str, reply_text: str, session_id: str | None, memory_origin: MemoryOrigin | None = None) -> None:
         """Persist memory candidates in a background thread (fast_mode only)."""
         try:
             candidates = self._build_memory_candidates(user_text=user_text, reply_text=reply_text)
             if candidates:
-                self._memory.persist_candidates(candidates, session_id=session_id)
+                self._memory.persist_candidates(candidates, session_id=session_id, origin=memory_origin)
         except Exception:
-            pass  # background thread — never propagate
+            pass  # background thread â€” never propagate
 
     def _remember_assistant_state(self, *, user_text: str, reply_text: str, emotion: str, session_id: str | None = None) -> None:
         if not settings.assistant_state_enabled:
             return
         try:
             self._assistant_state.update(emotion=emotion, user_text=user_text, reply_text=reply_text)
+        except Exception:
+            pass
+        try:
             self._emotion_memory.update_from_turn(
                 emotion=emotion,
                 user_text=user_text,
@@ -1002,7 +1110,7 @@ class ConversationService:
         return self._tts
 
     def _extract_turn_metadata(self, user_text: str, reply_text: str, speaker: SpeakerProfile | None = None) -> dict:
-        # save_core_memory is owner-only — hide it from the tool list for everyone else
+        # save_core_memory is owner-only â€” hide it from the tool list for everyone else
         visible_tools = self._tools.tool_summaries()
         if speaker is None or speaker.is_owner:
             pass  # all tools visible
@@ -1019,7 +1127,7 @@ class ConversationService:
             "memory_candidates: array of up to 3 objects with keys type, text, importance, tags, subject_type, subject_name, relationship_to_user.\n"
             "Available safe tools:\n"
             f"{tool_help}\n"
-            "Only emit tool_calls when the user is explicitly asking for current system, provider, artifact, or memory state that these tools can answer.\n"
+            "Only emit tool_calls for an explicit request these tools can fulfill. coding_goal is for an owner concrete repository coding or improvement instruction, never brainstorming. coding_status and coding_control read or control that work.\n"
             "Use search_memory when the user asks what you remember, asks you to recall prior context, or asks about a known person/project.\n"
             "Use save_memory only for durable facts, reminders, recurring preferences, named people, important plans, or corrections the assistant should intentionally keep.\n"
             "Do not use save_memory for casual chatter, acknowledgements, or one-off small talk.\n"
@@ -1089,9 +1197,26 @@ class ConversationService:
             return True
         return len(user_text.split()) >= 12
 
-    def _execute_tool_calls(self, tool_calls: list[ToolCall]) -> list[ToolExecutionResult]:
+    def _execute_tool_calls(self, tool_calls: list[ToolCall], *, speaker: SpeakerProfile | None = None,
+                            recipient: RecipientContext | None = None,
+                            memory_origin: MemoryOrigin | None = None,
+                            tool_checkpoint: Callable[[], None] | None = None) -> list[ToolExecutionResult]:
+        recipient = _recipient_context(recipient)
         results: list[ToolExecutionResult] = []
         for call in tool_calls[:3]:
+            from ..tools.coding import CODING_TOOLS
+            if call.tool in CODING_TOOLS and not (speaker is not None and speaker.is_owner is True and speaker.trust == 'owner'):
+                results.append(ToolExecutionResult(tool=call.tool,ok=False,output='Only the verified owner can control coding work.',metadata={'reason':'owner_required'}))
+                continue
+            if call.tool == "save_core_memory" and not (
+                speaker is not None and speaker.is_owner is True and speaker.trust == "owner"
+            ):
+                results.append(ToolExecutionResult(
+                    tool=call.tool, ok=False,
+                    output="Only the verified owner can save core memory.",
+                    metadata={"reason": "owner_required"},
+                ))
+                continue
             tool = self._tools.get(call.tool)
             if tool is None:
                 results.append(
@@ -1103,8 +1228,15 @@ class ConversationService:
                     )
                 )
                 continue
+            if tool_checkpoint is not None:
+                tool_checkpoint()
             try:
-                result = tool.run(**call.args)
+                args = {k:v for k,v in call.args.items() if k not in {'is_owner','speaker','trust','resolved_via'}} if call.tool in CODING_TOOLS else call.args
+                if call.tool == "save_memory":
+                    args = {k: v for k, v in args.items() if k != "_memory_origin"}
+                    args["_memory_origin"] = memory_origin or MemoryOrigin.from_speaker(
+                        speaker, source="tool", privacy_scope=recipient.privacy_scope)
+                result = tool.run(**args)
                 results.append(
                     ToolExecutionResult(
                         tool=call.tool,
@@ -1122,12 +1254,17 @@ class ConversationService:
                         metadata={"reason": "execution_error"},
                     )
                 )
-        return results
+        return [disclose_tool_result(result, recipient=recipient) for result in results]
 
     def _infer_tool_calls(self, user_text: str, speaker: SpeakerProfile | None = None) -> list[ToolCall]:
         lowered = user_text.lower()
         inferred: list[ToolCall] = []
         is_owner = speaker is None or speaker.is_owner
+
+        if speaker is not None and speaker.is_owner is True and speaker.trust == 'owner' and lowered.startswith('coding goal:'):
+            goal = user_text[len('coding goal:'):].strip()
+            if len(goal) >= 12:
+                return [ToolCall(tool='coding_goal',args={'goal':goal})]
 
         if any(term in lowered for term in ["provider", "providers", "ollama", "qwen", "stt", "tts", "llm"]):
             if any(term in lowered for term in ["status", "using", "use", "configured", "running", "right now", "current"]):
@@ -1158,7 +1295,7 @@ class ConversationService:
                 )
             )
 
-        # Core memory — owner only. Trigger: "remember: <fact>"
+        # Core memory â€” owner only. Trigger: "remember: <fact>"
         if is_owner and lowered.startswith("remember:"):
             fact = user_text[len("remember:"):].strip()
             if fact:
@@ -1186,8 +1323,21 @@ class ConversationService:
         draft_reply: str,
         tool_results: list[ToolExecutionResult],
         image: VisionImage | None = None,
+        recipient: RecipientContext | None = None,
     ) -> str:
         tool_summary = []
+        recipient = _recipient_context(recipient)
+        tool_results = [disclose_tool_result(result, recipient=recipient) for result in tool_results]
+        if not recipient.allows_private_memory and draft_reply.lstrip().startswith("{"):
+            # Structured draft arguments are execution inputs, not disclosures.
+            try:
+                draft = json.loads(draft_reply)
+                if isinstance(draft, dict) and isinstance(draft.get("tool_calls"), list):
+                    draft["tool_calls"] = [disclose_tool_call(ToolCall.model_validate(call), recipient=recipient).model_dump()
+                                           for call in draft["tool_calls"]]
+                    draft_reply = json.dumps(draft, ensure_ascii=False)
+            except (ValueError, TypeError):
+                draft_reply = "A tool request was executed; use the recipient-visible results below."
         for result in tool_results:
             tool_summary.append(
                 json.dumps(
@@ -1282,11 +1432,24 @@ class ConversationService:
             + "\nAnswer the user using both the image and this structured context."
         )
 
-    def _render_direct_tool_reply(self, *, user_text: str, tool_results: list[ToolExecutionResult]) -> str | None:
+    def _render_direct_tool_reply(self, *, user_text: str, tool_results: list[ToolExecutionResult],
+                                  recipient: RecipientContext | None = None) -> str | None:
+        recipient = _recipient_context(recipient)
+        tool_results = [disclose_tool_result(result, recipient=recipient) for result in tool_results]
         if not tool_results or any(not result.ok for result in tool_results):
             return None
+        if not recipient.allows_private_memory:
+            return tool_results[0].output if len(tool_results) == 1 else None
         if len(tool_results) == 1:
             result = tool_results[0]
+            if result.tool == 'coding_goal':
+                return "I've queued that coding goal. I'll work through the tasks and record the checks in Improvement."
+            if result.tool == 'coding_control':
+                return 'The coding control is requested for the next safe boundary.'
+            if result.tool == 'coding_status':
+                jobs = result.metadata.get('jobs', [])
+                from ..tools.coding import coding_status_reply
+                return coding_status_reply(jobs)
             if result.tool == "provider_status":
                 return self._format_provider_status_reply(result.metadata)
             if result.tool == "search_memory":

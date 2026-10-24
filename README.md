@@ -18,9 +18,9 @@ Browser clients call the dashboard, and the dashboard calls Shana through her
 HTTP API. The dashboard does not construct Shana's conversation, memory, or
 voice services.
 
-The authoritative deployment and proxy contract is
+The deployment and proxy reference is
 [`specs/LOCKED_GAMMA_NETWORK_DEPLOYMENT.md`](specs/LOCKED_GAMMA_NETWORK_DEPLOYMENT.md).
-Do not change deployment routing based only on this overview.
+Read that reference before changing deployment routing.
 
 ## Install
 
@@ -104,13 +104,51 @@ Then open:
 - `http://127.0.0.1:8001/dashboard` for operations and configuration
 - `http://127.0.0.1:8000/health` for Shana health
 
-Lifecycle commands are scoped and safe:
+For manual or development launches that are not systemd-owned, supervisor
+lifecycle commands are scoped and safe:
 
 ```bash
 .venv/bin/python -m gamma.supervisor.cli restart shana
 .venv/bin/python -m gamma.supervisor.cli restart dashboard
 .venv/bin/python -m gamma.supervisor.cli stop all
 ```
+
+### Start automatically on Linux boot
+
+Do not use those supervisor commands to control the production systemd-owned
+Shana or dashboard processes; use the systemd commands below or the dashboard's
+systemd-aware Shana controls.
+
+The production Linux host uses lingering systemd user services so Shana and
+the dashboard start during boot without waiting for an interactive login:
+
+```text
+~/.config/systemd/user/gamma-shana.service
+~/.config/systemd/user/gamma-dashboard.service
+```
+
+Both units are enabled under `default.target`. The Shana unit starts and stops
+its configured local Qwen TTS and audio-understanding dependencies through the
+Gamma supervisor hooks. Set this environment marker in both units so dashboard
+process controls use systemd rather than creating competing supervisor-owned
+processes:
+
+```ini
+Environment=GAMMA_LIFECYCLE_MANAGER=systemd-user
+```
+
+Manage the boot-owned applications with:
+
+```bash
+systemctl --user status gamma-shana gamma-dashboard
+systemctl --user restart gamma-shana gamma-dashboard
+journalctl --user-unit gamma-shana -f
+```
+
+The dashboard remains always on. Its Shana Start, Stop, and Restart controls
+operate `gamma-shana.service`; the combined runtime stop leaves the dashboard
+running. Other platforms and manual development launches continue to use the
+Gamma supervisor fallback.
 
 Browser microphone access requires HTTPS or localhost. Public URLs and bind
 addresses are separate settings; never use `0.0.0.0` as a public hostname.
@@ -215,3 +253,10 @@ Start with [`specs/README.md`](specs/README.md), then read
 [`specs/current_implementations.md`](specs/current_implementations.md) and the
 relevant domain spec. Future work is ordered in
 [`specs/roadmap.md`](specs/roadmap.md).
+
+The Improvement dashboard can assign repository coding work within the registered
+Discord status scope. Gamma plans, edits, tests, repairs and applies that helper,
+with protected checks, independent checker help, evidence and rollback copies.
+The Presence dashboard controls Shana's Discord bot and voice connection.
+See [`specs/coding_improvement.md`](specs/coding_improvement.md) for the current
+scope and remaining model-training work.

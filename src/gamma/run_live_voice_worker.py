@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .memory.attribution import MemoryOrigin
+
 import argparse
 import base64
 import json
@@ -132,7 +134,7 @@ def _normalize_estimated_sentence_count(planner_state: dict[str, Any]) -> int:
     return max(1, min(4, estimated))
 
 
-def _append_memory_fast_path(conversation: ConversationService, *, user_text: str, reply_text: str, session_id: str | None) -> None:
+def _append_memory_fast_path(conversation: ConversationService, *, user_text: str, reply_text: str, session_id: str | None, memory_origin: MemoryOrigin | None = None) -> None:
     """Append memory via fast path.
     
     Args:
@@ -144,7 +146,7 @@ def _append_memory_fast_path(conversation: ConversationService, *, user_text: st
     try:
         candidates = conversation._build_memory_candidates(user_text=user_text, reply_text=reply_text)
         if candidates:
-            conversation._memory.persist_candidates(candidates, session_id=session_id)
+            conversation._memory.persist_candidates(candidates, session_id=session_id, origin=memory_origin)
     except Exception:
         pass
 
@@ -550,6 +552,9 @@ def _run_incremental_experimental(
     turn_state: AssistantTurnState,
     audio_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    # Capture the existing local assumed identity once, before generation.
+    memory_origin = MemoryOrigin.from_speaker(conversation._identity.resolve(None),
+        source="live_voice", session_id=args.session_id, turn_id=args.turn_id)
     speech_filter = SpeechSafetyFilter(settings.speech_filter_level)
     stream_event = _live_voice_stream_event(
         turn_id=args.turn_id,
@@ -739,7 +744,7 @@ def _run_incremental_experimental(
     )
     stream_brain.record_result(stream_result)
     payload["stream"] = _serialize_stream_turn_result(stream_result)
-    _append_memory_fast_path(conversation, user_text=transcript, reply_text=payload["reply_text"], session_id=args.session_id)
+    _append_memory_fast_path(conversation, user_text=transcript, reply_text=payload["reply_text"], session_id=args.session_id, memory_origin=memory_origin)
     return payload
 
 

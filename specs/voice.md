@@ -23,6 +23,10 @@ for inference.
 - Qwen TTS uses a managed local HTTP sidecar.
 - OpenAI provides hosted speech.
 - Voice profiles load from layered `config/voices*.toml` files.
+- The generic `tts_model` value selects the OpenAI backend's model, not the Qwen
+  sidecar checkpoint. Backend/profile settings select the TTS path; the Qwen
+  sidecar's `QWEN_TTS_MODEL` setting selects its checkpoint. This spec does not
+  establish which checkpoint a running sidecar loaded.
 - RVC is an optional Piper post-process, not a standalone provider.
 - Conversation responses expose text, content type, timing, and local artifact metadata.
 - `speech_text` is the only conversation field eligible for TTS and spoken

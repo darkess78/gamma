@@ -12,7 +12,7 @@ Gamma intentionally runs two FastAPI applications:
 | Shana API | 8000 | conversation, memory, voice inference, vision, stream decisions, performer state |
 | Dashboard | 8001 | authentication, browser clients, supervisor controls, machine status, local configuration |
 
-The protected deployment and proxy contract is
+The editable deployment and proxy reference is
 `LOCKED_GAMMA_NETWORK_DEPLOYMENT.md`.
 
 ## Dependency Direction

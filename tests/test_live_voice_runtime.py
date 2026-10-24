@@ -39,6 +39,8 @@ class _FakeStreamBrain:
 
 class _FakeConversation:
     def __init__(self) -> None:
+        from types import SimpleNamespace
+        self._identity = SimpleNamespace(resolve=lambda _: None)
         self.calls: list[dict[str, object]] = []
 
     def respond(self, text, **kwargs):
@@ -179,7 +181,7 @@ class LiveVoiceRuntimeTest(unittest.TestCase):
                 args=argparse.Namespace(turn_id="turn-2", session_id="session-2"),
                 transcript="Gamma, explain the routing change.",
                 synthesize_speech=False,
-                conversation=object(),  # type: ignore[arg-type]
+                conversation=_FakeConversation(),  # type: ignore[arg-type]
                 stream_brain=stream_brain,  # type: ignore[arg-type]
                 sentence_generator=_FakeSentenceGenerator(),  # type: ignore[arg-type]
                 output_path=temp_path / "out.json",

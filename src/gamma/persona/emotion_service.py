@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import settings
+from .state_io import atomic_write_text, state_file_lock
 from .emotion_extractor import extract_emotion_turn
 from .emotion_models import AssistantEmotionState, EmotionalEpisode, EmotionalPattern
 
@@ -42,7 +43,7 @@ class EmotionMemoryService:
         Args:
             path: Emotion memory path (default from settings).
         """
-        self._path = path or _DEFAULT_PATH
+        self._path = (path or _DEFAULT_PATH).resolve()
 
     def load_bundle(self) -> dict[str, object]:
         """Load bundle.
@@ -109,61 +110,62 @@ class EmotionMemoryService:
             reply_text: Reply text.
             session_id: Session ID.
         """
-        bundle = self.load_bundle()
-        state: AssistantEmotionState = bundle["state"]
-        episodes: list[EmotionalEpisode] = bundle["episodes"]
-        patterns: list[EmotionalPattern] = bundle["patterns"]
-        extracted = extract_emotion_turn(emotion=emotion, user_text=user_text, reply_text=reply_text)
+        with state_file_lock(self._path):
+            bundle = self.load_bundle()
+            state: AssistantEmotionState = bundle["state"]
+            episodes: list[EmotionalEpisode] = bundle["episodes"]
+            patterns: list[EmotionalPattern] = bundle["patterns"]
+            extracted = extract_emotion_turn(emotion=emotion, user_text=user_text, reply_text=reply_text)
 
-        state.current_emotion = extracted.emotion
-        state.intensity = extracted.intensity
-        state.emotional_target = extracted.emotional_target
-        state.cause_summary = extracted.cause_summary
-        state.updated_at = _utc_now()
-        state.decay_turns_remaining = max(0, settings.assistant_emotion_decay_turns)
-        state.recent_emotions.append(extracted.emotion)
-        state.recent_emotions = state.recent_emotions[-8:]
-        state.notes.append(f"{extracted.emotion}: user='{extracted.cause_summary}'")
-        state.notes = state.notes[-8:]
+            state.current_emotion = extracted.emotion
+            state.intensity = extracted.intensity
+            state.emotional_target = extracted.emotional_target
+            state.cause_summary = extracted.cause_summary
+            state.updated_at = _utc_now()
+            state.decay_turns_remaining = max(0, settings.assistant_emotion_decay_turns)
+            state.recent_emotions.append(extracted.emotion)
+            state.recent_emotions = state.recent_emotions[-8:]
+            state.notes.append(f"{extracted.emotion}: user='{extracted.cause_summary}'")
+            state.notes = state.notes[-8:]
 
-        if extracted.intensity >= settings.assistant_emotion_episode_threshold and extracted.emotion != "neutral":
-            episodes.append(
-                EmotionalEpisode(
-                    event_summary=f"{extracted.trigger_type}: {' '.join(reply_text.split())[:120]}",
-                    emotion=extracted.emotion,
-                    intensity=extracted.intensity,
-                    trigger_type=extracted.trigger_type,
-                    relationship_effect=extracted.relationship_effect,
-                    importance=max(extracted.intensity, 0.5),
-                    created_at=_utc_now(),
-                    session_id=session_id,
-                )
-            )
-            episodes[:] = episodes[-40:]
-
-        if extracted.pattern_text:
-            matched = next((item for item in patterns if item.pattern_text == extracted.pattern_text), None)
-            if matched is None:
-                patterns.append(
-                    EmotionalPattern(
-                        pattern_text=extracted.pattern_text,
-                        emotion_family=extracted.emotion,
-                        confidence=0.55,
-                        evidence_count=1,
-                        subject_scope="user",
-                        last_reinforced_at=_utc_now(),
+            if extracted.intensity >= settings.assistant_emotion_episode_threshold and extracted.emotion != "neutral":
+                episodes.append(
+                    EmotionalEpisode(
+                        event_summary=f"{extracted.trigger_type}: {' '.join(reply_text.split())[:120]}",
+                        emotion=extracted.emotion,
+                        intensity=extracted.intensity,
+                        trigger_type=extracted.trigger_type,
+                        relationship_effect=extracted.relationship_effect,
+                        importance=max(extracted.intensity, 0.5),
+                        created_at=_utc_now(),
+                        session_id=session_id,
                     )
                 )
-            else:
-                matched.evidence_count += 1
-                matched.confidence = min(0.95, matched.confidence + 0.08)
-                matched.last_reinforced_at = _utc_now()
-            patterns[:] = [
-                item for item in patterns
-                if item.evidence_count >= 1
-            ][-20:]
+                episodes[:] = episodes[-40:]
 
-        self._save(state=state, episodes=episodes, patterns=patterns)
+            if extracted.pattern_text:
+                matched = next((item for item in patterns if item.pattern_text == extracted.pattern_text), None)
+                if matched is None:
+                    patterns.append(
+                        EmotionalPattern(
+                            pattern_text=extracted.pattern_text,
+                            emotion_family=extracted.emotion,
+                            confidence=0.55,
+                            evidence_count=1,
+                            subject_scope="user",
+                            last_reinforced_at=_utc_now(),
+                        )
+                    )
+                else:
+                    matched.evidence_count += 1
+                    matched.confidence = min(0.95, matched.confidence + 0.08)
+                    matched.last_reinforced_at = _utc_now()
+                patterns[:] = [
+                    item for item in patterns
+                    if item.evidence_count >= 1
+                ][-20:]
+
+            self._save(state=state, episodes=episodes, patterns=patterns)
 
     def dashboard_payload(self) -> dict[str, object]:
         """Get dashboard payload.
@@ -195,4 +197,4 @@ class EmotionMemoryService:
             "episodes": [item.as_dict() for item in episodes],
             "patterns": [item.as_dict() for item in patterns if item.evidence_count >= settings.assistant_emotion_pattern_threshold or item.evidence_count >= 1],
         }
-        self._path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_text(self._path, json.dumps(payload, ensure_ascii=False, indent=2))

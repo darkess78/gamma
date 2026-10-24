@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ..memory.attribution import describe_record
+
 import json
 import re
 from pathlib import Path
@@ -7,7 +9,9 @@ from typing import TYPE_CHECKING
 
 from ..config import settings
 from ..memory.service import MemoryService
+from ..schemas.conversation import RecipientContext
 from .emotion_service import EmotionMemoryService
+from .disclosure import persona_view, style_view
 
 if TYPE_CHECKING:
     from ..identity.profile import SpeakerProfile
@@ -45,11 +49,24 @@ def _cached_text(path: Path) -> str:
     return content
 
 
+def load_persona_config(*, private: bool) -> dict:
+    """Read and validate the declared persona without exposing parser diagnostics."""
+    path = CONFIG_DIR / "persona.yaml"
+    document = None
+    if path.exists() and yaml is not None:
+        try:
+            document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except Exception:
+            raise ValueError("persona_public_contract_invalid") from None
+    return persona_view(document, private=private)
+
+
 def build_system_prompt(
     memory_service: MemoryService | None = None,
     user_text: str | None = None,
     session_id: str | None = None,
     speaker: "SpeakerProfile | None" = None,
+    recipient: RecipientContext | None = None,
 ) -> str:
     """Build system prompt.
     
@@ -62,26 +79,25 @@ def build_system_prompt(
     Returns:
         str: System prompt string.
     """
+    if recipient is None:
+        recipient = RecipientContext()
+    if type(recipient) is not RecipientContext:
+        raise TypeError("recipient_context_must_be_internal")
+    private_view = recipient.allows_private_memory
     core = _cached_text(PERSONA_DIR / "core.md")
     boundaries = _cached_text(PERSONA_DIR / "boundaries.md")
     style = json.loads(_cached_text(PERSONA_DIR / "style.json") or "{}")
-    relationship = json.loads(_cached_text(PERSONA_DIR / "relationship_state.json") or "{}")
-    persona_config: dict = {}
-    yaml_path = CONFIG_DIR / "persona.yaml"
-    if yaml_path.exists() and yaml is not None:
-        try:
-            persona_yaml = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
-        except Exception:
-            persona_yaml = None
-        if persona_yaml:
-            persona_config = persona_yaml if isinstance(persona_yaml, dict) else {"value": persona_yaml}
+    relationship = (json.loads(_cached_text(PERSONA_DIR / "relationship_state.json") or "{}")
+                    if private_view else {})
     memory_config = _read_toml(CONFIG_DIR / "memory.toml") if (CONFIG_DIR / "memory.toml").exists() else {}
 
     # Build the speaker block
-    speaker_block = _build_speaker_block(speaker)
+    persona_config = load_persona_config(private=private_view)
+    style = style_view(style, private=private_view)
+    speaker_block = _build_speaker_block(speaker, include_private=private_view)
 
     # Memory is only read for owner/trusted speakers
-    memory_read_ok = speaker is None or speaker.memory_read_allowed
+    memory_read_ok = recipient.allows_private_memory and (speaker is None or speaker.memory_read_allowed)
 
     memory_lines: list[str] = []
     if memory_read_ok and memory_service and settings.memory_enabled and memory_config.get("enabled", True):
@@ -96,7 +112,7 @@ def build_system_prompt(
             if profile_facts:
                 memory_lines.append("## Stored Facts About The User")
                 for fact in profile_facts:
-                    memory_lines.append(f"- [{fact.category}] {fact.fact_text}")
+                    memory_lines.append(f"- [{fact.category}] {describe_record(fact)}")
 
             mentioned_people = _extract_named_people(user_text or "")
             if mentioned_people:
@@ -109,8 +125,8 @@ def build_system_prompt(
                     if person_facts:
                         memory_lines.append(f"## Stored Facts About {person_name}")
                         for fact in person_facts:
-                            relationship = f" relationship={fact.relationship_to_user}" if fact.relationship_to_user else ""
-                            memory_lines.append(f"- [{fact.category}]{relationship} {fact.fact_text}")
+                            fact_relationship = f" relationship={fact.relationship_to_user}" if fact.relationship_to_user else ""
+                            memory_lines.append(f"- [{fact.category}]{fact_relationship} {describe_record(fact)}")
 
         if user_text and memory_config.get("episodic_enabled", True):
             memories = memory_service.search_memories(
@@ -127,34 +143,43 @@ def build_system_prompt(
                     subject = ""
                     if memory.subject_type == "other_person" and memory.subject_name:
                         subject = f" subject={memory.subject_name}"
-                    memory_lines.append(f"- {memory.summary}{tags}{subject}")
+                    memory_lines.append(f"- {describe_record(memory)}{tags}{subject}")
 
     memory_block = "\n".join(memory_lines).strip() or "No stored memory injected for this turn."
 
-    core_memories_block = _load_core_memories()
+    core_memories_block = _load_core_memories() if private_view else "Private core memories are unavailable for this recipient."
     if settings.assistant_state_enabled:
-        emotion_memory = EmotionMemoryService().relevant_context(user_text=user_text or "")
-        assistant_state_block = emotion_memory["state"].to_prompt_block()
-        emotional_episode_block = "\n".join(
-            f"- [{item.emotion}] {item.event_summary} effect={item.relationship_effect} intensity={item.intensity:.2f}"
-            for item in emotion_memory["episodes"]
-        ) or "No relevant emotional episodes."
-        emotional_pattern_block = "\n".join(
-            f"- [{item.emotion_family}] {item.pattern_text} confidence={item.confidence:.2f} evidence={item.evidence_count}"
-            for item in emotion_memory["patterns"]
-        ) or "No relevant emotional patterns."
+        emotion_service = EmotionMemoryService()
+        emotion_memory = (
+            emotion_service.relevant_context(user_text=user_text or "")
+            if private_view else emotion_service.load_bundle()
+        )
+        assistant_state_block = emotion_memory["state"].to_prompt_block(include_private=private_view)
+        if private_view:
+            emotional_episode_block = "\n".join(
+                f"- [{item.emotion}] {item.event_summary} effect={item.relationship_effect} intensity={item.intensity:.2f}"
+                for item in emotion_memory["episodes"]
+            ) or "No relevant emotional episodes."
+            emotional_pattern_block = "\n".join(
+                f"- [{item.emotion_family}] {item.pattern_text} confidence={item.confidence:.2f} evidence={item.evidence_count}"
+                for item in emotion_memory["patterns"]
+            ) or "No relevant emotional patterns."
+        else:
+            emotional_episode_block = "Private emotional episodes are unavailable for this recipient."
+            emotional_pattern_block = "Private emotional patterns are unavailable for this recipient."
     else:
         assistant_state_block = "Assistant feeling state tracking is disabled."
         emotional_episode_block = "Emotional episode retrieval is disabled."
         emotional_pattern_block = "Emotional pattern retrieval is disabled."
 
     return "\n\n".join([
+        "# Recipient Context\nkind: " + recipient.kind + "\noutput_target: " + (recipient.target_policy or "unbound"),
         "# Core Persona\n" + core,
         "# Boundaries\n" + boundaries,
         "# Style\n" + json.dumps(style, indent=2, sort_keys=True),
         "# Relationship State\n" + json.dumps(relationship, indent=2, sort_keys=True),
         "# Persona Config\n" + json.dumps(persona_config, indent=2, sort_keys=True),
-        "# Memory Config\n" + json.dumps(memory_config, indent=2, sort_keys=True),
+        "# Memory Config\n" + json.dumps(memory_config if private_view else {}, indent=2, sort_keys=True),
         "# Core Memories\n" + core_memories_block,
         "# Assistant Feeling State\n" + assistant_state_block,
         "# Relevant Emotional Episodes\n" + emotional_episode_block,
@@ -190,7 +215,7 @@ def _load_core_memories() -> str:
     return "\n".join(lines)
 
 
-def _build_speaker_block(speaker: "SpeakerProfile | None") -> str:
+def _build_speaker_block(speaker: "SpeakerProfile | None", *, include_private: bool = False) -> str:
     """Build speaker block.
     
     Args:
@@ -200,12 +225,14 @@ def _build_speaker_block(speaker: "SpeakerProfile | None") -> str:
         str: Speaker block string.
     """
     if speaker is None:
+        if not include_private:
+            return "Name: Unidentified speaker\nTrust: public"
         return (
             "Name: Owner (assumed)\n"
             "Trust: owner\n"
             "Note: No speaker context provided — local solo use. Treat as the owner."
         )
-    return speaker.describe()
+    return speaker.describe(include_private=include_private)
 
 
 def _extract_named_people(text: str) -> list[str]:

@@ -13,6 +13,7 @@ from ..config import settings
 from ..conversation.service import ConversationService
 from ..errors import ConversationError
 from ..schemas.response import AssistantResponse
+from ..schemas.conversation import RecipientContext
 from ..safety.hard_blocklist import matched_rules as hard_block_matches
 from ..safety.heuristic_filter import review as heuristic_review
 from ..safety.llm_reviewer import LLMReviewDecision, SpeechLLMReviewer
@@ -130,6 +131,18 @@ class StreamBrain:
         self._recent_context = RecentStreamContextAssembler(self._temp_memory_store)
         self._self_goal_store = self_goal_store or StreamSelfGoalStore()
 
+    @staticmethod
+    def _recipient_for_event(event: StreamInputEvent) -> RecipientContext:
+        target = str(event.metadata.get("output_target_policy") or "").strip().lower() or None
+        if target not in {None, "dashboard_monitor", "stream_public", "discord_call"}:
+            raise ConversationError("unknown_recipient_output_target")
+        shared = (
+            target in {"stream_public", "discord_call"}
+            or event.actor.source.strip().lower() in {"twitch", "discord"}
+            or _is_public_stream_event(event)
+        )
+        return RecipientContext(kind="shared" if shared else "unknown", target_policy=target)
+
     def handle_event(
         self,
         event: StreamInputEvent,
@@ -191,6 +204,7 @@ class StreamBrain:
                 "delivery_context": "ambient" if event.kind in {"conversation_lull", "audio_event", "system"} else "public_stream",
                 "speech_allowed": synthesize_speech,
                 "speech_requested": synthesize_speech,
+                "recipient": self._recipient_for_event(event),
             }
             if _is_public_stream_event(event):
                 recent_context = self._assemble_recent_context()
@@ -198,7 +212,9 @@ class StreamBrain:
                     conversation_args["background_context"] = recent_context
             response = self._conversation.respond(**conversation_args)
             action_plan = self._action_planner.plan_from_response(response)
-        safety_decision = self._review_stream_output(event, response, include_llm=not parallel_safety) if response else {}
+        safety_decision = self._review_stream_output(
+            event, response, include_llm=not (parallel_safety and response.speech_text)
+        ) if response else {}
         if response is not None and response.speech_text and parallel_safety and not safety_decision.get("blocked"):
             response, safety_decision, late_review = self._synthesize_with_parallel_review(event, response)
         if safety_decision.get("blocked"):
@@ -314,7 +330,8 @@ class StreamBrain:
                 "safe_output": "filtered",
                 "playback_approved": False,
             }
-        fast_review = _fast_stream_safety_review(response.speech_text or "")
+        output_text = response.speech_text or response.display_text or ""
+        fast_review = _fast_stream_safety_review(output_text)
         if fast_review["blocked"]:
             return {
                 "action": "filtered",
@@ -327,7 +344,7 @@ class StreamBrain:
                 "safe_output": "filtered",
                 "playback_approved": False,
             }
-        llm_decision = self._review_stream_output_with_llm(event, response.speech_text or "") if include_llm and response.speech_text else None
+        llm_decision = self._review_stream_output_with_llm(event, output_text) if include_llm and output_text else None
         if llm_decision is not None:
             return llm_decision
         return {
@@ -346,48 +363,56 @@ class StreamBrain:
         event: StreamInputEvent,
         response: AssistantResponse,
     ) -> tuple[AssistantResponse, dict, tuple[Future, ThreadPoolExecutor] | None]:
+        timeout_seconds = max(0.05, float(settings.stream_safety_review_timeout_seconds or 2.0))
+        started_at = time.perf_counter()
         executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="stream-safety")
-        review_future = executor.submit(self._safety_reviewer.review, response.speech_text or "")
-        tts_future = executor.submit(
-            self._stream_speech_synthesizer().synthesize,
-            response.speech_text or "",
-            response.emotion,
-            response.voice_styles,
-        )
+        review_future = None
+        tts_future = None
         try:
-            tts_result = tts_future.result()
-        except Exception:
-            review_future.cancel()
-            executor.shutdown(wait=False, cancel_futures=True)
-            raise
-        response.audio_path = tts_result.audio_path
-        response.audio_content_type = tts_result.content_type
-        response.tts_metadata = {
-            **dict(response.tts_metadata or {}),
-            **dict(tts_result.metadata or {}),
-        }
-        if review_future.done():
+            review_future = executor.submit(self._safety_reviewer.review, response.speech_text or "")
+            tts_future = executor.submit(
+                self._stream_speech_synthesizer().synthesize,
+                response.speech_text or "",
+                response.emotion,
+                response.voice_styles,
+            )
             try:
-                review = review_future.result()
-            finally:
-                executor.shutdown(wait=False, cancel_futures=True)
+                review = review_future.result(timeout=max(0.0, timeout_seconds - (time.perf_counter() - started_at)))
+            except FutureTimeoutError:
+                return response, {
+                    "action": _stream_review_timeout_action(),
+                    "blocked": False,
+                    "source": "stream_output_gate_llm",
+                    "stage": "llm_parallel",
+                    "review_timeout": True,
+                    "timeout_seconds": timeout_seconds,
+                    "playback_approved": False,
+                }, None
+            except Exception as exc:
+                return response, {
+                    "action": "skip",
+                    "blocked": False,
+                    "source": "stream_output_gate_llm",
+                    "stage": "llm_parallel",
+                    "review_error": type(exc).__name__,
+                    "playback_approved": False,
+                }, None
             decision = _llm_review_payload(review)
             if decision["blocked"]:
                 return _filtered_stream_response(), decision, None
+            tts_result = tts_future.result()
+            response.audio_path = tts_result.audio_path
+            response.audio_content_type = tts_result.content_type
+            response.tts_metadata = {
+                **dict(response.tts_metadata or {}),
+                **dict(tts_result.metadata or {}),
+            }
             return response, decision, None
-        return (
-            response,
-            {
-                "action": "allow_pending_review",
-                "blocked": False,
-                "source": "stream_output_gate_llm",
-                "stage": "llm_parallel",
-                "review_pending": True,
-                "playback_approved": True,
-                "late_interrupt_armed": True,
-            },
-            (review_future, executor),
-        )
+        finally:
+            for future in (review_future, tts_future):
+                if future is not None:
+                    future.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
 
     def _arm_late_safety_interrupt(
         self,
@@ -417,6 +442,7 @@ class StreamBrain:
                 response=filtered,
                 safety_decision=decision,
             )
+            events = _apply_output_target_policy(event, events)
             events = _filter_stream_output_events(event, events)
             if events:
                 self._output_dispatcher.dispatch(events)
@@ -434,6 +460,8 @@ class StreamBrain:
         if not settings.speech_filter_llm_enabled:
             return None
         timeout_seconds = max(0.05, float(settings.stream_safety_review_timeout_seconds or 2.0))
+        if event.actor.source == "discord":
+            timeout_seconds = max(timeout_seconds, 20.0)
         started_at = time.perf_counter()
         executor = ThreadPoolExecutor(max_workers=1)
         future = executor.submit(self._safety_reviewer.review, text)

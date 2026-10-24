@@ -4,6 +4,8 @@ const dashboardPage = String(window.GAMMA_DASHBOARD_PAGE || '').trim().toLowerCa
 if (dashboardPage === 'improvement') {
   let requestInFlight = false;
   let pollTimer = null;
+  const dirtyCodingLessons = new Set();
+  let idlePolicyDirty = false;
 
   function byId(id) {
     return document.getElementById(id);
@@ -291,6 +293,52 @@ if (dashboardPage === 'improvement') {
   }
 
   function render(payload) {
+    const practice = payload.coding_practice || {};
+    setText('codingPracticeSummary', String(practice.run_count || 0) + ' recorded practice runs. Practice records do not change model weights; LoRA candidates are evaluated separately.');
+    const skills = Object.entries(practice.skills || {}).map(([name, evidence]) =>
+      detailRow(name.replaceAll('_', ' '), evidence.verified + ' verified (' + (evidence.independently_evaluated || 0) + ' independently evaluated), ' + evidence.failed + ' need a checker, ' + evidence.blocked + ' blocked')
+    );
+    replace('codingPracticeSkills', skills, 'No coding evidence yet.');
+    const idleToggle = byId('codingIdleEnabled');
+    if (idleToggle && !idlePolicyDirty) idleToggle.checked = !!(practice.idle_policy || {}).enabled;
+    if (!dirtyCodingLessons.size && !byId('codingLessons')?.contains(document.activeElement)) {
+      const lessons = (practice.lessons || []).map((lesson) => {
+        const card = node('article', 'improvement-item');
+        card.dataset.lessonId = lesson.id;
+        card.appendChild(node('strong', '', lesson.skill.replaceAll('_', ' ')));
+        card.appendChild(node('p', '', lesson.observation_count + ' observations; ' + lesson.authority.replaceAll('_', ' ')));
+          const text = node('textarea', 'text-area');
+          text.setAttribute('aria-label', lesson.skill.replaceAll('_', ' ') + ' lesson');
+        text.value = lesson.text;
+        text.maxLength = 2000;
+          text.rows = 3;
+        text.addEventListener('input', () => dirtyCodingLessons.add(lesson.id));
+        const active = node('input');
+        active.type = 'checkbox';
+        active.checked = lesson.active;
+        active.addEventListener('change', () => dirtyCodingLessons.add(lesson.id));
+        const label = node('label', '', ' Use this lesson ');
+        label.appendChild(active);
+        const save = node('button', 'secondary', 'Save lesson');
+        save.type = 'button';
+        save.addEventListener('click', async () => {
+          save.disabled = true;
+          try {
+            const response = await fetch('/api/coding/lessons/' + encodeURIComponent(lesson.id), {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: text.value, active: active.checked })
+            });
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            dirtyCodingLessons.delete(lesson.id);
+            setText('codingPracticeMessage', 'Lesson saved. This changes practice guidance, not model weights.');
+          } catch (error) { setText('codingPracticeMessage', 'Could not save lesson: ' + String(error)); }
+          finally { save.disabled = false; }
+        });
+        card.append(text, label, save);
+        return card;
+      });
+      replace('codingLessons', lessons, 'Verified practice observations will appear here as editable lessons.');
+    }
     renderSummary(payload);
     renderCurrentWork(payload);
     renderPolicy(payload);
@@ -334,6 +382,41 @@ if (dashboardPage === 'improvement') {
   }
 
   const refreshButton = byId('improvementRefreshButton');
+  const practiceForm = byId('codingPracticeForm');
+  const idleSave = byId('codingIdleSave');
+  byId('codingIdleEnabled')?.addEventListener('change', () => { idlePolicyDirty = true; });
+  if (idleSave) idleSave.addEventListener('click', async () => {
+    idleSave.disabled = true;
+    try {
+      const response = await fetch('/api/coding/idle-policy', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: byId('codingIdleEnabled').checked, model: byId('codingPracticeModel').value.trim() })
+      });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      idlePolicyDirty = false;
+      setText('codingPracticeMessage', 'Idle practice setting saved. Assigned work and conversations take priority.');
+    } catch (error) { setText('codingPracticeMessage', 'Could not save setting: ' + String(error)); }
+    finally { idleSave.disabled = false; }
+  });
+  if (practiceForm) practiceForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = byId('codingPracticeStart');
+    button.disabled = true;
+    setText('codingPracticeMessage', 'Starting bounded local practice...');
+    try {
+      const response = await fetch('/api/coding/practice', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: byId('codingPracticeModel').value.trim() })
+      });
+      const result = await response.json();
+      if (!response.ok || result.ok === false) throw new Error(result.detail || 'Could not start practice.');
+      setText('codingPracticeMessage', 'Practice started. Verified outcomes appear here when the run finishes.');
+    } catch (error) {
+      setText('codingPracticeMessage', 'Practice could not start: ' + String(error));
+    } finally {
+      button.disabled = false;
+    }
+  });
   if (refreshButton) refreshButton.addEventListener('click', loadImprovementStatus);
   const workForm = byId('improvementWorkForm');
   if (workForm) workForm.addEventListener('submit', async (event) => {

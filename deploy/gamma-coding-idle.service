@@ -1,0 +1,14 @@
+[Unit]
+Description=Gamma idle coding practice worker
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Documents/gamma-main
+ExecStart=%h/Documents/gamma-main/.venv/bin/python -m gamma.coding.worker
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=default.target

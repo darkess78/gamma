@@ -119,7 +119,7 @@ class VisionService:
         """
         if not llm_adapter.supports_vision:
             raise ConversationError(
-                "The configured LLM provider does not support image analysis. Set SHANA_LLM_PROVIDER=openai to enable vision."
+                "The configured LLM provider does not support image analysis. Configure a vision-capable model/provider to enable vision."
             )
         normalized_mode = self._normalize_mode(mode)
         analysis_prompt = (

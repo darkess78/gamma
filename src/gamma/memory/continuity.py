@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
+import logging
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sqlalchemy import event, func
+from sqlalchemy import event, func, update
 from sqlalchemy.pool import NullPool
 from sqlmodel import Field, Session, SQLModel, create_engine, delete, select
 
 from ..config import settings
 from ..llm.capabilities import estimate_text_tokens
+from .journal_identity import capture_identity, owner_is_dead
 
 
 def _utc_now() -> datetime:
@@ -30,6 +33,31 @@ class ConversationJournalEntry(SQLModel, table=True):
     privacy_scope: str = Field(default="local_generic", index=True)
     completion_status: str = Field(default="pending", index=True)
     tool_metadata_json: str = "{}"
+    owner_id: str | None = Field(default=None, index=True)
+    input_sequence: int | None = Field(default=None, exclude=True)
+
+
+class ConversationInputCursor(SQLModel, table=True):
+    """Private receive high-water mark, retained while its scope has work/context."""
+
+    session_id: str = Field(primary_key=True)
+    privacy_scope: str = Field(primary_key=True)
+    latest_sequence: int = Field(default=0, exclude=True)
+    updated_at: datetime = Field(default_factory=_utc_now, exclude=True)
+
+
+class ConversationJournalOwner(SQLModel, table=True):
+    """Internal process identity. Never include these fields in API payloads."""
+
+    owner_id: str = Field(primary_key=True)
+    host: str
+    pid: int
+    process_started: float
+    checked_at: datetime = Field(default_factory=_utc_now, index=True)
+
+
+class JournalOwnershipError(RuntimeError):
+    """The pending exchange is no longer owned by this service/process."""
 
 
 class RollingSessionSummary(SQLModel, table=True):
@@ -55,6 +83,31 @@ class WorkingStateCheckpoint(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utc_now)
 
 
+class ScopedSessionSummary(SQLModel, table=True):
+    """New summaries are isolated by session and exact privacy scope."""
+
+    session_id: str = Field(primary_key=True)
+    privacy_scope: str = Field(primary_key=True)
+    summary_text: str = ""
+    through_entry_id: int | None = None
+    completed_exchanges: int = 0
+    updated_at: datetime = Field(default_factory=_utc_now)
+
+
+class ScopedWorkingStateCheckpoint(SQLModel, table=True):
+    session_id: str = Field(primary_key=True)
+    privacy_scope: str = Field(primary_key=True)
+    active_topic: str = ""
+    current_objective: str = ""
+    pending_questions_json: str = "[]"
+    commitments_json: str = "[]"
+    relevant_people_json: str = "[]"
+    last_meaningful_interaction: datetime | None = None
+    last_assistant_action: str = ""
+    next_intended_action: str = ""
+    updated_at: datetime = Field(default_factory=_utc_now)
+
+
 class DurableOutputState(SQLModel, table=True):
     target_policy: str = Field(primary_key=True)
     turn_id: str
@@ -72,11 +125,21 @@ class ContinuityService:
         connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
         engine_kwargs = {"poolclass": NullPool} if url.startswith("sqlite") else {}
         self._engine = create_engine(url, connect_args=connect_args, **engine_kwargs)
+        self._owner_id = uuid4().hex
+        self._host, self._pid, self._process_started = capture_identity()
         if url.startswith("sqlite"):
             event.listen(self._engine, "connect", self._configure_sqlite)
-        SQLModel.metadata.create_all(self._engine)
         if url.startswith("sqlite"):
-            with self._engine.begin() as connection:
+            # Serialize schema checks as well as DDL across simultaneous instances.
+            with self._engine.connect() as connection:
+                connection.exec_driver_sql("BEGIN IMMEDIATE")
+                SQLModel.metadata.create_all(connection)
+                self._ensure_sqlite_column(connection, "conversationjournalentry", "owner_id", "TEXT")
+                self._ensure_sqlite_column(connection, "conversationjournalentry", "input_sequence", "INTEGER")
+                connection.exec_driver_sql(
+                    "CREATE INDEX IF NOT EXISTS ix_conversationjournalentry_owner_id "
+                    "ON conversationjournalentry (owner_id)"
+                )
                 self._ensure_sqlite_column(
                     connection,
                     "rollingsessionsummary",
@@ -89,7 +152,37 @@ class ContinuityService:
                     "privacy_scope",
                     "TEXT DEFAULT 'local_generic'",
                 )
-        self.mark_pending_interrupted()
+                connection.commit()
+        else:
+            SQLModel.metadata.create_all(self._engine)
+
+    @contextmanager
+    def _write_session(self):
+        with Session(self._engine) as session:
+            if self._engine.dialect.name == "sqlite":
+                session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+            try:
+                yield session
+                session.commit()
+            except BaseException:
+                session.rollback()
+                raise
+
+    def _require_current_process(self) -> None:
+        try:
+            current = capture_identity()
+        except Exception as exc:
+            raise JournalOwnershipError("journal_owner_unverifiable") from exc
+        if current != (self._host, self._pid, self._process_started):
+            raise JournalOwnershipError("journal_owner_process_changed")
+
+    def _registered_owner(self, session: Session) -> ConversationJournalOwner:
+        owner = session.get(ConversationJournalOwner, self._owner_id)
+        if owner is None or (owner.host, owner.pid, owner.process_started) != (
+            self._host, self._pid, self._process_started
+        ):
+            raise JournalOwnershipError("journal_owner_missing_or_changed")
+        return owner
 
     @staticmethod
     def _configure_sqlite(connection, _record) -> None:
@@ -107,6 +200,35 @@ class ContinuityService:
         if column not in existing:
             connection.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
+    def _allocate_input_sequence_locked(
+        self, session: Session, *, session_id: str, privacy_scope: str, now: datetime,
+    ) -> int:
+        # Allocate and publish the receive mark in the same serialized input transaction.
+        key = (session_id, privacy_scope)
+        row = session.get(ConversationInputCursor, key, with_for_update=True)
+        if row is None:
+            row = ConversationInputCursor(session_id=session_id, privacy_scope=privacy_scope)
+        else:
+            seq = row.latest_sequence
+            if type(seq) is not int or seq < 0 or seq >= 2**63 - 1:
+                raise RuntimeError("cursor state is invalid")
+        row.latest_sequence += 1
+        row.updated_at = now
+        session.add(row)
+        session.flush()
+        return row.latest_sequence
+
+    @staticmethod
+    def _input_is_current_locked(
+        session: Session, entry: ConversationJournalEntry | None, *, session_id: str,
+    ) -> bool:
+        # Pre-change null markers have unknown order, especially after old retention.
+        if entry is None or type(entry.input_sequence) is not int or entry.input_sequence <= 0:
+            return False
+        cursor = session.get(ConversationInputCursor, (session_id, entry.privacy_scope), with_for_update=True)
+        return (cursor is not None and type(cursor.latest_sequence) is int
+                and entry.input_sequence == cursor.latest_sequence)
+
     def begin_exchange(
         self,
         *,
@@ -116,10 +238,22 @@ class ContinuityService:
         input_source: str,
         privacy_scope: str,
     ) -> str:
+        self._require_current_process()
         exchange_id = uuid4().hex
-        with Session(self._engine) as session:
+        with self._write_session() as session:
+            owner = session.get(ConversationJournalOwner, self._owner_id)
+            if owner is None:
+                owner = ConversationJournalOwner(owner_id=self._owner_id, host=self._host,
+                    pid=self._pid, process_started=self._process_started)
+                session.add(owner)
+            else:
+                self._registered_owner(session)
+            sequence = self._allocate_input_sequence_locked(
+                session, session_id=session_id, privacy_scope=privacy_scope, now=_utc_now(),
+            )
             session.add(
                 ConversationJournalEntry(
+                    input_sequence=sequence,
                     exchange_id=exchange_id,
                     session_id=session_id[:120],
                     role="user",
@@ -128,10 +262,26 @@ class ContinuityService:
                     text=text[:16_000],
                     privacy_scope=privacy_scope,
                     completion_status="pending",
+                    owner_id=self._owner_id,
                 )
             )
-            session.commit()
         return exchange_id
+
+    def require_owned_pending_exchange(
+        self, exchange_id: str, *, session_id: str, privacy_scope: str,
+    ) -> None:
+        """Cooperative admission check. The read closes before any tool runs."""
+        with Session(self._engine) as session:
+            entries = list(session.exec(select(ConversationJournalEntry.id).where(
+                ConversationJournalEntry.exchange_id == exchange_id,
+                ConversationJournalEntry.role == "user",
+                ConversationJournalEntry.owner_id == self._owner_id,
+                ConversationJournalEntry.completion_status == "pending",
+                ConversationJournalEntry.session_id == session_id[:120],
+                ConversationJournalEntry.privacy_scope == privacy_scope,
+            ).limit(2)))
+        if len(entries) != 1:
+            raise JournalOwnershipError("journal_exchange_not_pending_or_not_owned")
 
     def complete_exchange(
         self,
@@ -146,17 +296,28 @@ class ContinuityService:
         tool_metadata: dict | None = None,
         state_updates: dict | None = None,
     ) -> None:
+        self._require_current_process()
         now = _utc_now()
-        with Session(self._engine) as session:
+        with self._write_session() as session:
+            self._registered_owner(session)
+            changed = session.exec(
+                update(ConversationJournalEntry).where(
+                    ConversationJournalEntry.exchange_id == exchange_id,
+                    ConversationJournalEntry.role == "user",
+                    ConversationJournalEntry.owner_id == self._owner_id,
+                    ConversationJournalEntry.completion_status == "pending",
+                    ConversationJournalEntry.session_id == session_id[:120],
+                    ConversationJournalEntry.privacy_scope == privacy_scope,
+                ).values(completion_status="completed").execution_options(synchronize_session=False)
+            )
+            if changed.rowcount != 1:
+                raise JournalOwnershipError("journal_exchange_not_pending_or_not_owned")
             user_entry = session.exec(
                 select(ConversationJournalEntry).where(
                     ConversationJournalEntry.exchange_id == exchange_id,
                     ConversationJournalEntry.role == "user",
                 )
             ).first()
-            if user_entry is not None:
-                user_entry.completion_status = "completed"
-                session.add(user_entry)
             assistant = None
             if assistant_text.strip():
                 assistant = ConversationJournalEntry(
@@ -172,53 +333,95 @@ class ContinuityService:
                     completion_status="completed",
                     tool_metadata_json=json.dumps(tool_metadata or {}, ensure_ascii=False)[:8000],
                     occurred_at=now,
+                    owner_id=self._owner_id,
+                    input_sequence=user_entry.input_sequence if user_entry is not None else None,
                 )
                 session.add(assistant)
-            session.commit()
-            if assistant is not None:
-                session.refresh(assistant)
-            self._update_working_state_locked(
-                session,
-                session_id=session_id,
-                user_text=user_entry.text if user_entry is not None else "",
-                assistant_text=assistant_text,
-                internal_summary=internal_summary,
-                state_updates=state_updates or {},
-                now=now,
-                privacy_scope=privacy_scope,
-            )
+            session.flush()
+            if self._input_is_current_locked(session, user_entry, session_id=session_id):
+                self._update_working_state_locked(
+                    session,
+                    session_id=session_id,
+                    user_text=user_entry.text if user_entry is not None else "",
+                    assistant_text=assistant_text,
+                    internal_summary=internal_summary,
+                    state_updates=state_updates or {},
+                    now=now,
+                    privacy_scope=privacy_scope,
+                )
             self._maybe_update_summary_locked(
                 session,
                 session_id=session_id,
                 through_entry_id=assistant.id if assistant is not None else (user_entry.id if user_entry is not None else None),
                 privacy_scope=privacy_scope,
             )
-            session.commit()
-        self.prune()
+        # Retention is post-commit maintenance, not a second terminal transaction.
+        try:
+            self.prune()
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Journal retention deferred (%s)", type(exc).__name__)
 
-    def fail_exchange(self, exchange_id: str, *, status: str = "failed") -> None:
-        with Session(self._engine) as session:
-            entries = list(
-                session.exec(select(ConversationJournalEntry).where(ConversationJournalEntry.exchange_id == exchange_id))
-            )
+    def fail_exchange(self, exchange_id: str, *, status: str = "failed") -> bool:
+        if status not in {"failed", "cancelled", "interrupted"}:
+            raise ValueError("Invalid failed exchange status")
+        self._require_current_process()
+        with self._write_session() as session:
+            owner = session.get(ConversationJournalOwner, self._owner_id)
+            if owner is None:
+                return False
+            self._registered_owner(session)
+            changed = session.exec(update(ConversationJournalEntry).where(
+                ConversationJournalEntry.exchange_id == exchange_id,
+                ConversationJournalEntry.role == "user",
+                ConversationJournalEntry.owner_id == self._owner_id,
+                ConversationJournalEntry.completion_status == "pending",
+            ).values(completion_status=status).execution_options(synchronize_session=False))
+            return changed.rowcount == 1
+
+    def reconcile_interrupted(self, *, limit: int = 100) -> int:
+        """Recover a bounded, fair batch of verifiably dead owners' pending rows."""
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 1000:
+            raise ValueError("Invalid journal recovery batch size")
+        count = 0
+        with self._write_session() as session:
+            entries = list(session.exec(select(ConversationJournalEntry).join(
+                ConversationJournalOwner,
+                ConversationJournalEntry.owner_id == ConversationJournalOwner.owner_id,
+            ).where(
+                ConversationJournalEntry.role == "user",
+                ConversationJournalEntry.completion_status == "pending",
+            ).order_by(ConversationJournalOwner.checked_at, ConversationJournalEntry.id).limit(limit)))
+            checked = {}
+            now = _utc_now()
             for entry in entries:
-                if entry.completion_status == "pending":
-                    entry.completion_status = status
+                if entry.owner_id not in checked:
+                    owner = session.get(ConversationJournalOwner, entry.owner_id)
+                    checked[entry.owner_id] = owner_is_dead(owner.host, owner.pid, owner.process_started)
+                    owner.checked_at = now
+                    session.add(owner)
+                if checked[entry.owner_id]:
+                    entry.completion_status = "interrupted"
                     session.add(entry)
-            session.commit()
+                    count += 1
+            session.flush()
+            self._prune_owner_registry_locked(session, limit=limit)
+        return count
 
-    def mark_pending_interrupted(self) -> int:
-        with Session(self._engine) as session:
-            entries = list(
-                session.exec(
-                    select(ConversationJournalEntry).where(ConversationJournalEntry.completion_status == "pending")
-                )
-            )
-            for entry in entries:
-                entry.completion_status = "interrupted"
-                session.add(entry)
-            session.commit()
-        return len(entries)
+    def mark_pending_interrupted(self, *, limit: int = 100) -> int:
+        """Compatibility entry point; construction never invokes recovery."""
+        return self.reconcile_interrupted(limit=limit)
+
+    @staticmethod
+    def _prune_owner_registry_locked(session: Session, *, limit: int = 100) -> None:
+        pending_owner = select(ConversationJournalEntry.id).where(
+            ConversationJournalEntry.owner_id == ConversationJournalOwner.owner_id,
+            ConversationJournalEntry.completion_status == "pending",
+        ).exists()
+        orphans = list(session.exec(select(ConversationJournalOwner).where(
+            ~pending_owner
+        ).order_by(ConversationJournalOwner.checked_at).limit(limit)))
+        for owner in orphans:
+            session.delete(owner)
 
     def recent_turns(
         self,
@@ -254,37 +457,47 @@ class ContinuityService:
         return list(reversed(selected))
 
     def prompt_context(self, session_id: str, *, privacy_scopes: set[str], token_budget: int | None = None) -> str:
-        snapshot = self.snapshot(session_id)
         parts: list[str] = []
-        summary = snapshot.get("summary")
-        if (
-            isinstance(summary, dict)
-            and summary.get("summary_text")
-            and summary.get("privacy_scope") in privacy_scopes
-        ):
-            parts.append("# Rolling Session Summary\n" + str(summary["summary_text"]))
-        working = snapshot.get("working_state")
-        if (
-            isinstance(working, dict)
-            and working.get("privacy_scope") in privacy_scopes
-            and any(working.get(key) for key in ("active_topic", "current_objective", "next_intended_action"))
-        ):
-            parts.append("# Active Working State\n" + json.dumps(working, ensure_ascii=False, sort_keys=True))
+        for privacy_scope in sorted(privacy_scopes):
+            snapshot = self.snapshot(session_id, privacy_scope=privacy_scope)
+            summary = snapshot.get("summary")
+            if isinstance(summary, dict) and summary.get("summary_text"):
+                parts.append("# Rolling Session Summary\n" + str(summary["summary_text"]))
+            working = snapshot.get("working_state")
+            if isinstance(working, dict) and any(
+                working.get(key) for key in ("active_topic", "current_objective", "next_intended_action")
+            ):
+                parts.append("# Active Working State\n" + json.dumps(working, ensure_ascii=False, sort_keys=True))
         turns = self.recent_turns(session_id, privacy_scopes=privacy_scopes, token_budget=token_budget)
         if turns:
             lines = [f"{entry.role}: {entry.text}" for entry in turns]
             parts.append("# Recent Conversation Turns\n" + "\n".join(lines))
         return "\n\n".join(parts)
 
-    def snapshot(self, session_id: str) -> dict:
+    def snapshot(self, session_id: str, *, privacy_scope: str = "local_private") -> dict:
+        """Select one exact scope; the compatibility default is a private-owner view.
+
+        Public/unknown callers must explicitly select their authorized scope.
+        Legacy scope labels cannot authorize public reads of old state.
+        """
         with Session(self._engine) as session:
-            summary = session.get(RollingSessionSummary, session_id)
-            working = session.get(WorkingStateCheckpoint, session_id)
-        return {
+            summary = session.get(ScopedSessionSummary, (session_id, privacy_scope))
+            working = session.get(ScopedWorkingStateCheckpoint, (session_id, privacy_scope))
+            if privacy_scope == "local_private":
+                if summary is None:
+                    summary = session.get(RollingSessionSummary, session_id)
+                if working is None:
+                    working = session.get(WorkingStateCheckpoint, session_id)
+        payload = {
             "session_id": session_id,
             "summary": self._summary_payload(summary),
             "working_state": self._working_payload(working),
         }
+        # A legacy row may already be mislabeled public. Do not propagate that label.
+        for key in ("summary", "working_state"):
+            if payload[key] is not None:
+                payload[key]["privacy_scope"] = privacy_scope
+        return payload
 
     def record_output(self, *, target_policy: str, turn_id: str, text: str, status: str, spoken: bool) -> None:
         with Session(self._engine) as session:
@@ -314,7 +527,7 @@ class ContinuityService:
         }
 
     def delete_session(self, session_id: str) -> int:
-        with Session(self._engine) as session:
+        with self._write_session() as session:
             count = int(
                 session.exec(
                     select(func.count()).select_from(ConversationJournalEntry).where(
@@ -329,27 +542,44 @@ class ContinuityService:
                 session.delete(summary)
             if working is not None:
                 session.delete(working)
-            session.commit()
+            for model in (ScopedSessionSummary, ScopedWorkingStateCheckpoint):
+                session.exec(delete(model).where(model.session_id == session_id))
+            # Keep a marker if inherited journal normalization left outstanding work.
+            cursor_has_entries = select(ConversationJournalEntry.id).where(
+                ConversationJournalEntry.session_id == func.substr(ConversationInputCursor.session_id, 1, 120),
+                ConversationJournalEntry.privacy_scope == ConversationInputCursor.privacy_scope,
+            ).exists()
+            session.exec(delete(ConversationInputCursor).where(
+                ConversationInputCursor.session_id == session_id, ~cursor_has_entries,
+            ))
+            session.flush()
+            self._prune_owner_registry_locked(session)
         return count
 
     def prune(self) -> int:
         cutoff = _utc_now() - timedelta(days=max(1, settings.conversation_journal_retention_days))
         removed = 0
-        with Session(self._engine) as session:
+        with self._write_session() as session:
             expired = list(
-                session.exec(select(ConversationJournalEntry).where(ConversationJournalEntry.occurred_at < cutoff))
+                session.exec(select(ConversationJournalEntry).where(
+                    ConversationJournalEntry.occurred_at < cutoff,
+                    ConversationJournalEntry.completion_status != "pending",
+                ))
             )
             for entry in expired:
                 session.delete(entry)
             removed += len(expired)
-            session_ids = list(session.exec(select(ConversationJournalEntry.session_id).distinct()))
+            scope_keys = list(session.exec(select(
+                ConversationJournalEntry.session_id, ConversationJournalEntry.privacy_scope
+            ).distinct()))
             max_exchanges = max(1, settings.conversation_journal_max_exchanges_per_session)
-            for session_id in session_ids:
+            for session_id, privacy_scope in scope_keys:
                 exchange_ids = list(
                     session.exec(
                         select(ConversationJournalEntry.exchange_id)
                         .where(
                             ConversationJournalEntry.session_id == session_id,
+                            ConversationJournalEntry.privacy_scope == privacy_scope,
                             ConversationJournalEntry.role == "user",
                             ConversationJournalEntry.completion_status == "completed",
                         )
@@ -368,7 +598,35 @@ class ContinuityService:
                     for entry in stale_entries:
                         session.delete(entry)
                     removed += len(stale_entries)
-            session.commit()
+            session.flush()
+            # Keep state while that scope has any journal rows, including pending work.
+            for model in (ScopedSessionSummary, ScopedWorkingStateCheckpoint):
+                scope_has_entries = select(ConversationJournalEntry.id).where(
+                    ConversationJournalEntry.session_id == model.session_id,
+                    ConversationJournalEntry.privacy_scope == model.privacy_scope,
+                ).exists()
+                session.exec(delete(model).where(model.updated_at < cutoff, ~scope_has_entries))
+            # Reset ordering only after no old exchange or retained checkpoint can use it.
+            cursor_has_entries = select(ConversationJournalEntry.id).where(
+                ConversationJournalEntry.session_id == func.substr(ConversationInputCursor.session_id, 1, 120),
+                ConversationJournalEntry.privacy_scope == ConversationInputCursor.privacy_scope,
+            ).exists()
+            cursor_has_state = select(ScopedWorkingStateCheckpoint.session_id).where(
+                ScopedWorkingStateCheckpoint.session_id == ConversationInputCursor.session_id,
+                ScopedWorkingStateCheckpoint.privacy_scope == ConversationInputCursor.privacy_scope,
+            ).exists()
+            session.exec(delete(ConversationInputCursor).where(
+                ConversationInputCursor.updated_at < cutoff, ~cursor_has_entries, ~cursor_has_state,
+            ))
+            # Legacy state is private compatibility data regardless of its old label.
+            # Pending work keeps it available until explicit deletion or a later prune.
+            for model in (RollingSessionSummary, WorkingStateCheckpoint):
+                session_has_pending = select(ConversationJournalEntry.id).where(
+                    ConversationJournalEntry.session_id == model.session_id,
+                    ConversationJournalEntry.completion_status == "pending",
+                ).exists()
+                session.exec(delete(model).where(model.updated_at < cutoff, ~session_has_pending))
+            self._prune_owner_registry_locked(session)
         return removed
 
     def _maybe_update_summary_locked(
@@ -379,22 +637,24 @@ class ContinuityService:
         through_entry_id: int | None,
         privacy_scope: str,
     ) -> None:
-        summary = session.get(RollingSessionSummary, session_id)
+        summary = session.get(ScopedSessionSummary, (session_id, privacy_scope))
+        new_summary = summary is None
         if summary is None:
-            summary = RollingSessionSummary(session_id=session_id)
-        completed = int(
-            session.exec(
+            summary = ScopedSessionSummary(session_id=session_id, privacy_scope=privacy_scope)
+            completed = int(session.exec(
                 select(func.count()).select_from(ConversationJournalEntry).where(
                     ConversationJournalEntry.session_id == session_id,
+                    ConversationJournalEntry.privacy_scope == privacy_scope,
                     ConversationJournalEntry.role == "user",
                     ConversationJournalEntry.completion_status == "completed",
                 )
-            ).one()
-        )
+            ).one())
+        else:
+            # Count accepted completions in this scope even after old turns expire.
+            completed = summary.completed_exchanges + 1
         summary.completed_exchanges = completed
-        summary.privacy_scope = privacy_scope
         interval = max(1, settings.conversation_summary_interval_exchanges)
-        if completed == 1 or completed % interval == 0:
+        if new_summary or completed % interval == 0:
             recent = list(
                 session.exec(
                     select(ConversationJournalEntry)
@@ -409,8 +669,9 @@ class ContinuityService:
             )
             recent.reverse()
             summary.summary_text = "\n".join(f"{item.role}: {item.text[:500]}" for item in recent)[-5000:]
-            summary.through_entry_id = through_entry_id
-            summary.updated_at = _utc_now()
+            # Coverage describes the selected rows, not the triggering completion.
+            summary.through_entry_id = recent[-1].id if recent else None
+        summary.updated_at = _utc_now()
         session.add(summary)
 
     def _update_working_state_locked(
@@ -425,9 +686,15 @@ class ContinuityService:
         now: datetime,
         privacy_scope: str,
     ) -> None:
-        state = session.get(WorkingStateCheckpoint, session_id)
+        state = session.get(ScopedWorkingStateCheckpoint, (session_id, privacy_scope))
         if state is None:
-            state = WorkingStateCheckpoint(session_id=session_id)
+            state = ScopedWorkingStateCheckpoint(session_id=session_id, privacy_scope=privacy_scope)
+            if privacy_scope == "local_private":
+                legacy = session.get(WorkingStateCheckpoint, session_id)
+                if legacy is not None:
+                    for field in ScopedWorkingStateCheckpoint.model_fields:
+                        if field not in {"session_id", "privacy_scope"}:
+                            setattr(state, field, getattr(legacy, field))
         state.active_topic = " ".join(str(state_updates.get("active_topic") or user_text).split())[:500]
         objective = state_updates.get("current_objective") or internal_summary
         if objective:
@@ -436,17 +703,17 @@ class ContinuityService:
         state.last_meaningful_interaction = now
         state.last_assistant_action = " ".join(assistant_text.split())[:1000]
         state.next_intended_action = " ".join(
-            str(state_updates.get("deferred_intention") or "Respond to the next turn using the current topic and unresolved questions.").split()
+            str(state_updates.get("deferred_intention") or state.next_intended_action
+                or "Respond to the next turn using the current topic and unresolved questions.").split()
         )[:1000]
         relationship_signals = state_updates.get("relationship_signals")
         if isinstance(relationship_signals, list):
             state.relevant_people_json = json.dumps([" ".join(str(item).split())[:200] for item in relationship_signals[:8]])
-        state.privacy_scope = privacy_scope
         state.updated_at = now
         session.add(state)
 
     @staticmethod
-    def _summary_payload(summary: RollingSessionSummary | None) -> dict | None:
+    def _summary_payload(summary: RollingSessionSummary | ScopedSessionSummary | None) -> dict | None:
         if summary is None:
             return None
         return {
@@ -458,7 +725,7 @@ class ContinuityService:
         }
 
     @staticmethod
-    def _working_payload(state: WorkingStateCheckpoint | None) -> dict | None:
+    def _working_payload(state: WorkingStateCheckpoint | ScopedWorkingStateCheckpoint | None) -> dict | None:
         if state is None:
             return None
         return {

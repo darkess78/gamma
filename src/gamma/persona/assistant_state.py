@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import settings
+from .state_io import atomic_write_text, state_file_lock
 
 
 _DEFAULT_STATE_PATH = settings.data_dir / "assistant_state.json"
@@ -66,7 +67,7 @@ class AssistantStateStore:
         Args:
             path: State file path (default from settings).
         """
-        self._path = path or _DEFAULT_STATE_PATH
+        self._path = (path or _DEFAULT_STATE_PATH).resolve()
 
     def load(self) -> AssistantFeelingState:
         """Load state.
@@ -108,33 +109,34 @@ class AssistantStateStore:
         Returns:
             AssistantFeelingState: Updated state.
         """
-        state = self.load()
-        normalized = emotion.strip().lower() if emotion else "neutral"
-        if normalized not in _ALLOWED_EMOTIONS:
-            normalized = "neutral"
-        state.current_emotion = normalized
-        state.recent_emotions.append(normalized)
-        state.recent_emotions = state.recent_emotions[-8:]
-        note = self._build_note(user_text=user_text, reply_text=reply_text, emotion=normalized)
-        if note:
-            state.notes.append(note)
-            state.notes = state.notes[-8:]
-        state.updated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(
-            json.dumps(
-                {
-                    "current_emotion": state.current_emotion,
-                    "recent_emotions": state.recent_emotions,
-                    "notes": state.notes,
-                    "updated_at": state.updated_at,
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        return state
+        with state_file_lock(self._path):
+            state = self.load()
+            normalized = emotion.strip().lower() if emotion else "neutral"
+            if normalized not in _ALLOWED_EMOTIONS:
+                normalized = "neutral"
+            state.current_emotion = normalized
+            state.recent_emotions.append(normalized)
+            state.recent_emotions = state.recent_emotions[-8:]
+            note = self._build_note(user_text=user_text, reply_text=reply_text, emotion=normalized)
+            if note:
+                state.notes.append(note)
+                state.notes = state.notes[-8:]
+            state.updated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write_text(
+                self._path,
+                json.dumps(
+                    {
+                        "current_emotion": state.current_emotion,
+                        "recent_emotions": state.recent_emotions,
+                        "notes": state.notes,
+                        "updated_at": state.updated_at,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+            )
+            return state
 
     def _build_note(self, *, user_text: str, reply_text: str, emotion: str) -> str | None:
         """Build emotion note.

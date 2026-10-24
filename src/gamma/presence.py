@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +13,7 @@ from .conversation.service import ConversationService
 from .identity.profile import SpeakerProfile, UNKNOWN_PUBLIC
 from .identity.resolver import IdentityResolver
 from .memory.service import MemoryService
+from .persona.state_io import atomic_write_text, state_file_lock
 from .performer.bus import PerformerEventBus, get_performer_event_bus
 from .performer.models import DASHBOARD_MONITOR_TARGET
 from .schemas.presence import AudienceSelection
@@ -163,27 +165,66 @@ def load_presence_state(
     downgrade_stale_live: bool = False,
     booted_at: datetime | None = None,
 ) -> dict[str, Any]:
-    state_path = path or presence_state_path()
+    state_path = (path or presence_state_path()).resolve()
+    if downgrade_stale_live:
+        with state_file_lock(state_path):
+            state = load_presence_state(path=state_path, downgrade_stale_live=False)
+            downgraded = downgrade_stale_live_state(state, booted_at=booted_at or SHANA_BOOTED_AT)
+            if downgraded != state:
+                _canonical_write(state_path, downgraded)
+            return downgraded
     try:
         payload = json.loads(state_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return default_presence_state()
     except Exception:
         payload = {}
-    state = merge_presence_state(payload if isinstance(payload, dict) else {})
-    if downgrade_stale_live:
-        state = downgrade_stale_live_state(state, booted_at=booted_at or SHANA_BOOTED_AT)
-    return state
+    return merge_presence_state(payload if isinstance(payload, dict) else {})
+
+
+def _canonical_write(state_path: Path, merged: dict[str, Any]) -> None:
+    atomic_write_text(state_path, json.dumps(merged, ensure_ascii=True, indent=2) + "\n")
 
 
 def save_presence_state(state: dict[str, Any], *, path: Path | None = None) -> dict[str, Any]:
-    state_path = path or presence_state_path()
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    merged = merge_presence_state(state)
-    temp_path = state_path.with_suffix(state_path.suffix + ".tmp")
-    temp_path.write_text(json.dumps(merged, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
-    temp_path.replace(state_path)
+    """Publish an explicit complete state under the shared per-file writer lock."""
+    state_path = (path or presence_state_path()).resolve()
+    with state_file_lock(state_path):
+        merged = merge_presence_state(state)
+        _canonical_write(state_path, merged)
     return merged
+
+
+def update_presence_state(
+    mutate: Callable[[dict[str, Any]], None], *, path: Path | None = None,
+) -> dict[str, Any]:
+    """Fresh read/mutate/publish. Callbacks must be short local state operations."""
+    state_path = (path or presence_state_path()).resolve()
+    with state_file_lock(state_path):
+        state = load_presence_state(path=state_path, downgrade_stale_live=False)
+        state = downgrade_stale_live_state(state, booted_at=SHANA_BOOTED_AT)
+        mutate(state)
+        merged = merge_presence_state(state)
+        _canonical_write(state_path, merged)
+    return merged
+
+
+def presence_snapshot_matches(
+    snapshot: dict[str, Any], current: dict[str, Any], *, missing_file: bool = False,
+) -> bool:
+    """Late bookkeeping cannot replace changed owner control or newer activity."""
+    fields = (
+        "mode", "desired_mode", "requires_confirmation", "last_confirmed_live_at",
+        "updated_at", "updated_by", "audience", "autonomy", "inputs", "outputs",
+        "safety", "activity", "lifecycle",
+    )
+    for field in fields:
+        # Two missing-file defaults have independently generated timestamps.
+        if field == "updated_at" and missing_file:
+            continue
+        if snapshot.get(field) != current.get(field):
+            return False
+    return (snapshot.get("wake") or {}).get("enabled") == (current.get("wake") or {}).get("enabled")
 
 
 def merge_presence_state(payload: dict[str, Any]) -> dict[str, Any]:
@@ -234,6 +275,24 @@ def apply_presence_to_stream_event(
     metadata = dict(event.metadata or {})
     metadata["presence_mode"] = mode
     metadata["presence"] = public_presence_payload(presence)
+
+    if event.actor.source == "discord":
+        from .integrations.discord.runtime import DiscordRuntimeConfig
+
+        config = DiscordRuntimeConfig.from_app_config()
+        expected_channel = config.voice_channel_id if event.kind == "mic_transcript" else config.text_channel_id
+        allowed = (
+            mode in {"wake", "go_live"} and config.enabled and config.output_enabled
+            and metadata.get("guild_id") == config.guild_id
+            and bool(expected_channel) and metadata.get("channel_id") == expected_channel
+            and event.kind in {"chat_message", "mic_transcript"}
+            and (event.kind != "mic_transcript" or config.voice_enabled)
+        )
+        metadata["public_output"] = True
+        metadata["output_target_policy"] = "discord_call"
+        metadata["presence_suppressed"] = not allowed
+        return event.model_copy(update={"metadata": metadata}), bool(allowed and synthesize_speech)
+
 
     if event.kind == "conversation_lull":
         authorized = bool(metadata.get("scheduler_authorized"))
@@ -318,7 +377,6 @@ class PresenceService:
 
     def status(self) -> dict[str, Any]:
         state = load_presence_state(downgrade_stale_live=True)
-        save_presence_state(state)
         session_id = str((state.get("activity") or {}).get("session_id") or "")
         continuity = self._conversation.continuity_snapshot(session_id) if session_id else None
         return {
@@ -340,18 +398,21 @@ class PresenceService:
         normalized = normalize_presence_mode(mode)
         if normalized == "go_live" and not confirm_public_output:
             raise ValueError("confirm_public_output is required for Go Live")
-        previous = load_presence_state(downgrade_stale_live=True)
-        state = presence_state_for_mode(
-            normalized,
-            previous=previous,
-            updated_by=updated_by,
-            confirmed_live_at=utc_now() if normalized == "go_live" else None,
-        )
-        if audience is not None:
-            state["audience"] = self._audience_payload(audience)
-        if normalized == "go_live":
-            state["audience"] = {"kind": "unknown", "known_person_id": None, "display_name": "Public audience"}
-        saved = save_presence_state(state)
+        selected_audience = self._audience_payload(audience) if audience is not None else None
+
+        def mutate(current: dict[str, Any]) -> None:
+            state = presence_state_for_mode(
+                normalized, previous=current, updated_by=updated_by,
+                confirmed_live_at=utc_now() if normalized == "go_live" else None,
+            )
+            if selected_audience is not None:
+                state["audience"] = selected_audience
+            if normalized == "go_live":
+                state["audience"] = {"kind": "unknown", "known_person_id": None, "display_name": "Public audience"}
+            current.clear()
+            current.update(state)
+
+        saved = update_presence_state(mutate)
         return {"ok": True, "state": saved, "detail": self._detail(saved)}
 
     def wake(self, *, audience: AudienceSelection, session_id: str | None = None) -> dict[str, Any]:
@@ -475,31 +536,40 @@ class PresenceService:
 
     def _record_wake_result(self, state: dict[str, Any], *, status: str, **details: Any) -> dict[str, Any]:
         now = utc_now()
-        wake = dict(state.get("wake") or {})
-        opening = details.get("opening")
-        history = list(wake.get("recent_openings") or [])
-        if opening:
-            history.append({"occurred_at": now, "opening": str(opening)[:1000], "status": status})
-        wake.update(
-            {
-                "last_status": status,
-                "last_opening": opening,
-                "last_event_at": now,
-                "recent_openings": history[-10:],
-                "suppression_reason": details.get("reason"),
-            }
-        )
-        state["wake"] = wake
-        state["activity"] = {
-            **dict(state.get("activity") or {}),
-            "last_event_kind": "presence_wake",
-            "last_output_target": DASHBOARD_MONITOR_TARGET if status in {"spoken", "text_only"} else None,
-            "current_turn_id": details.get("turn_id"),
-            "session_id": details.get("session_id"),
-        }
-        if status in {"spoken", "text_only"}:
-            state.setdefault("lifecycle", {})["last_interaction_at"] = now
-        saved = save_presence_state(state)
+
+        def mutate(current: dict[str, Any]) -> None:
+            wake = dict(current.get("wake") or {})
+            matches = presence_snapshot_matches(
+                state, current, missing_file=not presence_state_path().resolve().exists(),
+            )
+            opening = details.get("opening")
+            history = list(wake.get("recent_openings") or [])
+            if opening:
+                history.append({"occurred_at": now, "opening": str(opening)[:1000],
+                                "status": status if matches else "stale"})
+                wake["recent_openings"] = history[-10:]
+                current["wake"] = wake
+            if not matches:
+                return
+            wake.update({
+                "last_status": status, "last_opening": opening, "last_event_at": now,
+                "recent_openings": history[-10:], "suppression_reason": details.get("reason"),
+            })
+            current["wake"] = wake
+            activity = dict(current.get("activity") or {})
+            activity.update(
+                last_event_kind="presence_wake",
+                last_output_target=DASHBOARD_MONITOR_TARGET if status in {"spoken", "text_only"} else None,
+            )
+            for field in ("current_turn_id", "session_id"):
+                value = details.get("turn_id" if field == "current_turn_id" else field)
+                if value is not None:
+                    activity[field] = value
+            current["activity"] = activity
+            if status in {"spoken", "text_only"}:
+                current.setdefault("lifecycle", {})["last_interaction_at"] = now
+
+        saved = update_presence_state(mutate)
         return {"ok": status != "failed", "state": saved, "wake": {"status": status, **details}}
 
     @staticmethod

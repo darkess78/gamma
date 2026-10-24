@@ -4,6 +4,7 @@ import json
 import sys
 
 from .conversation.service import ConversationService
+from .schemas.conversation import RecipientContext
 
 
 def main() -> None:
@@ -16,7 +17,10 @@ def main() -> None:
         JSON with input, reply, emotion, internal_summary.
     """
     text = " ".join(sys.argv[1:]).strip() or "Dashboard LLM smoke test."
-    response = ConversationService().respond(text, synthesize_speech=False)
+    response = ConversationService().respond(
+        text, synthesize_speech=False,
+        recipient=RecipientContext(kind="owner_private", owner_authorized=True),
+    )
     print(
         json.dumps(
             {

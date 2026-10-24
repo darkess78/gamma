@@ -11,7 +11,7 @@ from gamma.conversation.service import ConversationService
 from gamma.persona.assistant_state import AssistantStateStore
 from gamma.safety.privacy_guard import PRIVACY_REFUSAL
 from gamma.memory.service import MemoryService
-from gamma.schemas.conversation import SpeakerContext
+from gamma.schemas.conversation import RecipientContext, SpeakerContext
 from gamma.schemas.response import AssistantResponse
 from gamma.voice.tts import TTSResult
 
@@ -406,6 +406,7 @@ class ConversationPipelineTest(unittest.TestCase):
                 user_text="Shana, what is chat discussing?",
                 fast_mode=True,
                 background_context="Recent sanitized stream context:\n- viewer: boss attempt",
+                recipient=RecipientContext(kind="owner_private", owner_authorized=True),
             )
             service.respond(user_text="ordinary local conversation", fast_mode=True)
 

@@ -137,6 +137,63 @@ ws://SHANA_PC:8000/v1/performer/events
 
 The exact endpoint can change, but the direction should stay: clients connect to the Shana PC and receive ordered output events.
 
+### Staged target diagnostics
+
+In the staged foundation rework, performer WebSocket ready messages and HTTP
+recent-event responses with an explicit target use aggregate diagnostics.
+They retain the stats keys but return no subscriber rows or connection names,
+hosts, identifiers, timestamps, or per-client capabilities. Subscriber counts
+cover only the selected target. History counts use that target's existing
+delivery and mute filters; Monitor still sees public events. The mute list
+contains only the selected target when muted. Empty or whitespace selectors
+resolve to the default public target; unknown selectors remain finite.
+
+Omitting the HTTP target and inspecting performer status retain full global
+operator diagnostics. Own ready identity and capability acknowledgements remain
+available. Known target names, global sequence numbers, replay windows and gap
+checks remain unchanged, so this does not hide all traffic activity. The API
+bearer remains global operator authority; target selection is not authentication.
+
+### Staged late safety target retention
+
+The retained late-callback helper applies the same existing output target policy
+as the original turn to the entire clear and filtered replacement batch before
+existing output controls filter it. Monitor and Discord
+turns therefore retain their targets instead of defaulting to public output.
+Public/default routing, target normalization, unknown-target handling and Monitor
+visibility remain unchanged. Late allows produce no duplicate output. This does not
+change target normalization, optional review settings, review deadlines or
+audible-completion semantics. The pre-publication gate below governs current
+release; it does not rely on late interruption. This remains staged and has not
+been activated in production.
+
+### Staged text-only review selection
+
+Text-only stream responses use the existing synchronous LLM review when enabled,
+even when the caller requested synthesis. They do not generate TTS. Review allow
+approves the returned text; block or soften uses the existing filtered replacement.
+The text-only draft remains caller-returned content, not performer-bus draft text;
+the bus emits expression metadata for an allowed text-only response. Optional
+review settings and event controls, fast guards, target routing and synchronous
+review deadlines, including Discord's minimum, remain unchanged. Actual speech
+uses parallel preparation with release governed by the pre-publication gate
+below. This remains staged and has not been activated in production.
+
+### Staged pre-publication review gate
+
+Privacy/disclosure and fast safety checks remain mandatory. Optional reviewer
+enable controls remain explicit; disabling LLM review does not disable privacy.
+When enabled, review must conclude with allow before original draft text/audio
+is dispatched, enters performer live/replay history or is returned as approved
+to integration callbacks. TTS may prepare concurrently, but its artifact is
+unpublished until approval. Block/soften uses the existing filtered replacement;
+timeout or reviewer error uses the existing bounded skip/defer/hold behavior and
+cannot release the original. A missing model for an enabled reviewer is not an
+allow verdict. Prepared work may finish after cancellation of its future; no
+late completion publishes it. Executor cleanup preserves bounded review waits.
+The separate synchronous Discord review retains its existing minimum deadline.
+No production activation or audible-playback proof is claimed.
+
 ## Event Shape
 
 Gamma should emit generic performer events rather than runtime-specific commands.

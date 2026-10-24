@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from gamma.memory.continuity import ContinuityService
+from sqlmodel import Session, select
+
+from gamma.memory.continuity import ContinuityService, ConversationJournalEntry
 
 
 def _database_url(path: Path) -> str:
@@ -118,11 +120,11 @@ def test_silent_exchange_updates_working_state_without_fake_assistant_turn() -> 
     assert snapshot["summary"]["completed_exchanges"] == 1
 
 
-def test_pending_turn_is_marked_interrupted_after_reconstruction() -> None:
+def test_pending_turn_remains_pending_after_live_service_reconstruction() -> None:
     with TemporaryDirectory() as temp_dir:
         url = _database_url(Path(temp_dir) / "interrupted.db")
         first = ContinuityService(database_url=url)
-        first.begin_exchange(
+        exchange_id = first.begin_exchange(
             session_id="session-b",
             text="This generation will be interrupted",
             speaker_name="Owner",
@@ -131,6 +133,11 @@ def test_pending_turn_is_marked_interrupted_after_reconstruction() -> None:
         )
 
         reconstructed = ContinuityService(database_url=url)
+        with Session(reconstructed._engine) as session:
+            entry = session.exec(select(ConversationJournalEntry).where(
+                ConversationJournalEntry.exchange_id == exchange_id
+            )).one()
+            assert entry.completion_status == "pending"
         completed = reconstructed.recent_turns(
             "session-b",
             privacy_scopes={"local_private"},

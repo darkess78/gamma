@@ -4,7 +4,7 @@ import base64
 import json
 from urllib import error, request
 
-from ..errors import ConfigurationError
+from ..errors import ConfigurationError, EmptyModelResponse
 from ..config import settings
 from ..llm.backend_admission import backend_slot
 from ..errors import ContextOverflowError, ExternalServiceError
@@ -102,6 +102,19 @@ class LocalLLMAdapter(LLMAdapter):
         if image_inputs:
             payload["images"] = [base64.b64encode(item.data).decode("ascii") for item in image_inputs]
         body = json.dumps(payload).encode("utf-8")
+        # Reasoning models (gpt-oss) sometimes end a turn after thinking, with no answer.
+        # That is random, so one more try almost always answers; it is not a provider fault.
+        for attempt in (1, 2):
+            data = self._post_generate(endpoint, body)
+            text = (data.get("response") or "").strip()
+            if text:
+                break
+            if attempt == 1 and (data.get("thinking") or "").strip():
+                continue
+            raise EmptyModelResponse("Local model returned an empty response.")
+        return LLMReply(text=text)
+
+    def _post_generate(self, endpoint: str, body: bytes) -> dict:
         req = request.Request(
             endpoint + "/api/generate",
             data=body,
@@ -111,7 +124,7 @@ class LocalLLMAdapter(LLMAdapter):
         try:
             with backend_slot(endpoint, foreground=True, timeout=settings.local_llm_timeout_seconds):
                 with request.urlopen(req, timeout=settings.local_llm_timeout_seconds) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
+                    return json.loads(resp.read().decode("utf-8"))
         except error.HTTPError as exc:
             details = exc.read().decode("utf-8", errors="replace")
             if is_context_overflow_message(details):
@@ -123,10 +136,6 @@ class LocalLLMAdapter(LLMAdapter):
             if is_context_overflow_message(str(exc)):
                 raise ContextOverflowError(f"Local LLM context overflow: {exc}") from exc
             raise ExternalServiceError(f"Local LLM request failed: {exc}") from exc
-        text = (data.get("response") or "").strip()
-        if not text:
-            raise ExternalServiceError("Local model returned an empty response.")
-        return LLMReply(text=text)
 
     def _model_name_for_request(
         self,

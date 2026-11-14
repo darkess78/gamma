@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from ..errors import ConfigurationError, ContextBudgetError, ContextOverflowError
+from ..errors import ConfigurationError, ContextBudgetError, ContextOverflowError, EmptyModelResponse
 from .base import LLMAdapter, LLMCallContext, LLMImageInput, LLMReply
 from .capabilities import estimate_text_tokens, model_capability
 from .provider_health import ProviderHealthMixin
@@ -281,11 +281,12 @@ class RouterLLMAdapter(RoutePolicyMixin, ProviderHealthMixin, RouteEventsMixin, 
             except Exception as exc:
                 last_exc = exc
                 duration_ms = round((time.perf_counter() - started_at) * 1000, 1)
-                self._mark_provider_failure(
-                    decision.provider,
-                    has_images=bool(image_inputs),
-                    route_family=decision.route_family,
-                )
+                if not isinstance(exc, EmptyModelResponse):  # an empty answer isn't a broken provider
+                    self._mark_provider_failure(
+                        decision.provider,
+                        has_images=bool(image_inputs),
+                        route_family=decision.route_family,
+                    )
                 self._record_route_event(
                     decision=decision,
                     call_context=call_context,

@@ -13,6 +13,13 @@ class ExternalServiceError(GammaError):
     """Raised when an external dependency fails or returns unusable data."""
 
 
+class EmptyModelResponse(ExternalServiceError):
+    """The model answered but said nothing (gpt-oss sometimes stops after its reasoning).
+
+    The provider is working, so this must not put it in failure backoff.
+    """
+
+
 class ContextOverflowError(ExternalServiceError):
     """Raised when a provider rejects an otherwise valid oversized prompt."""
 

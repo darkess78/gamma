@@ -422,6 +422,22 @@ class RouterLLMAdapterTest(unittest.TestCase):
         backoff = router.provider_backoff_state()
         self.assertIn("local:chat_light", backoff)
 
+    def test_empty_answer_does_not_back_off_the_provider(self) -> None:
+        """gpt-oss sometimes stops after thinking; the provider still works, so no backoff."""
+        from gamma.errors import EmptyModelResponse
+        settings.llm_router_allow_hosted_escalation = True
+        router = _TestRouter()
+
+        def empty_local(*args, **kwargs):
+            raise EmptyModelResponse("Local model returned an empty response.")
+
+        router.fake_adapters["local"].generate_reply = empty_local  # type: ignore[method-assign]
+        begin_route_trace()
+        router.generate_reply(system_prompt="conversation prompt", user_text="tell me a quick joke",
+                              call_context=LLMCallContext(purpose="conversation_draft", fast_mode=True))
+        take_route_trace()
+        self.assertEqual(router.provider_backoff_state(), {})
+
     def test_vision_backoff_does_not_block_text_routes(self) -> None:
         router = _TestRouter()
         router._mark_provider_failure("local", has_images=True, route_family="vision")

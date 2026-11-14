@@ -6,8 +6,11 @@ if (window.GAMMA_DASHBOARD_PAGE === 'coding') {
   const ACTIVE = ['queued', 'running', 'deferred', 'paused'];
   const TONES = {
     awaiting_owner_review: 'live', running: 'good', queued: 'good', deferred: 'warn', paused: 'warn',
-    already_satisfied: 'good', completed: 'good', applied: 'good',
-    blocked: 'bad', review_rejected: 'bad', interrupted: 'bad', stopped: 'off',
+    needs_owner: 'warn', blocked: 'bad', failed: 'bad', interrupted: 'bad', stopped: 'off',
+  };
+  const STAGES = {
+    starting: 'starting', splitting: 'splitting into tasks', working: 'working on a task',
+    suite: 'running the full test suite', waiting_for_gpu: 'waiting for the GPU', resumed: 'resumed',
   };
   const openDetails = new Set();
   const proposals = new Map();
@@ -64,7 +67,9 @@ if (window.GAMMA_DASHBOARD_PAGE === 'coding') {
     const card = el('article', 'job-card');
     const head = el('div', 'job-head');
     head.append(el('span', `badge ${TONES[job.status] || 'off'}`, label(job.status)));
-    if (job.stage && job.stage !== job.status) head.append(el('span', 'muted small', label(job.stage)));
+    if (job.stage && job.stage !== job.status && ACTIVE.includes(job.status)) {
+      head.append(el('span', 'muted small', STAGES[job.stage] || label(job.stage)));
+    }
     if (job.created_at) head.append(el('span', 'muted small', new Date(job.created_at * 1000).toLocaleString()));
     card.append(head, el('p', 'job-goal', job.goal));
     if (job.reason) card.append(el('p', 'muted', job.reason));
@@ -72,21 +77,24 @@ if (window.GAMMA_DASHBOARD_PAGE === 'coding') {
     if (tasks.length) {
       const ul = el('ul', 'task-list');
       for (const task of tasks) {
-        ul.append(el('li', '', `${task.id}: ${label(task.status)}${task.attempts ? `, ${task.attempts} attempt${task.attempts === 1 ? '' : 's'}` : ''}`));
+        const li = el('li', '');
+        li.append(el('strong', '', `${task.title || task.id}`), document.createTextNode(` (${label(task.status)}`
+          + `${task.steps ? `, ${task.steps} step${task.steps === 1 ? '' : 's'}` : ''})`));
+        if (task.files && task.files.length) li.append(el('div', 'muted small', `${task.files.join(', ')}; checked by ${task.check}`));
+        if (task.summary) li.append(el('div', 'small', task.summary));
+        ul.append(li);
       }
       card.append(ul);
     }
-    if (job.learning) {
-      card.append(el('p', 'muted small', job.learning.recorded
-        ? `Learning recorded: ${(job.learning.lesson_ids || []).join(', ')}`
-        : `Learning not recorded${job.learning.error ? `: ${job.learning.error}` : ''}`));
+    if (job.suite) {
+      card.append(el('p', `small ${job.suite.passed ? '' : 'muted'}`, job.suite.passed ? 'Full test suite passed.' : 'Full test suite failed.'));
     }
     if (job.proposal) {
       card.append(fold(job, 'proposal', 'Proposed diff', (details) => showProposal(job, details)));
     }
     card.append(fold(job, 'raw', 'Work events (raw)', (details) => {
       if (details.querySelector('pre')) return;
-      details.append(el('pre', 'log', JSON.stringify({ events: job.events, application: job.application, learning: job.learning }, null, 2)));
+      details.append(el('pre', 'log', JSON.stringify({ events: job.events, suite: job.suite, last_transport: job.last_transport }, null, 2)));
     }));
     if (ACTIVE.includes(job.status)) {
       const row = el('div', 'button-row');
@@ -141,11 +149,12 @@ if (window.GAMMA_DASHBOARD_PAGE === 'coding') {
         body: JSON.stringify({
           goal: document.getElementById('autonomousCodingGoal').value,
           model: document.getElementById('autonomousCodingModel').value,
-          checker_model: document.getElementById('autonomousCodingChecker').value,
           budget_seconds: Number(document.getElementById('autonomousCodingBudget').value),
         }),
       });
-      message.textContent = `Gamma accepted ${value.job.id}.`;
+      message.textContent = value.process && value.process.ok === false
+        ? 'The goal was saved, but the coding worker could not start.'
+        : 'Queued. Shana will split it into tasks and start when the GPU is free.';
       await refresh();
     } catch (error) { message.textContent = error.message; }
     finally { submitting = false; button.disabled = false; }

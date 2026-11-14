@@ -47,8 +47,10 @@ class TaskResult:
 
 
 class TaskLoop:
-    def __init__(self, model, workspace: Path, run_check: Callable[[str], dict], *, max_steps: int = MAX_STEPS) -> None:
+    def __init__(self, model, workspace: Path, run_check: Callable[[str], dict], *, max_steps: int = MAX_STEPS,
+                 checkpoint: Callable[[], None] = lambda: None) -> None:
         self.model = model
+        self.checkpoint = checkpoint  # raises to stop (owner stop, time budget); blocks while paused
         self.root = workspace.resolve()
         self.run_check = run_check
         self.max_steps = max_steps
@@ -59,6 +61,7 @@ class TaskLoop:
         changed: set[str] = set()
         check_passed = False
         for step in range(1, self.max_steps + 1):
+            self.checkpoint()
             prompt = (f"Task {task.id}: {task.title}\n{task.detail}\nFiles you may edit: {', '.join(task.files)}\n"
                       f"Check: {task.check}\n{notes}\n\nRecent results:\n" + ("\n\n".join(history[-KEEP_RESULTS:]) or "(none yet)"))
             reply = self.model.generate_reply(system_prompt=LOOP_GUIDE, user_text=prompt)
@@ -140,6 +143,7 @@ class TaskLoop:
             path.write_text(text.replace(old, new, 1), encoding="utf-8")
             return f"Replaced 1 snippet in {rel}.", rel, None
         if tool == "test":
+            self.checkpoint()
             outcome = self.run_check(task.check)
             passed = bool(outcome.get("passed"))
             return _cap(("PASSED. " if passed else "FAILED. ") + str(outcome.get("output") or "")), None, passed

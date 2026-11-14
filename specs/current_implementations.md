@@ -116,12 +116,10 @@ are unchanged.
 - Shared-backend OS admission lets an active coding response finish, then admits
   registered conversation/reviewer work before new coding generation. Waiting
   coding retains owner controls and resource guards. See [LLM routing](llm_router.md).
-- Autonomous coding rechecks cooperative pause/stop and the time budget before
-  dispatching new generation after availability. Pre-admission resource waits use
-  100 ms sleep slices for those checks while retaining two-second availability
-  probes. Paused waits retain their separate one-second loop; admitted network
-  requests and generation remain nonpreemptive. See
-  [`RepositoryAgent.ask`](../src/gamma/coding/autonomous.py).
+- Coding jobs recheck pause/stop and the time budget before dispatching new
+  generation, including while waiting for the GPU (100 ms slices, two-second
+  availability probes). Admitted requests are not preempted. See
+  [`BackgroundModel`](../src/gamma/coding/local_model.py).
 
 Accepted composed synthetic checks exercise concurrent owner status/stop and
 unrelated public output while coding waits, enforcing authority, public/private
@@ -234,9 +232,8 @@ and recovery planning. Machine maintenance did not activate this staged source.
   feature checks in a Linux sandbox, honest blocked/checker states, bounded
   capability summaries, a withheld generated-case verification gate, retained
   review-only candidate solutions and editable observed lessons. Practice now
-  runs only under the coordination core. A separate owner-directed executor now discovers ordinary Python
-  source, plans bounded dependent tasks, repairs executed failures, independently
-  reviews verified source and stops at owner review. See
+  runs only under the coordination core. Owner coding goals are split into small tested tasks,
+  worked one tool step at a time by a local model, and stop at owner review. See
   `coding_improvement.md` for implemented boundaries and outstanding work.
 
 - Linux-only runtime on Gamma PC; see `platform.md`.
@@ -266,11 +263,11 @@ was removed on 2026-11-14; autonomous coding is the only coding path.
 
 ## Autonomous coding
 
-The Coding page accepts owner goals and exposes pause/resume/stop and executed
-test receipts. Verified work stops at `awaiting_owner_review` with a
-`proposal.diff`; nothing is applied to running Shana. Frozen acceptance tests are
-no longer copied into `tests/`.
-Lesson revisions preserve provenance and owner edits. The runtime uses local
-Qwen3.8:27b for coding and GPT-OSS:20b for independent review. Protected controller,
+The Coding page queues owner goals and shows each job's tasks (title, files,
+check, summary), pause/resume/stop and the proposed diff. Finished work stops
+at `awaiting_owner_review` with a `proposal.diff`; nothing is applied to
+running Shana. See [coding_improvement](coding_improvement.md).
+Lesson revisions preserve provenance and owner edits. Coding uses a local
+model (default Qwen3.8:27b). Protected controller,
 identity, safety and authentication code cannot be changed by the learner.
 

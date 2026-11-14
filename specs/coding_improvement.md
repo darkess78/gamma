@@ -76,159 +76,57 @@ its `gamma-coding-idle.service` unit were removed on 2026-11-13.
 The older registered-scope repository coding path (`gamma.coding.repository`,
 its Discord-status scope and dashboard panel) was removed on 2026-11-14.
 
-## Local-model workflow (2026-11-14)
+## Owner coding goals (local models)
 
 The owner wants self-coding to stay on local models, so Shana works the way a
-small model can succeed: in small, checked steps.
+small model can succeed: in small, checked steps. This is the only path for
+repository coding; the older executor (whole-file proposals, a separate
+checker model, automatic application with rollback) was removed on 2026-11-14.
 
-- `coding/split.py` splits a goal into at most 6 tasks, each changing at most
-  3 files and naming the pytest check that proves it. The model proposes the
-  split; code enforces the rules and asks once more with the problems, or
-  returns a question for the owner.
-- `coding/task_loop.py` works one task with tools (read, search, replace,
-  write, test, done, give_up), one per step, seeing each result. Edits are
-  limited to the task's files and "done" is refused until the check passes.
-- `coding/workflow.py` runs it in a throwaway git worktree, runs each check and
-  then the full suite in the bubblewrap sandbox, and writes `proposal.diff` and
-  `report.json`. The result is always for owner review.
+**Queue.** The Coding page (`GET/POST /api/coding/work`, `POST
+/api/coding/work/{id}/control`, `GET /api/coding/work/{id}/proposal`) and
+Shana's owner-only `coding_goal` tool queue a goal with a model and a time
+budget (1 minute to 8 hours, counted from when it was queued). One goal is
+active at a time. Jobs live in ignored `data/coding/autonomous/work-*`
+(`state.json`, `control.json`, `proposal.diff`, `report.json`).
+`python -m gamma.coding.workflow --goal "..."` queues one from a shell.
 
-`python -m gamma.coding.workflow --goal "..." --model qwen3.8:27b` (needs the
-GPU). Not yet wired into the Coding page; the older executor below remains.
+**Worker.** `coding/autonomous.py` runs queued jobs one by one (started on
+demand, or as `deploy/gamma-coding-autonomous.service`). Pause, resume and
+stop take effect at the next step. A job that was running when the worker died
+is marked interrupted and never replayed.
 
-## Owner-directed autonomous repository coding
+**Model calls.** `coding/local_model.py` (`BackgroundModel`) waits until no
+model is loaded in Ollama, takes the shared backend slot as a background
+caller so a waiting conversation turn always goes first, and unloads the model
+after each call. Owner controls are honoured while it waits. A sent request is
+never retried.
 
-The authenticated Improvement dashboard owns `GET/POST /api/coding/work` and
-`POST /api/coding/work/{id}/control`. The owner gives a result and rough notes;
-Gamma inspects current source and plans up to four dependent tasks. The coding
-model and a different local checker are explicitly selected. Budgets range
-from one minute to eight hours. Pause, resume and stop act at safe boundaries;
-in-flight model calls and sandbox checks have their own bounded timeouts.
+**Workflow** (`coding/workflow.py`):
 
-Each job copies the current dirty checkout into a private snapshot. Local
-credentials, model files and runtime databases are excluded. Protected baseline
-tests must pass before inference. The checker writes acceptance tests before
-seeing candidate edits. Invalid test programs receive bounded format feedback;
-valid acceptance is frozen. Gamma writes exact source patches and uses executed
-failures to repair them. Both requested behavior and protected regressions must
-pass before a task is accepted. After five attempts, the checker diagnoses the
-failures, followed by at most two repair attempts under the same time budget.
+1. A throwaway git worktree of the repository at HEAD.
+2. `coding/split.py` splits the goal into at most 6 tasks, each changing at
+   most 3 files and naming the pytest check that proves it. Code enforces the
+   rules and asks the model once more with the problems, or returns a question
+   (status `needs_owner`).
+3. `coding/task_loop.py` works each task with tools (read, search, replace,
+   write, test, done, give_up), one per step, seeing each result. Edits are
+   limited to the task's files and "done" is refused until the check passes.
+4. Changed source is checked for tricks that fake a pass, then the full suite
+   runs. Checks run in the bubblewrap sandbox (no network, read-only).
+5. `proposal.diff` and `report.json` are written. The job ends
+   `awaiting_owner_review`, `needs_owner`, `blocked` or `failed`. Nothing is
+   applied to running Shana (D5); the owner reviews and applies the diff.
 
-Candidate checks use the existing no-network, read-only sandbox and an executed
-pytest receipt requiring actual test calls. The final independent review sees
-the source diff and evidence. Application checks baseline hashes, stores original
-bytes, repeats the full suite on the installed source, restarts affected managed
-services and checks HTTP health. Failures roll back only unchanged candidate
-bytes; concurrent owner edits are preserved. Interrupted inference or an
-uncertain application is never replayed automatically.
+**What it may change** (`coding/project_policy.py`): Python modules under
+`src/gamma` outside the protected areas (coding, safety, persona, tools, API,
+identity, supervisor, improvement, resources, agent, config and the main entry
+points), and only *new* `tests/test_*.py` files. Existing tests prove nothing
+broke, so a task can't edit them. Changed source may not exit the process, use
+exec/eval, patch builtins or import test machinery.
 
-The executor can edit ordinary Python modules and the lesson/curriculum learning
-modules. Its own controller, tests, authentication, safety, identity, supervisor,
-configuration and model weights remain protected. Integration worker activation
-requires a feature-specific adapter; HTTP health alone does not establish voice
-or external-service correctness. This is bounded repository autonomy, not a
-guarantee that every unfamiliar project will succeed.
+**Status for Shana.** `coding_status` gives only status, stage, task counts and
+whether a proposal exists; never the goal, file names or code.
 
-Only a trusted owner speaker may invoke `coding_goal`, `coding_status` or
-`coding_control` in conversation. An explicit `coding goal: <result>` starts a
-job without waiting for coding to finish in the conversation request. Caller
-arguments cannot supply owner identity. Dashboard access retains the existing
-authentication and proxy policy.
-
-Jobs, plans, model responses, frozen tests, repairs and application receipts are
-stored under ignored `data/coding/autonomous`. Verified examples explicitly say
-`training_approved: false` and `model_weights_changed: false`. Collecting examples
-and editable lessons does not change model weights.
-
-`deploy/gamma-coding-autonomous.service` is a user systemd unit for the Gamma PC
-checkout. It maintains one executor and survives user-session restarts when
-lingering is enabled.
-
-### Frozen owner checks and durable learning
-
-Trusted dashboard/API or host callers may supply up to three independently
-written `test_goal_owner_*.py` programs and select `acceptance_mode=owner_contract`.
-They are validated and hashed before candidate inference. This substitutes for
-checker test design; final independent model review remains mandatory. The
-conversation coding tool cannot select this mode. Frozen checks are no longer copied into `tests/`
-(removed 2026-11-14); they stay with the job's own records.
-
-After successful installed checks and activation, the host observer reloads the
-installed lesson implementation and passes the actual completed work record.
-Strict proof validation and work-ID deduplication precede learning. Tasks without
-an explicit skill produce `lesson-repository_verification`; valid explicit skill
-labels remain compatible. Owner text and disabled flags survive observations.
-The dashboard exposes bounded revision history with automatic/owner provenance.
-Observer failure is reported separately and cannot replay or undo applied work.
-
-## Staged interrupted application evidence reconciliation
-
-Startup retains interrupted status and never replays saved execution. Under the
-existing executor lock, bounded recovery reads only each job's fixed
-`application/journal.json` and the configured project root. A completed journal
-must have the expected shape, exact boolean success, bounded allowed-source
-scope and current installed hashes before its existing application payload is
-attached to the interrupted job. Job-record IDs must match their directories.
-This checks filesystem evidence, not cryptographic authenticity or whole-goal
-completion. Retention, learning and later follow-up completion are not inferred.
-
-`application_recovery.status` distinguishes `completed_current`, `missing`,
-`incomplete`, `invalid`, `source_conflict`, `baseline_conflict`, `rolled_back` and
-`rollback_conflict` and `record_budget`. Only `completed_current` attaches application evidence.
-Checks are bounded to regular files; unsafe paths, symlinks, malformed/duplicate
-JSON, invalid flags/hashes and oversized records are rejected. The recorded
-hashes reflect source at recovery, not a lock against later owner edits. Repeated
-recovery rechecks interrupted jobs and removes the current-evidence payload if
-source changes. Original journals/backups and installed or owner-edited bytes
-remain untouched; normal terminal jobs remain unchanged.
-
-A valid receipt that exceeds the combined two-megabyte job-record budget is
-retained in its journal but omitted from the job payload, with `record_budget`
-recorded and status kept interrupted. Unrelated progress is never truncated. If
-even the minimal update cannot persist, the original state is retained; individual
-record budget or write failures do not abort recovery of later jobs.
-A persistence failure emits a standard logger warning containing only the constant
-`coding_recovery_persistence_failed` label, validated opaque job ID and exception
-class. Private content, paths and exception messages are omitted.
-
-There are no recovery callbacks, inference, application, rollback, activation,
-test-retention or learning actions. Existing budgets, controls, execution and
-recipient disclosure gates remain in place. No private recipient/session binding,
-automatic completion bridge or safe task-resumption policy is added. Validation
-uses disposable synthetic application/startup crashes and filesystem controls;
-this repair is staged, awaiting independent acceptance, and not activated.
-
-
-## Staged bounded private coding progress pull
-
-The existing `coding_status` tool and private direct reply expose at most five
-stored jobs with finite job/stage/recovery/application outcomes, at most four
-finite task statuses and bounded attempt counts. Opaque job IDs remain useful for
-existing controls. Goals, raw reasons, task IDs/editable paths, journal contents,
-file hashes/contents, nested evidence, addresses, credentials and arbitrary logs
-are omitted. Empty or unreadable/malformed storage is handled conservatively;
-read failures log only a constant event and exception class.
-Non-numeric/non-finite ordering metadata is excluded before sorting so malformed
-neighboring records cannot hide valid progress. Such exclusion preserves the file
-and logs a constant label with its validated opaque job ID.
-
-`verified_at_recovery` describes a valid completed application payload paired
-with stored `completed_current` recovery evidence on an interrupted job. A normal
-completed job can expose `completed_receipt`. Neither outcome verifies current
-source at pull time or proves whole-goal, retention or learning follow-up success.
-A `completed_current` marker without a valid application payload is reported as
-stored recovery information with an explicitly unconfirmed completion payload.
-Other recovery outcomes, including conflicts and `record_budget`, remain finite
-and unconfirmed. A failed recovery update may leave the original job running;
-the pull does not infer evidence from a journal it has not read. Follow-up
-completion is explicitly unconfirmed. Task verification counts do not establish
-whole-job completion.
-
-The existing caller still requires its resolved trusted-owner speaker for coding
-tools, and private details still require an internal owner-private recipient.
-Shared/default/unknown recipients retain fixed acknowledgement and scrubbed
-metadata. This adds no authenticated job recipient/session binding, stronger
-owner identity, private ingress or assumed-voice proof, notification bridge,
-automatic delivery, new credentials or authorization policy. Jobs remain unbound;
-no recipient is inferred from their goals, model arguments or interaction mode.
-The separate `repository.status_summary` Discord helper is unchanged. This pull
-projection is staged and awaits independent acceptance; it is not activated.
+Not done yet: a real run on Gamma PC (needs the GPU), and an "apply proposal"
+button (today the owner applies the diff by hand).

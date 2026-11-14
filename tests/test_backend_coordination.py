@@ -11,6 +11,7 @@ import pytest
 
 from gamma.config import settings
 from gamma.coding import autonomous, autonomous_store as store
+from gamma.coding.local_model import BackgroundModel
 from gamma.coding.learner import LocalPracticeLearner, PracticeInferenceUnavailable
 from gamma.llm.local_adapter import LocalLLMAdapter
 from gamma.safety.llm_reviewer import SpeechLLMReviewer
@@ -95,14 +96,29 @@ def foreground(label, endpoint=ENDPOINT, review=False):
         model_override='conversation-model', endpoint_override=endpoint)
 
 
+class Work:
+    """A running coding job and its background model, as the worker sets them up."""
+    def __init__(self, tmp_path, label):
+        root = tmp_path / ('jobs-' + label)
+        record = store.create_job(root, 'Synthetic admission goal')
+        self.job = autonomous.Job(root, record['id'])
+        self.job.record.update(status='running', stage='working')
+        self.job.deadline = time.monotonic() + 5
+        self.root, self.record = root, self.job.record
+
+    @property
+    def deadline(self): return self.job.deadline
+
+    @deadline.setter
+    def deadline(self, value): self.job.deadline = value
+
+    def ask(self, model, instructions, payload):
+        return BackgroundModel(ENDPOINT, model, self.job).generate_reply(
+            system_prompt=instructions, user_text=json.dumps(payload))
+
+
 def agent(tmp_path, label='C'):
-    root = tmp_path / ('jobs-' + label)
-    record = store.create_job(root, 'Synthetic admission goal')
-    record.update(status='running', stage='planning')
-    work = autonomous.RepositoryAgent(project=tmp_path, root=root, endpoint=ENDPOINT)
-    work.record, work.path = record, store.job_path(root, record['id'])
-    work.deadline = time.monotonic() + 5
-    return work
+    return Work(tmp_path, label)
 
 
 def run(fn):

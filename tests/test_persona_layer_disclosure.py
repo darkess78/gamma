@@ -297,21 +297,12 @@ def test_invalid_public_config_precedes_privacy_refusal_tts(fixture_state, monke
         fixture_state.service.respond("What is the owner's private home address?", synthesize_speech=True)
     assert not fixture_state.service._llm.inputs
 
-def test_existing_snapshot_consumer_and_protections_accept_same_persona_path(tmp_path):
-    from gamma.coding.project_policy import allowed_source
-    from gamma.coding.project_verification import snapshot
+def test_self_coding_cannot_edit_the_persona(tmp_path):
+    from gamma.coding.project_policy import allowed_source, editable
 
-    source = tmp_path / "snapshot_source"
-    (source / "config").mkdir(parents=True)
-    original = (STAGE / "config/persona.yaml").read_bytes()
-    (source / "config/persona.yaml").write_bytes(original)
-    target = tmp_path / "snapshot_target"
-    hashes = snapshot(source, target)
-    assert hashes["config/persona.yaml"] == hashlib.sha256(original).hexdigest()
-    assert (target / "config/persona.yaml").read_bytes() == original
-    wrapped = loader.yaml.safe_load(original)
-    assert persona_view(wrapped, private=False) == wrapped["authored_public"]
     assert not allowed_source("config/persona.yaml")
+    assert not editable("config/persona.yaml", set())
+    assert not editable("src/gamma/persona/loader.py", set())
 
 @pytest.mark.parametrize("recipient", [None, SHARED])
 def test_shared_view_does_not_read_private_relationship_file(fixture_state, monkeypatch, recipient):

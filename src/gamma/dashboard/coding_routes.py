@@ -1,4 +1,4 @@
-"""Dashboard-owned controls for general autonomous coding goals."""
+"""Dashboard controls for owner coding goals: queue one, watch it, pause/stop it, read its proposal."""
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
@@ -11,10 +11,7 @@ router = APIRouter(prefix='/api/coding')
 class GoalRequest(BaseModel):
     goal: str = Field(min_length=12, max_length=2000)
     model: str = Field(default='qwen3.8:27b', pattern=r'^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,199}$')
-    checker_model: str = Field(default='gpt-oss:20b', pattern=r'^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,199}$')
     budget_seconds: int = Field(default=1800, ge=60, le=28800)
-    acceptance_tests: dict[str, str] = Field(default_factory=dict, max_length=3)
-    acceptance_mode: str = Field(default='checker', pattern=r'^(checker|owner_contract)$')
 
 
 class ControlRequest(BaseModel):
@@ -23,8 +20,7 @@ class ControlRequest(BaseModel):
 
 def start_goal(request):
     from ..coding.operator import enqueue_goal
-    return enqueue_goal(request.goal,request.model,request.checker_model,request.budget_seconds,
-                        acceptance_tests=request.acceptance_tests, acceptance_mode=request.acceptance_mode)
+    return enqueue_goal(request.goal, request.model, request.budget_seconds)
 
 
 @router.get('/work')

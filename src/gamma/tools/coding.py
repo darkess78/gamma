@@ -5,15 +5,11 @@ from .base import Tool, ToolResult
 CODING_TOOLS = {'coding_goal','coding_status','coding_control'}
 
 
-_JOB_STATES = {'queued', 'running', 'deferred', 'paused', 'interrupted', 'blocked',
-               'stopped', 'needs_checker', 'already_satisfied', 'review_rejected',
-               'completed', 'application_failed'}
-_STAGES = _JOB_STATES | {'snapshot', 'baseline_checks', 'planning', 'acceptance_design',
-                         'coding', 'feature_checks', 'checker', 'regression_checks',
-                         'waiting_for_inference', 'applying', 'resumed'}
-_TASK_STATES = {'pending', 'running', 'verified', 'already_satisfied', 'needs_checker', 'blocked_dependency'}
-_RECOVERY = {'completed_current', 'missing', 'incomplete', 'invalid', 'source_conflict',
-             'baseline_conflict', 'rolled_back', 'rollback_conflict', 'record_budget'}
+_ACTIVE = {'queued', 'running', 'deferred', 'paused'}
+_JOB_STATES = _ACTIVE | {'awaiting_owner_review', 'needs_owner', 'blocked', 'failed', 'stopped', 'interrupted'}
+_STAGES = _JOB_STATES | {'starting', 'splitting', 'working', 'suite', 'waiting_for_gpu', 'resumed'}
+_TASK_STATES = {'pending', 'done', 'gave_up', 'out_of_steps'}
+MAX_TASKS = 6
 
 
 def _finite(value, choices):
@@ -21,70 +17,45 @@ def _finite(value, choices):
 
 
 def _coding_progress(record):
-    from ..coding.autonomous_store import _valid_completed_receipt
+    """What Shana may say about a job: fixed words and counts, never the goal, files or code."""
     import re
     identifier = record.get('id')
     if type(identifier) is not str or not re.fullmatch(r'work-[0-9a-f]{32}', identifier):
         identifier = None
-    status = _finite(record.get('status'), _JOB_STATES)
     raw_tasks = record.get('tasks')
-    bounded = type(raw_tasks) is list and len(raw_tasks) <= 4
-    tasks = []
-    if bounded:
-        for item in raw_tasks:
-            item = item if type(item) is dict else {}
-            attempt = item.get('attempts')
-            tasks.append({'status': _finite(item.get('status'), _TASK_STATES),
-                          'attempts': attempt if type(attempt) is int and 0 <= attempt <= 7 else None})
-    recovery = record.get('application_recovery')
-    recovery = _finite(recovery.get('status'), _RECOVERY) if type(recovery) is dict else 'unknown'
-    application = record.get('application')
-    outcome, file_count = 'unconfirmed', None
-    if _valid_completed_receipt(application):
-        if status == 'interrupted' and recovery == 'completed_current':
-            outcome = 'verified_at_recovery'
-        elif status == 'completed' and recovery == 'unknown':
-            outcome = 'completed_receipt'
-        if outcome != 'unconfirmed':
-            file_count = len(application['files'])
-    return {'id': identifier, 'status': status, 'stage': _finite(record.get('stage'), _STAGES),
-            'tasks': tasks, 'task_count': len(tasks) if bounded else None,
-            'verified_task_count': sum(t['status'] == 'verified' for t in tasks) if bounded else None,
-            'recovery_outcome': recovery, 'application_outcome': outcome,
-            'application_file_count': file_count, 'followup_completion': 'unconfirmed'}
+    bounded = type(raw_tasks) is list and len(raw_tasks) <= MAX_TASKS
+    tasks = [_finite((t if type(t) is dict else {}).get('status'), _TASK_STATES) for t in raw_tasks] if bounded else []
+    return {'id': identifier, 'status': _finite(record.get('status'), _JOB_STATES),
+            'stage': _finite(record.get('stage'), _STAGES),
+            'task_count': len(tasks) if bounded else None,
+            'done_count': tasks.count('done') if bounded else None,
+            'has_proposal': record.get('proposal') == 'proposal.diff'}
 
 
 def coding_status_reply(jobs):
-    """Finite wording for the existing private direct reply, never raw metadata."""
+    """Fixed wording for the private direct reply, never raw metadata."""
     if type(jobs) is not list or not jobs:
         return 'No coding goals are recorded yet.'
     row = jobs[0] if type(jobs[0]) is dict else {}
-    reply = 'The latest coding goal is ' + _finite(row.get('status'), _JOB_STATES) + '.'
-    outcome = row.get('application_outcome')
-    if outcome == 'verified_at_recovery':
-        detail = 'The application was verified at recovery.'
-    elif outcome == 'completed_receipt':
-        detail = 'The stored application receipt records completion.'
-    else:
-        details = {'completed_current': 'Stored recovery records a checked application, but its completion payload is unconfirmed.',
-                   'source_conflict': 'Source conflicted with application evidence at recovery.',
-                   'record_budget': 'Application evidence is omitted because of the record budget.',
-                   'missing': 'No application journal was found at recovery.',
-                   'incomplete': 'Application evidence was incomplete at recovery.',
-                   'invalid': 'Application evidence was invalid at recovery.',
-                   'baseline_conflict': 'The application recorded a baseline conflict.',
-                   'rolled_back': 'The application recorded a rollback.',
-                   'rollback_conflict': 'The application recorded a rollback conflict.'}
-        recovery = _finite(row.get('recovery_outcome'), _RECOVERY)
-        detail = details.get(recovery, 'Application completion evidence is unconfirmed.')
-    return reply + ' ' + detail + ' Follow-up completion is unconfirmed.'
-
+    status = _finite(row.get('status'), _JOB_STATES)
+    done, total = row.get('done_count'), row.get('task_count')
+    progress = (f'{done} of {total} tasks are done' if type(done) is int and type(total) is int and total
+                else 'it has no task list yet')
+    if status == 'awaiting_owner_review':
+        return f'The latest coding goal is finished: {progress}, and a proposal is waiting for your review on the Coding page.'
+    if status == 'needs_owner':
+        return 'The latest coding goal needs a decision from you before it can be split into tasks; the question is on the Coding page.'
+    if status in _ACTIVE:
+        return f'The latest coding goal is {status.replace("_", " ")}; {progress}.'
+    if status == 'unknown':
+        return "The latest coding goal has a status I can't read."
+    return f'The latest coding goal is {status.replace("_", " ")}; {progress}. The Coding page has the reason.'
 
 
 class CodingGoalTool(Tool):
     name = 'coding_goal'
-    description = ('Owner only: accept a concrete repository improvement goal, create its task list, '
-                   'run local coding and independent checks in the background. Args: goal, optional budget_seconds. '
+    description = ('Owner only: queue a concrete repository improvement goal. A local model splits it into '
+                   'small tasks, works each with tests, and leaves a proposal for owner review. Args: goal, optional budget_seconds. '
                    'Queued work is not finished work. Never submit while brainstorming or without an owner instruction.')
 
     def run(self, **kwargs):
@@ -97,7 +68,7 @@ class CodingGoalTool(Tool):
 
 class CodingStatusTool(Tool):
     name = 'coding_status'
-    description = 'Owner only: read bounded coding progress and stored application evidence.'
+    description = 'Owner only: read coding progress (status and task counts).'
 
     def run(self, **kwargs):
         from ..coding.autonomous_store import list_jobs

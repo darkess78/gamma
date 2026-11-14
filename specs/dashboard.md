@@ -18,7 +18,7 @@ endpoint every 10 seconds, and skips the poll while the tab is hidden.
 | Shana | `/dashboard/shana` | Voice: speech engine, voice profile, test, profile editor, generated audio. Brain and hearing: LLM and STT status and tests. Behaviour: speech safety, model routing, emotion, idle chatter (one Save button). | `/api/status/settings` |
 | People | `/dashboard/people` | Known people with linked accounts and trust, memories (add, edit, forget, forget recent), and Twitch viewer trust (collapsed). | `/api/status/memory` |
 | Integrations | `/dashboard/integrations` | Twitch chat worker and EventSub start/stop and stream settings; Discord bot and voice controls; output targets (mute/unmute monitor, stream, Discord call), stop stream speech, overlay links; stream activity feeds (collapsed, loaded only while open). | `/api/status/summary`, `/api/discord/text-worker/status` |
-| Coding | `/dashboard/coding` | Owner review queue for autonomous coding: goal form, work list with pause/resume/stop, and the proposed diff for work awaiting review. | `/api/coding/work` |
+| Coding | `/dashboard/coding` | Owner coding goals: goal form, work list with each task's progress, pause/resume/stop, and the proposed diff for work awaiting review. | `/api/coding/work` |
 | System | `/dashboard/system` | Shana start/restart/stop, Gamma PC CPU/RAM/disk/GPU, service health, provider details, and collapsed diagnostics: presence internals, startup admission, sidecar GPU allocations, timings, stdout/stderr, Twitch replay test, raw status JSON. | `/api/status/diagnostics` |
 
 The top bar on every page shows Shana's state (running and presence mode), the

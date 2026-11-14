@@ -291,8 +291,12 @@ harness: `coding/split.py` (small tasks, ≤3 files each, each with its own
 pytest check), `coding/task_loop.py` (one tool per step with results fed
 back; "done" only after the check passes) and `coding/workflow.py` (worktree,
 sandboxed checks and full suite, `proposal.diff` for review). See
-coding_improvement.md. Waiting on the GPU for a real run; then wire it into
-the Coding page in place of the older executor.
+coding_improvement.md. **Wired in (2026-11-14):** the Coding page and Shana's
+`coding_goal` tool queue goals for `coding/autonomous.py`, which now runs this
+workflow through a background model client (waits for a free GPU, yields to
+conversation). The older executor and its ~2,000 lines were removed. Self-coding
+may only change unprotected `src/gamma` modules and new test files. Waiting on
+the GPU for a first real run.
 
 ### W9. Shana's identity in the model — **Later, changed**
 

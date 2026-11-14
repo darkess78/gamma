@@ -384,7 +384,7 @@
     <!-- ============================== CODING ============================== -->
     <section class="card card-wide" data-dashboard-tab="coding" aria-labelledby="codingHeading">
       <div class="card-head"><h2 id="codingHeading">New coding goal</h2></div>
-      <p class="muted">Gamma reads the source, plans tasks, writes code and runs independent checks, then stops with a proposed diff for you to review. Nothing is applied to running Shana.</p>
+      <p class="muted">Shana splits the goal into small tasks (at most 6, each touching at most 3 files and proven by a test), works each one with a local model, then runs the full test suite and stops with a proposed diff for you to review. Nothing is applied to running Shana. Work only runs while no other model is loaded on the GPU, and conversation always goes first.</p>
       <form id="autonomousCodingForm" class="form-grid">
         <label class="span-2">Goal
           <textarea id="autonomousCodingGoal" rows="4" required minlength="12" maxlength="2000" placeholder="Describe the result you want and any rough notes"></textarea>
@@ -393,9 +393,8 @@
           <select id="autonomousCodingBudget"><option value="1800">30 minutes</option><option value="7200">2 hours</option><option value="28800">Overnight, 8 hours</option></select>
         </label>
         <details class="fold inner">
-          <summary>Models</summary>
+          <summary>Model</summary>
           <label>Coding model <input id="autonomousCodingModel" value="qwen3.8:27b" required></label>
-          <label>Independent checker <input id="autonomousCodingChecker" value="gpt-oss:20b" required></label>
         </details>
         <div class="span-2 button-row"><button type="submit">Start goal</button></div>
       </form>
@@ -573,6 +572,6 @@
   <script src="/static/memory.js?v=20261114a"></script>
   <script type="module" src="/static/presence.mjs?v=20261114a"></script>
   <script type="module" src="/static/discord.mjs?v=20261114a"></script>
-  <script type="module" src="/static/autonomous-coding.mjs?v=20261114a"></script>
+  <script type="module" src="/static/autonomous-coding.mjs?v=20261114b"></script>
 </body>
 </html>

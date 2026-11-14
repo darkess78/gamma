@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from ..config import settings
 from ..errors import ConfigurationError
+from ..memory.sqlite_setup import sqlite_path
 
 
 SelfGoalStatus = Literal["proposed", "approved", "rejected", "cleared"]
@@ -240,13 +241,9 @@ class StreamSelfGoalStore:
 
 
 def _sqlite_path_from_url(database_url: str) -> Path:
-    prefix = "sqlite:///"
-    if not database_url.startswith(prefix):
+    path = sqlite_path(database_url)
+    if path is None:
         raise ConfigurationError("stream self-goals currently require a sqlite database_url")
-    raw = database_url[len(prefix):]
-    path = Path(raw)
-    if not path.is_absolute():
-        path = settings.project_root / raw
     return path
 
 

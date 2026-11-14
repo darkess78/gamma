@@ -11,6 +11,7 @@ from typing import Any
 from ..config import settings
 from ..errors import ConfigurationError
 from .models import StreamTurnResult
+from ..memory.sqlite_setup import sqlite_path
 
 
 STREAM_TEMP_MEMORY_BUCKETS = {"chat_mood", "event_history", "owner_directives"}
@@ -430,13 +431,9 @@ def _clean_context_fragment(value: str, *, max_chars: int) -> str:
 
 
 def _sqlite_path_from_url(database_url: str) -> Path:
-    prefix = "sqlite:///"
-    if not database_url.startswith(prefix):
+    path = sqlite_path(database_url)
+    if path is None:
         raise ConfigurationError("stream temp memory currently requires a sqlite database_url")
-    raw = database_url[len(prefix):]
-    path = Path(raw)
-    if not path.is_absolute():
-        path = settings.project_root / raw
     return path
 
 

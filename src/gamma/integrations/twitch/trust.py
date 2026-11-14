@@ -8,6 +8,7 @@ from pathlib import Path
 from ...config import settings
 from ...errors import ConfigurationError
 from .models import TrustLevel
+from ...memory.sqlite_setup import sqlite_path
 
 
 VALID_TRUST_LEVELS: set[str] = {"owner", "trusted", "regular", "normal", "new_viewer", "suspicious", "blocked"}
@@ -211,21 +212,9 @@ class ViewerTrustStore:
 
 
 def _sqlite_path_from_url(database_url: str) -> Path:
-    """Convert SQLite URL to Path, relative to project root if needed.
-    
-    Args:
-        database_url: SQLite database URL.
-        
-    Returns:
-        Path to the database file.
-    """
-    prefix = "sqlite:///"
-    if not database_url.startswith(prefix):
+    path = sqlite_path(database_url)
+    if path is None:
         raise ConfigurationError("viewer trust store currently requires a sqlite database_url")
-    raw = database_url[len(prefix):]
-    path = Path(raw)
-    if not path.is_absolute():
-        path = settings.project_root / raw
     return path
 
 

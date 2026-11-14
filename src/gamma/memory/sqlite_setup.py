@@ -9,6 +9,18 @@ _SQLITE_PREFIX = "sqlite:///"
 _WAL_SWITCH_DEADLINE_SECONDS = 5.0
 
 
+def sqlite_path(database_url: str) -> Path | None:
+    """The database file of a ``sqlite:///`` URL; relative paths are under the project root."""
+    if not database_url.startswith(_SQLITE_PREFIX):
+        return None
+    raw = database_url[len(_SQLITE_PREFIX):]
+    path = Path(raw)
+    if not path.is_absolute():
+        from ..config import settings
+        path = settings.project_root / raw
+    return path
+
+
 def ensure_sqlite_parent(database_url: str) -> None:
     """Create the parent directory of a file-backed SQLite URL.
 

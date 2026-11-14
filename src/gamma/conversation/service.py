@@ -80,6 +80,7 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
         stream_context: str | None = None,
         speaker_label: str | None = None,
         viewer_notes: list[str] | None = None,
+        relationship_note: str | None = None,
     ) -> AssistantResponse:
         """Respond to a user text message.
         
@@ -145,6 +146,7 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                     stream_context=stream_context,
                     speaker_label=speaker_label if not recipient.allows_private_memory else None,
                     viewer_notes=viewer_notes if recipient.privacy_scope in SHARED_HISTORY_SCOPES else None,
+                    relationship_note=relationship_note if recipient.privacy_scope in SHARED_HISTORY_SCOPES else None,
                     persist_state=not evaluation_mode,
                     memory_origin=MemoryOrigin.from_speaker(speaker,
                         source=speaker_ctx.source if speaker_ctx is not None else "local",
@@ -178,6 +180,8 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                 )
                 if presence_snapshot is not None:
                     self._record_presence_interaction(session_id, expected_state=presence_snapshot)
+            if not evaluation_mode and recipient.allows_private_memory and speaker.is_owner:
+                self._record_owner_relationship(user_text)
             return response
         except BaseException as interruption:
             if isinstance(interruption, Exception):
@@ -191,6 +195,18 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                         type(cleanup_error).__name__,
                     )
             raise
+
+    def _record_owner_relationship(self, user_text: str) -> None:
+        """Count a finished owner-private turn. Shared turns are counted by the stream brain."""
+        from ..memory.relationships import OWNER_AUDIENCE, OWNER_KEY, RelationshipStore
+        from ..persona.loader import owner_baseline_familiarity
+
+        try:
+            RelationshipStore(self._memory._engine).record(
+                OWNER_KEY, user_text, audience=OWNER_AUDIENCE, trust_level="owner",
+                neutral=owner_baseline_familiarity())
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Owner relationship update failed (%s)", type(exc).__name__)
 
     def continuity_snapshot(self, session_id: str) -> dict:
         return self._continuity.snapshot(session_id)
@@ -493,6 +509,7 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
         stream_context: str | None = None,
         speaker_label: str | None = None,
         viewer_notes: list[str] | None = None,
+        relationship_note: str | None = None,
     ) -> AssistantResponse:
         recipient = _recipient_context(recipient, delivery_context=delivery_context)
         memory_origin = memory_origin or MemoryOrigin.from_speaker(
@@ -611,6 +628,8 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                 notes = "\n".join(f"- {note}" for note in viewer_notes)
                 system_prompt += (f"\n\n# What {speaker_label or 'this viewer'} Has Told You Before\n"
                                   f"They said these things about themselves in this channel:\n{notes}")
+            if relationship_note and recipient.privacy_scope in SHARED_HISTORY_SCOPES:
+                system_prompt += f"\n\n# How Well You Know Them\n{' '.join(relationship_note.split())[:240]}"
             if brief_mode:
                 system_prompt += (
                     "\n\n# Live Voice Brevity\n"

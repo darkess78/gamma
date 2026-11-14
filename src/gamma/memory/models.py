@@ -120,3 +120,24 @@ class PersonIdentity(SQLModel, table=True):
     platform_user_id: str = Field(index=True)
     display_name: str | None = None
     created_at: datetime = Field(default_factory=_utc_now, index=True)
+
+
+class RelationshipState(SQLModel, table=True):
+    """How well Shana knows one person in one audience (see memory/relationships.py).
+
+    ``key`` is ``owner``, ``person:<id>`` for a linked person record, or a
+    platform key like ``twitch:12345``. One row per key and audience, so what
+    was built on stream never shows up on Discord or in owner-private turns.
+    """
+    __table_args__ = (Index("ix_relationshipstate_key_audience", "key", "audience", unique=True),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    key: str = Field(index=True)
+    audience: str
+    familiarity: float = 0.0
+    interaction_count: int = 0
+    first_seen: datetime = Field(default_factory=_utc_now)
+    last_seen: datetime = Field(default_factory=_utc_now)
+    steps_day: str = ""
+    steps_today: int = 0
+    updated_at: datetime = Field(default_factory=_utc_now)

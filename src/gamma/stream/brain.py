@@ -11,6 +11,7 @@ from ..conversation.service import ConversationService
 from ..errors import ConversationError
 from ..safety.llm_reviewer import SpeechLLMReviewer
 from ..integrations.twitch.sanitize import safe_username_alias
+from ..memory.relationships import RelationshipStore, relationship_key, shared_line
 from ..memory.viewer_memory import ViewerMemory, viewer_key
 from ..schemas.conversation import RecipientContext
 from ..schemas.response import AssistantResponse
@@ -234,6 +235,9 @@ class StreamBrain(PublicationReviewMixin):
                 "speaker_label": _speaker_label(event),
                 "viewer_notes": self._viewer_notes_for(event, recipient),
             }
+            relationship = self._relationship_target(event, recipient)
+            if relationship:
+                conversation_args["relationship_note"] = self._relationship_note(event, *relationship)
             if _is_public_stream_event(event) and event.actor.source.strip().lower() != "discord":
                 recent_context = self._assemble_recent_context()
                 stream_context = "\n\n".join(part for part in (recent_context, (chat_summary or "").strip()) if part)
@@ -241,6 +245,8 @@ class StreamBrain(PublicationReviewMixin):
                     conversation_args["stream_context"] = stream_context
             response = self._conversation.respond(**conversation_args)
             self._remember_viewer(event, recipient)
+            if relationship:
+                self._record_relationship(event, *relationship)
             action_plan = self._action_planner.plan_from_response(response)
         safety_decision = self._review_stream_output(
             event, response, include_llm=not (parallel_safety and response.speech_text)
@@ -340,6 +346,43 @@ class StreamBrain(PublicationReviewMixin):
             memory.remember(key, raw, alias=_speaker_label(event) or "viewer", audience=audience,
                             scope=recipient.privacy_scope,
                             trust_level=str(event.metadata.get("trust_level") or "new_viewer"))
+        except Exception:
+            pass
+
+    def _relationship_target(self, event: StreamInputEvent, recipient) -> tuple[RelationshipStore, str, str] | None:
+        """(store, key, audience) for a Twitch or Discord speaker; None for the owner and everyone else.
+
+        The owner's relationship is owner-private and kept by the conversation service.
+        """
+        audience = _AUDIENCE.get(recipient.privacy_scope)
+        memory = getattr(self._conversation, "_memory", None)
+        engine = getattr(memory, "_engine", None)
+        source, platform_id = event.actor.source.strip().lower(), event.actor.platform_id
+        if not (audience and engine is not None and event.kind in {"chat_message", "mic_transcript"}
+                and viewer_key(source, platform_id)):
+            return None
+        if event.metadata.get("is_owner") is True or str(event.metadata.get("trust_level") or "") == "owner":
+            return None
+        try:
+            person = memory.resolve_person_identity(source, platform_id or "")
+        except Exception:
+            person = None
+        if person and str(person.get("trust") or "") == "owner":
+            return None
+        key = relationship_key(source, platform_id, person_id=person.get("id") if person else None)
+        return (RelationshipStore(engine), key, audience) if key else None
+
+    def _relationship_note(self, event: StreamInputEvent, store: RelationshipStore, key: str, audience: str) -> str | None:
+        name = _speaker_label(event) or safe_username_alias(event.actor.display_name, fallback="this person")
+        try:
+            return shared_line(store.get(key, audience), name)
+        except Exception:
+            return None
+
+    def _record_relationship(self, event: StreamInputEvent, store: RelationshipStore, key: str, audience: str) -> None:
+        raw = str(event.metadata.get("raw_text") or event.text or "")
+        try:
+            store.record(key, raw, audience=audience, trust_level=str(event.metadata.get("trust_level") or "new_viewer"))
         except Exception:
             pass
 

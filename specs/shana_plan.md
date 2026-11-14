@@ -182,6 +182,21 @@ audience. `GET/DELETE /v1/memory/viewers/{key}` shows or forgets them.
 `identity/standing.py` combines owner ids, linked person records and the Twitch
 trust store; linked people's trust now applies on Twitch, and unlinked viewers
 cap at guest.
+**Relationship state per person done (2026-11-14):** `memory/relationships.py`
+keeps one row per person and audience: familiarity (0..1), interaction count,
+first and last seen. Keys are `owner`, `person:<id>` for linked people, or
+`twitch:<id>`/`discord:<id>`. Each real turn adds 5% of the distance left to
+1.0, and only 5 turns a day count. Trivial turns ("lol", under 3 words) and
+suspicious or blocked viewers count for nothing. Time apart halves the gap to
+neutral every 30 days; this is worked out on read. Labels: new, familiar face
+(0.15), regular (0.4), close (0.7). The stream brain updates Twitch and Discord
+rows; the conversation service updates the owner's row on owner-private turns.
+Evaluation mode writes nothing. A shared prompt gets one line about the current
+speaker only, built in that audience. The owner-private prompt keeps
+`relationship_state.json` and adds the owner's live numbers under `current`; the
+file's familiarity is the owner's neutral point. The owner gets no line on
+stream. `GET/DELETE /v1/memory/relationships/{key}` shows or forgets one person.
+Deleting a person record also deletes its rows.
 
 ### W4. Twitch and other chats — **Do**
 

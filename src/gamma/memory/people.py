@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from sqlmodel import Session, select
-from .models import KnownPerson, PersonIdentity, ProfileFact
+from .models import KnownPerson, PersonIdentity, ProfileFact, RelationshipState
 from .fact_text import _normalize_identity, _normalize_subject_name
 
 
@@ -119,6 +119,9 @@ class PeopleMixin:
                 return False
             for identity in session.exec(select(PersonIdentity).where(PersonIdentity.person_id == person_id)):
                 session.delete(identity)
+            # A reused id must not inherit the old person's familiarity.
+            for state in session.exec(select(RelationshipState).where(RelationshipState.key == f"person:{person_id}")):
+                session.delete(state)
             session.delete(person)
             session.commit()
         return True

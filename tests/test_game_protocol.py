@@ -60,9 +60,14 @@ def decide(session, request_id="r1", actions=("place",), **extra):
 
 # ---- route ------------------------------------------------------------------
 
+streamed = []  # stream events the route would hand to the stream brain
+
+
 @pytest.fixture
 def games(monkeypatch):
+    streamed.clear()
     monkeypatch.setattr(settings, "games_enabled", True)
+    monkeypatch.setattr("gamma.api.routes_games._to_stream", lambda events: streamed.extend(events))
     monkeypatch.setattr(settings, "games_key", KEY)
     monkeypatch.setattr(settings, "games_chooser", "random")
     return TestClient(app)
@@ -124,6 +129,11 @@ def test_a_whole_tictactoe_game_through_the_reference_client(games, monkeypatch)
         result = tictactoe.play(client, rng=random.Random(4), allow_resign=False)
     assert result in ("X", "O", "draw")
     assert client.said and client.said[0].startswith("Cell 1")
+    import time
+    deadline = time.monotonic() + 2
+    while not streamed and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert streamed and streamed[0].metadata["game_say"] == client.said[0]
 
 
 def test_bad_declarations_are_reported():

@@ -291,6 +291,8 @@ class Settings:
     games_enabled: bool = _bool("games_enabled", default=False)
     games_key: str = _str("games_key", default="", strip=True)
     games_chooser: str = _str("games_chooser", default="model", strip=True, lower=True)
+    # Speak her move lines and react to "comment" events through the stream (pacing and safety apply).
+    games_stream_output: bool = _bool("games_stream_output", default=True)
     # 3D avatar over the VMC protocol (OSC/UDP), e.g. Warudo or VSeeFace on the
     # streaming PC. See specs/avatar_3d.md. [avatar3d] table in app.toml.
     avatar3d_enabled: bool = _bool("avatar3d", "enabled", default=False, env="SHANA_AVATAR3D_ENABLED")

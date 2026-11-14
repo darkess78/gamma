@@ -197,6 +197,7 @@ class GameSession:
         self.context: deque[Observation] = deque(maxlen=CONTEXT_LINES)
         self.decision: Decision | None = None
         self.said: list[str] = []  # Shana's lines, for the speech/subtitle path to pick up
+        self.comments: list[str] = []  # events the game asked her to react to
         self.closed = False
 
     # ---- game -> Gamma ------------------------------------------------------
@@ -287,7 +288,10 @@ class GameSession:
         if not text:
             return [_error("observe needs 'text'", "observe")]
         importance = msg.get("importance") if msg.get("importance") in _IMPORTANCE else "normal"
-        self.context.append(Observation(text, importance, msg.get("comment") is True))
+        comment = msg.get("comment") is True
+        self.context.append(Observation(text, importance, comment))
+        if comment:
+            self.comments.append(text)
         return []
 
     def _decide(self, msg: dict) -> list[dict]:

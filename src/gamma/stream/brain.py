@@ -505,7 +505,7 @@ class StreamBrain(PublicationReviewMixin):
                 metadata={"event_kind": event.kind},
             )
         if event.kind == "game_state":
-            return TurnDecision(decision="defer", reason="game_state_not_connected_yet", metadata={"event_kind": event.kind})
+            return _game_decision(event)
         if event.kind == "conversation_lull":
             idle_policy_decision = str(event.metadata.get("idle_policy_decision") or "defer")
             would_reply = idle_policy_decision in {"reply", "topic_shift", "check_in"}
@@ -651,6 +651,19 @@ class StreamBrain(PublicationReviewMixin):
 
 
 OWNER_EVENT_KINDS = {"mic_transcript", "owner_command"}
+
+
+def _game_decision(event: StreamInputEvent) -> TurnDecision:
+    """A game move line is said as written (after safety review); a comment event gets a short reaction."""
+    meta = {"event_kind": event.kind, "game": event.metadata.get("game")}
+    line = str(event.metadata.get("game_say") or "").strip()
+    if line:
+        return TurnDecision(decision="acknowledge", reason="game_move_line", response_mode="game_say",
+                            metadata={**meta, "canned_response": line[:300], "canned_emotion": "neutral"})
+    if event.metadata.get("game_comment") and (event.text or "").strip():
+        return TurnDecision(decision="reply", reason="game_event_comment", should_call_conversation=True,
+                            response_mode="game_comment", metadata=meta)
+    return TurnDecision(decision="defer", reason="game_state_context_only", metadata=meta)
 
 
 def _dispatched_speech_text(output_events: list[StreamOutputEvent]) -> str | None:

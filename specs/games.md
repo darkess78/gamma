@@ -127,6 +127,12 @@ game   {"type":"bye","reason":"game over"}
   adapter for `{"action", "params", "say"}` JSON.
 - `src/gamma/api/routes_games.py`: the WebSocket route. Model calls run in a
   worker thread.
+- `src/gamma/games/stream_output.py`: her `say` lines and `observe` events
+  marked `comment: true` become `game_state` stream events. A line is said as
+  written, and a comment event gets a one-sentence reaction from the model.
+  Both go through the stream's safety review, pacing and subtitle/voice output.
+  The game is an unknown speaker, with no private memory and no tools. Turn it
+  off with `games_stream_output = false`.
 - `src/gamma/games/client.py`: reference client. `decide_and_apply()` runs a
   whole decide/act/outcome loop with a callback.
 - `src/gamma/games/examples/tictactoe.py`: example game.
@@ -134,11 +140,6 @@ game   {"type":"bye","reason":"game over"}
 
 ## Not done yet
 
-- `say` lines are sent to the game and collected in `GameSession.said`, but
-  not yet spoken through Shana's voice or shown on the stream overlay.
-- `observe` with `comment: true` is stored but nothing makes Shana comment on
-  it yet; game events don't reach her normal conversation. Both belong to the
-  coordination core.
 - No speech-timing messages (letting the game wait until she finishes talking).
 - `priority` is accepted and passed to the chooser but doesn't change anything.
 - No schema-constrained decoding; invalid answers are caught by validation and

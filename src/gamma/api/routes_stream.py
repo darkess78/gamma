@@ -75,8 +75,10 @@ def stream_event(
         is_owner_channel = http_request is not None and owner_channel.is_owner_channel(
             http_request.headers.get(owner_channel.HEADER)
         )
+        proven = http_request is not None and owner_channel.identity_proven(http_request.headers)
         if chat_window and _chat_window_eligible(event) and not is_owner_channel:
-            return deps.get_chat_window().submit(event, synthesize_speech=synthesize_speech, fast_mode=fast_mode)
+            return deps.get_chat_window().submit(event, synthesize_speech=synthesize_speech, fast_mode=fast_mode,
+                                                 ingress_verified=proven)
         window = deps.started_chat_window()
         with window.foreground() if window is not None else nullcontext():
             return deps.get_stream_brain().handle_event(
@@ -84,6 +86,7 @@ def stream_event(
                 synthesize_speech=synthesize_speech,
                 fast_mode=fast_mode,
                 owner_channel=is_owner_channel,
+                ingress_verified=proven,
             )
     except ConversationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -37,7 +37,8 @@ def _filter_stream_output_events(event: StreamInputEvent, output_events: list[St
 def _apply_output_target_policy(event: StreamInputEvent, output_events: list[StreamOutputEvent]) -> list[StreamOutputEvent]:
     target_policy = str(event.metadata.get("output_target_policy") or "").strip().lower()
     if target_policy not in {"stream_public", "dashboard_monitor", "discord_call"}:
-        return output_events
+        # Fail closed: untargeted output is public only when the event itself is.
+        target_policy = "stream_public" if _is_public_stream_event(event) else "dashboard_monitor"
     targeted: list[StreamOutputEvent] = []
     for output_event in output_events:
         payload = dict(output_event.payload)

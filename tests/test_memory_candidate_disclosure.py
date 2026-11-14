@@ -19,6 +19,7 @@ from gamma.schemas.response import MemoryCandidate
 from test_conversation_recipient import PRIVATE, SHARED, Dispatcher, Reviewer
 from test_core_memory_owner import core_state, tool_state, fixture_state, speaker_context
 from tests.pairwise import pairwise
+from gamma.system.owner_channel import INGRESS_HEADER, ingress_secret
 
 TEXT = "CANDIDATE_TEXT_PRIVATE_CANARY"
 NAME = "CandidatePerson"
@@ -153,7 +154,7 @@ def test_actual_http_does_not_accept_candidate_private_claims(candidate_state, m
         denied = client.post("/v1/conversation/respond", json=request)
         assert denied.status_code == 401 and state.persisted_inputs == []
         result = client.post("/v1/conversation/respond",
-            headers={"Authorization": "Bearer synthetic-candidate-token"}, json=request)
+            headers={"Authorization": "Bearer synthetic-candidate-token", INGRESS_HEADER: ingress_secret()}, json=request)
         assert result.status_code == 200
         assert result.json()["memory_candidates"] == []
         assert_rows(state, path)
@@ -195,7 +196,7 @@ def test_actual_stream_http_and_discord_forward_empty_view(candidate_state, monk
             event.session_id = "candidate-current"
     client = TestClient(app)
     try:
-        result = client.post("/v1/stream/events", headers={"Authorization": "Bearer synthetic-candidate-token"},
+        result = client.post("/v1/stream/events", headers={"Authorization": "Bearer synthetic-candidate-token", INGRESS_HEADER: ingress_secret()},
                              json=event.model_dump(mode="json"))
         assert result.status_code == 200
         assistant = result.json()["assistant_response"]

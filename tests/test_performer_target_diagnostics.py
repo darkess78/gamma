@@ -72,7 +72,7 @@ def test_actual_target_ready_and_http_omit_foreign_and_peer_connections(output_s
             peers.append(ready)
         client = TestClient(app, client=("10.55.0.99", 42099))
         ws = stack.enter_context(client.websocket_connect(
-            ws_path(selector, client_name="Selected_Self", replay_recent=100, token=TOKEN)))
+            ws_path(selector, client_name="Selected_Self", replay_recent=100), headers=AUTH))
         ready = ws.receive_json()
         assert ready["target_policy"] == target
         assert ready["subscriber_id"]
@@ -196,3 +196,22 @@ def test_anonymous_and_wrong_credentials_still_denied(output_state, headers):
             pass
     assert exc.value.code == 1008
     assert output_state.stats()["subscriber_count"] == 0
+
+
+
+def test_url_token_opens_only_the_public_feed(monkeypatch):
+    """A URL token (OBS overlay) can watch stream_public; private feeds need the header or a ticket."""
+    from gamma.system import owner_channel
+    monkeypatch.setattr(settings, "api_auth_enabled", True)
+    monkeypatch.setattr(settings, "api_bearer_token", TOKEN)
+    client = TestClient(app)
+    with client.websocket_connect(ws_path("stream_public", token=TOKEN)) as ws:
+        assert ws.receive_json()["type"] == "ready"
+    for private in ("dashboard_monitor", "discord_call"):
+        with pytest.raises(Exception):
+            with client.websocket_connect(ws_path(private, token=TOKEN)) as ws:
+                ws.receive_json()
+    ticket = owner_channel.issue_ticket()
+    with client.websocket_connect(ws_path("dashboard_monitor") + f"&ticket={ticket}") as ws:
+        assert ws.receive_json()["type"] == "ready"
+    assert not owner_channel.ticket_ok("1.deadbeef") and not owner_channel.ticket_ok(ticket, now=10**10)

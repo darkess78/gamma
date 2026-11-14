@@ -122,7 +122,9 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
             exchange_id = continuity.begin_exchange(
                 session_id=session_id,
                 text=user_text,
-                speaker_name=(speaker_label if speaker_label and not recipient.allows_private_memory else speaker.name),
+                # Shared history is read back into shared prompts: never a private profile name there.
+                speaker_name=(speaker.name if recipient.allows_private_memory
+                              else speaker_label or speaker.public_label()),
                 input_source=speaker_ctx.source if speaker_ctx is not None else "local",
                 privacy_scope=privacy_scope,
             )
@@ -665,6 +667,7 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
             draft_started = time.perf_counter()
             draft_request_started = time.perf_counter()
             draft_user_text = self._build_user_input_text(
+                private=recipient.allows_private_memory,
                 user_text=stripped,
                 image=image,
                 vision_analysis=vision_analysis,
@@ -762,6 +765,7 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                     final_reply_text = self._cleanup_spoken_text(self._finalize_reply_with_tools(
                         system_prompt=system_prompt,
                         user_text=self._build_user_input_text(
+                            private=recipient.allows_private_memory,
                             user_text=stripped,
                             image=image,
                             vision_analysis=vision_analysis,
@@ -878,7 +882,8 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                     ).start()
 
                 if persist_state:
-                    self._remember_assistant_state(user_text=stripped, reply_text=response.display_text or "", emotion=response.emotion, session_id=session_id)
+                    self._remember_assistant_state(user_text=stripped, reply_text=response.display_text or "", emotion=response.emotion, session_id=session_id,
+                                                   private=recipient.allows_private_memory)
                 return response
 
             # Standard path: use structured draft metadata directly; extract
@@ -916,6 +921,7 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                     final_reply_text = self._finalize_reply_with_tools(
                         system_prompt=system_prompt,
                         user_text=self._build_user_input_text(
+                            private=recipient.allows_private_memory,
                             user_text=stripped,
                             image=image,
                             vision_analysis=vision_analysis,
@@ -1014,7 +1020,8 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                     timing=timing,
                     route_events=route_events,
                 )
-                self._remember_assistant_state(user_text=stripped, reply_text=response.display_text or "", emotion=response.emotion, session_id=session_id)
+                self._remember_assistant_state(user_text=stripped, reply_text=response.display_text or "", emotion=response.emotion, session_id=session_id,
+                                                   private=recipient.allows_private_memory)
             else:
                 response.tts_metadata["evaluation_route_events"] = route_events
             return response
@@ -1041,13 +1048,14 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
         user_text: str,
         image: VisionImage | None,
         vision_analysis: VisionAnalysis | None = None,
+        private: bool = False,
     ) -> str:
         if image is None:
             return user_text
         image_note = "The user attached an image."
         if image.filename:
             image_note = f"The user attached an image named {image.filename}."
-        if image.stored_path:
+        if image.stored_path and private:  # host paths stay out of shared or unknown turns
             image_note += f" Stored at {image.stored_path}."
         if vision_analysis is None:
             return f"{user_text}\n\n{image_note}\nUse the image directly when answering."

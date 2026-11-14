@@ -17,6 +17,7 @@ from gamma.schemas.response import ToolCall
 from test_conversation_recipient import PRIVATE, SHARED, Dispatcher, Reviewer
 from test_tool_result_disclosure import FullCapture, tool_state, fixture_state
 from tests.pairwise import pairwise
+from gamma.system.owner_channel import INGRESS_HEADER, ingress_secret
 
 FACT = "CORE_OWNER_EXECUTION_CANARY"
 ACTORS = ["owner", "omitted", "trusted", "guest", "unknown"]
@@ -173,8 +174,14 @@ def test_authenticated_http_preserves_actor_resolution(core_state, monkeypatch, 
         assert denied.status_code == 401
         assert_effect(state, False)
         assert state.service._llm.calls == []
+        # The token alone doesn't make a body's platform-id claim believable.
         result = client.post("/v1/conversation/respond",
                              headers={"Authorization": "Bearer synthetic-core-token"}, json=payload)
+        assert result.status_code == 200
+        assert_effect(state, False)
+        # Gamma's own workers prove their identities with the ingress header.
+        result = client.post("/v1/conversation/respond", json=payload, headers={
+            "Authorization": "Bearer synthetic-core-token", INGRESS_HEADER: ingress_secret()})
         assert result.status_code == 200
         assert_effect(state, actor == "owner")
         assert FACT not in json.dumps(result.json()["tool_results"])
@@ -204,8 +211,8 @@ def test_stream_http_checks_actor_before_core_write(core_state, monkeypatch, act
                "metadata": {"output_target_policy": "stream_public", "is_owner": True}}
     client = TestClient(app)
     try:
-        result = client.post("/v1/stream/events",
-                             headers={"Authorization": "Bearer synthetic-core-token"}, json=payload)
+        result = client.post("/v1/stream/events", json=payload, headers={  # as the Twitch/Discord worker sends it
+                             "Authorization": "Bearer synthetic-core-token", INGRESS_HEADER: ingress_secret()})
         assert result.status_code == 200
         assert_effect(state, actor == "owner")
         assistant = result.json()["assistant_response"]

@@ -62,6 +62,7 @@ class TTS:
 def setup(fixture_state,tmp_path,monkeypatch,target,delivery,verdict,*,disabled=None,text=TEXT,missing=False):
     service=fixture_state.service;service._llm=Provider(delivery,text)
     monkeypatch.setattr(settings,'speech_filter_llm_enabled',disabled!='setting')
+    monkeypatch.setattr(settings,'twitch_llm_safety_review_enabled',disabled!='event')  # server-side switch
     monkeypatch.setattr(settings,'speech_filter_llm_model','' if missing else 'synthetic-review')
     monkeypatch.setattr(settings,'local_llm_tagging_model','')
     monkeypatch.setattr(settings,'local_llm_light_model','')

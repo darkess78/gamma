@@ -10,6 +10,7 @@ from typing import Any
 
 from ..config import settings
 from ..errors import ExternalServiceError
+from uuid import uuid4
 
 
 @dataclass(slots=True)
@@ -63,8 +64,10 @@ class TTSBackend:
 
 class BaseFileTTSBackend(TTSBackend):
     def _target_path(self, suffix: str) -> Path:
+        # Unique per file: two replies in the same second (say, the Monitor and a Discord
+        # call) must never overwrite each other's audio.
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        return settings.audio_output_dir / f"tts-{stamp}{suffix}"
+        return settings.audio_output_dir / f"tts-{stamp}-{uuid4().hex[:12]}{suffix}"
 
     def _content_type_for_suffix(self, suffix: str) -> str:
         normalized = suffix.lstrip(".").lower()

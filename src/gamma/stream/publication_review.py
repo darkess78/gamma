@@ -13,6 +13,7 @@ from .event_rules import _is_public_stream_event, _twitch_control_enabled
 from .models import StreamInputEvent
 from .output_events import _apply_output_target_policy, _filter_stream_output_events
 from .safety_rules import _fast_stream_safety_review, _filtered_stream_response, _late_safety_override_events, _llm_review_payload, _stream_review_timeout_action
+from .safety_rules import llm_review_enabled
 
 
 class PublicationReviewMixin:
@@ -41,6 +42,18 @@ class PublicationReviewMixin:
                 "playback_approved": False,
             }
         output_text = response.speech_text or response.display_text or ""
+        from ..safety.sensitive_terms import matches as private_terms_in
+        private_hits = private_terms_in(" ".join(filter(None, {output_text, response.display_text or "", response.spoken_text or ""})))
+        if private_hits:
+            return {
+                "action": "filtered",
+                "blocked": True,
+                "source": "owner_sensitive_terms",
+                "stage": "fast",
+                "matched_rules": [f"private_term:{h}" for h in private_hits],
+                "safe_output": "filtered",
+                "playback_approved": False,
+            }
         fast_review = _fast_stream_safety_review(output_text)
         if fast_review["blocked"]:
             return {
@@ -160,7 +173,7 @@ class PublicationReviewMixin:
         threading.Thread(target=finish_review, name=f"stream-safety-{turn_id[:8]}", daemon=True).start()
 
     def _review_stream_output_with_llm(self, event: StreamInputEvent, text: str) -> dict | None:
-        if not _twitch_control_enabled(event, "llm_safety_review_enabled", True):
+        if not llm_review_enabled():
             return None
         if not settings.speech_filter_llm_enabled:
             return None

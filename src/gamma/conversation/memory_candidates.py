@@ -20,9 +20,14 @@ class MemoryCandidatesMixin:
         except Exception:
             pass  # background thread â€” never propagate
 
-    def _remember_assistant_state(self, *, user_text: str, reply_text: str, emotion: str, session_id: str | None = None) -> None:
+    def _remember_assistant_state(self, *, user_text: str, reply_text: str, emotion: str, session_id: str | None = None,
+                                  private: bool = True) -> None:
+        """Her feeling state is shown in the owner's private prompt, so only owner-private turns
+        leave their words in it. Other turns still move her emotion, with no text attached."""
         if not settings.assistant_state_enabled:
             return
+        if not private:
+            user_text = reply_text = ""
         try:
             self._assistant_state.update(emotion=emotion, user_text=user_text, reply_text=reply_text)
         except Exception:

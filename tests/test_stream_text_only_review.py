@@ -76,6 +76,8 @@ def _setup(fixture_state, tmp_path, monkeypatch, target, action, *, delivery="te
                         trace_store=StreamTraceStore(tmp_path / "trace.jsonl"),
                         output_dispatcher=StreamOutputDispatcher([PerformerBusOutputAdapter(bus)]))
     monkeypatch.setattr(settings, "speech_filter_llm_enabled", enabled)
+    # The stream review switch is server-side (setting); event metadata can't turn it off.
+    monkeypatch.setattr(settings, "twitch_llm_safety_review_enabled", event_control)
     event = StreamInputEvent(kind="mic_transcript", text="Shana hello", session_id="selection-fixture",
                              actor=StreamActor(source="discord" if target == "discord_call" else "local",
                                                platform_id="fixture-actor"),

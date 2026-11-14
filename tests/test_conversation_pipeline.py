@@ -87,6 +87,7 @@ class ConversationPipelineTest(unittest.TestCase):
             reply_text="Hey there.",
             emotion="happy",
             session_id=None,
+            private=False,
         )
 
     def test_structured_turn_exposes_and_synthesizes_only_final_text(self) -> None:
@@ -372,6 +373,7 @@ class ConversationPipelineTest(unittest.TestCase):
             reply_text="I’m not going to say that. Let’s keep it safe and respectful.",
             emotion="happy",
             session_id=None,
+            private=False,
         )
 
     def test_speech_filter_metadata_is_present_without_tts(self) -> None:
@@ -437,8 +439,8 @@ class ConversationPipelineTest(unittest.TestCase):
         state = service._assistant_state.load()
         self.assertEqual(state.current_emotion, "teasing")
         self.assertIn("teasing", state.recent_emotions)
-        self.assertTrue(state.notes)
-        self.assertIn("Fine, I guess.", state.notes[-1])
+        # Her mood moves, but a non-owner turn leaves no words in the owner-visible feeling state.
+        self.assertFalse(any("Fine, I guess." in note or "say something back" in note for note in state.notes))
 
     def test_privacy_request_is_refused_before_llm_call(self) -> None:
         service = ConversationService()

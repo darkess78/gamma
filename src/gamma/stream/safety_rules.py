@@ -51,12 +51,27 @@ def _filtered_audio_path() -> Path | None:
     return path if path.exists() else None
 
 
+def llm_review_enabled() -> bool:
+    """Whether the stream LLM safety review runs: server-side settings and the owner's
+    go-live toggle only. Event metadata is caller-controlled and can't switch it off."""
+    if not settings.twitch_llm_safety_review_enabled:
+        return False
+    try:
+        from ..presence import load_presence_state
+        presence = load_presence_state()
+        if str(presence.get("mode") or "") == "go_live":
+            return bool((presence.get("safety") or {}).get("llm_safety_review_enabled", True))
+    except Exception:
+        pass
+    return True
+
+
 def _parallel_stream_safety_enabled(event: StreamInputEvent, *, synthesize_speech: bool) -> bool:
     return (
         synthesize_speech
         and _is_public_stream_event(event)
         and settings.speech_filter_llm_enabled
-        and _twitch_control_enabled(event, "llm_safety_review_enabled", True)
+        and llm_review_enabled()
     )
 
 

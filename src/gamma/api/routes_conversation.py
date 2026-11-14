@@ -45,7 +45,9 @@ def conversation_respond(request: ConversationRequest, http_request: Request = N
             user_text=request.user_text,
             session_id=request.session_id,
             synthesize_speech=request.synthesize_speech,
-            speaker_ctx=request.speaker,
+            # A body can claim any platform id (the owner's Discord id is public); it
+            # only counts from the dashboard or Gamma's own workers.
+            speaker_ctx=request.speaker if http_request is not None and owner_channel.identity_proven(http_request.headers) else None,
             fast_mode=request.fast_mode,
             evaluation_mode=request.evaluation_mode,
             owner_verified=_owner_verified(http_request),

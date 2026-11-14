@@ -196,9 +196,11 @@ def _turn(service, step: dict, session_id: str):
         return service.respond(text, session_id=session_id, fast_mode=True, owner_verified=True)
     if via == "unknown":  # HTTP caller naming no speaker
         return service.respond(text, session_id=session_id, fast_mode=True)
-    if via == "claimed_owner":  # HTTP caller giving the owner's Twitch id, no owner channel
-        return service.respond(text, session_id=session_id, fast_mode=True,
-                               speaker_ctx=SpeakerContext(source="twitch", platform_id="owner-twitch"))
+    if via == "claimed_owner":
+        # HTTP caller giving the owner's Twitch id with no proof. The route
+        # (routes_conversation) drops an unproven speaker claim; do the same here
+        # with the eval's own service, so no real model is ever reached.
+        return service.respond(text, session_id=session_id, fast_mode=True, speaker_ctx=None)
     owner_channel = via in {"owner_monitor", "owner_monitor_to_stream"}
     if owner_channel:
         target = "dashboard_monitor" if via == "owner_monitor" else "stream_public"
@@ -216,7 +218,8 @@ def _turn(service, step: dict, session_id: str):
             metadata["input_safety"] = {"safe_prompt_text": text}  # what Twitch ingest attaches to clean chat
     event = StreamInputEvent(kind=kind, text=text, session_id=session_id, priority=30, actor=actor, metadata=metadata)
     brain = StreamBrain(conversation=service, output_dispatcher=_Dispatcher(), safety_reviewer=_Reviewer())
-    result = brain.handle_event(event, synthesize_speech=False, owner_channel=owner_channel)
+    # Twitch/Discord probes stand for Gamma's own workers, which prove their identities.
+    result = brain.handle_event(event, synthesize_speech=False, owner_channel=owner_channel, ingress_verified=True)
     return result.assistant_response
 
 

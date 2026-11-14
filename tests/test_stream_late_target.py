@@ -188,7 +188,8 @@ def test_late_callback_preserves_unknown_metadata_fallback(fixture_state, tmp_pa
     state = _setup(fixture_state, tmp_path, monkeypatch, "block")
 
     async def run():
-        subscriber, queue = await state.bus.subscribe(target_policy="stream_public")
+        # Fail closed: an event with no valid target is not public, so its late stop goes to the Monitor.
+        subscriber, queue = await state.bus.subscribe(target_policy="dashboard_monitor")
         review = Future()
         review.set_result(LLMReviewDecision(action="block", reason="synthetic", confidence=1))
         executor = ThreadPoolExecutor(max_workers=1)
@@ -203,7 +204,7 @@ def test_late_callback_preserves_unknown_metadata_fallback(fixture_state, tmp_pa
             assert await asyncio.to_thread(state.finished.wait, 2)
             await asyncio.sleep(0)
             delivered = _drain(queue)
-            assert delivered and all(e["target_policy"] == "stream_public" for e in delivered)
+            assert delivered and all(e["target_policy"] == "dashboard_monitor" for e in delivered)
         finally:
             state.bus.unsubscribe(subscriber)
             executor.shutdown(wait=True)

@@ -80,6 +80,7 @@ class WindowItem:
     fast_mode: bool
     received_at: float
     origin: str = "chat"  # "chat" or "deferred"
+    ingress_verified: bool = False  # the event's platform identity came from Gamma's own worker
     queue_id: str = field(default_factory=lambda: uuid4().hex)
     replays: int = 0
 
@@ -281,7 +282,8 @@ class ChatWindow:
 
     # -- intake --
 
-    def submit(self, event: StreamInputEvent, *, synthesize_speech: bool = False, fast_mode: bool = True) -> dict[str, Any]:
+    def submit(self, event: StreamInputEvent, *, synthesize_speech: bool = False, fast_mode: bool = True,
+               ingress_verified: bool = False) -> dict[str, Any]:
         """Add a chat event; returns at once with a queue id (status "queued" or "handled")."""
         now = self._now()
         with self._lock:
@@ -289,7 +291,8 @@ class ChatWindow:
         decision = self._brain.decide(event)
         if not _decision_would_speak(decision):
             # Nothing to say: trace it through the cheap no-model path now.
-            result = self._brain.handle_event(event, synthesize_speech=synthesize_speech, fast_mode=fast_mode)
+            result = self._brain.handle_event(event, synthesize_speech=synthesize_speech, fast_mode=fast_mode,
+                                              ingress_verified=ingress_verified)
             ticket = {
                 "status": "handled",
                 "queue_id": event.event_id,
@@ -303,7 +306,7 @@ class ChatWindow:
             return ticket
         item = WindowItem(
             event=event, synthesize_speech=synthesize_speech, fast_mode=fast_mode,
-            received_at=now, queue_id=event.event_id,
+            received_at=now, queue_id=event.event_id, ingress_verified=ingress_verified,
         )
         overflow: list[WindowItem] = []
         with self._lock:
@@ -386,6 +389,7 @@ class ChatWindow:
                 synthesize_speech=item.synthesize_speech,
                 fast_mode=item.fast_mode,
                 chat_summary=summary.text if summary else None,
+                ingress_verified=item.ingress_verified,
             )
         except Exception as exc:
             logger.exception("chat window turn failed")
@@ -435,6 +439,7 @@ class ChatWindow:
                     origin="deferred",
                     queue_id=event.event_id,
                     replays=replays,
+                    ingress_verified=bool(options.get("ingress_verified", False)),
                 )
             )
             self._counters["deferred_pulled"] += 1

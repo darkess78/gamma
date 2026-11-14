@@ -49,6 +49,14 @@ class SpeakerProfile:
         """Maps to the memory subject_type used in MemoryCandidate."""
         return "primary_user" if self.is_owner else "other_person"
 
+    def _public_trust(self) -> str:
+        return self.trust if type(self.trust) is str and self.trust in ("owner", "trusted", "guest", "public") else "public"
+
+    def public_label(self) -> str:
+        """A role label safe for shared prompts and history; never the mapped name."""
+        return {"owner": "Recognized owner", "trusted": "Recognized trusted speaker",
+                "guest": "Guest speaker", "public": "Unidentified speaker"}[self._public_trust()]
+
     def describe(self, *, include_private: bool = True) -> str:
         """Render identity without changing its authority or stored attributes.
 
@@ -56,10 +64,7 @@ class SpeakerProfile:
         prompts therefore use finite role labels rather than the mapped name.
         """
         if not include_private:
-            trust = self.trust if type(self.trust) is str and self.trust in ("owner", "trusted", "guest", "public") else "public"
-            label = {"owner": "Recognized owner", "trusted": "Recognized trusted speaker",
-                     "guest": "Guest speaker", "public": "Unidentified speaker"}[trust]
-            return f"Name: {label}\nTrust: {trust}"
+            return f"Name: {self.public_label()}\nTrust: {self._public_trust()}"
         lines = [f"Name: {self.name}", f"Trust: {self.trust}"]
         if self.resolved_via != "assumed":
             lines.append(f"Identified via: {self.resolved_via}")

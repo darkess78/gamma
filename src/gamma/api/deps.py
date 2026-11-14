@@ -302,20 +302,23 @@ def _cancel_active_live_turns(*, reason: str) -> dict:
     }
 
 
-def _websocket_api_auth_ok(websocket: WebSocket) -> bool:
-    """Check WebSocket API authentication.
-    
-    Args:
-        websocket: WebSocket connection.
-        
-    Returns:
-        bool: True if authenticated or API auth disabled.
+def websocket_feed_allowed(websocket: WebSocket, target_policy: str) -> bool:
+    """Who may watch which live feed.
+
+    The public stream feed takes the API token in the URL (OBS can't send headers).
+    Private feeds (the owner's Monitor) need the Authorization header or a short-lived
+    ticket from the logged-in dashboard: an overlay URL, which ends up in scene exports,
+    screenshots and proxy logs, must never be able to read them.
     """
     if not settings.api_auth_enabled:
         return True
     expected = f"Bearer {settings.api_bearer_token}"
-    auth_header = websocket.headers.get("authorization", "")
-    if settings.api_bearer_token and secrets.compare_digest(auth_header, expected):
+    if settings.api_bearer_token and secrets.compare_digest(websocket.headers.get("authorization", ""), expected):
+        return True
+    from ..system import owner_channel
+    if owner_channel.ticket_ok(websocket.query_params.get("ticket")):
         return True
     token = websocket.query_params.get("token", "")
-    return bool(settings.api_bearer_token and secrets.compare_digest(token, settings.api_bearer_token))
+    url_token_ok = bool(settings.api_bearer_token and secrets.compare_digest(token, settings.api_bearer_token))
+    return url_token_ok and target_policy == "stream_public"
+

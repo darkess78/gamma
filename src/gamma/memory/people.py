@@ -7,6 +7,15 @@ from .models import KnownPerson, PersonIdentity, ProfileFact, RelationshipState
 from .fact_text import _normalize_identity, _normalize_subject_name
 
 
+def _owner_reported(attribution: str | None) -> bool:
+    """True for facts the owner reported, manual entries, and legacy rows with no source."""
+    from .attribution import decode
+    data = decode(attribution)
+    if data.get("kind") in {"legacy", "manual"}:
+        return True
+    return data.get("is_owner") is True
+
+
 class PeopleMixin:
     """Known people and their platform identities (part of MemoryService)."""
 
@@ -55,6 +64,8 @@ class PeopleMixin:
             name = _normalize_subject_name(fact.subject_name)
             if not name or name.casefold() in existing:
                 continue
+            if fact.category == "viewer_note" or not _owner_reported(fact.attribution):
+                continue  # only the owner's own words add people to the owner's list
             session.add(
                 KnownPerson(
                     name=name,

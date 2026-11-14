@@ -130,7 +130,22 @@
     });
   }
 
-  function connect() {
+  async function privateFeedTicket() {
+    // Private feeds need a short-lived ticket from the logged-in dashboard; a token in a URL
+    // only opens the public stream feed.
+    if (targetPolicy === 'stream_public') return '';
+    try {
+      const response = await fetch('/api/performer/ticket', { credentials: 'same-origin' });
+      if (!response.ok) return '';
+      const value = await response.json();
+      return value.ticket || '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  async function connect() {
+    const ticket = await privateFeedTicket();
     const apiUrl = new URL(apiBase);
     const protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
     const queryString = new URLSearchParams({
@@ -141,7 +156,9 @@
     if (lastSequence > 0) {
       queryString.set('after_sequence', String(lastSequence));
     }
-    if (token) {
+    if (ticket) {
+      queryString.set('ticket', ticket);
+    } else if (token) {
       queryString.set('token', token);
     }
     const url = `${protocol}//${apiUrl.host}/v1/performer/events?${queryString.toString()}`;

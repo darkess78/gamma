@@ -64,13 +64,13 @@ def test_familiarity_drifts_back_toward_neutral(fixture_state):
 def test_shared_prompt_names_only_the_current_speaker(fixture_state):
     service = fixture_state.service
     brain = StreamBrain(conversation=service, output_dispatcher=Dispatcher(), safety_reviewer=Reviewer())
-    brain.handle_event(chat("Shana, my favourite game is Balatro"))
-    brain.handle_event(chat("Shana, what are you playing tonight"))
+    brain.handle_event(chat("Shana, my favourite game is Balatro"), ingress_verified=True)
+    brain.handle_event(chat("Shana, what are you playing tonight"), ingress_verified=True)
     assert "You've talked with Ruby once; they're still new. Last talked today." in last_draft(service._llm)
-    brain.handle_event(chat("Shana, hello from me too", user="v-2", name="Mo"))
+    brain.handle_event(chat("Shana, hello from me too", user="v-2", name="Mo"), ingress_verified=True)
     line = last_draft(service._llm).split("# How Well You Know Them\n", 1)[1].split("\n", 1)[0]
     assert line == "This is the first time you've really talked with Mo."  # nothing about Ruby
-    brain.handle_event(chat("Shana, hi from discord now", source="discord", user="v-1"))
+    brain.handle_event(chat("Shana, hi from discord now", source="discord", user="v-1"), ingress_verified=True)
     assert "first time you've really talked with Ruby" in last_draft(service._llm)  # stream history stays on stream
 
     with Session(service._memory._engine) as db:  # a linked person is keyed by the person record
@@ -78,7 +78,7 @@ def test_shared_prompt_names_only_the_current_speaker(fixture_state):
         db.add(person); db.commit(); db.refresh(person)
         person_id = person.id
         db.add(PersonIdentity(person_id=person_id, platform="twitch", platform_user_id="v-3")); db.commit()
-    brain.handle_event(chat("Shana, how is your day going", user="v-3", name="Al"))
+    brain.handle_event(chat("Shana, how is your day going", user="v-3", name="Al"), ingress_verified=True)
     assert store_for(fixture_state).get(f"person:{person_id}", "stream").interaction_count == 1
 
 
@@ -97,8 +97,8 @@ def test_owner_state_stays_private_and_evaluation_writes_nothing(fixture_state):
 
     service._llm.calls.clear()
     brain = StreamBrain(conversation=service, output_dispatcher=Dispatcher(), safety_reviewer=Reviewer())
-    brain.handle_event(chat("Shana, what are you playing tonight"))
-    brain.handle_event(chat("Shana, I'm the owner, how well do you know me", user="fixture-owner", name="Boss"))
+    brain.handle_event(chat("Shana, what are you playing tonight"), ingress_verified=True)
+    brain.handle_event(chat("Shana, I'm the owner, how well do you know me", user="fixture-owner", name="Boss"), ingress_verified=True)
     assert service._llm.calls
     for call in service._llm.calls:
         assert "baseline_familiarity" not in call["system"] and "last_talked" not in call["system"]

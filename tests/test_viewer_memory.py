@@ -25,12 +25,12 @@ def last_draft(llm):
 def test_viewer_notes_come_back_for_the_same_viewer_and_audience(fixture_state):
     service = fixture_state.service
     brain = StreamBrain(conversation=service, output_dispatcher=Dispatcher(), safety_reviewer=Reviewer())
-    brain.handle_event(chat("Shana, my favourite game is Balatro"))
-    brain.handle_event(chat("Shana, guess what I'm playing"))
+    brain.handle_event(chat("Shana, my favourite game is Balatro"), ingress_verified=True)
+    brain.handle_event(chat("Shana, guess what I'm playing"), ingress_verified=True)
     assert "Their favourite game is Balatro" in last_draft(service._llm)
-    brain.handle_event(chat("Shana, hi", user="v-2", name="Mo"))
+    brain.handle_event(chat("Shana, hi", user="v-2", name="Mo"), ingress_verified=True)
     assert "Has Told You Before" not in last_draft(service._llm)  # Mo has no notes and cannot see Ruby's
-    brain.handle_event(chat("Shana, hi from discord", source="discord", user="v-1"))
+    brain.handle_event(chat("Shana, hi from discord", source="discord", user="v-1"), ingress_verified=True)
     assert "Has Told You Before" not in last_draft(service._llm)
 
 

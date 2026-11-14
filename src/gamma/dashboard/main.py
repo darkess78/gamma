@@ -134,6 +134,13 @@ async def dashboard_live_voice(websocket: WebSocket) -> None:
         return
 
 
+@app.get("/api/performer/ticket")
+def performer_ticket() -> dict:
+    """A 10-minute pass for the Monitor's private live feed (behind the dashboard login)."""
+    from ..system import owner_channel
+    return {"ticket": owner_channel.issue_ticket(), "expires_in": owner_channel.TICKET_SECONDS}
+
+
 for _router in (pages_router, control_router, integrations_router, memory_router,
                 voice_router, stream_router, coding_router):
     app.include_router(_router)

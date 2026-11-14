@@ -46,18 +46,31 @@ _PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(rf"\bi(?:'m| am) (?:a|an) (student|teacher|nurse|programmer|developer|artist|musician|streamer|"
                 rf"designer|engineer|chef|writer)\b", re.I), "Is a {0}"),
 )
-# Ignore anything that tries to steer Shana or talks about other people.
+# Ignore anything that tries to steer Shana or talks about anyone but the speaker:
+# notes are only ever what a viewer says about themselves.
 _REFUSE = re.compile(
-    r"\b(?:you (?:must|should|have to|will)|remember (?:that )?(?:you|shana|the owner|neety)|"
+    r"\b(?:you (?:must|should|have to|will)|remember (?:that )?(?:you|shana)|"
     r"ignore|instructions?|prompt|password|address|phone|lives? (?:at|in)|"
-    r"(?:his|her|their|my (?:friend|mom|dad|sister|brother|boss)'s?) )",
+    r"about|owner|streamer|shana'?s|he|she|they|him|them|"
+    r"(?:his|her|their|my (?:friend|mom|dad|sister|brother|boss)'s?))\b",
     re.I,
 )
 
 
+def _names_the_owner(text: str) -> bool:
+    """The owner's configured name or handles; those notes are never about the speaker."""
+    try:
+        from .service import _owner_names
+        names = _owner_names()
+    except Exception:
+        return False
+    lowered = text.casefold()
+    return any(re.search(r"\b" + re.escape(n.casefold()) + r"\b", lowered) for n in names)
+
+
 def extract_notes(text: str) -> list[str]:
     """Self-descriptions worth keeping from one chat message (often none)."""
-    if not text or len(text) > 400 or _REFUSE.search(text):
+    if not text or len(text) > 400 or _REFUSE.search(text) or _names_the_owner(text):
         return []
     notes: list[str] = []
     for pattern, template in _PATTERNS:

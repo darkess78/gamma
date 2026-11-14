@@ -15,6 +15,7 @@ from .tts_post import TTSPostProcessingMixin
 from .tts_qwen import QwenTTSBackend
 from .tts_stub import StubTTSBackend
 from .voice_profiles import resolve_tts_config
+from uuid import uuid4
 
 
 class TTSService(TTSPostProcessingMixin):
@@ -138,7 +139,7 @@ class TTSService(TTSPostProcessingMixin):
                     params = wf.getparams()
                 frames_list.append(wf.readframes(wf.getnframes()))
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        out_path = settings.audio_output_dir / f"tts-{stamp}.wav"
+        out_path = settings.audio_output_dir / f"tts-{stamp}-{uuid4().hex[:12]}.wav"
         with wave.open(str(out_path), "wb") as wf:
             wf.setparams(params)
             for frames in frames_list:

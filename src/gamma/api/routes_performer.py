@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import mimetypes
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
@@ -157,9 +158,15 @@ def performer_target_clear(target_policy: str, reason: str = "operator") -> dict
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+_SERVABLE_AUDIO = re.compile(r"tts-[A-Za-z0-9-]{1,80}\.(?:wav|mp3|ogg|opus|flac|m4a|aac)")
+
+
 @router.get("/v1/audio/artifacts/{filename}")
 def audio_artifact(filename: str) -> FileResponse:
+    """Shana's own synthesized speech only; mic captures and text sidecars are never served."""
     safe_name = Path(filename).name
+    if not _SERVABLE_AUDIO.fullmatch(safe_name):
+        raise HTTPException(status_code=404, detail="audio artifact not found")
     audio_path = settings.audio_output_dir / safe_name
     try:
         if audio_path.resolve().parent != settings.audio_output_dir.resolve():
@@ -180,12 +187,12 @@ async def performer_events(
     target_policy: str = DEFAULT_TARGET_POLICY,
     client_name: str = "",
 ) -> None:
-    if not deps._websocket_api_auth_ok(websocket):
+    subscriber_target_policy = target_policy.strip().lower() or DEFAULT_TARGET_POLICY
+    if not deps.websocket_feed_allowed(websocket, subscriber_target_policy):
         await websocket.close(code=1008)
         return
     await websocket.accept()
     bus = deps.get_performer_bus()
-    subscriber_target_policy = target_policy.strip().lower() or DEFAULT_TARGET_POLICY
     subscriber_id, queue = await bus.subscribe(
         replay_recent=max(0, min(replay_recent, 100)),
         after_sequence=after_sequence,

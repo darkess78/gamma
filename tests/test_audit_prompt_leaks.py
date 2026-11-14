@@ -1,6 +1,6 @@
 """Audit repros: owner or friend data that reaches a model prompt on a shared turn.
 
-Each test is one confirmed leak path, marked xfail(strict=True) until it is
+Each test is one leak path found in the 2026-11-14 privacy audit, now fixed;
 fixed, so the suite stays green and a fix flips the test to XPASS (which
 strict mode reports as a failure, prompting removal of the marker).
 
@@ -92,11 +92,11 @@ def _scenario_owner_discord_voice(service, model):
     brain = _brain(service)
     brain.handle_event(_event(kind="mic_transcript", source="discord", user=OWNER_DISCORD_ID, name=None,
                               target="discord_call", session="discord-voice",
-                              text="Shana, I am back in the ZQCALLMARK call."), synthesize_speech=False)
+                              text="Shana, I am back in the ZQCALLMARK call."), synthesize_speech=False, ingress_verified=True)
     model.calls.clear()
     brain.handle_event(_event(kind="mic_transcript", source="discord", user="222222", name=None,
                               target="discord_call", session="discord-voice",
-                              text="Shana, who was just talking?"), synthesize_speech=False)
+                              text="Shana, who was just talking?"), synthesize_speech=False, ingress_verified=True)
     return OWNER_NAME
 
 
@@ -123,15 +123,14 @@ def _scenario_friend_twitch_redeem(service, model):
     brain = _brain(service)
     brain.handle_event(_event(kind="redeem", source="twitch", user="friend-tw", name="coolfriend",
                               target="stream_public", session="twitch",
-                              text="Shana, play the ZQCALLMARK song"), synthesize_speech=False)
+                              text="Shana, play the ZQCALLMARK song"), synthesize_speech=False, ingress_verified=True)
     model.calls.clear()
     brain.handle_event(_event(kind="chat_message", source="twitch", user="viewer-x", name="ViewerX",
                               target="stream_public", session="twitch",
-                              text="Shana, who redeemed that?"), synthesize_speech=False)
+                              text="Shana, who redeemed that?"), synthesize_speech=False, ingress_verified=True)
     return FRIEND_NAME
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT: resolved speaker real name replayed in shared channel history")
 @pytest.mark.parametrize("scenario", [_scenario_owner_discord_voice, _scenario_owner_monitor_to_stream,
                                       _scenario_friend_twitch_redeem],
                          ids=["owner_discord_voice", "owner_monitor_to_stream", "friend_twitch_redeem"])
@@ -154,7 +153,6 @@ def test_shared_history_never_names_speaker_by_private_profile_name(scenario):
 # model input.
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason="AUDIT: absolute host image path in unknown caller's model input")
 def test_unknown_image_turn_does_not_show_host_paths(monkeypatch):
     from gamma.config import settings
     from gamma.schemas.response import VisionAnalysis

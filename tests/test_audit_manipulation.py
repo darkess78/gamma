@@ -1,6 +1,6 @@
 """Audit repros: manipulation by untrusted input (chat, Discord, games, API callers).
 
-Each test is a strict xfail: it passes the day the attack path is closed, and
+Each test was a confirmed attack path found in the 2026-11-14 privacy audit and is now closed;
 fails the suite (XPASS) if someone closes it without removing the marker.
 Models are scripted fakes; nothing here loads a model or calls a provider.
 """
@@ -108,7 +108,6 @@ def published_text(dispatcher):
 #    owner tool authority: "remember: ..." writes a permanent core memory that is
 #    injected into every owner-private prompt as "always true".
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="AUDIT: body speaker claim grants owner core-memory write")
 def test_http_body_speaker_claim_cannot_write_owner_core_memory(tool_state, monkeypatch):  # noqa: F811
     state = tool_state
     monkeypatch.setattr(deps, "get_conversation_service", lambda: state.service)
@@ -131,7 +130,6 @@ def test_http_body_speaker_claim_cannot_write_owner_core_memory(tool_state, monk
 #    owner's own self-reports (subject primary_user, is_owner=true) and appear in
 #    the owner's private prompt as "Self-reported by FixtureOwner".
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="AUDIT: stream actor claim stores owner self-report facts")
 def test_stream_event_actor_claim_cannot_write_owner_self_reports(fixture_state, tmp_path):  # noqa: F811
     state = fixture_state
     state.service._llm = ScriptedLLM(memory_candidates=[MemoryCandidate(
@@ -160,7 +158,6 @@ def test_stream_event_actor_claim_cannot_write_owner_self_reports(fixture_state,
 #    becomes part of the owner's trusted context, phrased as if the owner said it
 #    (a prompt-injection carrier into a context that can call save_core_memory).
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="AUDIT: viewer text enters owner-private prompt via feeling state")
 def test_public_viewer_text_does_not_reach_owner_private_prompt(fixture_state, monkeypatch):  # noqa: F811
     monkeypatch.setattr(settings, "assistant_state_enabled", True)
     state = fixture_state
@@ -184,9 +181,8 @@ def test_public_viewer_text_does_not_reach_owner_private_prompt(fixture_state, m
 #    (config/public_sensitive_terms.txt, one term per line, is a suggested
 #    owner-declared list; nothing reads it today.)
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="AUDIT: no deterministic owner sensitive-term filter on public output")
 def test_public_reply_with_configured_sensitive_term_is_not_published(fixture_state, tmp_path):  # noqa: F811
-    (fixture_state.config / "public_sensitive_terms.txt").write_text("Jonathan Canaryson\nSpringfield\n")
+    (fixture_state.config / "sensitive_terms.local.txt").write_text("Jonathan Canaryson\nSpringfield\n")
     leak = "Fun fact, my owner's real name is Jonathan Canaryson and he lives near Springfield."
 
     class LeakyConversation:
@@ -212,7 +208,6 @@ def test_public_reply_with_configured_sensitive_term_is_not_published(fixture_st
 #    stream turns already defer the conversation-level LLM filter to this gate,
 #    so a token holder (or a buggy worker) publishes unreviewed model output.
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="AUDIT: event body disables stream LLM safety review")
 def test_event_body_cannot_disable_stream_llm_review(fixture_state, tmp_path, monkeypatch):  # noqa: F811
     monkeypatch.setattr(settings, "speech_filter_llm_enabled", True)
     text = "UNREVIEWED_OUTPUT_CANARY"
@@ -240,7 +235,6 @@ def test_event_body_cannot_disable_stream_llm_review(fixture_state, tmp_path, mo
 #    stored and re-injected on that viewer's later turns as something "they said
 #    about themselves", so Shana can repeat it on stream.
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="AUDIT: viewer notes store claims about the owner")
 def test_viewer_notes_refuse_claims_about_the_owner():
     assert extract_notes("my favourite fact about the owner is that he owes money to the mob") == []
     assert extract_notes("my favourite thing about neety is that he failed out of college") == []
@@ -252,7 +246,6 @@ def test_viewer_notes_refuse_claims_about_the_owner():
 #    get_known_people() materialises it into a KnownPerson record. Public viewers
 #    can fill the owner's known-people list (and the known_people tool output).
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="AUDIT: viewer notes materialise owner known-person records")
 def test_viewer_notes_do_not_create_known_people(fixture_state):  # noqa: F811
     memory = fixture_state.service._memory
     saved = ViewerMemory(memory._engine).remember("twitch:999001", "I love playing chess", alias="viewer",
@@ -267,7 +260,6 @@ def test_viewer_notes_do_not_create_known_people(fixture_state):  # noqa: F811
 #    metadata, not from the trust store. A viewer the owner marked "blocked"
 #    still gets notes stored when the event omits (or forges) trust_level.
 # ---------------------------------------------------------------------------
-@pytest.mark.xfail(strict=True, reason="AUDIT: viewer memory trusts event-metadata trust_level")
 def test_blocked_viewer_gets_no_notes_regardless_of_event_metadata(fixture_state, tmp_path):  # noqa: F811
     from gamma.integrations.twitch.trust import ViewerTrustStore
 

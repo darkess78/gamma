@@ -13,7 +13,8 @@ from ..safety.llm_reviewer import SpeechLLMReviewer
 from ..integrations.twitch.sanitize import safe_username_alias
 from ..memory.relationships import RelationshipStore, relationship_key, shared_line
 from ..memory.viewer_memory import ViewerMemory, viewer_key
-from ..schemas.conversation import RecipientContext
+from ..config import settings
+from ..schemas.conversation import RecipientContext, SpeakerContext
 from ..schemas.response import AssistantResponse
 from ..voice.tts import TTSResult, TTSService
 from .actions import ActionPlanner
@@ -140,8 +141,14 @@ class StreamBrain(PublicationReviewMixin):
         micro_mode: bool = False,
         owner_channel: bool = False,
         chat_summary: str | None = None,
+        ingress_verified: bool = False,
     ) -> StreamTurnResult:
         """owner_channel: the API verified the request came from the owner's dashboard.
+
+        ingress_verified: the event came from the dashboard or one of Gamma's own
+        integration workers, so its actor's platform id is real. Otherwise the id is
+        only a claim: the speaker is treated as unknown and no viewer notes or
+        relationship state are read or written for it.
 
         chat_summary: a summary of the other recent chat messages, supplied by the
         chat-window picker (never read from the event body, which callers control).
@@ -155,6 +162,7 @@ class StreamBrain(PublicationReviewMixin):
                 micro_mode=micro_mode,
                 owner_channel=owner_channel,
                 chat_summary=chat_summary,
+                ingress_verified=ingress_verified or owner_channel,
             )
         except BaseException:
             self._pacer.release(event.event_id)
@@ -170,6 +178,7 @@ class StreamBrain(PublicationReviewMixin):
         micro_mode: bool,
         owner_channel: bool,
         chat_summary: str | None,
+        ingress_verified: bool = False,
     ) -> StreamTurnResult:
         started_at = time.perf_counter()
         decision = self.decide(event)
@@ -218,7 +227,8 @@ class StreamBrain(PublicationReviewMixin):
                 "user_text": text,
                 "session_id": event.session_id,
                 "synthesize_speech": synthesize_speech and not parallel_safety,
-                "speaker_ctx": event.actor.to_speaker_context(),
+                "speaker_ctx": (event.actor.to_speaker_context() if ingress_verified
+                                else SpeakerContext(source=event.actor.source)),  # an unproven id is just a claim
                 "fast_mode": fast_mode,
                 "brief_mode": brief_mode,
                 "micro_mode": micro_mode,
@@ -233,9 +243,9 @@ class StreamBrain(PublicationReviewMixin):
                 "recipient": recipient,
                 "owner_verified": owner_channel and event.actor.source.strip().lower() == "local_monitor",
                 "speaker_label": _speaker_label(event),
-                "viewer_notes": self._viewer_notes_for(event, recipient),
+                "viewer_notes": self._viewer_notes_for(event, recipient) if ingress_verified else [],
             }
-            relationship = self._relationship_target(event, recipient)
+            relationship = self._relationship_target(event, recipient) if ingress_verified else None
             if relationship:
                 conversation_args["relationship_note"] = self._relationship_note(event, *relationship)
             if _is_public_stream_event(event) and event.actor.source.strip().lower() != "discord":
@@ -244,7 +254,8 @@ class StreamBrain(PublicationReviewMixin):
                 if stream_context:
                     conversation_args["stream_context"] = stream_context
             response = self._conversation.respond(**conversation_args)
-            self._remember_viewer(event, recipient)
+            if ingress_verified:
+                self._remember_viewer(event, recipient)
             if relationship:
                 self._record_relationship(event, *relationship)
             action_plan = self._action_planner.plan_from_response(response)
@@ -293,7 +304,8 @@ class StreamBrain(PublicationReviewMixin):
             self._pacer.release(event.event_id)
         if decision.decision == "defer" and decision.metadata.get("pending_slot"):
             self._pacer.remember_pending_options(
-                event.event_id, {"synthesize_speech": synthesize_speech, "fast_mode": fast_mode},
+                event.event_id, {"synthesize_speech": synthesize_speech, "fast_mode": fast_mode,
+                                 "ingress_verified": ingress_verified},
             )
         if chat_summary:
             decision.metadata.setdefault("chat_window_summary", chat_summary)
@@ -320,6 +332,21 @@ class StreamBrain(PublicationReviewMixin):
             )
         return result
 
+    def _standing_level(self, event: StreamInputEvent) -> str:
+        """The speaker's trust level from Gamma's own records, never from the event body."""
+        try:
+            from ..identity.resolver import _load_config
+            from ..identity.standing import standing_for
+            from ..integrations.twitch.trust import ViewerTrustStore
+            owner_ids = (_load_config().get("owner", {}) or {}).get("platform_ids", {}) or {}
+            if event.actor.source.strip().lower() == "twitch" and settings.twitch_owner_user_id:
+                owner_ids = {**owner_ids, "twitch": settings.twitch_owner_user_id}
+            return standing_for(event.actor.source, event.actor.platform_id, owner_ids=owner_ids,
+                                memory=getattr(self._conversation, "_memory", None),
+                                trust_store=ViewerTrustStore()).level
+        except Exception:
+            return "suspicious"  # unknown standing: store nothing about them
+
     def _viewer_memory(self):
         engine = getattr(getattr(self._conversation, "_memory", None), "_engine", None)
         return ViewerMemory(engine) if engine is not None else None
@@ -344,8 +371,7 @@ class StreamBrain(PublicationReviewMixin):
         raw = str(event.metadata.get("raw_text") or event.text or "")
         try:
             memory.remember(key, raw, alias=_speaker_label(event) or "viewer", audience=audience,
-                            scope=recipient.privacy_scope,
-                            trust_level=str(event.metadata.get("trust_level") or "new_viewer"))
+                            scope=recipient.privacy_scope, trust_level=self._standing_level(event))
         except Exception:
             pass
 
@@ -361,7 +387,7 @@ class StreamBrain(PublicationReviewMixin):
         if not (audience and engine is not None and event.kind in {"chat_message", "mic_transcript"}
                 and viewer_key(source, platform_id)):
             return None
-        if event.metadata.get("is_owner") is True or str(event.metadata.get("trust_level") or "") == "owner":
+        if self._standing_level(event) == "owner":
             return None
         try:
             person = memory.resolve_person_identity(source, platform_id or "")
@@ -382,7 +408,7 @@ class StreamBrain(PublicationReviewMixin):
     def _record_relationship(self, event: StreamInputEvent, store: RelationshipStore, key: str, audience: str) -> None:
         raw = str(event.metadata.get("raw_text") or event.text or "")
         try:
-            store.record(key, raw, audience=audience, trust_level=str(event.metadata.get("trust_level") or "new_viewer"))
+            store.record(key, raw, audience=audience, trust_level=self._standing_level(event))
         except Exception:
             pass
 

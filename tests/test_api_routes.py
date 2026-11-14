@@ -81,6 +81,18 @@ class ApiRoutesTest(unittest.TestCase):
         self.assertEqual(call["synthesize_speech"], True)
         self.assertEqual(call["fast_mode"], True)
         self.assertEqual(call["evaluation_mode"], True)
+        # No ingress proof: the body's claimed platform id is ignored.
+        self.assertIsNone(call["speaker_ctx"])
+        from types import SimpleNamespace
+        from gamma.system import owner_channel
+        proven = SimpleNamespace(headers={owner_channel.INGRESS_HEADER: owner_channel.ingress_secret()})
+        with patch("gamma.api.deps.get_conversation_service", return_value=conversation_service):
+            routes_conversation.conversation_respond(
+                routes_conversation.ConversationRequest(user_text="hello",
+                                                        speaker=SpeakerContext(source="discord", platform_id="12345")),
+                http_request=proven,
+            )
+        call = conversation_service.respond.call_args.kwargs
         self.assertEqual(call["speaker_ctx"].source, "discord")
         self.assertEqual(call["speaker_ctx"].platform_id, "12345")
 

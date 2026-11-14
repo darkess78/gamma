@@ -60,4 +60,9 @@ class GammaStreamClient:
             headers["X-Request-ID"] = request_id
         if settings.api_auth_enabled and self.bearer_token:
             headers["Authorization"] = f"Bearer {self.bearer_token}"
+        try:
+            from ...system import owner_channel
+            headers[owner_channel.INGRESS_HEADER] = owner_channel.ingress_secret()
+        except (OSError, RuntimeError):
+            pass  # without it the API treats event identities as unproven
         return headers

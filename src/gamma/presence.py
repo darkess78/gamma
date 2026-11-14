@@ -305,6 +305,12 @@ def apply_presence_to_stream_event(
             metadata["presence_suppressed"] = True
             return event.model_copy(update={"metadata": metadata}), False
 
+    # The owner's Monitor input stays on the Monitor unless the owner sent it to the stream
+    # on purpose; Monitor "chat"/"context" notes are chat_message kind but never viewer chat.
+    if event.actor.source == "local_monitor" and metadata.get("output_target_policy") != "stream_public":
+        metadata["output_target_policy"] = "dashboard_monitor"
+        return event.model_copy(update={"metadata": metadata}), synthesize_speech
+
     if not is_public_stream_event(event):
         if mode in {"wake", "go_live", "break"} and not metadata.get("output_target_policy"):
             metadata["output_target_policy"] = "dashboard_monitor"

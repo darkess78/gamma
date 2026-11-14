@@ -1,7 +1,8 @@
 """Audit repros: owner-private output reaching people other than the owner.
 
-Each test states the safe behaviour and is marked strict xfail while the leak
-exists. A test that starts passing means its fix landed; remove the marker then.
+Each test states the safe behaviour. All but the nginx one are fixed (2026-11-14);
+the nginx access-log change needs the owner's approval because it touches the
+locked deployment configuration, so it stays a strict xfail until then.
 All data here is synthetic (``*_CANARY`` strings); no model, GPU or network use.
 """
 from __future__ import annotations
@@ -79,7 +80,6 @@ def _no_llm_review(monkeypatch):
     monkeypatch.setattr(settings, "speech_filter_llm_enabled", False)
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT: go_live rewrites Monitor context/chat notes to stream_public")
 @pytest.mark.parametrize("input_mode", ["context", "chat"])
 def test_monitor_note_marked_monitor_only_is_not_broadcast_when_live(tmp_path, monkeypatch, input_mode):
     """The Monitor page says "monitor-only output" and sends output_target_policy=dashboard_monitor.
@@ -114,7 +114,6 @@ def test_monitor_note_marked_monitor_only_is_not_broadcast_when_live(tmp_path, m
     assert _public_canary_events(bus) == []
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT: untagged owner-private output defaults to stream_public")
 def test_owner_private_turn_without_target_never_reaches_stream_public(tmp_path):
     """An owner-channel Monitor turn with no output_target_policy is owner_private, yet
     _apply_output_target_policy leaves its events untagged and performer_event_from_stream_output
@@ -132,7 +131,6 @@ def test_owner_private_turn_without_target_never_reaches_stream_public(tmp_path)
     assert _public_canary_events(bus) == []
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT: overlay URL token can subscribe to dashboard_monitor")
 def test_stream_overlay_query_token_cannot_read_private_monitor_target(monkeypatch):
     """OBS overlay/performer pages must carry the API token as ?token= (browsers can't send
     headers on WebSockets), and the page picks its own target_policy. The same token
@@ -157,7 +155,7 @@ def test_stream_overlay_query_token_cannot_read_private_monitor_target(monkeypat
     assert REPLY_CANARY not in str(leaked)
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT: nginx access log stores ?token= and ?key= secrets")
+@pytest.mark.xfail(strict=True, reason="AUDIT: nginx access log records ?token=/?key= (needs owner approval: locked deployment)")
 def test_repo_nginx_access_log_does_not_record_query_secrets():
     """deploy/nginx/nginx.conf uses the default "combined" access log, whose $request
     includes the query string, so every overlay/monitor WebSocket URL writes the API
@@ -169,7 +167,6 @@ def test_repo_nginx_access_log_does_not_record_query_secrets():
     assert "log_format" in conf and "$request " not in conf and "$request_uri" not in conf
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT: TTS files named by second collide across targets")
 def test_two_tts_artifacts_in_the_same_second_get_distinct_files(tmp_path, monkeypatch):
     """Every file TTS backend names its output tts-YYYYmmddTHHMMSSZ.wav. Two syntheses in
     the same second (an owner Monitor reply and a Discord-call reply, say) write the
@@ -191,7 +188,6 @@ def test_two_tts_artifacts_in_the_same_second_get_distinct_files(tmp_path, monke
     assert private.audio_path != public.audio_path
 
 
-@pytest.mark.xfail(strict=True, reason="AUDIT: audio artifact route serves mic captures and sidecars")
 @pytest.mark.parametrize("name", ["mic-input-20261114T120000Z.wav", "tts-20261114T120000Z.txt"])
 def test_audio_artifact_route_serves_only_tts_audio(tmp_path, monkeypatch, name):
     """/v1/audio/artifacts/{filename} serves any file in data/audio with a guessable

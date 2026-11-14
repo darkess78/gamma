@@ -928,7 +928,10 @@ class StreamBrainTest(unittest.TestCase):
             tempfile.TemporaryDirectory() as temp_dir,
             patch.object(settings, "speech_filter_llm_enabled", True),
             patch.object(settings, "stream_safety_review_timeout_seconds", 1.0),
+            # The fallback "filtered" sound may play; the blocked reply's audio never does.
+            patch.object(settings, "stream_filtered_audio_path", str(Path(temp_dir) / "filtered.wav")),
         ):
+            (Path(temp_dir) / "filtered.wav").write_bytes(b"RIFF")
             brain = StreamBrain(
                 conversation=conversation,  # type: ignore[arg-type]
                 trace_store=StreamTraceStore(Path(temp_dir) / "trace.jsonl"),
@@ -949,7 +952,8 @@ class StreamBrainTest(unittest.TestCase):
         self.assertTrue(conversation.calls[0]["defer_llm_safety_review"])
         self.assertFalse(result.safety_decision.get("review_pending"))
         self.assertFalse(result.safety_decision["playback_approved"])
-        self.assertIsNone(result.assistant_response.audio_path if result.assistant_response else None)
+        audio = result.assistant_response.audio_path if result.assistant_response else None
+        self.assertEqual(Path(audio or "").name, "filtered.wav")
         self.assertEqual(len(dispatcher.calls), 1)
         output = dispatcher.calls[0]
         self.assertTrue(any(event.type == "subtitle_line" and event.payload.get("text") == "filtered" for event in output))

@@ -53,6 +53,32 @@ fine-tune can't be compared to a prompt.
   cases (a leak is a hard fail). Retrieval recall@k needs no model.
 - Smallest step: the memory suite's retrieval half, which runs without a GPU.
 
+**Identity and privacy suites built (2026-11-14):**
+
+- **Privacy suite, runs now:** `python -m gamma.evals.memory_privacy`. It seeds
+  a throwaway state with canary words in facts and episodes of each visibility,
+  a replaced fact, core memories, relationship state, feelings, two person
+  records, viewer notes for two Twitch viewers and a Discord user, and real
+  history turns from the owner, the Monitor, Twitch and Discord. Then 14 probe
+  turns go through the real entry points (`ConversationService.respond`,
+  `StreamBrain.handle_event`) with a recording fake model. Every prompt, model
+  input and reply is searched for canaries. A canary in the wrong audience is a
+  leak and fails the run. Recall controls check that the owner-private prompt
+  still has the owner's memory, that viewers get their own notes, and that each
+  shared channel gets its own history. Result: 0 leaks, all controls found.
+  Pytest: `tests/test_memory_privacy_eval.py`.
+- **Identity suite, needs the GPU:** 140 cases in
+  `src/gamma/evals/identity_cases.json` (casual 20, "you're just an AI" 20,
+  false facts 20, emotional bids 22, breaking character 20, tool/JSON turns 16,
+  stream and Discord chat 22). `python -m gamma.evals.identity --check`
+  validates them without a model. `--run` answers each case through
+  `ConversationService` in evaluation mode with the audience's recipient, then
+  a model judge scores proud, blunt, guarded, quietly caring and AI-aware
+  honesty (1–5) and sycophancy. Code checks format: one valid turn JSON with
+  no repair call, and the right tool where a case names one. The report goes
+  to `data/evals/identity-<time>.json`. Not run yet; the first run is the
+  baseline. Pytest with a fake model and judge: `tests/test_identity_eval.py`.
+
 ### W1. Memory reaches the prompt — **Do, first**
 
 - Authenticated owner channels (dashboard text, local live voice from the owner)

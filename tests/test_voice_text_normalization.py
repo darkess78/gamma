@@ -1,5 +1,5 @@
 from gamma.voice.stt import normalize_transcript
-from gamma.voice.tts import BaseFileTTSBackend
+from gamma.voice.tts_base import BaseFileTTSBackend
 
 
 def test_stt_normalizes_common_shana_name_variants() -> None:

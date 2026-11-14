@@ -13,7 +13,7 @@ from gamma.persona.emotion_service import EmotionMemoryService
 from gamma.safety.privacy_guard import PRIVACY_REFUSAL, review_private_info_request
 from gamma.safety.speech_filter import SpeechSafetyFilter
 from gamma.voice.expressive_text import build_qwen_instruct, strip_hidden_style_tags
-from gamma.voice.tts import QwenTTSBackend
+from gamma.voice.tts_qwen import QwenTTSBackend
 from scripts.qwen_tts_server import _normalize_generation_params, _pop_output_peak
 
 

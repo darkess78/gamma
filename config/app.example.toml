@@ -287,4 +287,7 @@ text_channel_id = ""
 voice_channel_id = ""
 output_enabled = false
 voice_enabled = false
+# In voice calls, answer only when addressed (her name, a follow-up, or a one-on-one call),
+# or "everyone" to answer every utterance.
+voice_reply_mode = "addressed"
 owner_user_id = ""

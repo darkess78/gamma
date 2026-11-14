@@ -238,6 +238,18 @@ a reply queue (up to 3) instead of being dropped; "Shana is typing..." shows
 while she thinks; `discord_text_channel_ids` adds more channels; Discord no
 longer leaks into stream memory (done with W1).
 
+**Step 2, who she answers in voice (2026-11-14):** `discord/addressing.py`.
+In a voice call she answers when:
+- someone says her name, including common speech-to-text mishearings;
+- the person she just answered keeps talking within 20 seconds (fillers like
+  "yeah" don't count);
+- it's a one-on-one call.
+
+Other speech is never sent to her. If someone starts talking while her reply is
+being made, she drops it unless she was called by name.
+`[discord] voice_reply_mode = "everyone"` restores the old behaviour.
+Interruption mid-sentence and speed still depend on W6.
+
 ### W6. Voice latency — **Later (needs GPU)**
 
 Each live turn starts a fresh Python process that reloads Whisper, the

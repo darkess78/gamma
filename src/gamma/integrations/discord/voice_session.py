@@ -8,6 +8,7 @@ from pathlib import Path
 import time
 
 from ...config import settings
+from . import addressing
 from .adapter import DiscordVoiceUtterance
 from .audio_buffer import PCMUtteranceBuffer
 from .delivery import approved_reply
@@ -27,7 +28,9 @@ class DiscordVoiceSession:
         self.expirer = None
         self.sinks = set()
         self.generation = 0
-        self.stats = {"utterances": 0, "dropped": 0, "replies": 0, "failures": 0}
+        self.stats = {"utterances": 0, "dropped": 0, "replies": 0, "failures": 0, "not_for_her": 0, "talked_over": 0}
+        self.last_answered: str | None = None  # who she last answered, for follow-ups
+        self.last_reply_at: float | None = None
         session = self
 
         class UtteranceSink(voice_recv.AudioSink):
@@ -141,6 +144,13 @@ class DiscordVoiceSession:
                     continue
                 guild = self.client.get_guild(int(self.config.guild_id))
                 member = guild.get_member(int(item["user_id"])) if guild else None
+                decision = addressing.decide(
+                    text, speaker_id=item["user_id"], others_in_call=self._others_in_call(guild),
+                    last_answered=self.last_answered, last_reply_at=self.last_reply_at, now=time.monotonic(),
+                    mode=getattr(self.config, "voice_reply_mode", "addressed"))
+                if not decision.answer:
+                    self.stats["not_for_her"] += 1
+                    continue
                 event = self.runtime.normalize_voice(DiscordVoiceUtterance(
                     transcript=text, user_id=item["user_id"],
                     display_name=getattr(member, "display_name", None),
@@ -153,8 +163,13 @@ class DiscordVoiceSession:
                 )
                 if generation == self.generation and approved_reply(result):
                     response = result.get("assistant_response", {})
+                    if decision.reason != "named" and not self.queue.empty():
+                        # Someone spoke while she was thinking; don't talk over them unless called by name.
+                        self.stats["talked_over"] += 1
+                        continue
                     if response.get("delivery_mode") == "speech":
                         await self._play(response.get("audio_path"), generation)
+                        self.last_answered, self.last_reply_at = item["user_id"], time.monotonic()
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -162,6 +177,14 @@ class DiscordVoiceSession:
                 self.logger.warning("Shana Discord voice turn failed; no reply delivered")
             finally:
                 self.queue.task_done()
+
+    def _others_in_call(self, guild) -> int:
+        """People in the voice channel besides bots; unknown counts as a group call."""
+        channel = guild.get_channel(int(self.config.voice_channel_id)) if guild else None
+        members = getattr(channel, "members", None)
+        if members is None:
+            return 2
+        return sum(1 for m in members if not getattr(m, "bot", False))
 
     async def _play(self, audio_path, generation):
         import discord

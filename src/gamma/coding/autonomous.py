@@ -36,10 +36,12 @@ def compact_feedback(value):
 
 
 class RepositoryAgent:
-    def __init__(self, *, project, root, endpoint, checks=run_checks, activate=None):
+    def __init__(self, *, project, root, endpoint, checks=run_checks, activate=None, apply_changes=True):
         self.project, self.root = Path(project), Path(root)
         self.endpoint, self.checks = endpoint, checks
         self.activate = activate
+        # False stops at a reviewed proposal; the owner applies it (direction D5).
+        self.apply_changes = apply_changes
 
     def event(self, stage, message='', **values):
         self.record.update(stage=stage)
@@ -421,19 +423,27 @@ class RepositoryAgent:
             store.write_json(self.path / 'candidate-checks.json', regression)
             if regression.get('passed') is not True or regression.get('count', 0) < base_check.get('count', 0):
                 raise RuntimeError('Candidate regressed protected behavior')
-            review = self.ask(self.record['checker_model'],
-                'Independently review whether the owner goal is satisfied and the code preserves existing behavior. '
-                'Return JSON {"approved":true,"reason":"specific evidence"} only if it does. Reject unsafe '
-                'behavior, test tricks, incomplete scope, unverified external actions or unexplained regressions.',
-                {'goal':self.record['goal'], 'tasks':[{k:t.get(k) for k in ('id','status','editable','attempts')} for t in self.record['tasks']],
+            review_input = {'goal':self.record['goal'], 'tasks':[{k:t.get(k) for k in ('id','status','editable','attempts')} for t in self.record['tasks']],
                  'diffs':{p:''.join(difflib.unified_diff(
                      source_path(self.project,p).read_text().splitlines(True) if source_path(self.project,p).exists() else [],
                      s.splitlines(True),fromfile=p,tofile=p)) for p,s in changes.items()},
                  'regression':{k:regression[k] for k in ('passed','count')}, 'acceptance_tests':[
-                     (workspace/p).read_text() for p in accepted]}, tokens=1600)
+                     (workspace/p).read_text() for p in accepted]}
+            review = self.ask(self.record['checker_model'],
+                'Independently review whether the owner goal is satisfied and the code preserves existing behavior. '
+                'Return JSON {"approved":true,"reason":"specific evidence"} only if it does. Reject unsafe '
+                'behavior, test tricks, incomplete scope, unverified external actions or unexplained regressions.',
+                review_input, tokens=1600)
             store.write_json(self.path / 'review.json', review)
             if review.get('approved') is not True or not isinstance(review.get('reason'), str) or not review['reason']:
                 self.record.update(status='review_rejected', reason='Independent checker did not approve application')
+                return self.record
+            if not self.apply_changes:
+                proposal = ''.join(review_input['diffs'].values())
+                (self.path / 'proposal.diff').write_text(proposal, encoding='utf-8')
+                self.record.update(status='awaiting_owner_review', stage='awaiting_owner_review',
+                                   reason='Verified proposal is waiting for the owner to review and apply it',
+                                   proposal='proposal.diff')
                 return self.record
             self.checkpoint(); self.event('applying', 'Applying hash-bound verified source with rollback')
             retained = []
@@ -488,8 +498,8 @@ def main():
     parser = argparse.ArgumentParser(); parser.add_argument('--once', action='store_true')
     args = parser.parse_args()
     root = settings.data_dir / 'coding' / 'autonomous'
-    from .project_activation import activate_source
-    agent = RepositoryAgent(project=PROJECT_ROOT, root=root, endpoint=settings.local_llm_endpoint, activate=activate_source)
+    # Never write live source or restart services from the worker; the owner reviews proposal.diff.
+    agent = RepositoryAgent(project=PROJECT_ROOT, root=root, endpoint=settings.local_llm_endpoint, apply_changes=False)
     with store.execution_lock(root):
         # A process restart cannot replay an inference or an uncertain application.
         store.reconcile_interrupted_applications(root, PROJECT_ROOT)

@@ -97,6 +97,48 @@ def test_real_pipeline_requires_frozen_checks_and_installed_verification(tmp_pat
     assert (store.job_path(root,record['id'])/'verified-example.json').exists()
 
 
+def test_owner_review_mode_writes_proposal_without_touching_source(tmp_path):
+    project=tmp_path/'project';path=project/'src/gamma/memory/example.py';path.parent.mkdir(parents=True)
+    path.write_text('def value():\n return 0\n')
+    root=tmp_path/'jobs';record=store.create_job(root,'Make value return one while preserving behavior')
+    def checks(workspace,**options):
+        if options.get('full_suite'):return {'passed':True,'count':3,'evidence':'protected'}
+        source=(Path(workspace)/'src/gamma/memory/example.py').read_text()
+        return {'passed':'return 1' in source,'count':1,'output_tail':'expected one','infrastructure_error':False}
+    activations=[]
+    agent=RepositoryAgent(project=project,root=root,endpoint='http://127.0.0.1:11434',checks=checks,
+                          activate=activations.append,apply_changes=False)
+    responses=iter([
+        {'action':'read','paths':['src/gamma/memory/example.py']},
+        {'action':'plan','tasks':[{'id':'one','editable':['src/gamma/memory/example.py'],'depends_on':[],
+                                 'instructions':'Make value() return integer one'}]},
+        {'approved':True,'reason':'matches goal','test_source':'from gamma.memory.example import value\ndef test_value():\n assert value()==1\n'},
+        {'patches':[{'path':'src/gamma/memory/example.py','old':'return 0','new':'return 1'}]},
+        {'approved':True,'reason':'Requested behavior checked and regression passed'},
+    ])
+    agent.ask=lambda *args,**kwargs:next(responses)
+    with patch('gamma.coding.autonomous.LocalPracticeLearner.require_idle',lambda self:None):result=agent.execute(record['id'])
+    assert result['status']=='awaiting_owner_review', result
+    assert path.read_text()=='def value():\n return 0\n' and activations==[]
+    proposal=(store.job_path(root,record['id'])/'proposal.diff').read_text()
+    assert '-' in proposal and '+ return 1' in proposal
+    assert not list(project.glob('tests/test_verified_*'))
+
+
+def test_main_entry_point_never_applies_or_activates(monkeypatch):
+    import gamma.coding.autonomous as autonomous
+    created={}
+    class Recorder:
+        def __init__(self,**kwargs):created.update(kwargs)
+    monkeypatch.setattr(autonomous,'RepositoryAgent',Recorder)
+    monkeypatch.setattr(autonomous.store,'execution_lock',lambda root:__import__('contextlib').nullcontext())
+    monkeypatch.setattr(autonomous.store,'reconcile_interrupted_applications',lambda *a:None)
+    monkeypatch.setattr(autonomous.store,'list_jobs',lambda root:[])
+    monkeypatch.setattr('sys.argv',['autonomous','--once'])
+    autonomous.main()
+    assert created['apply_changes'] is False and created.get('activate') is None
+
+
 def test_baseline_failure_never_calls_model_or_applies(tmp_path):
     project=tmp_path/'project';path=project/'src/gamma/memory/example.py';path.parent.mkdir(parents=True);path.write_text('x=1')
     root=tmp_path/'jobs';record=store.create_job(root,'Improve module without bypassing regression failures')

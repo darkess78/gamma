@@ -41,6 +41,8 @@ page navigation destroys browser audio and WebSocket state.
 
 ## Core Domains
 
+- `coordination`: separately hosted isolated private activity owner; see
+  `shana_coordination_core.md`. It is not activated by `gamma.main`.
 - `conversation`: prompt assembly, response generation, tools, safety, memory
 - `llm`: swappable model adapters and deterministic routing
 - `memory`: profile facts, episodic memory, known people, identity links

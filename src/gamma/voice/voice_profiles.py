@@ -184,8 +184,8 @@ def _coalesce(override: Any, fallback: Any) -> Any:
     return override
 
 
-def resolve_tts_config() -> ResolvedTTSConfig:
-    profile = get_voice_profile(settings.tts_profile)
+def resolve_tts_config(profile_id: str | None = None) -> ResolvedTTSConfig:
+    profile = get_voice_profile(settings.tts_profile if profile_id is None else profile_id)
     values = profile.values if profile and isinstance(profile.values, dict) else {}
     provider = str(_coalesce(values.get("provider"), settings.tts_provider)).strip().lower()
 

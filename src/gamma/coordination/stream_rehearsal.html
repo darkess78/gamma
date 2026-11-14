@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Private rehearsal · Shana</title>
+  <link rel="stylesheet" href="/static/coordination_shell.css">
+  <style>
+    .rehearsal-heading{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+    .rehearsal-heading h1{margin-bottom:.3rem}.rehearsal-heading p{margin-top:0}
+    .rehearsal-status{padding:.5rem .8rem;border:1px solid currentColor;border-radius:99px;font-size:.9rem}
+    .rehearsal-form{display:grid;gap:1rem}.rehearsal-form label{display:grid;gap:.45rem}
+    .rehearsal-form input,.rehearsal-form select,.rehearsal-form textarea{font:inherit;padding:.7rem;border-radius:.5rem;border:1px solid #73798a;background:transparent;color:inherit;width:100%;box-sizing:border-box}
+    .rehearsal-form textarea{resize:vertical;min-height:6rem}.rehearsal-pair{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+    .rehearsal-privacy{display:flex;gap:.7rem;align-items:flex-start;padding:1rem;border:1px solid #73798a;border-radius:.7rem;margin:1.5rem 0}.rehearsal-privacy input{width:1.2rem;height:1.2rem;flex-shrink:0}
+    .rehearsal-privacy small{display:block;margin-top:.3rem}.rehearsal-feed{list-style:none;padding:0;margin:0;display:grid;gap:.8rem;max-height:30rem;overflow:auto}
+    .rehearsal-feed li{padding:1rem;border:1px solid #73798a;border-radius:.6rem}.rehearsal-feed p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6}
+    .rehearsal-feed small{display:block;margin-top:.6rem}.rehearsal-notice{min-height:1.5rem;overflow-wrap:anywhere}
+    .rehearsal-summary{line-height:1.6}.rehearsal-summary:empty{display:none}.rehearsal-control-group{margin-top:1rem}
+    button:disabled{opacity:.5;cursor:not-allowed}button{min-height:2.7rem}
+    @media(max-width:650px){.rehearsal-pair{grid-template-columns:1fr}.rehearsal-heading{align-items:flex-start}.shana-actions button{flex:1 1 auto}}
+  </style>
+  <script src="/static/coordination_shell.js" defer></script>
+  <script src="/static/presence_queue.js" defer></script>
+  <script src="/static/channel_audio_player.js" defer></script>
+  <script src="/static/stream_rehearsal.js" defer></script>
+</head>
+<body>
+<main class="shana-main">
+  <div class="rehearsal-heading">
+    <div><h1>Private rehearsal</h1><p class="shana-muted">Try a stream idea together before taking it further.</p></div>
+    <span id="rehearsalConnection" class="rehearsal-status" role="status">Disconnected</span>
+  </div>
+  <label class="rehearsal-privacy" for="rehearsalPrivate">
+    <input id="rehearsalPrivate" type="checkbox">
+    <span>This screen is private.<small class="shana-muted">Replies appear here. Turning this off disconnects and stops the rehearsal. Nothing is sent to Twitch.</small></span>
+  </label>
+  <p id="rehearsalNotice" class="rehearsal-notice" role="status" aria-live="polite">Confirm a private screen to begin.</p>
+  <div class="shana-grid">
+    <section class="shana-card" aria-labelledby="rehearsalPlanTitle">
+      <h2 id="rehearsalPlanTitle">Choose an idea</h2>
+      <form id="rehearsalPlanForm" class="rehearsal-form">
+        <label for="rehearsalPlan">What are we doing?
+          <textarea id="rehearsalPlan" required maxlength="1000">Keep me company during an OSRS skilling session. Chat when it fits and leave focused moments quiet.</textarea>
+        </label>
+        <div class="rehearsal-pair">
+          <label for="rehearsalFormat">Format<select id="rehearsalFormat"><option value="gameplay">Gameplay and chat</option><option value="coding">Building or coding and chat</option></select></label>
+          <label for="rehearsalDuration">Time limit<select id="rehearsalDuration"><option value="900">15 minutes</option><option value="1800">30 minutes</option><option value="3600">1 hour</option><option value="14400">4 hours</option></select></label>
+        </div>
+        <div class="shana-actions"><button id="rehearsalStart" type="submit" disabled>Start rehearsal</button><button id="rehearsalConnect" type="button" disabled>Connect to existing</button></div>
+      </form>
+      <p id="rehearsalSummary" class="shana-muted rehearsal-summary"></p>
+      <div class="rehearsal-control-group">
+        <div class="shana-actions"><button id="rehearsalAway" type="button" disabled>I'm stepping away</button><button id="rehearsalReturn" type="button" disabled>I'm back</button></div>
+        <div class="shana-actions"><button id="rehearsalFocus" type="button" disabled>Quiet while I focus</button><button id="rehearsalRelax" type="button" disabled>Back to relaxed</button><button id="rehearsalStop" type="button" disabled>Stop rehearsal</button></div>
+      </div>
+      <div class="rehearsal-control-group">
+        <label for="rehearsalListen"><input id="rehearsalListen" type="checkbox" disabled> Listen to new contributions</label>
+        <p id="rehearsalSpeechStatus" class="shana-muted" role="status">Speech is off. Text will still appear below.</p>
+        <button id="rehearsalStopSpeech" type="button" disabled>Stop speech</button>
+      </div>
+    </section>
+    <section class="shana-card" aria-labelledby="rehearsalInputTitle">
+      <h2 id="rehearsalInputTitle">Try an example</h2>
+      <p class="shana-muted">Enter an example chat message, activity update or quiet moment. This is rehearsal input; a live Twitch feed isn't connected.</p>
+      <form id="rehearsalEventForm" class="rehearsal-form">
+        <div class="rehearsal-pair"><label for="rehearsalKind">Example type<select id="rehearsalKind"><option value="chat">Chat message</option><option value="activity">Activity update</option><option value="lull">Quiet moment</option></select></label><label for="rehearsalAlias">Example viewer name<input id="rehearsalAlias" type="text" maxlength="80" value="ExampleViewer" autocomplete="off"></label></div>
+        <label for="rehearsalText">What's happening?<textarea id="rehearsalText" maxlength="1200" placeholder="Shana, what would make this activity more interesting?"></textarea></label>
+        <div class="shana-actions"><button id="rehearsalSend" type="submit" disabled>Send example</button></div>
+      </form>
+    </section>
+  </div>
+  <section class="shana-card" aria-labelledby="rehearsalRepliesTitle" style="margin-top:1.2rem">
+    <h2 id="rehearsalRepliesTitle">Shana's contributions</h2>
+    <p id="rehearsalEmpty" class="shana-muted">Replies will appear here. A quiet moment can stay quiet.</p>
+    <ol id="rehearsalFeed" class="rehearsal-feed" aria-live="polite" aria-relevant="additions"></ol>
+  </section>
+</main>
+</body>
+</html>

@@ -10,6 +10,37 @@ Status: working and verified on June 10, 2026
 Public hostname: `gamma.neety.me`  
 Gamma host: `10.78.78.13`
 
+## Current private production operation, 2026-10-31
+
+The owner authorized the private coordination release on the existing HTTPS entry.
+The new user units are `gamma-private-release-qwen.service`,
+`gamma-private-release-api.service`, `gamma-private-release-dashboard.service`
+and `gamma-private-release-discord.service`.
+API and Dashboard bind loopback 8000/8001 respectively. Existing Nginx routes,
+certificates and public entry `https://gamma.neety.me` were retained.
+
+The frozen source is
+`/home/neety/Documents/shana-releases/private-20261031-a157e86d/source`;
+imports must resolve to that checkout's `src/gamma`. This supersedes the historical
+runtime source and service authority below. The four legacy units stay loaded,
+inactive and fenced by an owner-only activation marker. For this release use
+`systemctl --user status gamma-private-release-api gamma-private-release-dashboard`
+and the corresponding `restart` command; do not restart the legacy supervisor mappings.
+The Discord unit uses `python -m gamma.coordination.discord_release`, connects only
+the pinned owner DM/private voice room, and shares the existing API. It opens no
+new public listener. A manifest change requires coordinated API, dashboard and
+Discord restarts because their credential binds the manifest. A bot reconnect
+requires an explicit `!shana join` for voice.
+
+The dashboard uses a protected verifier file for the persistent `darkess78` login.
+Actual verified HTTPS login, all nine pages, typed API proxies, production voice
+transport and an API/dashboard restart passed. Owner-private Discord DM/voice
+checks also passed on the normal unit entry, with no diagnostic drop-in active.
+No production Nginx reload was needed.
+See [the operation record](shana_private_release.md#actual-private-production-operation)
+for exact authority, backups, compatible reversal and remaining acceptance limits.
+The earlier topology and isolated-milestone statements below retain their dated scope.
+
 ## Purpose
 
 This document records the network and runtime changes that restored the Gamma
@@ -100,6 +131,23 @@ Do not install `gamma-proxy.conf` as the system port-`443` configuration. It is
 specifically the NPM-facing port-`8080` configuration.
 
 ## Required Path Routing
+
+The isolated coordination milestone uses separate explicit app factories and
+localhost review listeners. Dashboard-owned `/api/coordination/*` proxies to
+Shana-owned `/v1/coordination/*`; private text retains `/api/monitor/input`.
+These routes require the isolated owner host and do not activate in `gamma.main`.
+The private Monitor uses typed private-only proxies. It requires an explicit
+`GAMMA_COORDINATION_API_ORIGIN` on a separate literal loopback HTTP port, excludes
+production listeners, and checks the backend's authenticated isolated scope.
+It cannot forward legacy stream modes or public/speech delivery requests.
+No live listener, Nginx route or systemd unit changes in this milestone. See
+`shana_coordination_core.md` before a later separately approved handover.
+The isolated P5 extension adds dashboard-owned `/api/coordination/interaction/*`
+and Shana-owned `/v1/coordination/interaction/*`, plus `/dashboard/presence`.
+They use the same private authentication and separate loopback owner hosts.
+`/api/monitor/input` retains text-only behavior. These routes add no production
+proxy, unit or listener change. See `shana_private_interaction.md` and its Brave
+review instructions before preparing a finite private session.
 
 These routes belong to the dashboard process on port `8001`:
 
@@ -361,6 +409,46 @@ Future LLMs and automation must follow these rules:
 10. Requested architecture work can proceed within the user's authorized scope
     without a separate approval step imposed by this document. Record the
     design and validation appropriate to the change.
+
+## Isolated P1 review transport
+
+The opt-in [P1 review launcher](shana_foundation_review_runbook.md) starts an
+authenticated API on an ephemeral loopback port and a separate private dashboard
+on Gamma loopback port 18701 by default. Its Windows controller forwards only
+that dashboard to Windows loopback through a hidden SSH child. An explicit
+`--port` can select another unused non-production port. No public proxy, Nginx
+configuration or systemd unit changes. Production ports 8000/8001/8080 remain
+unchanged. Fresh credentials travel on stdin and in a private temporary login
+file, never in URLs or process arguments. Sessions have a 5-1800 second duration
+and an explicit stop control. Startup and shutdown verify their actual owned
+listeners/processes. Reused process IDs cannot confirm stale readiness.
+
+## Isolated P6-P9 review additions, 2026-10-27
+
+The candidate adds Home, Activities, Rehearsal, Phone and the design gallery at
+dashboard-owned `/dashboard/*` routes. Dashboard-owned
+`/api/coordination/shared-activity/*`, `/stream/*`, `/phone/*`, `/maintenance`
+and `/channel-audio/*` beneath `/api/coordination` forward to the corresponding
+Shana-owned `/v1/coordination` routes on the separately authenticated candidate.
+`/dashboard/phone-worker.js` is a notification-only worker with a narrow phone
+scope; it provides no background push or offline data cache. Normal production
+entry points and ports remain unchanged.
+
+The opt-in `GAMMA_COORDINATION_REVIEW_PREFIX=/review/shana` wrapper confines the
+candidate dashboard's routes, assets, API connections, cookie, browser storage
+and worker scope to that prefix. It rejects WebSockets and direct backend paths.
+Its Secure review cookie requires the intended HTTPS review entry point; the
+Windows launcher's loopback transport URL does not establish that HTTPS access.
+See [review ingress](shana_review_ingress.md).
+
+An additive packet for both current Nginx route files was prepared, not applied.
+The staged full `nginx -t` command required interactive sudo authentication.
+No Nginx reload, live route, DNS, certificate, unit or machine-local configuration
+change occurred. A future finite review needs independent route expiry and
+hash-aware rollback, actual HTTPS checks on both forwarding paths, and Android
+certificate trust verified without bypasses. The candidate's finite listener
+alone does not remove a proxy route. The normal 8000/8001 ownership and public
+HTTPS concepts above remain authoritative.
 
 ## Coding worker deployment
 

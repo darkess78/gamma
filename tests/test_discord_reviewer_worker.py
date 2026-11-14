@@ -1,4 +1,4 @@
-"""Independent local-worker contract for bounded safety review."""
+"""Bounded safety-review contract with the real backend admission boundary."""
 import importlib.util
 import json
 from pathlib import Path
@@ -6,15 +6,60 @@ import sys
 from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import patch
+from gamma.llm.backend_admission import backend_slot
+from gamma.llm.local_adapter import current_local_admission
 
-fake = ModuleType('_review_config.config')
-fake.settings = SimpleNamespace(speech_filter_llm_model='local-review',local_llm_tagging_model='',local_llm_light_model='',speech_filter_llm_enabled=True,speech_filter_llm_temperature=0,local_llm_endpoint='http://localhost:11434',local_llm_timeout_seconds=20)
-sys.modules['_review_config.config'] = fake
-spec=importlib.util.spec_from_file_location('_review_config.safety.llm_reviewer',Path(__file__).parents[1]/'src/gamma/safety/llm_reviewer.py')
-module=importlib.util.module_from_spec(spec);sys.modules[spec.name]=module;spec.loader.exec_module(module)
+def _load_reviewer():
+    """Load the real reviewer with isolated settings and restore every alias."""
+    prefix = '_review_config'
+    aliases = {}
+    for name in (prefix, prefix + '.llm', prefix + '.safety'):
+        package = ModuleType(name)
+        package.__path__ = []
+        aliases[name] = package
+    fake = ModuleType(prefix + '.config')
+    fake.settings = SimpleNamespace(speech_filter_llm_model='local-review',local_llm_tagging_model='',local_llm_light_model='',speech_filter_llm_enabled=True,speech_filter_llm_temperature=0,local_llm_endpoint='http://localhost:11434',local_llm_timeout_seconds=20)
+    aliases[fake.__name__] = fake
+    admission = ModuleType(prefix + '.llm.backend_admission')
+    admission.backend_slot = backend_slot
+    aliases[admission.__name__] = admission
+    adapter = ModuleType(prefix + '.llm.local_adapter')
+    adapter.current_local_admission = current_local_admission
+    aliases[adapter.__name__] = adapter
+    source = Path(__file__).parents[1] / 'src/gamma'
+    with patch.dict(sys.modules, aliases):
+        loaded = None
+        for suffix, relative in (
+            ('llm.local_metrics', 'llm/local_metrics.py'),
+            ('llm.local_runtime', 'llm/local_runtime.py'),
+            ('safety.llm_reviewer', 'safety/llm_reviewer.py'),
+        ):
+            spec = importlib.util.spec_from_file_location(prefix + '.' + suffix, source / relative)
+            loaded = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = loaded
+            spec.loader.exec_module(loaded)
+        return loaded
+
+
+module = _load_reviewer()
 
 
 class ReviewTests(unittest.TestCase):
+    def test_loader_uses_real_helpers_and_restores_aliases(self):
+        before = {name: value for name, value in sys.modules.items()
+                  if name == '_review_config' or name.startswith('_review_config.')}
+        sentinel = ModuleType('_review_config.llm.local_metrics')
+        with patch.dict(sys.modules, {'_review_config.llm.local_metrics': sentinel}):
+            loaded = _load_reviewer()
+            self.assertIs(sys.modules['_review_config.llm.local_metrics'], sentinel)
+            self.assertEqual(loaded.local_generation_metrics({'load_duration': 1000000}), {'load_ms': 1.0})
+            self.assertEqual(loaded.current_local_runtime_profile(), {})
+            with self.assertRaises(ValueError):
+                loaded.validate_review_num_gpu(True)
+        after = {name: value for name, value in sys.modules.items()
+                 if name == '_review_config' or name.startswith('_review_config.')}
+        self.assertEqual(after, before)
+
     def review(self, raw):
         self.requests=[]
         class Response:

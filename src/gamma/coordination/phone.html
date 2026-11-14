@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#121722">
+  <title>Shana · on your phone</title>
+  <link rel="stylesheet" href="/static/coordination_shell.css">
+  <script src="/static/coordination_shell.js" defer></script>
+  <link rel="stylesheet" href="/static/phone.css">
+  <script src="/static/phone.js" defer></script>
+</head>
+<body>
+<main>
+  <header><div><p class="eyebrow">Your conversation, wherever you are</p><h1>Shana</h1></div><span id="phoneState" class="badge" role="status">Disconnected</span></header>
+  <section class="privacy card" aria-label="Private access">
+    <label class="check"><input id="phonePrivate" type="checkbox"> I can receive private messages here.</label>
+    <p id="phoneConnection" class="subtle" role="status">Confirm your privacy, then connect. This uses the same Shana and ongoing work as your desktop.</p>
+    <div class="actions"><button id="phoneConnect" type="button" disabled>Connect</button><button id="phoneDisconnect" type="button" class="secondary" disabled>Disconnect</button><button id="phoneReset" type="button" class="secondary" hidden>Reset browser connection</button></div>
+    <details id="phoneDeviceManager" hidden>
+      <summary>Manage browser connections</summary>
+      <p class="subtle">Remove an unused connection if you lost its browser session. Your conversation and commitments stay on Gamma.</p>
+      <button id="phoneLoadDevices" type="button" class="secondary">Show connections</button>
+      <div id="phoneDeviceList"></div><p id="phoneDevicesStatus" class="subtle" role="status"></p>
+    </details>
+  </section>
+  <section id="phoneContent" hidden>
+    <section class="card" aria-labelledby="conversationTitle">
+      <div class="section-heading"><h2 id="conversationTitle">Conversation</h2><a href="/dashboard/work">View work</a></div>
+      <p class="subtle">Continue the conversation from Monitor, or ask how a task is going.</p>
+      <div id="phoneHistory" class="history" aria-live="polite"></div>
+      <form id="phoneForm">
+        <label for="phoneText">Message Shana</label><textarea id="phoneText" rows="3" maxlength="8000" placeholder="What's on your mind?"></textarea>
+        <div class="actions"><button id="phoneSend" type="submit">Send</button><button id="phoneCheck" type="button" class="secondary" hidden>Check last message</button></div>
+        <p id="phoneInputStatus" class="subtle" role="status"></p>
+      </form>
+    </section>
+    <section class="card" aria-labelledby="updatesTitle">
+      <div class="section-heading"><h2 id="updatesTitle">Updates</h2><span id="phoneReminderState" class="subtle">Reminders off</span></div>
+      <p class="subtle">Acknowledge a reminder to end that exchange. The commitment stays unfinished until you resolve it.</p>
+      <div id="phoneUpdates"><p class="subtle">No updates yet.</p></div>
+    </section>
+    <details class="card" id="phoneSettings">
+      <summary>Availability and reminders</summary>
+      <label for="phoneAvailability">When should Shana contact you?</label>
+      <select id="phoneAvailability"><option value="available">I'm available</option><option value="busy">I'm busy</option><option value="quiet">Quiet for now</option></select>
+      <label class="check"><input id="phoneReminders" type="checkbox"> Allow considered reminders for the next eight hours</label>
+      <p class="subtle">Up to three updates a day, at least fifteen minutes apart. Busy, quiet and sleep postpone new reminders.</p>
+      <button id="phoneApply" type="button">Save availability</button>
+      <div class="notifications"><button id="phoneNotifications" type="button" class="secondary">Enable discreet alerts</button><p id="phoneNotificationStatus" class="subtle">Alerts are optional and contain no message text. This browser page must be open.</p></div>
+      <p class="subtle">Your browser session stores only this device's access key and an unresolved request ID. Conversation history stays on Gamma. Closing this tab may require reconnecting as a new device.</p>
+      <button id="phoneForget" type="button" class="secondary">Remove this device</button>
+      <p id="phoneSettingsStatus" class="subtle" role="status"></p>
+    </details>
+  </section>
+</main>
+</body>
+</html>

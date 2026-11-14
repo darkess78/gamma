@@ -209,7 +209,7 @@ def _is_sensitive_key(key: str) -> bool:
     normalized = key.strip().lower().replace("-", "_")
     if normalized in {"authorization", "cookie", "password", "secret", "token"}:
         return True
-    if normalized.endswith(("_token", "_password", "_secret", "_cookie")):
+    if normalized.endswith(("_token", "_password", "_password_hash", "_verifier", "_secret", "_cookie")):
         return True
     return any(part in normalized for part in ("raw_audio", "audio_bytes", "audio_content"))
 

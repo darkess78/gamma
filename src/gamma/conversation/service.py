@@ -15,6 +15,7 @@ from ..errors import ConversationError, GammaError
 from ..identity.profile import SpeakerProfile
 from ..identity.resolver import IdentityResolver
 from ..llm.base import LLMCallContext, LLMReply
+from ..llm.local_metrics import allowlisted_local_timing
 from ..llm.capabilities import estimate_text_tokens
 from ..llm.context_budget import ContextBudgetManager, prompt_layers_from_system_prompt
 from ..llm.factory import build_llm_adapter
@@ -24,6 +25,8 @@ from ..memory.continuity import ContinuityService, JournalOwnershipError
 from ..persona.assistant_state import AssistantStateStore
 from ..persona.emotion_service import EmotionMemoryService
 from ..persona.loader import build_system_prompt, load_persona_config
+from ..persona.coordination import build_coordination_prompt
+from ..coordination.personal_models import PrivateTurnDraft
 from ..safety.privacy_guard import review_private_info_request
 from ..safety.speech_filter import SpeechFilterResult, SpeechSafetyFilter
 from ..schemas.conversation import RecipientContext, SpeakerContext
@@ -40,7 +43,7 @@ from ..schemas.response import (
 from ..tools.registry import ToolRegistry
 from ..tools.disclosure import disclose_tool_call, disclose_tool_result
 from ..vision.service import VisionImage, VisionService
-from ..voice.expressive_text import strip_hidden_style_tags
+from ..voice.expressive_text import resolve_voice_delivery, strip_hidden_style_tags
 from ..voice.tts import TTSService
 from .turn_contract import ParsedTurn, StructuredTurnParser, TurnContractError, resolve_delivery, structured_turn_instruction
 
@@ -101,6 +104,11 @@ class ConversationService:
         speech_allowed: bool = True,
         speech_requested: bool | None = None,
         recipient: RecipientContext | None = None,
+        coordination_mode: bool = False,
+        coordination_persona: dict | None = None,
+        coordination_mood: EmotionTag | None = None,
+        compact_json: bool = False,
+        stable_private_prefix: bool = False,
     ) -> AssistantResponse:
         """Respond to a user text message.
         
@@ -120,6 +128,12 @@ class ConversationService:
             AssistantResponse with spoken text and timing.
         """
         recipient = _recipient_context(recipient, delivery_context=delivery_context)
+        if coordination_mode and (not evaluation_mode or not recipient.allows_private_memory):
+            raise ConversationError('coordination drafts require side-effect-free owner-private context')
+        if coordination_mood is not None and not coordination_mode:
+            raise ConversationError("canonical mood requires a private coordination draft")
+        if coordination_persona is not None and not coordination_mode:
+            raise ConversationError('coordination persona requires a private coordination draft')
         speaker = self._identity.resolve(speaker_ctx)
         exchange_id = None
         tool_checkpoint = None
@@ -168,6 +182,11 @@ class ConversationService:
                     speech_requested=synthesize_speech if speech_requested is None else speech_requested,
                     recipient=recipient,
                     tool_checkpoint=tool_checkpoint,
+                    coordination_mode=coordination_mode,
+                    coordination_persona=coordination_persona,
+                    coordination_mood=coordination_mood,
+                    compact_json=compact_json,
+                    stable_private_prefix=stable_private_prefix,
                 )
             except Exception:
                 if exchange_id:
@@ -492,8 +511,19 @@ class ConversationService:
         recipient: RecipientContext | None = None,
         memory_origin: MemoryOrigin | None = None,
         tool_checkpoint: Callable[[], None] | None = None,
+        coordination_mode: bool = False,
+        coordination_persona: dict | None = None,
+        coordination_mood: EmotionTag | None = None,
+        compact_json: bool = False,
+        stable_private_prefix: bool = False,
     ) -> AssistantResponse:
         recipient = _recipient_context(recipient, delivery_context=delivery_context)
+        if coordination_mode and (persist_state or interaction_mode != 'evaluation' or not recipient.allows_private_memory):
+            raise ConversationError('coordination drafts require side-effect-free owner-private context')
+        if coordination_mood is not None and not coordination_mode:
+            raise ConversationError("canonical mood requires a private coordination draft")
+        if coordination_persona is not None and not coordination_mode:
+            raise ConversationError('coordination persona requires a private coordination draft')
         memory_origin = memory_origin or MemoryOrigin.from_speaker(
             speaker, privacy_scope=recipient.privacy_scope, session_id=session_id)
         background_context = background_context if recipient.allows_private_memory else None
@@ -503,7 +533,8 @@ class ConversationService:
         wants_speech = synthesize_speech if speech_requested is None else speech_requested
 
         try:
-            load_persona_config(private=recipient.allows_private_memory)
+            if not coordination_mode:
+                load_persona_config(private=recipient.allows_private_memory)
             privacy_decision = review_private_info_request(stripped)
             if privacy_decision.blocked:
                 started_at = time.perf_counter()
@@ -571,13 +602,22 @@ class ConversationService:
             started_at = time.perf_counter()
             timing: dict[str, float] = {}
             prompt_context_started = time.perf_counter()
-            system_prompt = build_system_prompt(
-                memory_service=self._memory,
-                user_text=stripped,
-                session_id=session_id,
-                speaker=speaker,
-                recipient=recipient,
-            )
+            legacy_delivery: DeliveryMode = "speech" if wants_speech else "text_only"
+            if coordination_mode:
+                system_prompt = build_coordination_prompt(
+                    coordination_persona, background_context, fast_mode=fast_mode,
+                    brief_mode=brief_mode, micro_mode=micro_mode, default_delivery=legacy_delivery,
+                    compact_json=compact_json,
+                    stable_private_prefix=stable_private_prefix,
+                )
+            else:
+                system_prompt = build_system_prompt(
+                    memory_service=self._memory,
+                    user_text=stripped,
+                    session_id=session_id,
+                    speaker=speaker,
+                    recipient=recipient,
+                )
             if session_id and persist_state and recipient.allows_private_memory:
                 continuity_context = self._continuity.prompt_context(
                     session_id,
@@ -585,9 +625,10 @@ class ConversationService:
                 )
                 if continuity_context:
                     system_prompt += "\n\n" + continuity_context
-            if background_context and background_context.strip():
-                system_prompt += f"\n\n# Stream Background Context\n{background_context.strip()}"
-            if brief_mode:
+            if not coordination_mode and background_context and background_context.strip():
+                background_header = 'Private Coordination Context' if coordination_mode else 'Stream Background Context'
+                system_prompt += f"\n\n# {background_header}\n{background_context.strip()}"
+            if brief_mode and not coordination_mode:
                 system_prompt += (
                     "\n\n# Live Voice Brevity\n"
                     "This is a low-latency live voice turn. "
@@ -596,7 +637,7 @@ class ConversationService:
                     "Use concise spoken phrasing and avoid paragraphs. "
                     "Do not use markdown, lists, code fences, or quoted formatting."
                 )
-            if micro_mode:
+            if micro_mode and not coordination_mode:
                 system_prompt += (
                     "\n\n# Live Voice Micro Reply\n"
                     "This is a micro-reply turn for live speech. "
@@ -605,14 +646,14 @@ class ConversationService:
                     "No markdown. No code fences. No lists. No roleplay formatting. "
                     "No explanation unless the user explicitly asks for detail."
                 )
-            if fast_mode:
+            if fast_mode and not coordination_mode:
                 system_prompt += (
                     "\n\n# Live Voice Formatting\n"
                     "For live speech, avoid numbered lists, bullet lists, section labels, and essay formatting. "
                     "Prefer natural spoken prose with short clauses and clear sentence boundaries."
                 )
-            legacy_delivery: DeliveryMode = "speech" if wants_speech else "text_only"
-            system_prompt += structured_turn_instruction(default_delivery=legacy_delivery)
+            if not coordination_mode:
+                system_prompt += structured_turn_instruction(default_delivery=legacy_delivery)
             timing["prompt_context_ms"] = round(
                 (time.perf_counter() - prompt_context_started) * 1000,
                 1,
@@ -628,6 +669,7 @@ class ConversationService:
             )
             prompt_layers = prompt_layers_from_system_prompt(system_prompt)
             budget_manager = ContextBudgetManager()
+            prompt_diagnostics = []
 
             def build_conversation_prompt(usable_input_tokens: int) -> tuple[str, str, dict[str, object]]:
                 built = budget_manager.build(
@@ -635,6 +677,10 @@ class ConversationService:
                     user_text=draft_user_text,
                     usable_input_tokens=usable_input_tokens,
                 )
+                prompt_diagnostics.append({'included_layers': list(built.included_layers),
+                                           'compaction_actions': list(built.compaction_actions),
+                                           'estimated_input_tokens': built.estimated_input_tokens})
+                del prompt_diagnostics[:-4]
                 return (
                     built.system_prompt,
                     built.user_text,
@@ -683,8 +729,15 @@ class ConversationService:
                 (time.perf_counter() - draft_started) * 1000,
                 1,
             )
+            draft_metadata = getattr(draft_reply, 'metadata', None)
+            draft_metrics = allowlisted_local_timing(
+                draft_metadata.get('local_timing') if isinstance(draft_metadata, dict) else None)
+            for name, value in draft_metrics.items():
+                output_name = {'eval_count': 'token_count', 'prompt_eval_count': 'prompt_token_count'}.get(name, name)
+                timing['draft_' + output_name] = value
 
             parse_started = time.perf_counter()
+            contract_diagnostics = {}
             parsed_turn = self._parse_turn_result(
                 raw=draft_reply.text,
                 system_prompt=system_prompt,
@@ -693,6 +746,9 @@ class ConversationService:
                 delivery_context=delivery_context,
                 image=image,
                 recipient=recipient,
+                prompt_builder=build_conversation_prompt,
+                diagnostics=contract_diagnostics,
+                draft_type=PrivateTurnDraft if coordination_mode else ConversationTurnDraft,
             )
             turn_draft = parsed_turn.draft
             timing["turn_parse_ms"] = round((time.perf_counter() - parse_started) * 1000, 1)
@@ -754,7 +810,14 @@ class ConversationService:
                 )
                 timing["memory_persist_ms"] = round((time.perf_counter() - memory_started) * 1000, 1)
                 timing["total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
-                expressive = strip_hidden_style_tags(final_reply_text, default_emotion=turn_draft.emotion)
+                expressive = (
+                    resolve_voice_delivery(
+                        final_reply_text, emotion=turn_draft.emotion,
+                        mood=turn_draft.state_updates.emotion or coordination_mood, allow_tags=False,
+                    ) if coordination_mode else
+                    strip_hidden_style_tags(final_reply_text, default_emotion=turn_draft.emotion)
+                )
+                speech_check_started = time.perf_counter()
                 safe_spoken = (
                     SpeechFilterResult(spoken_text="", blocked=False, matched_rules=[], action="allow", layers=[])
                     if turn_draft.action in {"stay_silent", "defer"}
@@ -763,6 +826,8 @@ class ConversationService:
                         include_llm=not defer_llm_safety_review,
                     )
                 )
+
+                timing['speech_check_ms'] = round((time.perf_counter() - speech_check_started) * 1000, 3)
 
                 delivery_mode = resolve_delivery(
                     action=turn_draft.action,
@@ -779,7 +844,8 @@ class ConversationService:
                     delivery_mode=delivery_mode,
                     response_action=turn_draft.action,
                     reason_code=turn_draft.reason_code,
-                    emotion=self._normalize_emotion(turn_draft.state_updates.emotion or expressive.emotion or turn_draft.emotion),
+                    emotion=self._normalize_emotion(expressive.emotion if coordination_mode else
+                        turn_draft.state_updates.emotion or expressive.emotion or turn_draft.emotion),
                     voice_styles=list(dict.fromkeys([*turn_draft.voice_styles, *expressive.styles])),
                     internal_summary=turn_draft.internal_summary,
                     motions=turn_draft.motions,
@@ -789,12 +855,15 @@ class ConversationService:
                     vision=vision_analysis,
                     state_updates=turn_draft.state_updates,
                 )
+                if coordination_mode:
+                    response.tts_metadata['coordination_prompt'] = {'builds': list(prompt_diagnostics), 'contract': contract_diagnostics}
                 speech_filter_metadata = {
                     "level": settings.speech_filter_level,
                     "blocked": safe_spoken.blocked,
                     "matched_rules": safe_spoken.matched_rules,
                     "action": safe_spoken.action,
                     "layers": safe_spoken.layers,
+                    "timing_ms": allowlisted_local_timing(getattr(safe_spoken, "metadata", {})),
                 }
                 response.tts_metadata["speech_filter"] = speech_filter_metadata
                 if synthesize_speech and response.speech_text:
@@ -841,7 +910,7 @@ class ConversationService:
             # Standard path: use structured draft metadata directly; extract
             # legacy metadata only when needed, then save candidates synchronously.
             metadata_started = time.perf_counter()
-            if parsed_turn.structured:
+            if parsed_turn.structured or coordination_mode:
                 extracted = {
                     "internal_summary": turn_draft.internal_summary,
                     "emotion": turn_draft.state_updates.emotion or turn_draft.emotion,
@@ -892,8 +961,15 @@ class ConversationService:
                 delivery_context=delivery_context,
                 recipient=recipient,
             )
-            expressive = strip_hidden_style_tags(final_reply_text, default_emotion=extracted["emotion"])
+            expressive = (
+                resolve_voice_delivery(
+                    final_reply_text, emotion=turn_draft.emotion,
+                    mood=turn_draft.state_updates.emotion or coordination_mood, allow_tags=False,
+                ) if coordination_mode else
+                strip_hidden_style_tags(final_reply_text, default_emotion=extracted["emotion"])
+            )
             response_emotion = self._normalize_emotion(expressive.emotion)
+            speech_check_started = time.perf_counter()
             safe_spoken = (
                 SpeechFilterResult(spoken_text="", blocked=False, matched_rules=[], action="allow", layers=[])
                 if turn_draft.action in {"stay_silent", "defer"}
@@ -902,6 +978,7 @@ class ConversationService:
                     include_llm=not defer_llm_safety_review,
                 )
             )
+            timing['speech_check_ms'] = round((time.perf_counter() - speech_check_started) * 1000, 3)
             final_reply_text = safe_spoken.spoken_text
 
             memory_candidates = (
@@ -947,6 +1024,7 @@ class ConversationService:
                 "matched_rules": safe_spoken.matched_rules,
                 "action": safe_spoken.action,
                 "layers": safe_spoken.layers,
+                "timing_ms": allowlisted_local_timing(getattr(safe_spoken, "metadata", {})),
             }
             response.tts_metadata["speech_filter"] = speech_filter_metadata
             if synthesize_speech and response.speech_text:
@@ -992,23 +1070,48 @@ class ConversationService:
         delivery_context: str,
         image: VisionImage | None,
         recipient: RecipientContext | None = None,
+        prompt_builder: Callable | None = None,
+        diagnostics: dict | None = None,
+        draft_type: type[ConversationTurnDraft] = ConversationTurnDraft,
     ) -> ParsedTurn:
         _recipient_context(recipient, delivery_context=delivery_context)
+        def invalid_fields(error):
+            cause = error.__cause__
+            if not callable(getattr(cause, 'errors', None)):
+                return []
+            schema = draft_type.model_json_schema()
+            known_fields = set(schema.get('properties', {}))
+            for definition in schema.get('$defs', {}).values():
+                known_fields.update(definition.get('properties', {}))
+            def field_part(part):
+                if type(part) is int and 0 <= part < 100:
+                    return str(part)
+                return part if isinstance(part, str) and part in known_fields else 'unknown_field'
+            return [{'field': '.'.join(field_part(p) for p in item['loc']), 'type': item['type']}
+                    for item in cause.errors()[:8]]
+        first_fields = []
         try:
-            return self._turn_parser.parse(raw, legacy_delivery=legacy_delivery)
-        except TurnContractError:
-            pass
+            return self._turn_parser.parse(raw, legacy_delivery=legacy_delivery, draft_type=draft_type)
+        except TurnContractError as exc:
+            first_fields = invalid_fields(exc)
+            if diagnostics is not None:
+                code = str(exc)
+                diagnostics['first_error'] = code if re.fullmatch(r'[a-z_]{1,80}', code) else 'turn_contract_error'
+                diagnostics['first_error_fields'] = first_fields
 
         # One bounded regeneration is permitted. The rejected payload is not
         # echoed into the repair prompt, logs, continuity, or output metadata.
+        suffix = ('\n\nYour previous result failed the turn contract. Regenerate the decision once as exact JSON. '
+                  'Do not quote, explain, or repeat the rejected result.')
+        if first_fields:
+            suffix += '\nCorrect these schema fields using the declared contract: ' + json.dumps(first_fields)
+        def repair_builder(budget):
+            system, user, metadata = prompt_builder(budget - estimate_text_tokens(suffix))
+            return system, user + suffix, metadata
         try:
             repaired = self._llm_adapter().generate_reply(
                 system_prompt=system_prompt,
-                user_text=(
-                    user_text
-                    + "\n\nYour previous result failed the turn contract. Regenerate the decision once as exact JSON. "
-                    "Do not quote, explain, or repeat the rejected result."
-                ),
+                user_text=user_text + suffix,
                 image_inputs=[image.to_llm_input()] if image is not None else None,
                 call_context=LLMCallContext(
                     purpose="conversation_structured_repair",
@@ -1016,10 +1119,17 @@ class ConversationService:
                     interaction_mode=delivery_context,
                     reasoning_depth="normal",
                     cost_sensitive=True,
+                    prompt_builder=repair_builder if prompt_builder else None,
                 ),
             )
-            return self._turn_parser.parse(repaired.text, legacy_delivery=legacy_delivery)
-        except Exception:
+            result = self._turn_parser.parse(repaired.text, legacy_delivery=legacy_delivery, draft_type=draft_type)
+            if diagnostics is not None:
+                diagnostics['repair_succeeded'] = True
+            return result
+        except Exception as exc:
+            if diagnostics is not None:
+                diagnostics.update(repair_succeeded=False, repair_exception=type(exc).__name__)
+                diagnostics['repair_error_fields'] = invalid_fields(exc)
             return ParsedTurn(
                 draft=self._fallback_turn_draft(delivery_context=delivery_context, recipient=recipient),
                 structured=True,

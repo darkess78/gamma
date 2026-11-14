@@ -26,9 +26,14 @@ class ShanaApiClient:
         base_url: str | None = None,
         timeout: float = 30.0,
         transport: httpx.BaseTransport | None = None,
+        bearer_token: str | None = None,
     ) -> None:
         headers: dict[str, str] = {}
-        if settings.api_auth_enabled and settings.api_bearer_token:
+        if bearer_token is not None:
+            if not isinstance(bearer_token, str) or not bearer_token:
+                raise ValueError('explicit_api_bearer_must_be_nonempty')
+            headers["Authorization"] = f"Bearer {bearer_token}"
+        elif settings.api_auth_enabled and settings.api_bearer_token:
             headers["Authorization"] = f"Bearer {settings.api_bearer_token}"
         self._client = httpx.Client(
             base_url=(base_url or settings.shana_internal_base_url).rstrip("/"),

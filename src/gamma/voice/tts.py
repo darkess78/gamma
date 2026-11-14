@@ -32,7 +32,7 @@ from .rvc_support import (
     resolve_rvc_project_root,
     resolve_rvc_python,
 )
-from .expressive_text import build_qwen_instruct, strip_hidden_style_tags
+from .expressive_text import build_qwen_instruct, resolve_voice_delivery
 from .voice_profiles import ResolvedTTSConfig, resolve_tts_config
 
 
@@ -140,6 +140,8 @@ class TTSService:
         Returns:
             TTSResult: Merged audio from all chunks.
         """
+        delivery = resolve_voice_delivery(text, emotion=emotion, styles=styles)
+        emotion, styles = delivery.emotion, delivery.styles
         chunks = self._split_text(text)
         if not chunks:
             raise ValueError("text is empty after parsing")
@@ -242,11 +244,8 @@ class TTSService:
             TTSResult: Generated audio with timing metadata.
         """
         started_at = time.perf_counter()
-        expressive = strip_hidden_style_tags(text, default_emotion=emotion)
-        voice_styles = list(expressive.styles)
-        for style in styles or []:
-            if style not in voice_styles:
-                voice_styles.append(style)
+        expressive = resolve_voice_delivery(text, emotion=emotion, styles=styles)
+        voice_styles = expressive.styles
         if isinstance(self._backend, QwenTTSBackend):
             result = self._backend.synthesize(text=expressive.clean_text, emotion=expressive.emotion, styles=voice_styles)
         else:
@@ -471,7 +470,7 @@ class BaseFileTTSBackend(TTSBackend):
         }
         pronunciation_overrides = {
             r"\bShana\b": "Shawna",
-            r"\bNeety\b": "Nee-tee",
+            r"\bNeety\b": "knee tea",
         }
         for pattern, replacement in abbrevs.items():
             text = re.sub(pattern, replacement, text)

@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from .delivery import resolve_emotion
+
 
 _TAG_RE = re.compile(r"\[(?P<tag>[a-zA-Z_][a-zA-Z0-9_\- ]{0,30})\]")
 
@@ -109,3 +111,19 @@ def build_qwen_instruct(*, base_instruct: str | None, emotion: str | None, style
     if not parts:
         return None
     return " ".join(parts)
+
+
+def resolve_voice_delivery(
+    text: str, *, emotion: str | None = None, mood: str | None = None,
+    styles: list[str] | None = None, allow_tags: bool = True,
+) -> ExpressiveText:
+    """Resolve a single delivery before chunking or synthesizing a reply."""
+    parsed = strip_hidden_style_tags(text)
+    return ExpressiveText(
+        clean_text=parsed.clean_text,
+        emotion=resolve_emotion(
+            emotion=emotion, tag_emotion=parsed.emotion if allow_tags else None, mood=mood,
+        ),
+        tags=parsed.tags,
+        styles=list(dict.fromkeys([*(styles or []), *(parsed.styles if allow_tags else [])])),
+    )

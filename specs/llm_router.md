@@ -37,6 +37,13 @@ models below the required context/persona capability are skipped.
 
 ## Context Budgeting
 
+The unactivated isolated coordinator selects a local adapter instance with an
+explicit 8192-token context cap, 1024-token output cap, JSON output and thinking
+disabled. Its supplied prompt builder uses the smaller instance budget rather
+than a larger configured model profile. Ordinary adapter instances retain their
+existing defaults. The isolated host rejects hosted routing and does not edit
+machine-local configuration. See `shana_coordination_core.md`.
+
 Model capability records distinguish advertised context, configured usable
 input, an optional model-specific runtime context, reserved output, safety
 margin, persona/vision/tool capability, and provenance. Prompt assembly budgets

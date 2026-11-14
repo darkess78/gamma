@@ -494,12 +494,16 @@
         throw new Error(payload.detail || `HTTP ${response.status}`);
       }
       if (status) status.textContent = payload.detail || 'Action completed.';
-      window.setTimeout(loadMonitorStatus, 350);
+      if (!window.GAMMA_PRIVATE_COORDINATION) window.setTimeout(loadMonitorStatus, 350);
     } catch (error) {
       if (status) status.textContent = `Action failed: ${String(error)}`;
     }
   }
 
+  const pendingPrivateInputs = new Map();
+  let privateInputInFlight = false;
+  let privateAudienceEpoch = 0;
+  let privateGeneration = 0;
   async function submitMonitorInput() {
     const status = document.getElementById('monitorInputStatus');
     const textInput = document.getElementById('monitorInputText');
@@ -508,15 +512,40 @@
       if (status) status.textContent = 'Input text is required.';
       return;
     }
+    const privateText = document.getElementById('monitorInputMode')?.value === 'private_text';
+    const audienceEpoch = privateAudienceEpoch;
+    let privateFingerprint = null;
+    let privateOperation = null;
+    if (privateText && document.getElementById('monitorPrivateAudience')?.value !== 'owner_private') {
+      if (status) status.textContent = 'Confirm that the owner is present privately.';
+      return;
+    }
+    if (privateText && privateInputInFlight) {
+      if (status) status.textContent = 'Waiting for the current private input. Your draft is retained.';
+      return;
+    }
     const payload = {
-      input_mode: document.getElementById('monitorInputMode')?.value || 'owner_mic',
+      input_mode: document.getElementById('monitorInputMode')?.value || 'private_text',
       session_id: document.getElementById('monitorInputSession')?.value || 'monitor-local-stream',
       text: text,
       output_target_policy: targetPolicy || 'dashboard_monitor',
-      synthesize_speech: true,
+      synthesize_speech: !privateText,
       fast_mode: true
     };
-    if (status) status.textContent = 'Sending input through stream path...';
+    if (privateText) {
+      payload.audience = document.getElementById('monitorPrivateAudience')?.value || 'unknown';
+      payload.output_target_policy = 'dashboard_monitor';
+      privateFingerprint = JSON.stringify([text, payload.session_id, payload.audience]);
+      privateOperation = pendingPrivateInputs.get(privateFingerprint);
+      if (!privateOperation) {
+        if (pendingPrivateInputs.size >= 64) { if (status) status.textContent = 'Retry an uncertain input before starting more requests.'; return; }
+        privateOperation = { id: crypto.randomUUID() };
+        pendingPrivateInputs.set(privateFingerprint, privateOperation);
+      }
+      payload.request_id = privateOperation.id;
+      privateInputInFlight = true;
+    }
+    if (status) status.textContent = privateText ? 'Sending private text...' : 'Sending stream input...';
     try {
       const response = await fetch('/api/monitor/input', {
         method: 'POST',
@@ -524,8 +553,16 @@
         body: JSON.stringify(payload)
       });
       const result = await response.json();
+      if (privateText && (audienceEpoch !== privateAudienceEpoch || document.getElementById('monitorPrivateAudience')?.value !== 'owner_private')) return;
       if (!response.ok || result.ok === false) {
         throw new Error(result.detail || `HTTP ${response.status}`);
+      }
+      if (privateText) {
+        const generation = result.result?.generation || 0;
+        if (generation < privateGeneration) throw new Error('An older owner result was withheld.');
+        privateGeneration = generation;
+        if (result.result?.assistant_response?.delivery_mode !== 'deferred'
+            && pendingPrivateInputs.get(privateFingerprint) === privateOperation) pendingPrivateInputs.delete(privateFingerprint);
       }
       const decision = result.result && result.result.decision ? result.result.decision : {};
       const reply = result.result && result.result.assistant_response
@@ -537,10 +574,19 @@
           reply ? `Reply: ${reply}` : ''
         ].filter(Boolean).join('\n');
       }
-      if (textInput) textInput.value = '';
-      window.setTimeout(loadMonitorStatus, 350);
+      if (privateText && reply) {
+        const subtitle = document.getElementById('subtitleDisplay');
+        if (subtitle) subtitle.textContent = reply;
+      }
+      const deferred = result.result?.assistant_response?.delivery_mode === 'deferred';
+      if (textInput && !deferred && (!privateText || (textInput.value.trim() === text
+          && document.getElementById('monitorInputSession')?.value === payload.session_id))) textInput.value = '';
+      if (!window.GAMMA_PRIVATE_COORDINATION) window.setTimeout(loadMonitorStatus, 350);
     } catch (error) {
-      if (status) status.textContent = `Input failed: ${String(error)}`;
+      if (status && (!privateText || (audienceEpoch === privateAudienceEpoch
+          && document.getElementById('monitorPrivateAudience')?.value === 'owner_private'))) status.textContent = `Input failed: ${String(error)}`;
+    } finally {
+      if (privateText) privateInputInFlight = false;
     }
   }
 
@@ -670,9 +716,32 @@
   setMonitorTheme(localStorage.getItem('gammaMonitorTheme') || 'dashboard');
   initMonitorPanelState();
   updateOutputLinks();
-  connect();
-  loadMonitorStatus();
-  window.setInterval(loadMonitorStatus, 10000);
+  if (!window.GAMMA_PRIVATE_COORDINATION) {
+    connect();
+    loadMonitorStatus();
+    window.setInterval(loadMonitorStatus, 10000);
+  } else {
+    const inputMode = document.getElementById('monitorInputMode');
+    if (inputMode) {
+      inputMode.value = 'private_text';
+      inputMode.disabled = true;
+    }
+    const privateAudience = document.getElementById('monitorPrivateAudience');
+    const updatePrivateAudience = () => {
+      privateAudienceEpoch += 1;
+      const confirmed = privateAudience?.value === 'owner_private';
+      const input = document.getElementById('monitorInputText');
+      if (input) input.hidden = !confirmed;
+      if (!confirmed) {
+        const subtitle = document.getElementById('subtitleDisplay');
+        const inputStatus = document.getElementById('monitorInputStatus');
+        if (subtitle) subtitle.textContent = '';
+        if (inputStatus) inputStatus.textContent = 'Private audience not confirmed.';
+      }
+    };
+    privateAudience?.addEventListener?.('change', updatePrivateAudience);
+    updatePrivateAudience();
+  }
 
   window.setMonitorTheme = setMonitorTheme;
   window.enableAudio = enableAudio;

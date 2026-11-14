@@ -10,14 +10,14 @@ from gamma.llm.local_adapter import LocalLLMAdapter
 
 
 class LocalLLMRuntimeContextTest(unittest.TestCase):
-    def _request_payload(self, *, model: str) -> dict[str, object]:
+    def _request_payload(self, *, model: str, **adapter_options) -> dict[str, object]:
         response = MagicMock()
         response.read.return_value = b'{"response":"ok"}'
         response.__enter__.return_value = response
         response.__exit__.return_value = False
 
         with patch("gamma.llm.local_adapter.request.urlopen", return_value=response) as urlopen:
-            LocalLLMAdapter().generate_reply(
+            LocalLLMAdapter(**adapter_options).generate_reply(
                 "system",
                 "hello",
                 model_override=model,
@@ -51,6 +51,16 @@ class LocalLLMRuntimeContextTest(unittest.TestCase):
 
         self.assertNotIn("options", payload)
         self.assertEqual(payload["keep_alive"], "30m")
+
+    def test_private_schema_reaches_ollama_without_changing_default_requests(self) -> None:
+        from gamma.coordination.turn_schema import private_turn_schema
+        schema = private_turn_schema()
+        payload = self._request_payload(model='qwen3.8:27b', json_schema=schema,
+                                        maximum_output_tokens=1024, maximum_context_tokens=8192)
+        self.assertEqual(payload['format'], schema)
+        self.assertEqual(payload['options'], {'num_ctx': 8192, 'num_predict': 1024})
+        self.assertNotIn('format', self._request_payload(model='qwen3.8:27b'))
+        self.assertEqual(self._request_payload(model='qwen3.8:27b', json_output=True)['format'], 'json')
 
 
 if __name__ == "__main__":

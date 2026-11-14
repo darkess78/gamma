@@ -22,6 +22,24 @@ emotion, voice, safety, and request context.
 - persona changes are evaluated against conversation, safety, and voice tests
 - additional characters or multi-persona routing are outside the current milestone
 
+## Isolated coordination review, October 23
+
+The separately hosted coordination slice in `shana_coordination_core.md` uses
+the agreed situational purpose in `core.md` and the tracked `authored_public`
+primary purpose: relaxed play can be entertaining,
+while focused work and commitments retain priority. Mood affects expression
+without deliberately reducing reliability. This is an isolated source change;
+it does not change the running persona or migrate personal state.
+
+Its side-effect-free private conversation drafts use an explicit coordinator
+turn-contract extension for bounded attention, activity and reconsideration
+fields. Accepted mood and working notes belong to the coordinator. Legacy
+persona and memory writers do not run on that draft path. Practice dispatch and
+status receipts render final communicable text from authorized run/check
+evidence after the owner check, as bounded capability results. Raw tool output,
+check logs and model-private material are not presentation text. Ordinary
+conversation paths retain their existing contract.
+
 ## Staged recipient views for authored persona
 
 This foundation slice is staged and has not been activated in production.

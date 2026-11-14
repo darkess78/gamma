@@ -9,5 +9,5 @@ def test_stt_normalizes_common_shana_name_variants() -> None:
 
 
 def test_tts_uses_speech_only_pronunciations_for_names() -> None:
-    assert BaseFileTTSBackend._normalize_text("Shana is talking to Neety.") == "Shawna is talking to Nee-tee."
-    assert BaseFileTTSBackend._normalize_text("NEETY asked SHANA.") == "Nee-tee asked Shawna."
+    assert BaseFileTTSBackend._normalize_text("Shana is talking to Neety.") == "Shawna is talking to knee tea."
+    assert BaseFileTTSBackend._normalize_text("NEETY asked SHANA.") == "knee tea asked Shawna."

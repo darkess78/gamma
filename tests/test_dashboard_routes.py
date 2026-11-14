@@ -499,7 +499,8 @@ class DashboardRoutesTest(unittest.TestCase):
     def test_monitor_has_stream_controls_and_status_reporting(self) -> None:
         body = main.dashboard_monitor_page().body.decode("utf-8")
 
-        self.assertIn('src="/static/monitor.js?v=20260623"', body)
+        self.assertIn('src="/static/monitor.js?v=20261023"', body)
+        self.assertIn('src="/static/coordination.js?v=20261023"', body)
         self.assertIn('src="/static/live.js?v=20260618"', body)
         self.assertIn("Server And Provider Status", body)
         self.assertIn("Live Voice", body)
@@ -508,7 +509,7 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('id="voiceSessionId"', body)
         self.assertIn('id="liveVoiceMeter"', body)
         self.assertIn('id="voicePlayback"', body)
-        self.assertIn("Manual Stream Input", body)
+        self.assertIn("Text and stream input", body)
         self.assertIn('id="monitorInputText"', body)
         self.assertIn("submitMonitorInput()", body)
         self.assertIn("/api/providers/tts/start", body)

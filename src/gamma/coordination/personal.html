@@ -1,0 +1,27 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shana · Private personal state</title><style>
+body{font:16px system-ui;background:#111823;color:#e4edf9;max-width:960px;margin:32px auto;padding:0 20px}a{color:#8acbff}
+section{border:1px solid #465568;border-radius:8px;padding:18px;margin:18px 0}label{display:block;margin:12px 0}
+input,textarea,select,button{font:inherit;padding:8px;border-radius:5px;max-width:95%}textarea{display:block;width:95%;min-height:70px}
+button{cursor:pointer;margin:4px}article{border-top:1px solid #465568;padding:14px 0}small{display:block;color:#b0c3d9;overflow-wrap:anywhere}
+[hidden]{display:none!important}#notice{white-space:pre-wrap}h1{font-size:1.5rem}
+</style><script defer src="/static/personal.js"></script></head><body><main class="shana-main">
+<a href="/dashboard/monitor">Back to private conversation</a><h1>Shana’s personal state</h1>
+<p>Changes here affect Shana's private state. Only make edits you want her to keep.</p>
+<label><input id="privateConfirm" type="checkbox"> I’m in a private owner session.</label><p id="notice" role="status">Confirm the private audience to inspect or edit state.</p>
+<div id="personalState" hidden>
+<section><h2>Authored character</h2><p>These are direct owner edits. They aren’t recorded as conversations or lived experiences.</p>
+<form id="identityForm"><label>Name<input id="identityName" maxlength="120"></label><label>Core personality<textarea id="identityPersonality" maxlength="4000"></textarea></label>
+<label>Speech style<textarea id="identitySpeech" maxlength="2000"></textarea></label><button>Save character edit</button></form><small id="identityProvenance"></small></section>
+<section><h2>Memory and corrections</h2><p>Reports, current beliefs, unfinished commitments and pending hypotheses keep their source labels. Corrections preserve the earlier report. Forget and delete remove its text and dependent replies from this candidate. Original backups stay under your control.</p>
+<div id="memoryList"></div><form id="memoryForm"><input id="memoryTarget" type="hidden"><label>Topic<input id="memoryTopic" maxlength="100" required></label>
+<label>Kind<select id="memoryKind"><option>fact</option><option>preference</option><option>decision</option><option>commitment</option><option>relationship</option><option>hypothesis</option></select></label>
+<label>Corrected or new report<textarea id="memoryText" maxlength="600" required></textarea></label><button>Save report</button><button type="button" id="clearMemory">New report</button></form></section>
+<section><h2>People and accounts</h2><p>Familiarity and opinions don’t grant action authority. An account link requires its exact platform identifier and your confirmation.</p><div id="peopleList"></div>
+<form id="personForm"><label>Name<input id="personName" maxlength="100" required></label><label>Relationship or opinion<textarea id="personRelationship" maxlength="600"></textarea></label><button>Add person</button></form>
+<form id="accountForm"><label>Person<select id="accountPerson"></select></label><label>Platform<input id="accountPlatform" maxlength="200" required></label>
+<label>Exact account ID<input id="accountId" maxlength="200" required></label><label><input id="accountConfirmed" type="checkbox" required> I have confirmed this exact account belongs to this person.</label><button>Link confirmed account</button></form><div id="accountList"></div></section>
+<section><h2>Retention and sleep</h2><form id="policyForm"><label>Keep raw conversation text for days<input id="textDays" type="number" min="0" max="3650" required></label>
+<label>Raw sources per session<input id="sessionSources" type="number" min="1" max="5000" required></label><button>Save retention</button></form>
+<p>Current accepted records remain separate from raw text. No continuous raw audio or video is retained here.</p><div id="queueList"></div></section>
+</div></main></body></html>

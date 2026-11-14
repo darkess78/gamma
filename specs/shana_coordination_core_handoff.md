@@ -206,7 +206,8 @@ Keep the original dirty Windows, production, and modular-candidate trees intact.
 Run Gamma tests, inference, GPU checks, and runtime validation on Gamma PC.
 
 Follow the user's worker requirement: read
-`C:/Users/darke/.codex/workers/README.md`, prefer scoped coding-workers jobs,
+the Windows-local worker README at C:/Users/darke/.codex/workers/README.md,
+prefer scoped coding-workers jobs,
 default to local Qwen, keep one active job per provider and at most five global
 jobs, respect the verified context/budget limits, and review source hashes,
 `proposal.diff`, `result.json`, and actual behavior before integration.

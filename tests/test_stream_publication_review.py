@@ -9,6 +9,7 @@ from test_conversation_recipient import fixture_state, FACT, EPISODE, PRIVATE_WO
 from gamma.config import settings
 from gamma.integrations.discord.delivery import approved_reply
 from gamma.llm.base import LLMReply
+from gamma.llm import backend_admission
 from gamma.performer.bus import PerformerEventBus
 from gamma.safety.llm_reviewer import SpeechLLMReviewer
 from gamma.schemas.response import ConversationTurnDraft
@@ -60,6 +61,9 @@ class TTS:
 
 def setup(fixture_state,tmp_path,monkeypatch,target,delivery,verdict,*,disabled=None,text=TEXT,missing=False):
     service=fixture_state.service;service._llm=Provider(delivery,text)
+    # This synthetic transport must exercise real admission without joining an
+    # actual local model owner's process-safe queue or surviving its teardown.
+    monkeypatch.setattr(backend_admission,'_coordination_root',lambda:tmp_path/'publication-admission')
     monkeypatch.setattr(settings,'speech_filter_llm_enabled',disabled!='setting')
     monkeypatch.setattr(settings,'speech_filter_llm_model','' if missing else 'synthetic-review')
     monkeypatch.setattr(settings,'local_llm_tagging_model','')
@@ -91,6 +95,25 @@ def drain(queue):
 def test_held_review_gates_live_replay_and_returned_approval(fixture_state,tmp_path,monkeypatch,
         target,delivery,fast_mode,verdict):
     brain,bus,transport,tts,event=setup(fixture_state,tmp_path,monkeypatch,target,delivery,verdict)
+    held_checks_finished = threading.Event()
+    if verdict == 'timeout':
+        # Establish the held-review scenario before its deliberately tiny
+        # deadline is observed. A busy executor can otherwise be cancelled
+        # before synthetic HTTP starts, which is a different safe timeout path.
+        # Actual futures, review, admission, and the production deadline remain
+        # in use; this gate only orders fixture setup and held-output checks.
+        original_executor = brain_module.ThreadPoolExecutor
+        class HeldScenarioExecutor(original_executor):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.submissions = 0
+            def submit(self, fn, /, *args, **kwargs):
+                future = super().submit(fn, *args, **kwargs)
+                self.submissions += 1
+                if self.submissions == (2 if delivery == 'speech' else 1):
+                    assert held_checks_finished.wait(4), 'Held publication checks did not finish'
+                return future
+        monkeypatch.setattr(brain_module, 'ThreadPoolExecutor', HeldScenarioExecutor)
     async def exercise():
         subscribers={t:await bus.subscribe(target_policy=t) for t in TARGETS}
         task=asyncio.create_task(asyncio.to_thread(brain.handle_event,event,synthesize_speech=True,fast_mode=fast_mode))
@@ -104,8 +127,10 @@ def test_held_review_gates_live_replay_and_returned_approval(fixture_state,tmp_p
             replay_id,replay=await bus.subscribe(target_policy=target,replay_recent=100)
             try:assert replay.empty()
             finally:bus.unsubscribe(replay_id)
+            held_checks_finished.set()
             if verdict!='timeout':transport.release.set()
             result=await asyncio.wait_for(task,2)
+            if verdict == 'timeout':assert result.safety_decision.get('review_timeout') is True
             await asyncio.sleep(0)
             live={t:drain(q) for t,(_,q) in subscribers.items()}
             recent=[e.model_dump() for e in bus.recent(limit=100,target_policy=target)]
@@ -138,7 +163,7 @@ def test_held_review_gates_live_replay_and_returned_approval(fixture_state,tmp_p
             before=bus.recent(limit=100);await asyncio.sleep(.02)
             assert bus.recent(limit=100)==before and all(q.empty() for _,q in subscribers.values())
         finally:
-            transport.release.set()
+            held_checks_finished.set();transport.release.set()
             if not task.done():await asyncio.wait_for(task,3)
             for subscriber,_ in subscribers.values():bus.unsubscribe(subscriber)
     asyncio.run(exercise())

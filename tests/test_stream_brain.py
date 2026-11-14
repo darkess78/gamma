@@ -928,6 +928,7 @@ class StreamBrainTest(unittest.TestCase):
             tempfile.TemporaryDirectory() as temp_dir,
             patch.object(settings, "speech_filter_llm_enabled", True),
             patch.object(settings, "stream_safety_review_timeout_seconds", 1.0),
+            patch.object(settings, "stream_filtered_audio_path", ""),
         ):
             brain = StreamBrain(
                 conversation=conversation,  # type: ignore[arg-type]

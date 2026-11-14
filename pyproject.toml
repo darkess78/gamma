@@ -52,6 +52,7 @@ include = ["gamma*"]
 
 [tool.setuptools.package-data]
 gamma = [
+  "coordination/*.html",
   "dashboard/static/*",
   "performer/static/*",
   "persona/*.md",

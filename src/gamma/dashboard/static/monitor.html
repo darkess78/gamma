@@ -165,7 +165,7 @@
     }
     .monitor-input-grid {
       display: grid;
-      grid-template-columns: minmax(170px, 0.5fr) minmax(170px, 0.5fr) minmax(0, 1fr) auto;
+      grid-template-columns: minmax(140px, 0.5fr) minmax(180px, 0.5fr) minmax(140px, 0.5fr) minmax(0, 1fr) auto;
       gap: 10px;
       align-items: end;
     }
@@ -342,8 +342,8 @@
 
 <!-- GAMMA_LIVE_VOICE_PANEL -->
 
-    <section class="panel full">
-      <h2>Manual Stream Input</h2>
+    <section class="panel full" id="coordinationInputPanel">
+      <h2>Text and stream input</h2>
       <div class="monitor-input-grid">
         <label>Mode
           <select id="monitorInputMode" class="select">
@@ -351,6 +351,12 @@
             <option value="chat">Simulated chat</option>
             <option value="context">Context note</option>
             <option value="gameplay">Gameplay note</option>
+          </select>
+        </label>
+        <label>Private audience
+          <select id="monitorPrivateAudience" class="select">
+            <option value="unknown">Not confirmed</option>
+            <option value="owner_private">Owner present privately</option>
           </select>
         </label>
         <label>Session
@@ -361,7 +367,37 @@
         </label>
         <button class="btn primary" onclick="submitMonitorInput()">Send</button>
       </div>
-      <div class="status-block" id="monitorInputStatus" style="margin-top:14px;">Manual input uses the stream decision, performer, and TTS path with monitor-only output.</div>
+      <div class="status-block" id="monitorInputStatus" style="margin-top:14px;">Send local input or stream context.</div>
+    </section>
+
+    <section class="panel full" id="coordinationActivityPanel" style="display:none">
+      <h2>Private activities</h2>
+      <label>Activity to control
+        <select id="coordinationActivityTarget" class="select">
+          <option value="">Select an activity to control</option>
+        </select>
+      </label>
+      <label>Exercise
+        <select id="coordinationExercise" class="select">
+          <option value="retry_budget">Bounded retry decisions</option>
+          <option value="message_chunks">Lossless message chunks</option>
+          <option value="owner_authority">Exact owner authorization</option>
+          <option value="command_dispatch">Command dispatch with prerequisites</option>
+        </select>
+      </label>
+      <div class="control-group">
+        <button class="btn" onclick="coordinationAction('practice')">Practice now</button>
+        <button class="btn" onclick="coordinationAction('permit')">Allow one quiet-time exercise</button>
+        <button class="btn" onclick="coordinationAction('pause')">Pause work</button>
+        <button class="btn" onclick="coordinationAction('resume')">Resume work</button>
+        <button class="btn" onclick="coordinationAction('stop')">Stop work</button>
+        <button class="btn" onclick="coordinationAction('sleep')">Sleep</button>
+        <button class="btn" onclick="coordinationAction('wake')">Wake</button>
+        <button class="btn" onclick="coordinationAction('focus', 'focused')">Focus quietly</button>
+        <button class="btn" onclick="coordinationAction('focus', 'relaxed')">Relax</button>
+      </div>
+      <p id="coordinationControlStatus" role="status">Select an activity before changing its work.</p>
+      <pre id="coordinationStatus" class="status-block">Activity controls require the isolated private coordinator.</pre>
     </section>
 
     <section class="panel full">
@@ -421,7 +457,8 @@
     <a data-dashboard-link href="/dashboard">Open Dashboard</a>
   </footer>
   <audio id="audioEngine" preload="auto" hidden></audio>
-  <script src="/static/monitor.js?v=20260623"></script>
+  <script src="/static/monitor.js?v=20261023"></script>
+  <script src="/static/coordination.js?v=20261023"></script>
   <script src="/static/live.js?v=20260618"></script>
 </body>
 </html>

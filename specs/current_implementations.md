@@ -1,7 +1,7 @@
 # Current Implementations
 
 Status: Current
-Last verified: 2026-08-30
+Inventory baseline: 2026-08-30; Shana coordination evidence updated: 2026-10-31
 
 This is a concise inventory of behavior present in the repository. Domain
 specs own detailed contracts; target documents own future work.
@@ -43,6 +43,132 @@ specs own detailed contracts; target documents own future work.
 
 ## Persistent Shana Core
 
+- The isolated P6-P9 candidate connects selected screen observations, private
+  gameplay/coding rehearsals, phone continuity and recovery to the same Core.
+  Finite timestamped moments/watch controls and optional checked speech now have
+  an actual authored-image-to-Core-to-Qwen-HTTP-WAV proof. No real OSRS window or
+  human hearing is implied. The current/live freshness and action gates remain.
+- The actual four-hour coding/chat rehearsal finished with its technical criteria
+  met. Original false completed-probe claims remain in its report. A later bounded
+  four-case replay repaired that specific grounding pattern without rewriting the
+  original result. Natural hosting, tone and redundant follow-up wording remain
+  owner-review items.
+- Phone HTTP clients share history and commitments, acknowledge reminders and
+  recover from offline/sleep. The latest real follow-up received two reminders
+  and chose one deliberate Core silence without invented prerequisite completion.
+  Physical Android, closed-dashboard notification scope and considerate tone
+  remain unaccepted.
+- An actual finite legacy drain/capture/import/reversal verified 17,343 raw files,
+  630,729,578 bytes and 16 tables. All four original services were restored with
+  new PIDs and checked authentication/health. A durable owner-only Windows archive
+  and corrected return-trip extraction/current-reader recovery also passed,
+  preserving 32 legacy references and later synthetic fixtures without operational
+  authority. Semantic adoption remains unaccepted. The later owner-authorized private production
+  operation is recorded in the private-release spec.
+- [Private release support](shana_private_release.md) provides source-bound
+  manifests, cross-checkout identity leases, manifest-bound API credentials,
+  observed-drain probes and current-reader reversal. Strict bounded stock Qwen
+  profile compatibility has actual factory/authentication/reference-drift checks.
+  A separate copied-state model swap/rollback and voice comparison have technical
+  evidence; no replacement model or voice was adopted. The new private-release
+  services now own the normal production entry under the October 30 authorization. The
+  [current work record](shana_remaining_phases.md) retains dated tests and limits.
+- The October 31 latency candidate applies the same current-owner question policy
+  to desktop/Monitor text, phone, local voice and Discord. Missing recall and a
+  prior answer are not reasons to ignore a current question. Explicit quiet,
+  thinking aloud and questions directed elsewhere retain silence. Bounded audio
+  admission now transcribes a second utterance before waiting for the single
+  foreground slot; stale work checkpoints prevent unnecessary later inference.
+  Numeric stage/outcome diagnostics distinguish silence, failure, queuing and
+  delivery. An explicit private-release manifest profile retains the primary
+  and unchanged independent reviewer, with bounded startup warmup and measured
+  reviewer offload. These are candidate changes; this record does not claim their
+  production rollout or human acceptance. See the
+  [interaction evidence](shana_private_interaction.md#latency-candidate-evidence-october-31)
+  and [profile contract](shana_private_release.md#optional-private-inference-profile).
+- The later October 31 latency revision is active in private production as
+  `1c26e8b26fa14e3c9ffef83f6f25e5a8`, retaining the same identity at generation
+  11. It supersedes the candidate-only rollout status above. The final suite
+  passed 3,736 tests and 156 subtests, with three skips and 14 warnings. The final
+  source rehearsal passed seven cases; real Discord then delivered a DM and
+  recorded one played owner-microphone response with no reported failures. First
+  live audio was ready after 8.796 seconds. The owner subsequently reported no
+  replies after the first heard answer; that follow-up remains unresolved.
+  Human hearing, intentional quiet, repetition and interruption acceptance remain
+  pending. All nine authenticated
+  HTTPS pages retain Night + Signal. See the
+  [final interaction record](shana_private_interaction.md#private-production-latency-revision-october-31)
+  and [release/backup record](shana_private_release.md#private-latency-revision-october-31).
+- The latest October 31 production revision is
+  `1a73976c75374dc6a555cba556e28f1a`, generation 13, with the same identity.
+  Its explicit profile adds lossless five-section JSON serialization and guarded
+  per-turn native prefix priming. The final suite passed 3,803 tests and 156
+  subtests; three skips and 14 warnings remain. The combined semantic matrix
+  passed 30/30 and the connected rehearsal 7/7. A real approved Discord DM
+  completed in 4.327 seconds, versus 7.917 seconds for the prior same-text check.
+  The earlier receiver-stop failure is fixed. The owner explicitly deferred fresh
+  listening. The exact-revision off-device archive has 735 verified file hashes
+  and a 192-record snapshot that passed non-activating restore. The later TTS
+  conditioning-cache and 43-layer reviewer experiments were rejected. All 632
+  source/test hashes were restored to the shipped baseline; 68 focused checks
+  and a fresh seven-case provider rehearsal passed afterward. Discord DMs remain
+  connected; voice was later disconnected by the owner. See the
+  [combined interaction record](shana_private_interaction.md#combined-cache-production-revision-october-31)
+  and [release record](shana_private_release.md#combined-cache-production-revision-october-31).
+- The later persistent-login production package passed 3,456 tests and 120 subtests
+  in 106.31 seconds, with three expected skips and three dependency warnings.
+  Source/fixture bytes were stable. Final cross-source/package metadata receipts
+  are recorded separately; human and physical acceptance remain open.
+- The isolated dashboard now starts at Home and links Activities, Rehearsal,
+  Phone and the existing private pages. Night + Signal is its default, with the original ten opt-in visual directions
+  available for later comparison. The combined Night + Signal direction was accepted
+  by the owner. The normal production login is open in Brave; extended everyday
+  usability and physical Android acceptance remain pending.
+- An opt-in review-prefix wrapper scopes authentication, cookies, browser
+  storage, API connections, assets and phone-worker URLs to one review path.
+  Its application checks passed. Live HTTPS routing and Android certificate
+  trust have not been verified; no live proxy change is implied.
+
+- The isolated P5 candidate routes private voice, desktop text and a prepared
+  owner-only Discord adapter through the same Core. Actual local STT, checked
+  response, Qwen TTS and browser media events have connected evidence. Bounded
+  ordered chunks, per-consumer release/acknowledgment, interruption, source
+  removal and no-replay recovery are verified. A real practical worker continued
+  through voice, mute, sleep and wake. First browser playback took 21.822 seconds
+  in the recorded run. The owner deferred listening acceptance and kept Discord
+  disconnected. See `shana_private_interaction.md`; use Brave for later review.
+
+- The isolated P4 candidate adds sourced experiences, tentative hypotheses,
+  scoped dialogue trials, frozen comparison records and owner-reviewed acceptance.
+  Contradictions, withdrawal, expiry and source removal stop active guidance.
+  Finite exploration uses the existing practical-work owner and executor.
+  Bounded source/result feedback, current-reader restore and private browser
+  behavior have connected evidence. A historical checked-status comparison
+  improved five to six cases; current explicit-source discussion passed narrowly.
+  Ordinary role/wording precision remains an interaction-quality limit. See
+  `shana_growth.md` for exact source versions, verification and scope. No weights
+  or production owner changed.
+- The isolated P3 candidate connects selected-file research and practical coding
+  to the same owner, activity journal, finite limits, sandbox and private Monitor.
+  It prepares reviewable candidates and concrete missing-input questions without
+  a production promotion path. See `shana_practical_work.md` for the two tool
+  journeys, actual verification, responsiveness and remaining review limits.
+- A separate, unactivated isolated coordination host supports private Monitor
+  text and selected resumable offline practice. See `shana_coordination_core.md`
+  for generation ownership, durable evidence, tests and live-handover limits.
+- The isolated P1 host connects current-session, focus-aware quiet review,
+  conversational task reservation/switch/pause/resume, targeted checked receipts,
+  sleep catch-up and real saved-edit process recovery. Its technical evidence and
+  remaining experience review are recorded in `shana_foundation_acceptance.md`.
+- The isolated P2 candidate adds canonical sourced personal records, automatic
+  lexical recall across sessions, corrections and source removal, authored owner
+  edits, exact account links without new permissions, finite mood and durable
+  sleep communication. `shana_personal_state.md` records the copied-data and
+  genuine older-code reversal evidence. Public production behavior is unchanged.
+- An opt-in Windows review controller starts separate authenticated loopback
+  hosts on Gamma over hidden SSH, supplies ephemeral credentials, checks actual
+  controller identity and stops at a finite deadline. Its start/stop instructions
+  are in `shana_foundation_review_runbook.md`; it does not activate production.
 - Text conversation through `POST /v1/conversation/respond`.
 - Conversation generation now crosses an explicit structured turn boundary:
   action, requested delivery, final communicable text, safe summary, emotion,
@@ -328,3 +454,14 @@ parameters, preserved the base model and scored 1/8 held-out tasks versus 0/8 fo
 its base. It was rejected by the 80 percent pilot floor. This is hardware and
 pipeline proof, not a successful quality upgrade. No production adapter was
 activated; incumbent comparison and serving validation remain required.
+
+- The owner-private Discord production transport now shares the same Core for
+  exact owner DMs and the private configured voice room. The SDK connected,
+  API-only restart recovery and duplicate-process fencing passed. Scoped voice
+  controls preserve other consumers. The final suite passed 3,544 tests and
+  120 subtests. The owner confirmed heard voice without disconnecting; the normal
+  unit entry also delivered a real DM reply and remained listening. The confirmed
+  Neety owner profile survives compaction, and spoken pronunciation was adjusted
+  provisionally. The approved ShanaGamma account rename succeeded after a
+  cooldown; server nickname remains Shana. Broader voice quality remains open. See
+  [the permanent Discord operation](shana_private_interaction.md#permanent-owner-private-discord-october-30).

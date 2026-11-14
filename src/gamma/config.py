@@ -379,6 +379,9 @@ class Settings:
     dashboard_auth_username: str = str(
         _setting("SHANA_DASHBOARD_AUTH_USERNAME", _config_value(APP_CONFIG, "dashboard_auth_username", default=""))
     )
+    dashboard_credentials_file: str = str(
+        _setting("SHANA_DASHBOARD_CREDENTIALS_FILE", _config_value(APP_CONFIG, "dashboard_credentials_file", default=""))
+    )
     dashboard_auth_password: str = str(
         _setting("SHANA_DASHBOARD_AUTH_PASSWORD", _config_value(APP_CONFIG, "dashboard_auth_password", default=""))
     )

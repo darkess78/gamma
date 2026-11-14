@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .policy import SpeechSafetyPolicy
+from ..llm.local_metrics import allowlisted_local_timing
 
 
 @dataclass(slots=True)
@@ -21,6 +22,7 @@ class SpeechFilterResult:
     matched_rules: list[str]
     action: str = "allow"
     layers: list[str] = field(default_factory=list)
+    metadata: dict[str, float | int] = field(default_factory=dict)
 
 
 class SpeechSafetyFilter:
@@ -59,4 +61,5 @@ class SpeechSafetyFilter:
             matched_rules=result.matched_rules,
             action=result.action,
             layers=result.layers,
+            metadata=allowlisted_local_timing(getattr(result, 'metadata', {})),
         )

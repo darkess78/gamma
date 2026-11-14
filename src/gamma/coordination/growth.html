@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shana growth trials</title><style>
+body{font:16px system-ui;background:#111827;color:#e5e7eb;max-width:1040px;margin:2rem auto;padding:1rem}a{color:#93c5fd}
+textarea,select,button{font:inherit}textarea{box-sizing:border-box;width:100%;min-height:12rem;background:#1f2937;color:inherit}
+button{margin:.5rem;padding:.5rem}pre{white-space:pre-wrap;overflow-wrap:anywhere}label{display:block;margin:1rem 0}
+</style><script src="/static/growth.js" defer></script></head>
+<body><main class="shana-main"><a href="/dashboard/monitor">Private Monitor</a> <a href="/dashboard/personal">Personal state</a> <a href="/dashboard/work">Practical work</a>
+<h1>Growth trials and evidence</h1>
+<p>Experiences support hypotheses. A trial is a scoped, reversible change to dialogue guidance. It does not change model weights.</p>
+<label><input id="privateConfirm" type="checkbox"> I confirm this is a private audience.</label>
+<p id="notice" role="status">Private growth state hidden.</p>
+<div id="growthState" hidden>
+<label>Owner action<select id="growthAction">
+<option value="experience">Record a sourced experience</option><option value="hypothesis">Propose a hypothesis</option>
+<option value="contradict">Add contradictory evidence</option><option value="revise">Revise a wrong hypothesis</option>
+<option value="trial">Start a scoped dialogue trial</option><option value="evaluate">Attach independent comparison evidence</option>
+<option value="accept">Accept reviewed development</option><option value="withdraw">Withdraw a trial</option>
+<option value="opportunities">Offer finite exploration choices</option><option value="review">Schedule a permitted quiet review</option>
+</select></label>
+<label>Action values as JSON<textarea id="growthValues" spellcheck="false">{}</textarea></label>
+<p>Use the source, experience, hypothesis and trial IDs shown below. A trial needs its scope, expiry, review condition and rationale. Accepting it also needs independent comparison evidence. Hypotheses and praise never approve themselves.</p>
+<button id="applyGrowth" type="button">Apply selected owner action</button><button id="refreshGrowth" type="button">Refresh evidence</button>
+<h2>Current evidence, hypotheses, trials and choices</h2><pre id="growthDetail"></pre>
+</div></main></body></html>

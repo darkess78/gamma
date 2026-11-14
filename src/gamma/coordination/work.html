@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shana practical work</title><style>
+body{font:16px system-ui;background:#111827;color:#e5e7eb;max-width:1040px;margin:2rem auto;padding:1rem}a{color:#93c5fd}
+textarea,input,button{font:inherit}textarea{box-sizing:border-box;width:100%;min-height:16rem;background:#1f2937;color:inherit}
+button{margin:.4rem;padding:.5rem}article{border:1px solid #4b5563;padding:.7rem;margin:1rem 0}pre{white-space:pre-wrap;overflow-wrap:anywhere}
+label{display:block;margin:.7rem 0}small{display:block}#notice{min-height:2rem}
+</style><script src="/static/work.js" defer></script></head>
+<body><main class="shana-main"><a href="/dashboard/monitor">Private Monitor</a> <a href="/dashboard/personal">Personal state</a>
+<h1>Practical work</h1><p>Selected files stay within this Shana instance. Preparing a task does not start it. Starting work requires your approval.</p>
+<label><input type="checkbox" id="privateConfirm"> I confirm this is a private audience.</label>
+<p id="notice" role="status">Private work hidden.</p>
+<div id="workState" hidden>
+<label>Task scope as JSON<textarea id="workSpec" spellcheck="false" aria-label="Task scope as JSON"></textarea></label>
+<label>Maximum attempts <input id="maximumAttempts" type="number" min="1" max="5" value="3"></label>
+<label>Time budget in seconds <input id="budgetSeconds" type="number" min="30" max="1800" value="300"></label>
+<label><input id="authorizeStart" type="checkbox"> Allow Shana to start this exact task when I request it in conversation.</label>
+<button id="prepareWork" type="button">Prepare selected files</button><button id="refreshWork" type="button">Refresh tasks</button>
+<div id="workList"></div><h2>Selected candidate and evidence</h2><pre id="workDetail"></pre>
+<button id="downloadWork" type="button" disabled>Download candidate manifest and files</button>
+</div></main></body></html>

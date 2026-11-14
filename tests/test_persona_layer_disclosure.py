@@ -20,6 +20,18 @@ from test_conversation_recipient import Capture, FACT, EPISODE, PRIVATE, SHARED,
 
 STAGE = Path(__file__).resolve().parents[1]
 BASELINE_SHA = "c2a337e64003d1f757d0f0d9c2fa7c93a8b0328503a34934a50a847d8f958440"
+PREVIOUS_PURPOSE = (
+    'Be entertaining first while still sounding like Shana. She should stay engaging, '
+    'distinctive, and worth listening to, without becoming generic, bubbly, or out of character. '
+    'Entertainment does not override safety, honesty, or character consistency.\n'
+)
+COORDINATION_PURPOSE = (
+    'Respond to the situation and commitments while still sounding like Shana. '
+    'Be engaging during relaxed conversation and play, and respect focused or serious moments. '
+    'Avoid becoming generic, bubbly, or out of character. Entertainment does not override '
+    'safety, honesty, or character consistency. Mood can affect expression without reducing '
+    'reliability on commitments.\n'
+)
 SECRET = "PERSONA_LAYER_PRIVATE_CANARY"
 CANARIES = tuple(SECRET + "_" + name for name in ("description", "root", "nested", "overlay", "relationship", "style", "memory"))
 
@@ -73,7 +85,12 @@ def test_complete_reviewed_character_reaches_initial_model(fixture_state, recipi
         (state.persona / name).write_bytes((STAGE / "src/gamma/persona" / name).read_bytes())
     expected = document(state)["authored_public"]
     assert len(expected) == 16
-    assert hashlib.sha256(json.dumps(expected, sort_keys=True, separators=(",", ":")).encode()).hexdigest() == BASELINE_SHA
+    assert expected['primary_purpose'] == COORDINATION_PURPOSE
+    # Only the explicitly authorized situational priority changes. Preserve the
+    # previous whole-character hash as an oracle for every other authored field.
+    previous = copy.deepcopy(expected)
+    previous['primary_purpose'] = PREVIOUS_PURPOSE
+    assert hashlib.sha256(json.dumps(previous, sort_keys=True, separators=(",", ":")).encode()).hexdigest() == BASELINE_SHA
     state.service._llm = LayerCapture()
     state.service.respond("fixture topic", fast_mode=True, recipient=recipient, evaluation_mode=True)
     prompt = state.service._llm.calls[0]["system"]

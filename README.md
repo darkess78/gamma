@@ -22,6 +22,55 @@ The deployment and proxy reference is
 [`specs/LOCKED_GAMMA_NETWORK_DEPLOYMENT.md`](specs/LOCKED_GAMMA_NETWORK_DEPLOYMENT.md).
 Read that reference before changing deployment routing.
 
+The first private coordination refactor is implemented in a separate isolated
+host and is not activated by the normal Shana application. Its scope,
+verification commands and remaining handover requirements are in
+[`specs/shana_coordination_core.md`](specs/shana_coordination_core.md).
+The tested, finite Windows-to-Gamma private review launcher is documented in
+[`specs/shana_foundation_review_runbook.md`](specs/shana_foundation_review_runbook.md).
+The same isolated candidate includes [personal state](specs/shana_personal_state.md)
+and [bounded practical work](specs/shana_practical_work.md), with source-bound
+results and directly reviewable disposable tools.
+Its [P4 growth trials](specs/shana_growth.md) add sourced interpretations,
+reversible dialogue guidance and finite exploration. The isolated technical
+milestone is verified, with narrow source-discussion evidence and remaining
+interaction-quality limits. Training and production activation remain unapproved.
+The [P5 private voice and presence slice](specs/shana_private_interaction.md)
+connects local STT/TTS and a thin private client to the same Core, with ordered
+audio receipts and interruption fences. Its technical path is verified. Human
+listening, room behavior and actual Discord delivery remain deferred. Use Brave
+for the [later private review](specs/shana_private_interaction_review.md).
+
+The [P6-P9 work record](specs/shana_remaining_phases.md) tracks the implemented
+isolated channels and their dated evidence. Finite selected-window moments and
+optional checked speech use the same Core. Private gameplay/coding rehearsals,
+phone continuity/reminders and recovery have connected technical checks. The
+four-hour coding/chat run finished with a technical pass; its false probe claims
+were retained, repaired and checked in a separate bounded replay. Natural
+hosting, tone and human listening remain review items.
+
+The [fresh legacy capture](specs/shana_legacy_capture.md) completed an observed
+finite drain, actual all-file capture/import/reversal and restoration of the
+original services. A protected Windows archive and corrected return-trip
+[current-reader recovery](specs/shana_recovery.md) also passed. The
+[private release](specs/shana_private_release.md) has source/identity fences,
+manifest-bound authentication and compatible stock Qwen voice pins. A bounded
+copied-state model swap/rollback and separate voice comparison have technical
+evidence. Earlier comparisons did not promote a replacement or production ownership cutover. The owner has now requested a private production test with a persistent `darkess78` login; the private-release spec records that operation and its evidence.
+
+The combined Gamma candidate suite passed 3,437 tests and 120 subtests, with
+three expected skips and three dependency warnings. The current technical
+package is ready for owner review; detailed receipts and limits are in the work
+record. Temporary reversible test activation is authorized. The [ten dashboard
+directions](specs/shana_dashboard_designs.md) remain available for comparison.
+Night + Signal is now the default for the owner-authorized private production dashboard at
+`https://gamma.neety.me/dashboard/home`. Sign in as `darkess78` with the password
+entered in the owner setup window. The old finite review session is closed; use
+the normal HTTPS entry for persistent testing. Real OSRS/physical Android use, listening and visual
+acceptance still need owner review. Minecraft testing remains deferred and
+owner-private Discord connected. Final integrated validation and the consolidated review
+queue are recorded in the work record and requirements map.
+
 ## Install
 
 Gamma requires Python 3.11 or newer. Use the repository virtual environment.

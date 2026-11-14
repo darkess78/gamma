@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import mimetypes
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
@@ -12,7 +13,7 @@ from pydantic import BaseModel, Field
 from .service import DashboardService
 from .shana_client import ShanaClientError
 from ..config import settings as _app_settings
-from .auth import auth_config, dashboard_auth_ready, is_authenticated, session_cookie_value, verify_login, websocket_is_authenticated
+from .auth import auth_config, authenticate_login, dashboard_auth_ready, is_authenticated, session_cookie_value, verify_login, websocket_is_authenticated
 from ..schemas.response import AssistantResponse, VisionAnalysis
 from ..schemas.voice import VoiceRoundtripResponse
 from ..observability import configure_logging, install_request_logging
@@ -469,12 +470,14 @@ async def login_submit(request: Request):
     form = await request.form()
     username = str(form.get("username", ""))
     password = str(form.get("password", ""))
-    if not dashboard_auth_ready() or not verify_login(username, password):
+    from starlette.concurrency import run_in_threadpool
+    cookie_value = await run_in_threadpool(authenticate_login, username, password)
+    if cookie_value is None:
         return HTMLResponse(login_page().replace("</form>", "<p style='color:#fda4af; margin-top: 14px;'>Login failed.</p></form>"), status_code=401)
     response = RedirectResponse(url="/dashboard", status_code=303)
     response.set_cookie(
         "gamma_dashboard_session",
-        session_cookie_value(username),
+        cookie_value,
         httponly=True,
         samesite="lax",
         secure=auth_config().cookie_secure,
@@ -1493,13 +1496,25 @@ async def dashboard_stream_rehearsal_event(request: Request) -> dict:
 
 @app.post("/api/monitor/input")
 async def dashboard_monitor_input(request: Request) -> dict:
-    """Submit local monitor input through the stream/performer path."""
+    """Submit explicit private text or an existing stream rehearsal input."""
     payload = await _json_object_payload(request)
     try:
         from starlette.concurrency import run_in_threadpool
         return await run_in_threadpool(get_dashboard_service().submit_monitor_stream_input, payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get('/api/coordination/status')
+def dashboard_coordination_status(audience: Literal['owner_private']) -> dict:
+    return get_dashboard_service().coordination_status()
+
+
+@app.post('/api/coordination/control')
+async def dashboard_coordination_control(request: Request) -> dict:
+    from starlette.concurrency import run_in_threadpool
+    payload = await _json_object_payload(request)
+    return await run_in_threadpool(get_dashboard_service().coordination_control, payload)
 
 
 @app.post("/api/performer/targets/{target_policy}/mute")

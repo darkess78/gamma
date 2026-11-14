@@ -157,6 +157,8 @@ assistant_emotion_episode_threshold = 0.65
 assistant_emotion_pattern_threshold = 3
 dashboard_auth_enabled = false
 dashboard_auth_username = ""
+# Optional absolute path to an owner-only saved username/verifier/session record.
+dashboard_credentials_file = ""
 dashboard_auth_password = ""
 dashboard_session_secret = ""
 dashboard_cookie_secure = false

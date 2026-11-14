@@ -39,6 +39,17 @@ class BoundedStateUpdates(BaseModel):
     current_objective: str | None = Field(default=None, max_length=1000)
     deferred_intention: str | None = Field(default=None, max_length=1000)
     relationship_signals: list[str] = Field(default_factory=list, max_length=8)
+    activity_action: Literal['wait', 'practice', 'request_practice', 'pause', 'resume', 'stop', 'switch', 'report_status'] | None = None
+    activity_run_id: str | None = Field(default=None, pattern=r'^practice-[a-zA-Z0-9_-]{1,80}$')
+    practice_exercise: str | None = Field(default=None, max_length=80)
+    reconsider_after_seconds: int | None = Field(default=None, ge=30, le=3600)
+    attention_focus: Literal['focused', 'relaxed'] | None = None
+
+    @model_validator(mode='after')
+    def coherent_practice_choice(self):
+        if self.activity_action == 'wait' and self.practice_exercise:
+            raise ValueError('wait cannot select a practice exercise; queue a requested exercise with request_practice or leave practice_exercise null')
+        return self
 
 
 class ConversationTurnDraft(BaseModel):

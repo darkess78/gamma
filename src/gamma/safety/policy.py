@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..config import settings
+from ..llm.local_metrics import allowlisted_local_timing
 from .hard_blocklist import matched_rules as hard_block_matches
 from .heuristic_filter import review as heuristic_review
 from .llm_reviewer import SpeechLLMReviewer
@@ -26,6 +27,7 @@ class SafetyPolicyResult:
     matched_rules: list[str]
     action: str
     layers: list[str]
+    metadata: dict[str, float | int] = field(default_factory=dict)
 
 
 class SpeechSafetyPolicy:
@@ -66,6 +68,7 @@ class SpeechSafetyPolicy:
         matched: list[str] = []
         layers: list[str] = []
         action = "allow"
+        review_metrics = {}
 
         privacy = review_private_info_output(normalized)
         if privacy.blocked:
@@ -93,6 +96,7 @@ class SpeechSafetyPolicy:
 
         if action != "block" and include_llm and settings.speech_filter_llm_enabled:
             decision = self._reviewer.review(normalized)
+            review_metrics = allowlisted_local_timing(getattr(decision, 'metadata', {}))
             if decision.action != "allow":
                 layers.append("llm")
                 action = "block" if decision.action == "block" else ("soften" if action == "allow" else action)
@@ -107,4 +111,5 @@ class SpeechSafetyPolicy:
             matched_rules=matched,
             action=action,
             layers=layers,
+            metadata=review_metrics,
         )

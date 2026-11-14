@@ -19,6 +19,7 @@ from pydantic import BaseModel, ValidationError
 from gamma.integrations.minecraft.coordinator import (
     MinecraftCoordinator,
     ReceiveDisposition,
+    ReceiveResult,
 )
 from gamma.integrations.minecraft.protocol import ProtocolMessage, parse_protocol_message
 
@@ -31,6 +32,7 @@ PeerValidator = Callable[[str | None], bool]
 CoordinatorProvider = Callable[[], MinecraftCoordinator | None]
 ControlTokenProvider = Callable[[], str | None]
 MaximumInboundBytesProvider = Callable[[], int]
+ReceivedObserver = Callable[[ProtocolMessage, ReceiveResult], object]
 
 _PROTOCOL_MESSAGE_TYPES = get_args(get_args(ProtocolMessage)[0])
 
@@ -85,6 +87,7 @@ def create_minecraft_control_router(
     maximum_inbound_bytes_provider: MaximumInboundBytesProvider | None = None,
     peer_validator: PeerValidator = is_literal_loopback_peer,
     maximum_inbound_bytes: int = DEFAULT_MAXIMUM_INBOUND_BYTES,
+    received_observer: ReceivedObserver | None = None,
 ) -> APIRouter:
     """Build, but do not mount, the Shana-owned Minecraft control router."""
 
@@ -96,6 +99,8 @@ def create_minecraft_control_router(
         raise ValueError("control_token must be non-empty")
     if not callable(peer_validator):
         raise TypeError("peer_validator must be callable")
+    if received_observer is not None and not callable(received_observer):
+        raise TypeError("received_observer must be callable")
     if type(maximum_inbound_bytes) is not int or not (
         1 <= maximum_inbound_bytes <= MAXIMUM_INBOUND_BYTES_LIMIT
     ):
@@ -186,6 +191,8 @@ def create_minecraft_control_router(
                     break
 
                 result = await resolved_coordinator.receive(message)
+                if result.disposition == ReceiveDisposition.ACCEPTED and received_observer is not None:
+                    received_observer(message, result)
                 if result.disposition == ReceiveDisposition.REJECTED:
                     await _safe_close(
                         websocket, code=1008, reason="protocol message rejected"

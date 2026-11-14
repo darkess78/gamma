@@ -2189,6 +2189,14 @@ class DashboardService:
         text = str(payload.get("text") or "").strip()
         if not text:
             raise ValueError("text is required")
+        if payload.get('input_mode') == 'private_text':
+            if payload.get('audience') != 'owner_private':
+                raise ValueError('Select owner private only when the owner is present privately')
+            return self._post_remote_json('/v1/coordination/input', {
+                'text': text, 'input_mode': 'private_text', 'audience': 'owner_private',
+                'session_id': payload.get('session_id') or 'monitor-private',
+                'request_id': payload.get('request_id') or '',
+            }, timeout=180)
         input_mode = str(payload.get("input_mode") or "owner_mic").strip().lower()
         event_kind = self._monitor_event_kind(input_mode)
         session_id = str(payload.get("session_id") or "monitor-local-stream").strip()
@@ -2226,6 +2234,12 @@ class DashboardService:
         )
         result = self._post_remote_json(path, event, timeout=180)
         return {"ok": True, "event": result.get("input_event", event), "result": result}
+
+    def coordination_status(self) -> dict[str, Any]:
+        return self._shana.request_json('GET', '/v1/coordination/status', params={'audience': 'owner_private'})
+
+    def coordination_control(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._post_remote_json('/v1/coordination/control', payload)
 
     @staticmethod
     def _normalize_output_target_policy(value: Any) -> str:

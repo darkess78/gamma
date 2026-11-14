@@ -11,6 +11,9 @@ audio_output_dir = "./data/audio"
 image_input_dir = "./data/images"
 vision_max_image_bytes = 8000000
 memory_top_k = 5
+# Folder holding bge-small-en-v1.5 (onnx/model.onnx + tokenizer.json) for meaning-based
+# memory search on the CPU. Empty = look in data/models/bge-small-en-v1.5; missing = keywords only.
+memory_embeddings_dir = ""
 conversation_journal_retention_days = 30
 conversation_journal_max_exchanges_per_session = 500
 conversation_recent_turn_tokens = 2048

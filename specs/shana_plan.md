@@ -107,6 +107,7 @@ chosen by relevance with the two most important pinned. Measured with
 |---|---|---|---|---|
 | previous search | 0% | 57% | 0% | 25% |
 | current search | 100% | 100% | 100% | 25% |
+| + embeddings | 100% | 100% | 100% | 100% |
 
 **Choosing what becomes a memory (2026-11-14):** automatic candidates now go
 through `memory/triage.py` before storage. A cheap filter drops obvious
@@ -120,9 +121,21 @@ keeps; the dataset's skip examples are subtle (facts scoped to one release or
 one attempt) and need the model judge or a trained classifier, so agreement is
 50% until then.
 
-Paraphrases ("kitty" for cat, "for a living" for job) still miss: that needs
-embeddings, which need a model download (an owner decision). Supersession,
-reflection and the FTS5 index for large histories remain.
+**Meaning-based search (2026-11-14):** `memory/embeddings.py` runs
+BAAI/bge-small-en-v1.5 (MIT, 384-dim, 133 MB ONNX) with onnxruntime on 2 CPU
+threads, never the GPU. Vectors are cached per memory in `memoryvector`, keyed
+on a hash of the text so edits re-embed. In `retrieval.rank`, relevance is the
+larger of the keyword score and a meaning score. A memory with no shared
+words only counts when its cosine clears 0.50, is within 0.06 of the best
+match, and the best match stands out from the median by 0.12, which keeps
+small talk ("lol", "see you later") from pulling in random memories. Without
+the model everything works as before. To enable it, put the model in
+`data/models/bge-small-en-v1.5` or set `memory_embeddings_dir`; Gamma PC has
+it at `~/Documents/gamma-models/bge-small-en-v1.5`. Training our own embedding
+model was ruled out: it needs a large paired dataset and GPU time, and would
+still be worse than a pretrained one.
+
+Supersession, reflection and the FTS5 index for large histories remain.
 
 ### W3. Knowing people — **Do, changed**
 
@@ -341,8 +354,6 @@ No GPU needed.
 3. Which game first? (A turn-based one is easiest; it needs a small client, see games.md.)
 4. When to deploy `rebuild/shana-foundation` to Gamma PC (it is not live yet).
 5. Which Discord servers/channels she should be in.
-7. Meaning-based memory search (catches "kitty" for cat) needs a small
-   embedding model download (~300–600 MB, runs on CPU or the 3060 Ti).
 6. An API caller that names no speaker is still treated as the owner (owner
    tools included). Production requires the API token, so only Gamma's own
    processes can do this, but every one of them could. Tightening it means

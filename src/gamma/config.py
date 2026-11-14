@@ -563,6 +563,8 @@ class Settings:
         source=MEMORY_CONFIG,
         env="SHANA_MEMORY_WRITE_MODE",
     )
+    # Directory with onnx/model.onnx + tokenizer.json for meaning-based memory search (CPU).
+    memory_embeddings_dir: str = _str("memory_embeddings_dir", default="", strip=True)
     # Which judge decides whether an automatic memory candidate is kept: "keep" or "model".
     memory_triage_judge: str = _str("memory_triage_judge", default="keep", strip=True, lower=True)
     memory_personality: str = _str(

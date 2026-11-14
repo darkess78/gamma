@@ -8,8 +8,9 @@ search extension or embedding model. Scores combine:
 - recency: exponential decay with a half-life in days;
 - importance: the 0..1 score stored with the memory.
 
-A memory with no keyword overlap is never chosen for a non-empty query, so
-recency and importance only order the relevant ones.
+A memory with no keyword overlap is only chosen when embeddings are available
+and it is close in meaning (see MEANING_FLOOR), so recency and importance
+only order the relevant ones.
 """
 from __future__ import annotations
 
@@ -52,6 +53,26 @@ def terms(text: str) -> list[str]:
     return [_stem(w) for w in words if len(w) >= 2 and w not in STOPWORDS]
 
 
+# bge-small cosines: on the eval set the right memory scored 0.52-0.76 and the
+# best wrong one 0.45-0.70, so an absolute cut alone can't separate them.
+# A memory counts as related by meaning only if it clears MEANING_FLOOR and is
+# within MEANING_MARGIN of the closest memory for this query. Small talk ("lol",
+# "see you later") is loosely close to everything, so meaning is ignored unless
+# the closest memory stands out from the typical one by MEANING_GAP (measured:
+# real questions 0.10-0.36, small talk 0.07-0.15). The gap needs a few
+# candidates to mean anything, so it's skipped below MIN_FOR_GAP.
+MEANING_FLOOR = 0.50
+MEANING_MARGIN = 0.06
+MEANING_GAP = 0.12
+MIN_FOR_GAP = 5
+
+
+def _meaning(cosine: float | None, top: float) -> float:
+    if cosine is None or cosine <= MEANING_FLOOR or cosine < top - MEANING_MARGIN:
+        return 0.0
+    return min(1.0, (cosine - MEANING_FLOOR) / (1.0 - MEANING_FLOOR) * 1.5)
+
+
 @dataclass(frozen=True)
 class Weights:
     relevance: float = 1.0
@@ -80,9 +101,11 @@ def rank(
     now: datetime | None = None,
     weights: Weights = Weights(),
     limit: int = 5,
+    semantic: Callable[[T], float | None] | None = None,
 ) -> list[Scored[T]]:
+    """``semantic`` gives each item's cosine similarity to the query (embeddings), if available."""
     query_terms = terms(query)
-    if not query_terms or not items:
+    if not items or not (query_terms or semantic):
         return []
     documents = [terms(text(item)) for item in items]
     n = len(documents)
@@ -102,15 +125,20 @@ def rank(
             score += idf * frequency * (k1 + 1) / (frequency + k1 * (1 - b + b * len(document) / average_length))
         raw.append(score)
     best = max(raw)
-    if best <= 0:
+    cosines = [semantic(item) if semantic else None for item in items]
+    known = sorted(c for c in cosines if c is not None)
+    top = known[-1] if known else 0.0
+    stands_out = len(known) < MIN_FOR_GAP or top - known[len(known) // 2] >= MEANING_GAP
+    meaning = [_meaning(c, top) if stands_out else 0.0 for c in cosines]
+    if best <= 0 and max(meaning) <= 0:
         return []
 
     now = now or datetime.now(timezone.utc)
     results: list[Scored[T]] = []
-    for item, relevance in zip(items, raw):
+    for item, relevance, similar in zip(items, raw, meaning):
+        relevance = max(relevance / best if best > 0 else 0.0, similar)
         if relevance <= 0:
             continue
-        relevance /= best
         created = created_at(item)
         recency = 0.0
         if created is not None:

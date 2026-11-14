@@ -12,7 +12,7 @@ from sqlalchemy.pool import NullPool
 
 from ..config import settings
 from ..schemas.response import MemoryCandidate
-from . import retrieval, triage
+from . import embeddings, retrieval, triage
 from .models import EpisodicMemory, KnownPerson, PersonIdentity, ProfileFact
 from .attribution import MemoryOrigin, prepare_candidate, source_key, merge_origin, manual_origin
 
@@ -393,7 +393,8 @@ class MemoryService:
             if visibility is not None:
                 statement = statement.where(_visible(EpisodicMemory, visibility))
             candidates = list(session.exec(statement.order_by(EpisodicMemory.id.desc()).limit(MEMORY_CANDIDATES)))
-        if not retrieval.terms(query):
+        semantic = self._semantic(query, "episode", [(m.id, f"{m.summary} {m.tags}") for m in candidates])
+        if not retrieval.terms(query) and semantic is None:
             candidates.sort(key=lambda m: (m.importance, m.id or 0), reverse=True)
             return candidates[:limit]
         ranked = retrieval.rank(
@@ -404,6 +405,7 @@ class MemoryService:
             session=lambda m: m.session_id,
             session_id=session_id,
             limit=limit,
+            semantic=(lambda m: semantic.get(m.id)) if semantic is not None else None,
         )
         return [s.item for s in ranked]
 
@@ -429,12 +431,14 @@ class MemoryService:
                 statement = statement.where(_visible(ProfileFact, visibility))
             facts = list(session.exec(statement.order_by(ProfileFact.id.desc()).limit(MEMORY_CANDIDATES)))
         by_importance = sorted(facts, key=lambda f: (f.importance, f.confidence, f.id or 0), reverse=True)
+        semantic = self._semantic(query or "", "fact", [(f.id, f"{f.category} {f.fact_text}") for f in facts])
         ranked = retrieval.rank(
             query or "", facts,
             text=lambda f: f"{f.category} {f.fact_text} {f.relationship_to_user or ''}",
             importance=lambda f: f.importance,
             created_at=lambda f: f.created_at,
             limit=limit,
+            semantic=(lambda f: semantic.get(f.id)) if semantic is not None else None,
         )
         if not ranked:
             return by_importance[:limit]
@@ -473,6 +477,18 @@ class MemoryService:
         return saved
 
     _judge = None
+
+    def _semantic(self, query: str, kind: str, rows: list[tuple[int, str]]) -> dict[int, float] | None:
+        """Cosine similarity per row id, or None when no embedding model is installed."""
+        if not query.strip() or not rows:
+            return None
+        embedder = embeddings.get_embedder()
+        if embedder is None:
+            return None
+        try:
+            return embeddings.similarities(self._engine, embedder, query, kind, rows)
+        except Exception:
+            return None  # meaning search is a bonus; keyword search still works
 
     def _worth_keeping(self, candidate: MemoryCandidate, origin: MemoryOrigin | None) -> bool:
         """Triage automatic candidates (memory/triage.py); explicit and manual saves always pass."""

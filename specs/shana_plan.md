@@ -71,8 +71,15 @@ created on first use, never sent to a browser). With it, Monitor owner text
 (`mic_transcript`/`owner_command` with private output), dashboard live voice,
 image replies and `/v1/conversation/respond` run owner-private with the owner as
 speaker, so memory and history load. Stream-public output, rehearsed chat and
-Twitch/Discord sources stay shared even with the header. Remaining: shared
-channels' scoped history and stream context, and explicit speakers elsewhere.
+Twitch/Discord sources stay shared even with the header.
+
+**Step 2 done (2026-11-14):** shared audiences keep their own history. Stream
+turns are journaled as `public_stream` and Discord voice/text as
+`public_discord`; each reads back only its own recent turns, labelled with
+who said them. Old `public` rows (possibly mislabeled) are never read. Recent
+stream chat reaches stream turns through its own `stream_context` (private
+background notes still never reach shared turns), and Discord no longer
+writes into stream chat memory. Shana is told who is speaking in shared chat.
 
 ### W2. Better memory selection — **Do**
 

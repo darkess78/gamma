@@ -380,7 +380,11 @@ class RecentStreamContextAssembler:
 
 
 def _is_public_stream_result(result: StreamTurnResult) -> bool:
-    return result.input_event.actor.source == "twitch" or result.input_event.kind in {
+    """Stream chat and events. Discord is a different audience and never enters stream memory."""
+    source = result.input_event.actor.source.strip().lower()
+    if source == "discord":
+        return False
+    return source == "twitch" or result.input_event.kind in {
         "chat_message",
         "follow",
         "raid",

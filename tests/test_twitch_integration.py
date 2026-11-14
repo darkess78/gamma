@@ -783,12 +783,12 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertEqual(len(replay_results), 3)
         self.assertEqual(calls_after_replay, 3)
         self.assertEqual([result["decision"]["decision"] for result in replay_results], ["reply", "reply", "reply"])
-        self.assertNotIn("background_context", conversation.calls[0])
-        self.assertIn("background_context", conversation.calls[1])
+        self.assertNotIn("stream_context", conversation.calls[0])
+        self.assertIn("stream_context", conversation.calls[1])
 
         current_text = "What is currently being tested in this stream?"
         later_call = conversation.calls[2]
-        context = str(later_call["background_context"])
+        context = str(later_call["stream_context"])
         self.assertEqual(later_call["user_text"], current_text)
         self.assertNotIn("Recent sanitized stream context", str(later_call["user_text"]))
         self.assertNotIn(current_text, context)
@@ -813,7 +813,7 @@ class TwitchIntegrationTest(unittest.TestCase):
         self.assertEqual(lull_result.output_events, [])
         self.assertEqual(len(conversation.calls), calls_after_replay + 1)
         self.assertEqual(conversation.calls[-1]["user_text"], "ordinary microphone conversation")
-        self.assertNotIn("background_context", conversation.calls[-1])
+        self.assertNotIn("stream_context", conversation.calls[-1])
         self.assertEqual(mic_result.decision.decision, "reply")
 
     def test_follow_replay_event_is_first_class_stream_event(self) -> None:

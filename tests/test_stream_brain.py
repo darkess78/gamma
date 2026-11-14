@@ -171,7 +171,7 @@ class StreamBrainTest(unittest.TestCase):
         self.assertEqual(conversation.calls[0]["user_text"], "Gamma, are you there?")
         self.assertEqual(conversation.calls[0]["session_id"], "live-1")
         self.assertEqual(conversation.calls[0]["fast_mode"], True)
-        self.assertNotIn("background_context", conversation.calls[0])
+        self.assertNotIn("stream_context", conversation.calls[0])
         self.assertEqual([item.type for item in result.output_events], ["emotion_changed", "subtitle_line", "avatar_motion"])
         self.assertEqual(result.output_events[0].payload["emotion"], "happy")
         self.assertEqual(result.output_events[1].payload["text"], "I heard you.")
@@ -813,7 +813,7 @@ class StreamBrainTest(unittest.TestCase):
                 )
             )
 
-        context = str(conversation.calls[0]["background_context"])
+        context = str(conversation.calls[0]["stream_context"])
         self.assertIn("Recent sanitized stream context:", context)
         self.assertIn("no-hit boss attempt", context)
         self.assertNotIn("raw_text", context)

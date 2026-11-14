@@ -206,7 +206,7 @@ def test_actual_presence_producer_context_is_retained_but_default_wake_omits_it(
 
 
 @pytest.mark.parametrize("source,target", [("twitch","stream_public"),("discord","discord_call")])
-def test_actual_stream_context_assembly_continues_but_shared_prompt_omits_it(fixture_state, source, target):
+def test_recent_stream_chat_reaches_only_stream_turns(fixture_state, source, target):
     from gamma.stream.brain import StreamBrain
     from gamma.stream.models import StreamActor, StreamInputEvent, StreamTurnResult, TurnDecision
     from gamma.stream.temp_memory import StreamTempMemoryStore, RecentStreamContextAssembler
@@ -214,7 +214,7 @@ def test_actual_stream_context_assembly_continues_but_shared_prompt_omits_it(fix
     state = fixture_state
     store = StreamTempMemoryStore(database_url="sqlite:///" + str(state.data/"stream-context.db"))
     prior = StreamInputEvent(kind="chat_message",text=BACKGROUND,
-                            actor=StreamActor(source=source,platform_id="earlier",display_name="Viewer"),
+                            actor=StreamActor(source="twitch",platform_id="earlier",display_name="Viewer"),
                             metadata={"safe_prompt_text":BACKGROUND})
     store.record_turn(StreamTurnResult(input_event=prior,decision=TurnDecision(decision="ignore",reason="ambient")))
     assert BACKGROUND in RecentStreamContextAssembler(store).assemble()
@@ -226,7 +226,8 @@ def test_actual_stream_context_assembly_continues_but_shared_prompt_omits_it(fix
         metadata={"output_target_policy":target,"recipient":{"kind":"owner_private","owner_authorized":True}}),
         synthesize_speech=False)
     assert result.assistant_response.display_text == "Safe fixture reply."
-    assert all(BACKGROUND not in json.dumps(c) for c in state.service._llm.calls)
+    # Public stream chat is given back to stream turns; Discord never gets stream chat.
+    assert any(BACKGROUND in c["system"] for c in state.service._llm.calls) == (source == "twitch")
     assert BACKGROUND in RecentStreamContextAssembler(store).assemble()
 
 

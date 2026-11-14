@@ -38,6 +38,11 @@ from .turn_contract import StructuredTurnParser, resolve_delivery, structured_tu
 from .turn_metadata import TurnMetadataMixin
 
 
+# Shared audiences whose own recent turns are given back to Shana. Only rows
+# written under these scopes are read, never legacy "public" rows.
+SHARED_HISTORY_SCOPES = {"public_stream", "public_discord"}
+SHARED_HISTORY_TOKENS = 1200
+
 class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixin):
     """Orchestrates conversation responses, memory, tools, and voice."""
 
@@ -72,6 +77,8 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
         speech_requested: bool | None = None,
         recipient: RecipientContext | None = None,
         owner_verified: bool = False,
+        stream_context: str | None = None,
+        speaker_label: str | None = None,
     ) -> AssistantResponse:
         """Respond to a user text message.
         
@@ -113,7 +120,7 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
             exchange_id = continuity.begin_exchange(
                 session_id=session_id,
                 text=user_text,
-                speaker_name=speaker.name,
+                speaker_name=(speaker_label if speaker_label and not recipient.allows_private_memory else speaker.name),
                 input_source=speaker_ctx.source if speaker_ctx is not None else "local",
                 privacy_scope=privacy_scope,
             )
@@ -134,6 +141,8 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                     micro_mode=micro_mode,
                     defer_llm_safety_review=defer_llm_safety_review,
                     background_context=background_context,
+                    stream_context=stream_context,
+                    speaker_label=speaker_label if not recipient.allows_private_memory else None,
                     persist_state=not evaluation_mode,
                     memory_origin=MemoryOrigin.from_speaker(speaker,
                         source=speaker_ctx.source if speaker_ctx is not None else "local",
@@ -471,11 +480,15 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
         recipient: RecipientContext | None = None,
         memory_origin: MemoryOrigin | None = None,
         tool_checkpoint: Callable[[], None] | None = None,
+        stream_context: str | None = None,
+        speaker_label: str | None = None,
     ) -> AssistantResponse:
         recipient = _recipient_context(recipient, delivery_context=delivery_context)
         memory_origin = memory_origin or MemoryOrigin.from_speaker(
             speaker, privacy_scope=recipient.privacy_scope, session_id=session_id)
         background_context = background_context if recipient.allows_private_memory else None
+        # Recent public stream chat, only ever shown to the stream audience.
+        stream_context = stream_context if recipient.privacy_scope == "public_stream" else None
         stripped = user_text.strip()
         if not stripped:
             raise ConversationError("user_text must not be empty.")
@@ -564,8 +577,25 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                 )
                 if continuity_context:
                     system_prompt += "\n\n" + continuity_context
+            elif session_id and persist_state and recipient.privacy_scope in SHARED_HISTORY_SCOPES:
+                continuity_context = self._continuity.prompt_context(
+                    session_id,
+                    privacy_scopes={recipient.privacy_scope},
+                    token_budget=SHARED_HISTORY_TOKENS,
+                    named_speakers=True,
+                )
+                if continuity_context:
+                    system_prompt += (
+                        "\n\n# Shared Channel History\n"
+                        "Everyone in this channel could see these turns. Nothing private is included.\n\n"
+                        + continuity_context
+                    )
             if background_context and background_context.strip():
                 system_prompt += f"\n\n# Stream Background Context\n{background_context.strip()}"
+            if stream_context and stream_context.strip():
+                system_prompt += f"\n\n# Recent Stream Chat\n{stream_context.strip()}"
+            if speaker_label:
+                system_prompt += f"\n\n# Speaking Now\n{speaker_label} (as shown in chat)"
             if brief_mode:
                 system_prompt += (
                     "\n\n# Live Voice Brevity\n"

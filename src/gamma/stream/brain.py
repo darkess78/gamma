@@ -9,6 +9,7 @@ from uuid import uuid4
 from ..conversation.service import ConversationService
 from ..errors import ConversationError
 from ..safety.llm_reviewer import SpeechLLMReviewer
+from ..integrations.twitch.sanitize import safe_username_alias
 from ..schemas.conversation import RecipientContext
 from ..schemas.response import AssistantResponse
 from ..voice.tts import TTSResult, TTSService
@@ -122,6 +123,8 @@ class StreamBrain(PublicationReviewMixin):
         )
         if not shared and _is_owner_private_event(event, owner_channel=owner_channel):
             return RecipientContext(kind="owner_private", target_policy=target, owner_authorized=True)
+        if shared and target is None and event.actor.source.strip().lower() == "twitch":
+            target = "stream_public"  # Twitch replies go to the stream audience
         return RecipientContext(kind="shared" if shared else "unknown", target_policy=target)
 
     def handle_event(
@@ -195,11 +198,12 @@ class StreamBrain(PublicationReviewMixin):
                 "speech_requested": synthesize_speech,
                 "recipient": recipient,
                 "owner_verified": owner_channel and event.actor.source.strip().lower() == "local_monitor",
+                "speaker_label": _speaker_label(event),
             }
-            if _is_public_stream_event(event):
+            if _is_public_stream_event(event) and event.actor.source.strip().lower() != "discord":
                 recent_context = self._assemble_recent_context()
                 if recent_context:
-                    conversation_args["background_context"] = recent_context
+                    conversation_args["stream_context"] = recent_context
             response = self._conversation.respond(**conversation_args)
             action_plan = self._action_planner.plan_from_response(response)
         safety_decision = self._review_stream_output(
@@ -562,3 +566,13 @@ def _is_owner_private_event(event: StreamInputEvent, *, owner_channel: bool) -> 
         and event.actor.source.strip().lower() == "local_monitor"
         and event.kind in OWNER_EVENT_KINDS
     )
+
+
+def _speaker_label(event: StreamInputEvent) -> str | None:
+    """Who said a shared chat message, as the stream already shows them.
+
+    Kept out of the message text so owner commands ("remember: ...") still parse.
+    """
+    if event.kind != "chat_message" or event.actor.source.strip().lower() not in {"twitch", "discord"}:
+        return None
+    return str(event.metadata.get("safe_display_name") or "").strip() or safe_username_alias(event.actor.display_name)

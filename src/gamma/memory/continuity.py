@@ -452,7 +452,9 @@ class ContinuityService:
             used += cost
         return list(reversed(selected))
 
-    def prompt_context(self, session_id: str, *, privacy_scopes: set[str], token_budget: int | None = None) -> str:
+    def prompt_context(self, session_id: str, *, privacy_scopes: set[str], token_budget: int | None = None,
+                       named_speakers: bool = False) -> str:
+        """named_speakers: label user turns with who said them (shared channels with many people)."""
         parts: list[str] = []
         for privacy_scope in sorted(privacy_scopes):
             snapshot = self.snapshot(session_id, privacy_scope=privacy_scope)
@@ -466,7 +468,8 @@ class ContinuityService:
                 parts.append("# Active Working State\n" + json.dumps(working, ensure_ascii=False, sort_keys=True))
         turns = self.recent_turns(session_id, privacy_scopes=privacy_scopes, token_budget=token_budget)
         if turns:
-            lines = [f"{entry.role}: {entry.text}" for entry in turns]
+            lines = [f"{entry.speaker_name if named_speakers and entry.role == 'user' and entry.speaker_name else entry.role}: {entry.text}"
+                     for entry in turns]
             parts.append("# Recent Conversation Turns\n" + "\n".join(lines))
         return "\n\n".join(parts)
 

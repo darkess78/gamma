@@ -296,7 +296,8 @@ def test_real_stream_owner_and_discord_use_shared_view(fixture_state, source, ta
         row = db.exec(select(ConversationJournalEntry).where(
             ConversationJournalEntry.exchange_id == result.assistant_response.route_trace_id,
             ConversationJournalEntry.role == "user")).one()
-    assert row.privacy_scope == "public" and row.output_target is None
+    expected_scope = {"stream_public": "public_stream", "discord_call": "public_discord"}.get(target, "public")
+    assert row.privacy_scope == expected_scope and row.output_target is None
 
 
 def test_stream_unknown_target_rejected_before_conversation(fixture_state):

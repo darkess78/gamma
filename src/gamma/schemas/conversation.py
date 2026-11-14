@@ -80,5 +80,7 @@ class RecipientContext:
         if self.kind == "owner_private":
             return "local_private"
         if self.kind == "shared":
-            return "public"
+            # Each shared audience keeps its own history; plain "public" rows are
+            # legacy and may be mislabeled, so nothing reads them back.
+            return {"stream_public": "public_stream", "discord_call": "public_discord"}.get(self.target_policy, "public")
         return "local_generic"

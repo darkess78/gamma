@@ -259,6 +259,14 @@ local models well below their published scores on real repository tasks.
 Smallest step: about 200 lines — worktree, headless agent under bwrap,
 existing checks, diff + results as `awaiting_owner_review` on the Coding page.
 
+**Owner decision (2026-11-14): local models only.** Built instead of a hosted
+harness: `coding/split.py` (small tasks, ≤3 files each, each with its own
+pytest check), `coding/task_loop.py` (one tool per step with results fed
+back; "done" only after the check passes) and `coding/workflow.py` (worktree,
+sandboxed checks and full suite, `proposal.diff` for review). See
+coding_improvement.md. Waiting on the GPU for a real run; then wire it into
+the Coding page in place of the older executor.
+
 ### W9. Shana's identity in the model — **Later, changed**
 
 "Knows she's Shana without a character prompt every time" can't fully happen:

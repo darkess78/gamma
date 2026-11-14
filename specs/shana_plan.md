@@ -197,29 +197,24 @@ sentence-level TTS.
 ### W7. Games — **Do, changed**
 
 The goal is right; the approach should be one protocol, not per-game code.
-Neuro-sama's game SDK is MIT-licensed and documented: games connect over a
-WebSocket and register actions with JSON schemas; the AI is the server and
-sends back actions. Community mods already exist for Balatro, Inscryption,
-Buckshot Roulette, Slay the Spire 2, Among Us and more, and other people
-already run their own servers for it (Gary, Jippity).
+Games connect over a WebSocket, declare actions with JSON schemas, and ask
+Shana to decide; Gamma is the server and sends back actions. The design is
+inspired by the Neuro SDK, but Gamma speaks its own protocol rather than
+reusing Vedal's (owner's call, 2026-11-14), so Neuro-sama mods need a small
+port to connect.
 
-- Implement the server side of that protocol in Gamma. Existing mods then work
-  with Shana by pointing their URL at Gamma; new games get mods written against
-  a known API.
-- Test with the SDK's own tools (Randy for random play, Tony for manual) —
-  conformance needs no LLM.
-- Then one turn-based game end to end, with schema-constrained output.
-- Caveats: some mods say "Neuro" in their text; one forced action at a time;
-  results expire after about 20 seconds.
+- Gamma's own versioned protocol, with params validated before sending so a
+  bad model answer is retried instead of reaching the game.
+- Test with a random chooser and an example game — no LLM needed.
+- Then one turn-based game end to end with the real model.
 - "Learning to play" (D8) is separate from having access: memory of what
   happened in past runs comes from W2.
 
-Smallest step: protocol server + Randy, no GPU.
-
-**First version done (2026-11-14):** see [games.md](games.md). Server side of
-the protocol at `ws://<host>:8000/v1/games/neuro?key=…`, off by default, with a
-random chooser for testing mods and a model chooser for real play. Speech
-messages, speaking her move commentary, and a real-mod trial remain.
+**Version 1 done (2026-11-14):** see [games.md](games.md). Protocol at
+`ws://<host>:8000/v1/games/play?key=…`, off by default, with a reference
+Python client, an example tic-tac-toe game, a random chooser and a model
+chooser. Speaking her move lines, comment-on-events, and a real-game trial
+remain.
 
 ### W8. Shana coding her own improvements — **Do, changed**
 
@@ -281,7 +276,7 @@ judge quality, so real-model testing waits for the GPU).
 2. W0 retrieval half of the memory suite
 3. W4 steps 1 and 4 (filters, budget check, EventSub fixes)
 4. W5 text fixes
-5. W7 protocol server tested with Randy
+5. W7 protocol server tested with a random chooser
 6. W8 harness v1 with a hosted model (if the budget is approved)
 7. W2 hybrid search, measured
 8. W3 visibility scopes and one trust system
@@ -298,7 +293,7 @@ judge quality, so real-model testing waits for the GPU).
 1. Hosted model budget for self-coding (and possibly judging evals): yes/no,
    and a monthly cap.
 2. Should Shana type in Twitch chat, or only speak?
-3. Which game first? (A turn-based one with an existing mod is easiest.)
+3. Which game first? (A turn-based one is easiest; it needs a small client, see games.md.)
 4. When to deploy `rebuild/shana-foundation` to Gamma PC (it is not live yet).
 5. Which Discord servers/channels she should be in.
 7. Meaning-based memory search (catches "kitty" for cat) needs a small

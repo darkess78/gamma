@@ -37,6 +37,7 @@ in effect until revisions are implemented, verified, and approved for activation
 
 ## Domain Specs
 
+- `privacy.md` (how the owner's information is kept private, and the private-terms filter)
 - `deploy_rebuild.md` (proposed switch of Gamma PC to the rebuild branch, with rollback)
 - `persona.md`
 - `memory.md`

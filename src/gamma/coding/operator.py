@@ -1,6 +1,42 @@
 """Shared queue admission for owner conversation and dashboard controls."""
 from . import autonomous_store as store
-from .repository import submission_lock
+import os
+from contextlib import contextmanager
+from pathlib import Path
+
+
+@contextmanager
+def submission_lock(root):
+    """One goal admission at a time; a second concurrent submission is refused."""
+    root = store.safe_root(root)
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path = root / 'submission.lock'
+    if path.is_symlink():
+        raise ValueError('Invalid queue lock')
+    with path.open('a+b') as stream:
+        if os.name == 'nt':
+            import msvcrt
+            if path.stat().st_size == 0:
+                stream.write(b'0'); stream.flush()
+            stream.seek(0)
+            try:
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError:
+                raise ValueError('Coding queue busy') from None
+            try:
+                yield
+            finally:
+                stream.seek(0); msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            try:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                raise ValueError('Coding queue busy') from None
+            try:
+                yield
+            finally:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
 def enqueue_goal(goal, model='qwen3.8:27b', checker_model='gpt-oss:20b', budget_seconds=1800, *, manager=None, acceptance_tests=None, acceptance_mode='checker'):

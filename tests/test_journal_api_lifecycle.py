@@ -18,8 +18,6 @@ def test_application_owns_recovery_start_and_stop(monkeypatch, scheduler_fails):
         async def stop(self): events.append("scheduler-stop")
     monkeypatch.setattr(main, "JournalRecovery", Recovery)
     monkeypatch.setattr(main, "get_proactive_scheduler", Scheduler)
-    monkeypatch.setattr(main, "start_minecraft_coordinator", lambda: "fixture")
-    monkeypatch.setattr(main, "reset_minecraft_coordinator", lambda _: events.append("coordinator-stop"))
     async def exercise():
         async with main.lifespan(None):
             events.append("application-running")
@@ -31,7 +29,6 @@ def test_application_owns_recovery_start_and_stop(monkeypatch, scheduler_fails):
     assert events[0] == "recovery-start"
     assert events[-1] == "recovery-stop"
     assert "scheduler-stop" in events
-    assert "coordinator-stop" in events
 
 
 def test_authenticated_asgi_lifespan_runs_actual_scoped_recovery(tmp_path, monkeypatch):
@@ -67,8 +64,6 @@ os._exit(23)
         async def stop(self): pass
     monkeypatch.setattr(main, "JournalRecovery", lambda: recovery)
     monkeypatch.setattr(main, "get_proactive_scheduler", Scheduler)
-    monkeypatch.setattr(main, "start_minecraft_coordinator", lambda: "fixture")
-    monkeypatch.setattr(main, "reset_minecraft_coordinator", lambda _: None)
     monkeypatch.setattr(deps, "get_conversation_service", lambda: conversation)
     with TestClient(main.app) as client:
         assert client.get("/health").status_code == 401

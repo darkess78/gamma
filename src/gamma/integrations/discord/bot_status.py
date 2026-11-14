@@ -1,4 +1,4 @@
-"""Discord dashboard status, implemented by Gamma's repository coding loop."""
+"""Discord bot status label for the dashboard."""
 
 
 def summarize(process, state, now):

@@ -5,7 +5,7 @@ from gamma.dashboard import deps, main
 def test_discord_control_requires_dashboard_auth(monkeypatch):
     monkeypatch.setattr(main,'is_authenticated',lambda request:False)
     client=TestClient(main.app)
-    for url in ['/api/discord/voice/control','/api/coding/projects']:
+    for url in ['/api/discord/voice/control','/api/coding/work']:
         response=client.post(url,json={'command':'join'})
         assert response.status_code==401
 

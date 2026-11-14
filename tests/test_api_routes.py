@@ -8,6 +8,7 @@ from fastapi import HTTPException
 import gamma.system.status as status_module
 import gamma.voice.live_jobs as live_jobs_module
 import gamma.voice.roundtrip as roundtrip_module
+from gamma.config import settings
 from gamma.errors import ConfigurationError, ConversationError, ExternalServiceError
 from gamma.schemas.conversation import SpeakerContext
 from gamma.schemas.response import AssistantResponse
@@ -123,7 +124,7 @@ class ApiRoutesTest(unittest.TestCase):
         self.assertEqual(str(favicon.path), str(deps.DASHBOARD_STATIC_DIR / "favicon.svg"))
 
     def test_dashboard_subpage_routes_redirect_to_dashboard_app(self) -> None:
-        with patch.object(routes.settings, "dashboard_public_host", "10.78.78.29"):
+        with patch.object(settings, "dashboard_public_host", "10.78.78.29"):
             dashboard = pages.dashboard()
             response = pages.dashboard_page_redirect("live")
             presence = pages.presence_page_redirect()
@@ -160,9 +161,9 @@ class ApiRoutesTest(unittest.TestCase):
             ("settings", lambda: pages.dashboard_page_redirect("settings")),
         ]
         with (
-            patch.object(routes.settings, "dashboard_public_scheme", "https"),
-            patch.object(routes.settings, "dashboard_public_host", "gamma.neety.me"),
-            patch.object(routes.settings, "dashboard_public_port", 443),
+            patch.object(settings, "dashboard_public_scheme", "https"),
+            patch.object(settings, "dashboard_public_host", "gamma.neety.me"),
+            patch.object(settings, "dashboard_public_port", 443),
         ):
             for page_name, route_call in page_paths:
                 with self.subTest(page_name=page_name):

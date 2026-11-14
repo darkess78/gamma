@@ -788,7 +788,7 @@ These are proposed commits only; none were created during the inspection.
 
 | Commit | Purpose, files, symbols, tests, validation, stopping condition |
 | --- | --- |
-| 1. `spec: define Minecraft companion v1 contract` | Create `specs/minecraft_companion.md`; edit `specs/README.md`, `specs/roadmap.md`. Document ownership, protocol, state machine, safety, and acceptance criteria. Validation: spec-consistency tests and `git diff --check`. Stop if any design question changes protocol ownership or connection direction. |
+| 1. `spec: define Minecraft companion v1 contract` | Create `specs/archive/2026-11-14/minecraft_companion.md`; edit `specs/README.md`, `specs/roadmap.md`. Document ownership, protocol, state machine, safety, and acceptance criteria. Validation: spec-consistency tests and `git diff --check`. Stop if any design question changes protocol ownership or connection direction. |
 | 2. `feat: add Minecraft protocol models and fixtures` | Create package `src/gamma/integrations/minecraft/`, `protocol.py`, `models.py`, shared fixture JSON, and `tests/test_minecraft_protocol.py`. Main symbols: `ProtocolEnvelope`, `CommandEnvelope`, `CommandAck`, `CommandResult`, `StateSnapshot`, `ProtocolError`. Validation: focused pytest then full suite. Depends on commit 1. |
 | 3. `feat: scaffold TypeScript Minecraft sidecar contract` | Create `sidecars/minecraft/package.json`, lockfile, `tsconfig.json`, `src/protocol.ts`, and protocol tests. Exact pins only for TypeScript/test tooling initially. Validation: `npm test`, `npm run typecheck`, shared-fixture agreement. Stop before Mineflayer connection. |
 | 4. `feat: add fake sidecar and coordinator lifecycle` | Add `coordinator.py`, config/model helpers, Shana `LazySingleton`, lifespan start/stop, control WebSocket, heartbeat, status, cancellation, emergency stop, fake-sidecar tests. Edit `main.py`, `api/routes.py`, `config.py`, `app.example.toml`. No real Mineflayer. Validation: coordinator/API tests and full suite. |
@@ -917,7 +917,7 @@ Do not implement during the companion MVP:
 5. **Follow maximum duration:** recommended 15 minutes. If “persistent” requires longer, choose a hard upper bound and require periodic owner-presence renewal rather than unbounded execution.
 6. **Minecraft chat output:** keep disabled for the first movement slice, or allow short owner-only confirmations? Recommendation: disabled until output safety and rate limiting are tested.
 7. **Sidecar supervisor CLI shape:** add `minecraft` to `gamma.supervisor.cli`, or expose it only through Dashboard initially? Recommendation: add the CLI so lifecycle is independently testable.
-8. **Tracked specification name:** recommended `specs/minecraft_companion.md`.
+8. **Tracked specification name:** recommended `specs/archive/2026-11-14/minecraft_companion.md`.
 
 ## 26. Recommended First Implementation Prompt
 
@@ -949,7 +949,7 @@ First read:
 Stop and report without editing if the branch, HEAD, or worktree differs.
 
 Create:
-- specs/minecraft_companion.md
+- specs/archive/2026-11-14/minecraft_companion.md (archived 2026-11-14)
 - src/gamma/integrations/minecraft/__init__.py
 - src/gamma/integrations/minecraft/protocol.py
 - tests/test_minecraft_protocol.py

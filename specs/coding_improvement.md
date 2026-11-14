@@ -73,55 +73,8 @@ its `gamma-coding-idle.service` unit were removed on 2026-11-13.
 
 ## Outstanding implementation
 
-### Repository coding and Discord dashboard controls
-
-The Improvement page now starts `gamma.coding.repository` jobs under the existing
-dashboard access policy.
-The initial registered scope is the pure Discord dashboard status helper at
-`src/gamma/integrations/discord/bot_status.py`. Gamma's local model produces its
-own task plan and source replacements. The runner executes protected regression
-and feature checks offline, then separate withheld malformed-input checks. Failed
-checks feed subsequent attempts, up to five within a ten-minute budget.
-After five unsuccessful attempts, an independently selected local checker
-diagnoses the executed failures and replaces the failed implementation approach.
-Two further repair attempts may use that guidance under the same wall-clock
-budget. The protected tests and scope cannot be changed by either model.
-Completion requires applying the candidate to the registered source and repeating
-checks on the installed artifact. A baseline hash prevents overwriting intervening
-edits; each successful application retains the original source for rollback.
-Interrupted or failed promotion is never replayed automatically.
-
-`GET/POST /api/coding/projects` lists/starts this scope. The stop endpoint requests
-termination at the next stage boundary. Results retain plans, failures, hashes,
-attempt sources and verification evidence under ignored `data/coding/projects`.
-Successful runs add an editable `observed_repository` lesson. Candidate examples
-are marked `training_approved: false`; no model weights are trained or activated.
-Idle practice yields to queued or running repository jobs.
-
-This registered scope can apply verified changes under the owner's current
-authorization. The existing broader improvement experiments keep their separate
-review-only promotion policy. They are not a general-purpose coding executor.
-General repository access, new acceptance contracts and additional scope adapters
-remain necessary before Gamma can own unfamiliar projects.
-
-The Presence page provides Shana bot start/stop and voice join/leave/pause/resume.
-Commands inherit dashboard access controls and use a private serialized mailbox, owner identity from
-local configuration, and receipts from the live bot. Queued commands expire;
-running commands are never replayed after interruption. Status requires a live
-process and a fresh finite heartbeat and executes the installed Gamma-authored
-pure helper with restricted builtins. It exposes the helper hash for verification.
-
-- Broad-goal planning beyond registered scopes and general repository coding tools.
-- Automatic browser/runtime acceptance for new, unfamiliar coding scopes.
-- External checker integration beyond the local checker handoff.
-- Evidence-driven curriculum expansion rather than repetition of the fixed set.
-- Larger verified training datasets, incumbent-model comparison, production
-  candidate serving, owner activation and model rollback.
-- Personal preference/character learning and integration with the Memory dashboard.
-- Global GPU reservation and foreground preemption during candidate training.
-
-Passing this initial curriculum is a baseline measurement, not a model upgrade
-and not proof that Gamma can complete the Discord project autonomously.
+The older registered-scope repository coding path (`gamma.coding.repository`,
+its Discord-status scope and dashboard panel) was removed on 2026-11-14.
 
 ## Owner-directed autonomous repository coding
 
@@ -177,9 +130,8 @@ Trusted dashboard/API or host callers may supply up to three independently
 written `test_goal_owner_*.py` programs and select `acceptance_mode=owner_contract`.
 They are validated and hashed before candidate inference. This substitutes for
 checker test design; final independent model review remains mandatory. The
-conversation coding tool cannot select this mode. Successful frozen checks are
-retained as uniquely named protected `tests/test_verified_*.py` files, without
-overwriting owner tests, and participate in future repository snapshots.
+conversation coding tool cannot select this mode. Frozen checks are no longer copied into `tests/`
+(removed 2026-11-14); they stay with the job's own records.
 
 After successful installed checks and activation, the host observer reloads the
 installed lesson implementation and passes the actual completed work record.

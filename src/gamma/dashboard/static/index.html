@@ -87,7 +87,7 @@
       </section>
       <section class="panel full-width" data-dashboard-tab="improvement">
         <h2>Autonomous repository coding</h2>
-        <p>Give Gamma a concrete improvement goal. It inspects source, makes a task list, writes code, runs independent acceptance and regression checks, and applies verified changes with rollback.</p>
+        <p>Give Gamma a concrete coding goal. It inspects source, makes a task list, writes code and runs independent acceptance and regression checks, then stops with a proposed diff for your review. Nothing is applied to running Shana.</p>
         <form id="autonomousCodingForm" class="improvement-work-form">
           <label>Goal <textarea id="autonomousCodingGoal" class="text-input" required minlength="12" maxlength="2000" placeholder="Describe the result you want and any rough notes"></textarea></label>
           <label>Local coding model <input id="autonomousCodingModel" value="qwen3.8:27b" required></label>
@@ -97,18 +97,6 @@
         </form>
         <p id="autonomousCodingMessage" role="status"></p>
         <div id="autonomousCodingJobs"></div>
-      </section>
-      <section class="panel full-width" data-dashboard-tab="improvement">
-        <h2>Repository coding</h2>
-        <p>Gamma plans, edits, checks and applies changes within the registered Discord status scope. Failed checks feed repair attempts. Installed changes retain a rollback copy. This does not train model weights.</p>
-        <form id="codingProjectForm" class="improvement-work-form">
-          <label>Goal <textarea class="text-input" id="codingProjectGoal" required minlength="12" maxlength="1200">Make Shana Discord status accurate when stopped, reconnecting, listening or paused, including stale and malformed state.</textarea></label>
-          <label>Local model <input id="codingProjectModel" value="qwen3.8:27b" required></label>
-          <label>Independent local checker <input id="codingProjectCheckerModel" value="gpt-oss:20b" required></label>
-          <button type="submit">Give Gamma this coding task</button>
-        </form>
-        <p id="codingProjectMessage" role="status"></p>
-        <div id="codingProjectJobs"></div>
       </section>
       <section class="panel full-width" data-dashboard-tab="presence">
           <h2>Shana Discord bot</h2>
@@ -802,7 +790,6 @@
   <script src="/static/controls.js?v=20260611a"></script>
   <script src="/static/status.js?v=20260623c"></script>
     <script type="module" src="/static/discord.mjs?v=20261005a"></script>
-  <script type="module" src="/static/coding-projects.mjs?v=20261005d"></script>
   <script type="module" src="/static/autonomous-coding.mjs?v=20261004a"></script>
 </body>
 </html>

@@ -44,7 +44,6 @@ in effect until revisions are implemented, verified, and approved for activation
 - `llm_router.md`
 - `resource_routing.md`
 - `integrations.md`
-- `minecraft_companion.md`
 - `shana_presence.md`
 - `shana_output_bus.md`
 - `voice_dataset.md`

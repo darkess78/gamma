@@ -68,33 +68,6 @@ class DashboardService(StatusViewsMixin, LifecycleMixin, IntegrationsAdminMixin,
         self._stream_rehearsal_events: deque[dict[str, Any]] = deque(maxlen=25)
         self._stream_rehearsal_results: deque[dict[str, Any]] = deque(maxlen=25)
 
-    def start_coding_project(self, goal: str, model: str, checker_model: str = "gpt-oss:20b", checker_parent: str | None = None) -> dict[str, Any]:
-        from ..coding.repository import submission_lock
-        with submission_lock(settings.data_dir/"coding"/"projects"):
-            return self._start_coding_project_unlocked(goal,model,checker_model,checker_parent)
-
-    def _start_coding_project_unlocked(self, goal: str, model: str, checker_model: str, checker_parent: str | None) -> dict[str, Any]:
-        from ..coding.repository import create_job, list_jobs, job_path, write_json
-        root = settings.data_dir / "coding" / "projects"
-        if any(j["status"] in {"queued", "running"} for j in list_jobs(root)):
-            raise ValueError("A repository coding job is already pending")
-        record = create_job(root, goal, model, checker_model)
-        if checker_parent:
-            record["checker_parent"] = checker_parent
-            write_json(job_path(root,record["id"])/"state.json",record)
-        process = self._process_manager.start_module("coding_project", "gamma.coding.repository", ["--request-id", record["id"]])
-        if not process.get("ok"):
-            record.update(status="blocked", error="WorkerStartFailed")
-            write_json(job_path(root,record["id"])/"state.json",record)
-        return {"job":record,"process":process}
-
-    def continue_coding_with_checker(self, identifier: str) -> dict[str, Any]:
-        from ..coding.repository import job_path
-        path = job_path(settings.data_dir/'coding'/'projects', identifier)/'state.json'
-        record = json.loads(path.read_text(encoding='utf-8'))
-        if record.get('status') != 'needs_checker': raise ValueError('Job is not awaiting a checker')
-        return self.start_coding_project(record['goal'],record['model'],record.get('checker_model','gpt-oss:20b'),identifier)
-
     def clear_memory(self) -> dict[str, Any]:
         result = self._shana.post("/v1/memory/clear", {"scope": "all"})
         self._latest_provider_action = {

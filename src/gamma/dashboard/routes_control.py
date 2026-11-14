@@ -3,20 +3,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 from fastapi import HTTPException, Request
-from pydantic import BaseModel, Field
 
 from . import deps
-from ..config import settings as _app_settings
 
 router = APIRouter()
-
-class CodingProjectCreateRequest(BaseModel):
-    goal: str = Field(min_length=12, max_length=1200)
-    model: str = Field(default="qwen3.8:27b", pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,199}$")
-
-
-    checker_model: str = Field(default="gpt-oss:20b", pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,199}$")
-
 
 @router.get("/api/status")
 def status() -> dict:
@@ -66,43 +56,6 @@ def status_settings() -> dict:
 def status_memory() -> dict:
     """Return the bounded payload required by the Memory page."""
     return deps.get_dashboard_service().build_memory_status()
-
-
-@router.get("/api/coding/projects")
-def coding_projects() -> dict:
-    from ..coding.repository import list_jobs
-    return {"scope":"discord_status", "jobs":list_jobs(_app_settings.data_dir / "coding" / "projects")}
-
-
-@router.post("/api/coding/projects")
-def create_coding_project(payload: CodingProjectCreateRequest) -> dict:
-    try:
-        return deps.get_dashboard_service().start_coding_project(payload.goal, payload.model, payload.checker_model)
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-
-
-@router.post("/api/coding/projects/{identifier}/stop")
-def stop_coding_project(identifier: str) -> dict:
-    from ..coding.repository import job_path, write_json
-    import json
-    try:
-        path = job_path(_app_settings.data_dir / "coding" / "projects", identifier) / "state.json"
-        record = json.loads(path.read_text())
-        (path.parent / "stop.requested").touch(mode=0o600)
-        record["desired_state"] = "stopped"
-        write_json(path, record)
-        return {"id":identifier,"desired_state":"stopped"}
-    except (ValueError, FileNotFoundError) as exc:
-        raise HTTPException(status_code=404, detail="Repository job not found") from exc
-
-
-@router.post("/api/coding/projects/{identifier}/checker")
-def continue_coding_with_checker(identifier: str) -> dict:
-    try:
-        return deps.get_dashboard_service().continue_coding_with_checker(identifier)
-    except (ValueError,FileNotFoundError) as exc:
-        raise HTTPException(status_code=409, detail="Checker continuation unavailable") from exc
 
 
 @router.get("/api/presence")

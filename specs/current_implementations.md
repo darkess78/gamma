@@ -20,26 +20,8 @@ specs own detailed contracts; target documents own future work.
   configured local voice sidecars, and runtime stop controls preserve the
   always-on dashboard.
 - Structured rotating logs and request correlation.
-- Disabled-by-default Shana-owned Minecraft coordinator wiring and authenticated
-  loopback WebSocket control transport at `/v1/minecraft/control`.
-- Independently started Node sidecar with a narrow Mineflayer 4.37.1 adapter for
-  explicit offline-development join and leave; Gamma, Dashboard, and the
-  supervisor do not start it automatically.
-- Bounded Minecraft companion follow, wait, come, look, stop, and emergency-stop
-  execution uses direct steering without a pathfinder dependency. Movement is
-  limited to clear, flat, loaded, direct Overworld terrain and fails closed on
-  unknown terrain, obstacles, jumps, drops, liquids, hazards, portals, or a
-  dimension mismatch. No real-server movement smoke test has passed.
-- An explicitly opted-in manual smoke harness can exercise the real sidecar and
-  Mineflayer adapter against an already-running private loopback Java 1.21.11
-  offline server through a temporary fake Gamma controller. It does not use
-  active Shana, is excluded from default start and test paths, and has not yet
-  produced a successful real-server movement result.
-- Minecraft companion owner authorization is an exact case-insensitive match of
-  one configured and observed offline username. It is development-only and is
-  not online UUID-strength authorization. Dashboard controls, natural-language
-  commands, Microsoft authentication, and online owner UUID authorization remain
-  unimplemented.
+- The Minecraft companion (coordinator, control transport, Node sidecar) was
+  parked on `archive/minecraft-integration-20261114` on 2026-11-14.
 
 ## Persistent Shana Core
 
@@ -272,26 +254,22 @@ and recovery planning. Machine maintenance did not activate this staged source.
 - Conversation reliability and latency have an aggregate comparison foundation,
   but representative fixtures and an owner-facing soak/evaluation gate remain incomplete.
 
-# Registered repository coding and Shana controls
-
-The Coding dashboard page can run local-model repository coding on the registered
-Discord status helper. Gamma produces a plan and edits, repairs failed protected
-checks, requests another local model's diagnosis after five failures, verifies
-withheld cases and applies the helper with baseline conflict protection and a
-rollback copy. This narrow scope does not establish general project autonomy or
-change model weights. Evidence and candidate examples remain in ignored runtime
-storage; successful lessons are recorded there.
+# Discord controls
 
 The Presence dashboard controls Shana's Discord bot lifecycle and voice join,
-leave, pause and resume. Commands are serialized with live bot receipts. Status
-executes the installed Gamma-authored pure helper and includes its source hash.
-Existing dashboard authentication and proxy access policies apply.
+leave, pause and resume. Commands are serialized with live bot receipts. The
+status label comes from `integrations/discord/bot_status.py`. Existing dashboard
+authentication and proxy access policies apply.
+
+The older registered-scope repository coding path (`gamma.coding.repository`)
+was removed on 2026-11-14; autonomous coding is the only coding path.
 
 ## Autonomous coding
 
-The Coding page accepts owner goals and exposes pause/resume/stop, executed
-test receipts, installed-source application evidence and editable learning.
-Successful work retains frozen feature tests in the protected regression suite.
+The Coding page accepts owner goals and exposes pause/resume/stop and executed
+test receipts. Verified work stops at `awaiting_owner_review` with a
+`proposal.diff`; nothing is applied to running Shana. Frozen acceptance tests are
+no longer copied into `tests/`.
 Lesson revisions preserve provenance and owner edits. The runtime uses local
 Qwen3.8:27b for coding and GPT-OSS:20b for independent review. Protected controller,
 identity, safety and authentication code cannot be changed by the learner.

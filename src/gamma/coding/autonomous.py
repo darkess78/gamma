@@ -12,7 +12,7 @@ from . import autonomous_store as store
 from .learner import LocalPracticeLearner
 from .project_policy import allowed_source, inventory, read_sources, source_path, validate_edits
 from .project_loop import _ordered
-from .project_transaction import apply_verified_changes, digest
+from .project_transaction import apply_verified_changes
 from .project_verification import acceptance_source, run_checks, snapshot
 
 
@@ -440,7 +440,6 @@ class RepositoryAgent:
                                    proposal='proposal.diff')
                 return self.record
             self.checkpoint(); self.event('applying', 'Applying hash-bound verified source with rollback')
-            retained = []
             def installed():
                 installed_workspace = self.path / 'installed'
                 snapshot(self.project, installed_workspace)
@@ -451,19 +450,12 @@ class RepositoryAgent:
                 activation = self.activate(list(changes)) if passed and self.activate else None
                 if activation is not None:
                     passed = passed and activation.get('passed') is True
-                if passed:
-                    from .acceptance_retention import retain_checks
-                    retained.extend(retain_checks(self.project,workspace,accepted,identifier))
-                return {'passed':passed,'evidence':{'installed_checks':result,'activation':activation,
-                                                   'retained_checks':retained}}
+                return {'passed':passed,'evidence':{'installed_checks':result,'activation':activation}}
             receipt = apply_verified_changes(self.project, changes, {p:baseline.get(p) for p in changes},
                                              self.path / 'application', installed)
             self.record['application'] = receipt
             self.record['status'] = 'completed' if receipt['passed'] else 'application_failed'
             self.record['stage'] = self.record['status']
-            if not receipt['passed'] and retained:
-                from .acceptance_retention import rollback_checks
-                self.record['acceptance_rollback_conflicts'] = rollback_checks(retained)
             if not receipt['passed'] and receipt['status'] == 'rolled_back' and self.activate:
                 self.record['rollback_activation'] = self.activate(list(changes))
             if receipt['passed']:

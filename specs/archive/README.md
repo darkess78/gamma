@@ -8,6 +8,9 @@ wrong. Its scope and date still matter.
 - [2026-10-23 documentation capture](2026-10-23/README.md) preserves the older
   product plan, roadmaps, source audit, and implementation proposals while the
   fresh Shana foundation is discussed.
+- [2026-11-14 removals](2026-11-14/minecraft_companion.md): the Minecraft
+  companion spec and implementation plan. The code (Python coordinator, control
+  transport and the Node sidecar) is on `archive/minecraft-integration-20261114`.
 - [2026-11-13 removals](2026-11-13/improvement.md): the self-improvement
   pipeline spec, archived when `src/gamma/improvement/` was removed from
   `rebuild/shana-foundation`. The code remains on

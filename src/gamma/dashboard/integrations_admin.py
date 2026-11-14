@@ -86,13 +86,14 @@ class IntegrationsAdminMixin:
         missing = self._missing_discord_text_config(config)
         process = self._process_manager.module_status(self.DISCORD_TEXT_SERVICE, self.DISCORD_TEXT_MODULE)
         state = read_discord_worker_state()
-        from ..coding.repository import status_summary
-        from ..config import PROJECT_ROOT
-        summary, digest = status_summary(process.get("process", {}), state, time.time(), PROJECT_ROOT)
+        from ..integrations.discord.bot_status import summarize
+        try:
+            summary = summarize(process.get("process", {}), state, time.time())
+        except Exception:
+            summary = {"connected": False, "voice": "unknown", "label": "Status unverified"}
         return {
             **process,
             "summary": summary,
-            "summary_source_sha256": digest,
             "configured": not missing,
             "missing_config": missing,
             "enabled": config.enabled,

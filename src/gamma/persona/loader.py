@@ -112,8 +112,11 @@ def build_system_prompt(
             )
             if profile_facts:
                 memory_lines.append("## Stored Facts About The User")
+                earlier = memory_service.previous_values([f.id for f in profile_facts])
                 for fact in profile_facts:
-                    memory_lines.append(f"- [{fact.category}] {describe_record(fact)}")
+                    before = earlier.get(fact.id)
+                    previously = f" (previously: {'; '.join(before)})" if before else ""
+                    memory_lines.append(f"- [{fact.category}] {describe_record(fact)}{previously}")
 
             mentioned_people = _extract_named_people(user_text or "")
             if mentioned_people:

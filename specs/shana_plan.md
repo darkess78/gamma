@@ -135,7 +135,16 @@ it at `~/Documents/gamma-models/bge-small-en-v1.5`. Training our own embedding
 model was ruled out: it needs a large paired dataset and GPU time, and would
 still be worse than a pretrained one.
 
-Supersession, reflection and the FTS5 index for large histories remain.
+**Changed facts are kept (2026-11-14):** a newer fact about the same thing
+(your name, how you feel about one particular thing, your favourite of one
+kind, your main project) marks the older one `superseded_at`/`superseded_by`
+instead of overwriting or deleting it. Recall shows only current facts, and the
+owner-private prompt adds "(previously: …)" so Shana can say "you used to…".
+Forgetting a fact forgets what it replaced; "forget recent" brings the older
+value back. This also fixed a bug: any two likes ("I like cats", "I like
+pizza") or favourites of different kinds used to overwrite each other.
+
+Reflection and the FTS5 index for large histories remain.
 
 ### W3. Knowing people — **Do, changed**
 

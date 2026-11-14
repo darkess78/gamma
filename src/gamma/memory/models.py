@@ -42,6 +42,10 @@ class ProfileFact(SQLModel, table=True):
     # Which audience this came from: owner_only, stream, discord or unknown.
     # NULL (rows written before 2026-11-14) is treated as owner_only.
     visibility: str | None = Field(default=None, index=True, exclude=True)
+    # Set when a newer fact replaced this one ("you used to..."): kept as history,
+    # left out of normal recall, deleted together with the fact that replaced it.
+    superseded_at: datetime | None = Field(default=None, index=True, exclude=True)
+    superseded_by: int | None = Field(default=None, exclude=True)
     created_at: datetime = Field(default_factory=_utc_now, index=True)
 
 

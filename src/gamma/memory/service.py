@@ -97,6 +97,27 @@ def _profile_slot(category: str, fact_text: str) -> str | None:
     return None
 
 
+def _fact_key(category: str, fact_text: str) -> str | None:
+    """What a changeable fact is about, so a newer one replaces only the matching older one.
+
+    Your name; how you feel about one particular thing (like and dislike share a key,
+    so changing your mind replaces it); your favourite of one particular kind; your
+    main project. Anything else accumulates.
+    """
+    slot = _profile_slot(category, fact_text)
+    if slot in {"identity:name", "project:active"}:
+        return slot
+    subject = _extract_preference_subject(slot, fact_text)
+    if not subject:
+        return None
+    if slot in {"preference:like", "preference:dislike"}:
+        return f"preference:feeling:{subject}"
+    if slot == "preference:favorite":
+        kind = subject.split(" is ", 1)[0].split(" are ", 1)[0].strip()
+        return f"preference:favorite:{kind}" if kind and kind != subject else None
+    return None
+
+
 def _memory_text_signature(text: str) -> str:
     """Get signature for matching memory items.
     
@@ -305,6 +326,8 @@ class MemoryService:
                     "relationship_to_user": "TEXT",
                     "attribution": "TEXT",
                     "visibility": "TEXT",
+                    "superseded_at": "TEXT",
+                    "superseded_by": "INTEGER",
                     "created_at": "TEXT",
                 },
             )
@@ -358,7 +381,8 @@ class MemoryService:
             list[ProfileFact]: Profile facts ranked by importance, then confidence.
         """
         with Session(self._engine) as session:
-            statement = select(ProfileFact).order_by(ProfileFact.importance.desc(), ProfileFact.confidence.desc(), ProfileFact.id.desc())
+            statement = (select(ProfileFact).where(ProfileFact.superseded_at.is_(None))
+                         .order_by(ProfileFact.importance.desc(), ProfileFact.confidence.desc(), ProfileFact.id.desc()))
             if subject_type:
                 statement = statement.where(ProfileFact.subject_type == subject_type)
             if subject_name:
@@ -424,7 +448,7 @@ class MemoryService:
         """The most important fact(s), then the facts most relevant to ``query``."""
         limit = limit or settings.memory_top_k
         with Session(self._engine) as session:
-            statement = select(ProfileFact)
+            statement = select(ProfileFact).where(ProfileFact.superseded_at.is_(None))
             if subject_type:
                 statement = statement.where(ProfileFact.subject_type == subject_type)
             if subject_name:
@@ -445,6 +469,39 @@ class MemoryService:
         if not ranked:
             return by_importance[:limit]
         return retrieval.merge_pinned(by_importance[:pinned], [s.item for s in ranked], key=lambda f: f.id, limit=limit)
+
+    def previous_values(self, fact_ids: Iterable[int], *, limit: int = 2) -> dict[int, list[str]]:
+        """Older texts each current fact replaced, newest first ("you used to...")."""
+        wanted = [i for i in fact_ids if i]
+        if not wanted:
+            return {}
+        with Session(self._engine) as session:
+            history = list(session.exec(select(ProfileFact).where(ProfileFact.superseded_at.is_not(None))))
+        by_successor: dict[int, list[ProfileFact]] = {}
+        for fact in history:
+            if fact.superseded_by:
+                by_successor.setdefault(fact.superseded_by, []).append(fact)
+        out: dict[int, list[str]] = {}
+        for fact_id in wanted:
+            texts, frontier, seen = [], [fact_id], {fact_id}
+            while frontier and len(texts) < limit:
+                older = sorted((f for n in frontier for f in by_successor.get(n, [])),
+                               key=lambda f: f.superseded_at, reverse=True)
+                frontier = [f.id for f in older if f.id not in seen]
+                seen.update(frontier)
+                texts.extend(f.fact_text for f in older)
+            if texts:
+                out[fact_id] = texts[:limit]
+        return out
+
+    def _with_history(self, session: Session, fact_ids: set[int]) -> set[int]:
+        """The facts plus every older fact they replaced, so forgetting one forgets its past too."""
+        ids, frontier = set(fact_ids), set(fact_ids)
+        while frontier:
+            older = {f.id for f in session.exec(select(ProfileFact).where(ProfileFact.superseded_by.in_(frontier)))}
+            frontier = older - ids
+            ids |= older
+        return ids
 
     def persist_candidates(self, candidates: Iterable[MemoryCandidate], session_id: str | None = None, *, origin: MemoryOrigin | None = None) -> int:
         """Persist memory candidates.
@@ -524,6 +581,7 @@ class MemoryService:
             ProfileFact.fact_text == normalized_text,
             ProfileFact.subject_type == subject_type,
         )
+        exact_statement = exact_statement.where(ProfileFact.superseded_at.is_(None))
         if subject_name:
             exact_statement = exact_statement.where(ProfileFact.subject_name == subject_name)
         else:
@@ -537,52 +595,18 @@ class MemoryService:
             session.add(existing_exact)
             return 0
 
-        slot = _profile_slot(category, normalized_text)
-        preference_subject = _extract_preference_subject(slot, normalized_text)
-        if preference_subject and slot in {"preference:like", "preference:dislike"}:
-            opposite_slot = "preference:dislike" if slot == "preference:like" else "preference:like"
-            opposite_statement = select(ProfileFact).where(
-                ProfileFact.category.in_(["preference", "user_preference"]),
-                ProfileFact.subject_type == subject_type,
-            )
+        replaced: list[ProfileFact] = []
+        key = _fact_key(category, normalized_text)
+        if key:
+            current = select(ProfileFact).where(
+                ProfileFact.subject_type == subject_type, ProfileFact.superseded_at.is_(None))
             if subject_name:
-                opposite_statement = opposite_statement.where(ProfileFact.subject_name == subject_name)
+                current = current.where(ProfileFact.subject_name == subject_name)
             else:
-                opposite_statement = opposite_statement.where(ProfileFact.subject_name.is_(None))
-            for fact in list(session.exec(opposite_statement)):
-                if source_key(fact.attribution) != source_key(attribution):
-                    continue
-                if _profile_slot(fact.category, fact.fact_text) != opposite_slot:
-                    continue
-                if _extract_preference_subject(opposite_slot, fact.fact_text) == preference_subject:
-                    session.delete(fact)
-
-        if slot:
-            candidate_categories = [category]
-            if category == "preference":
-                candidate_categories.append("user_preference")
-            elif category == "user_preference":
-                candidate_categories.append("preference")
-            slot_statement = select(ProfileFact).where(
-                ProfileFact.category.in_(candidate_categories),
-                ProfileFact.subject_type == subject_type,
-            )
-            if subject_name:
-                slot_statement = slot_statement.where(ProfileFact.subject_name == subject_name)
-            else:
-                slot_statement = slot_statement.where(ProfileFact.subject_name.is_(None))
-            existing_facts = list(session.exec(slot_statement))
-            for fact in existing_facts:
-                if source_key(fact.attribution) != source_key(attribution):
-                    continue
-                if _profile_slot(fact.category, fact.fact_text) == slot:
-                    fact.fact_text = normalized_text
-                    fact.confidence = confidence
-                    fact.importance = importance
-                    fact.attribution = merge_origin(fact.attribution, attribution)
-                    fact.relationship_to_user = relationship_to_user or fact.relationship_to_user
-                    session.add(fact)
-                    return 0
+                current = current.where(ProfileFact.subject_name.is_(None))
+            replaced = [fact for fact in session.exec(current)
+                        if source_key(fact.attribution) == source_key(attribution)
+                        and _fact_key(fact.category, fact.fact_text) == key]
 
         session.add(
             ProfileFact(
@@ -597,6 +621,16 @@ class MemoryService:
                 relationship_to_user=relationship_to_user,
             )
         )
+        if replaced:
+            session.flush()
+            newest = session.exec(select(ProfileFact).where(ProfileFact.fact_text == normalized_text,
+                                                            ProfileFact.superseded_at.is_(None))
+                                  .order_by(ProfileFact.id.desc())).first()
+            now = datetime.now(timezone.utc)
+            for fact in replaced:
+                fact.superseded_at, fact.superseded_by = now, newest.id if newest else None
+                fact.relationship_to_user = fact.relationship_to_user or relationship_to_user
+                session.add(fact)
         return 1
 
     def _upsert_episodic_memory(self, session: Session, candidate: MemoryCandidate, session_id: str | None = None, *,
@@ -904,6 +938,7 @@ class MemoryService:
                     "summary": fact.fact_text,
                     "category": fact.category,
                     "confidence": fact.confidence,
+                    "replaced": fact.superseded_at is not None,
                     "session_id": None,
                     "created_at": fact.created_at.isoformat() if fact.created_at else None,
                 }
@@ -945,6 +980,13 @@ class MemoryService:
         with Session(self._engine) as session:
             recent_facts = list(session.exec(select(ProfileFact).where(ProfileFact.created_at >= cutoff)))
             recent_episodic = list(session.exec(select(EpisodicMemory).where(EpisodicMemory.created_at >= cutoff)))
+            removed = {fact.id for fact in recent_facts}
+            # Undoing a recent change brings back what it replaced.
+            if removed:
+                for older in session.exec(select(ProfileFact).where(ProfileFact.superseded_by.in_(removed))):
+                    if older.id not in removed:
+                        older.superseded_at, older.superseded_by = None, None
+                        session.add(older)
             for fact in recent_facts:
                 session.delete(fact)
             for memory in recent_episodic:
@@ -978,6 +1020,7 @@ class MemoryService:
             removed_profile = 0
             removed_episodic = 0
             if profile_ids:
+                profile_ids = self._with_history(session, profile_ids)
                 for fact in session.exec(select(ProfileFact).where(ProfileFact.id.in_(profile_ids))):
                     session.delete(fact)
                     removed_profile += 1

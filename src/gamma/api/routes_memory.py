@@ -92,3 +92,23 @@ def memory_viewer_forget(key: str) -> dict:
     """Forget everything a viewer told Shana."""
     from ..memory.viewer_memory import ViewerMemory
     return {"key": key, "forgotten": ViewerMemory(deps.get_memory_service()._engine).forget(key)}
+
+
+@router.get("/v1/memory/relationships/{key}")
+def memory_relationship(key: str) -> dict:
+    """How well Shana knows one person, per audience (key: owner, person:<id> or twitch:12345)."""
+    from ..memory.relationships import OWNER_KEY, RelationshipStore, valid_key
+    from ..persona.loader import owner_baseline_familiarity
+    if not valid_key(key):
+        raise HTTPException(status_code=400, detail="unsupported relationship key")
+    neutral = owner_baseline_familiarity() if key == OWNER_KEY else 0.0
+    return {"key": key, "relationships": RelationshipStore(deps.get_memory_service()._engine).all_for(key, neutral=neutral)}
+
+
+@router.delete("/v1/memory/relationships/{key}")
+def memory_relationship_forget(key: str) -> dict:
+    """Forget Shana's relationship state for one person (every audience)."""
+    from ..memory.relationships import RelationshipStore, valid_key
+    if not valid_key(key):
+        raise HTTPException(status_code=400, detail="unsupported relationship key")
+    return {"key": key, "forgotten": RelationshipStore(deps.get_memory_service()._engine).forget(key)}

@@ -38,3 +38,18 @@ packages for Windows; see [voice_dataset.md](voice_dataset.md).
 - Python virtualenv, `ffmpeg` and `ffprobe`
 - `bwrap`, `prlimit` and `systemd-run` for sandboxed practice and coding checks
 - PortAudio or ALSA tools only for local microphone capture
+
+## Dashboard login
+
+Reset the login on Gamma PC from the Gamma checkout:
+
+```bash
+.venv/bin/python -m gamma.dashboard.reset_password --restart
+```
+
+It asks for the new password with hidden input (twice, at least 10 characters),
+stores only a salted scrypt hash as `dashboard_auth_password_hash` in
+`config/app.local.toml`, removes any plain `dashboard_auth_password`, and rotates
+`dashboard_session_secret`, which signs out every browser. `--username NAME`
+changes the login name; `--restart` restarts `gamma-dashboard.service`.
+A plain `dashboard_auth_password` still works until the first reset.

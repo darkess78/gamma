@@ -158,6 +158,8 @@ assistant_emotion_pattern_threshold = 3
 dashboard_auth_enabled = false
 dashboard_auth_username = ""
 dashboard_auth_password = ""
+# Set both with: .venv/bin/python -m gamma.dashboard.reset_password
+dashboard_auth_password_hash = ""
 dashboard_session_secret = ""
 dashboard_cookie_secure = false
 api_auth_enabled = false

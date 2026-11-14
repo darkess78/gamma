@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from fastapi import Request, WebSocket
 
 from ..config import settings
+from .credentials import verify_password
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,6 +16,7 @@ class DashboardAuthConfig:
     enabled: bool
     username: str
     password: str
+    password_hash: str
     session_secret: str
     cookie_secure: bool
 
@@ -24,6 +26,7 @@ def auth_config() -> DashboardAuthConfig:
         enabled=settings.dashboard_auth_enabled,
         username=settings.dashboard_auth_username,
         password=settings.dashboard_auth_password,
+        password_hash=settings.dashboard_auth_password_hash,
         session_secret=settings.dashboard_session_secret,
         cookie_secure=settings.dashboard_cookie_secure,
     )
@@ -33,12 +36,16 @@ def dashboard_auth_ready() -> bool:
     config = auth_config()
     if not config.enabled:
         return False
-    return bool(config.username and config.password and config.session_secret)
+    return bool(config.username and (config.password_hash or config.password) and config.session_secret)
 
 
 def verify_login(username: str, password: str) -> bool:
     config = auth_config()
-    return secrets.compare_digest(username, config.username) and secrets.compare_digest(password, config.password)
+    if not secrets.compare_digest(username, config.username):
+        return False
+    if config.password_hash:  # set by `python -m gamma.dashboard.reset_password`
+        return verify_password(password, config.password_hash)
+    return bool(config.password) and secrets.compare_digest(password, config.password)
 
 
 def session_cookie_value(username: str) -> str:

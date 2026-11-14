@@ -275,6 +275,7 @@ class Settings:
     dashboard_auth_enabled: bool = _bool("dashboard_auth_enabled", default=False)
     dashboard_auth_username: str = _str("dashboard_auth_username", default="")
     dashboard_auth_password: str = _str("dashboard_auth_password", default="")
+    dashboard_auth_password_hash: str = _str("dashboard_auth_password_hash", default="")
     dashboard_session_secret: str = _str("dashboard_session_secret", default="")
     dashboard_cookie_secure: bool = _bool("dashboard_cookie_secure", default=False)
     dashboard_public_scheme: str = _str(

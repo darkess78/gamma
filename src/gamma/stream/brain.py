@@ -16,7 +16,7 @@ from ..schemas.conversation import RecipientContext
 from ..schemas.response import AssistantResponse
 from ..voice.tts import TTSResult, TTSService
 from .actions import ActionPlanner
-from .event_rules import _canned_response_from_decision, _input_safety, _is_public_stream_event, _twitch_control_enabled, _would_twitch_dry_run_suppress
+from .event_rules import _canned_response_from_decision, _decision_would_speak, _estimate_speech_seconds, _input_safety, _is_public_stream_event, _twitch_control_enabled, _would_twitch_dry_run_suppress
 from .models import (
     ActionPlan,
     StreamActor,
@@ -138,8 +138,38 @@ class StreamBrain(PublicationReviewMixin):
         brief_mode: bool = False,
         micro_mode: bool = False,
         owner_channel: bool = False,
+        chat_summary: str | None = None,
     ) -> StreamTurnResult:
-        """owner_channel: the API verified the request came from the owner's dashboard."""
+        """owner_channel: the API verified the request came from the owner's dashboard.
+
+        chat_summary: a summary of the other recent chat messages, supplied by the
+        chat-window picker (never read from the event body, which callers control).
+        """
+        try:
+            return self._handle_event(
+                event,
+                synthesize_speech=synthesize_speech,
+                fast_mode=fast_mode,
+                brief_mode=brief_mode,
+                micro_mode=micro_mode,
+                owner_channel=owner_channel,
+                chat_summary=chat_summary,
+            )
+        except BaseException:
+            self._pacer.release(event.event_id)
+            raise
+
+    def _handle_event(
+        self,
+        event: StreamInputEvent,
+        *,
+        synthesize_speech: bool,
+        fast_mode: bool,
+        brief_mode: bool,
+        micro_mode: bool,
+        owner_channel: bool,
+        chat_summary: str | None,
+    ) -> StreamTurnResult:
         started_at = time.perf_counter()
         decision = self.decide(event)
         response = None
@@ -206,8 +236,9 @@ class StreamBrain(PublicationReviewMixin):
             }
             if _is_public_stream_event(event) and event.actor.source.strip().lower() != "discord":
                 recent_context = self._assemble_recent_context()
-                if recent_context:
-                    conversation_args["stream_context"] = recent_context
+                stream_context = "\n\n".join(part for part in (recent_context, (chat_summary or "").strip()) if part)
+                if stream_context:
+                    conversation_args["stream_context"] = stream_context
             response = self._conversation.respond(**conversation_args)
             self._remember_viewer(event, recipient)
             action_plan = self._action_planner.plan_from_response(response)
@@ -249,6 +280,17 @@ class StreamBrain(PublicationReviewMixin):
             output_events = _apply_output_target_policy(event, output_events)
         output_events = _filter_stream_output_events(event, output_events)
         output_dispatch = self._output_dispatcher.dispatch(output_events) if output_events else None
+        spoken_text = _dispatched_speech_text(output_events)
+        if _decision_would_speak(decision) and spoken_text is not None:
+            self._pacer.confirm_spoken(event.event_id, speech_seconds=_estimate_speech_seconds(spoken_text))
+        else:
+            self._pacer.release(event.event_id)
+        if decision.decision == "defer" and decision.metadata.get("pending_slot"):
+            self._pacer.remember_pending_options(
+                event.event_id, {"synthesize_speech": synthesize_speech, "fast_mode": fast_mode},
+            )
+        if chat_summary:
+            decision.metadata.setdefault("chat_window_summary", chat_summary)
 
         result = StreamTurnResult(
             input_event=event,
@@ -345,6 +387,28 @@ class StreamBrain(PublicationReviewMixin):
         if result.output_events and not result.output_dispatch:
             result.output_dispatch = self._output_dispatcher.dispatch(result.output_events).model_dump()
         self._trace_store.append(result)
+
+    def speech_ready_in(self, event: StreamInputEvent) -> float:
+        """Seconds until a paced turn for ``event`` could speak; used by the chat-window picker."""
+        return self._pacer.ready_in(event)
+
+    def take_deferred(self) -> list[dict]:
+        """Hand the pacer's deferred turns to the chat-window picker for replay."""
+        return self._pacer.take_pending()
+
+    def record_skipped(self, event: StreamInputEvent, *, reason: str, metadata: dict | None = None) -> StreamTurnResult:
+        """Trace a chat message the picker dropped (stale, overflow) without calling the model."""
+        result = StreamTurnResult(
+            input_event=event,
+            decision=TurnDecision(
+                decision="ignore",
+                reason=reason,
+                metadata={"event_kind": event.kind, **(metadata or {})},
+            ),
+        )
+        self._record_temp_memory(result)
+        self._trace_store.append(result)
+        return result
 
     def pending_queue(self) -> dict:
         """Get pending queue snapshot.
@@ -587,6 +651,19 @@ class StreamBrain(PublicationReviewMixin):
 
 
 OWNER_EVENT_KINDS = {"mic_transcript", "owner_command"}
+
+
+def _dispatched_speech_text(output_events: list[StreamOutputEvent]) -> str | None:
+    """The text this turn put on stream (subtitle or audio), or None when nothing was spoken."""
+    spoke = False
+    text = ""
+    for output in output_events:
+        if output.type == "subtitle_line" and not output.payload.get("clear"):
+            spoke = True
+            text = text or str(output.payload.get("text") or "")
+        elif output.type in {"speech_started", "speech_chunk"}:
+            spoke = True
+    return text if spoke else None
 
 
 def _is_owner_private_event(event: StreamInputEvent, *, owner_channel: bool) -> bool:

@@ -40,6 +40,8 @@ class TwitchWorkerConfig:
     spam_quip_cooldown_seconds: int = 60
     max_speech_seconds_per_minute: int = 20
     ignored_bots: tuple[str, ...] = ("Nightbot", "StreamElements", "Streamlabs")
+    # Queue chat in the API's chat window (returns at once) instead of one blocking turn per message.
+    chat_window: bool = False
 
     @classmethod
     def from_settings(cls) -> "TwitchWorkerConfig":
@@ -71,6 +73,7 @@ class TwitchWorkerConfig:
             spam_quip_cooldown_seconds=max(0, int(getattr(settings, "twitch_spam_quip_cooldown_seconds", 60))),
             max_speech_seconds_per_minute=max(0, int(getattr(settings, "twitch_max_speech_seconds_per_minute", 20))),
             ignored_bots=tuple(getattr(settings, "twitch_ignored_bots", ("Nightbot", "StreamElements", "Streamlabs"))),
+            chat_window=bool(getattr(settings, "twitch_chat_window_enabled", True)),
         )
 
     @property
@@ -166,10 +169,12 @@ class TwitchIrcWorker:
             session_id=event.session_id,
         )
         try:
+            extra = {"chat_window": True} if self.config.chat_window else {}
             result = self.client.post_event(
                 event,
                 synthesize_speech=self.synthesize_speech,
                 fast_mode=self.fast_mode,
+                **extra,
             )
         except Exception as exc:
             log_event(

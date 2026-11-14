@@ -1,6 +1,9 @@
 """Stream events, traces, queue, temporary memory, self-goals and viewer trust."""
 from __future__ import annotations
 
+from contextlib import nullcontext
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Request
 
 from . import deps
@@ -41,10 +44,24 @@ def stream_viewer_trust_save(payload: ViewerTrustPayload) -> dict:
     return {"ok": True, "record": deps._viewer_trust_payload(record)}
 
 
-@router.post("/v1/stream/events", response_model=StreamTurnResult)
+@router.post("/v1/stream/events", response_model=None)
 def stream_event(
-    event: StreamInputEvent, synthesize_speech: bool = False, fast_mode: bool = True, http_request: Request = None,
-) -> StreamTurnResult:
+    event: StreamInputEvent,
+    synthesize_speech: bool = False,
+    fast_mode: bool = True,
+    chat_window: bool = False,
+    http_request: Request = None,
+) -> StreamTurnResult | dict[str, Any]:
+    """Run one stream event.
+
+    With ``chat_window=true`` a Twitch chat message from a non-owner channel is
+    queued in the chat window and the call returns at once with
+    ``{"status": "queued" | "handled", "queue_id": ...}``; poll
+    ``GET /v1/stream/chat-window/{queue_id}`` for the outcome. Everything else
+    (owner/Monitor input, Discord, support events, replay, rehearsal) stays on
+    the synchronous path and returns the full turn result; while such a turn
+    runs, the chat picker waits (owner first).
+    """
     try:
         request_id = current_request_id()
         if request_id:
@@ -55,13 +72,19 @@ def stream_event(
             synthesize_speech=synthesize_speech,
             state=presence,
         )
-        return deps.get_stream_brain().handle_event(
-            event,
-            synthesize_speech=synthesize_speech,
-            fast_mode=fast_mode,
-            owner_channel=http_request is not None
-            and owner_channel.is_owner_channel(http_request.headers.get(owner_channel.HEADER)),
+        is_owner_channel = http_request is not None and owner_channel.is_owner_channel(
+            http_request.headers.get(owner_channel.HEADER)
         )
+        if chat_window and _chat_window_eligible(event) and not is_owner_channel:
+            return deps.get_chat_window().submit(event, synthesize_speech=synthesize_speech, fast_mode=fast_mode)
+        window = deps.started_chat_window()
+        with window.foreground() if window is not None else nullcontext():
+            return deps.get_stream_brain().handle_event(
+                event,
+                synthesize_speech=synthesize_speech,
+                fast_mode=fast_mode,
+                owner_channel=is_owner_channel,
+            )
     except ConversationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ConfigurationError as exc:
@@ -70,6 +93,25 @@ def stream_event(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except GammaError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+def _chat_window_eligible(event: StreamInputEvent) -> bool:
+    return event.kind == "chat_message" and event.actor.source.strip().lower() == "twitch"
+
+
+@router.get("/v1/stream/chat-window")
+def stream_chat_window() -> dict:
+    window = deps.started_chat_window()
+    return window.snapshot() if window is not None else {"running": False, "size": 0, "items": []}
+
+
+@router.get("/v1/stream/chat-window/{queue_id}")
+def stream_chat_window_item(queue_id: str) -> dict:
+    window = deps.started_chat_window()
+    record = window.status(queue_id) if window is not None else None
+    if record is None:
+        raise HTTPException(status_code=404, detail="unknown queue_id")
+    return record
 
 
 @router.get("/v1/stream/traces/recent")
@@ -105,7 +147,11 @@ def stream_recent_outputs(limit: int = 50) -> dict[str, list[dict]]:
 @router.get("/v1/stream/queue")
 def stream_pending_queue() -> dict:
     try:
-        return deps.get_stream_brain().pending_queue()
+        queue = deps.get_stream_brain().pending_queue()
+        window = deps.started_chat_window()
+        if window is not None:
+            queue["chat_window"] = window.snapshot()
+        return queue
     except GammaError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
@@ -180,6 +226,9 @@ def stream_self_goals_clear() -> dict:
 def stream_stop(reason: str = "operator_stop") -> StreamTurnResult:
     try:
         live_cancellations = deps._cancel_active_live_turns(reason=reason)
+        window = deps.started_chat_window()
+        if window is not None:
+            window.clear()
         return deps.get_stream_brain().stop_stream(reason=reason, live_cancellations=live_cancellations)
     except GammaError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

@@ -183,6 +183,20 @@ request ("ban @x", "timeout that guy"); a spent speech budget defers before
 the model call; EventSub drops repeated message ids and posts off the event
 loop. More EventSub subscriptions need Twitch scopes on the owner's token.
 
+**Step 2 and the step 3 hook done (2026-11-14):** the IRC worker posts chat
+with `chat_window=true`; the API queues it and returns at once. One picker
+thread answers the best recent message when pacing allows (owner, support
+events, mentions, questions, trust, freshness; spam last), drops messages older
+than 40 s, does not answer the same viewer twice in a row while others wait,
+and replays turns the pacer deferred. Owner/Monitor, Discord, EventSub and
+replay stay synchronous; the picker waits while they run. When chat is busy a
+deterministic summary (counts, repeated topics, verbatim-checked quotes of
+questions) goes into stream context; the small-model summarizer plugs into the
+same interface and is still to do (needs the GPU). The pacer is now
+thread-safe and starts the gap when speech is dispatched; it uses a word-count
+estimate for speech length until playback-finished events are wired in. Not
+tried against live Twitch yet. Details: `streamer_plan/twitch_stream_module.md`.
+
 Whether Shana should type in Twitch chat as well as speak is an owner decision.
 
 ### W5. Discord — **Do**
@@ -327,7 +341,7 @@ No GPU needed.
 8. W3 visibility scopes and one trust system
 
 **Phase 2 — when the GPU is free**
-- W6 streaming voice, W10 real-model wiring, W4 steps 2–3, W5 voice,
+- W6 streaming voice, W10 real-model wiring, W4 step 3 (model summarizer), W5 voice,
   W7 first real game, W0 identity suite against the real model.
 
 **Phase 3**

@@ -17,6 +17,7 @@ from ..performer.vtube_studio import VTubeStudioAdapter, VTubeStudioRunner
 from ..presence import PresenceService
 from ..proactive import ProactiveScheduler
 from ..stream.brain import StreamBrain
+from ..stream.chat_window import ChatWindow
 from ..stream.output import StreamOutputLogService
 from ..stream.replay import StreamReplayService
 from ..stream.self_goals import StreamSelfGoalStore
@@ -64,6 +65,9 @@ live_turn_runtime = LazySingleton[LiveTurnRuntime]()
 
 
 stream_brain = LazySingleton[StreamBrain]()
+
+
+chat_window = LazySingleton[ChatWindow]()
 
 
 stream_replay_service = LazySingleton[StreamReplayService]()
@@ -168,6 +172,18 @@ def get_stream_brain() -> StreamBrain:
         StreamBrain: Lazy singleton instance.
     """
     return stream_brain.get(StreamBrain)
+
+
+def get_chat_window() -> ChatWindow:
+    """Chat window for queued Twitch chat; starts its picker thread on first use."""
+    window = chat_window.get(lambda: ChatWindow(get_stream_brain()))
+    window.start()
+    return window
+
+
+def started_chat_window() -> ChatWindow | None:
+    """The chat window if something already created it (sync turns hold its picker)."""
+    return chat_window._value
 
 
 def get_stream_replay_service() -> StreamReplayService:

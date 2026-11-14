@@ -426,6 +426,7 @@ class Settings:
     twitch_min_speech_gap_seconds: int = _int("twitch_min_speech_gap_seconds", default=5)
     twitch_spam_quip_cooldown_seconds: int = _int("twitch_spam_quip_cooldown_seconds", default=60)
     twitch_max_speech_seconds_per_minute: int = _int("twitch_max_speech_seconds_per_minute", default=20)
+    twitch_chat_window_enabled: bool = _bool("twitch_chat_window_enabled", default=True)
 
     stt_provider: str = _str(
         "stt",

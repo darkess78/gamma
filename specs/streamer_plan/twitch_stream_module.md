@@ -270,6 +270,56 @@ Use a tiny queue:
 
 High-priority events should wait until current speech finishes unless the owner/dashboard explicitly stops Shana.
 
+The pacer (`stream/pacing.py`) is shared by the HTTP path, the chat picker and
+the proactive scheduler, so every public method holds one lock. When `apply`
+allows a turn it reserves the speaking slot; the brain confirms it with
+`confirm_spoken` once speech output is dispatched (the gap counts from
+dispatch, and `speaking_until` = dispatch + estimated speech length), or
+releases it when the turn ended without speaking (safety skip, budget defer,
+model error). Real "playback finished" events from TTS/performer are not wired
+in yet; the word-count estimate stands in for them.
+
+## Chat Window (implemented 2026-11-14)
+Code: `src/gamma/stream/chat_window.py`, route `POST /v1/stream/events?chat_window=true`.
+
+What is queued and what is synchronous:
+- Queued: `chat_message` events with `actor.source == "twitch"` posted with
+  `chat_window=true` and without the owner-channel header. The IRC worker sends
+  this when `twitch_chat_window_enabled` (default true). The call returns at
+  once with `{"status": "queued", "queue_id", "window_size"}`, or
+  `{"status": "handled", ...}` when the message would not make Shana speak
+  (ambient chat, filtered input); those are traced immediately through the
+  cheap no-model path so temp memory and traces still see all chat.
+- Synchronous, unchanged: everything else (Monitor/owner input, Discord, support
+  events from EventSub, replay, dashboard rehearsal, calls without the flag).
+  While a synchronous turn runs, the picker does not start a new chat turn, so
+  owner input goes first. A chat turn already in flight is not interrupted.
+- Results: `GET /v1/stream/chat-window/{queue_id}` (`queued`, `done`, `dropped`,
+  `error`); `GET /v1/stream/chat-window` and `GET /v1/stream/queue` show the
+  window. `POST /v1/stream/stop` clears it.
+
+The picker (one daemon thread) loops: pull the pacer's deferred turns into the
+window, drop items older than 40 s (traced as `chat_window_stale`), wait while
+a synchronous turn runs or until `pacer.ready_in` is zero (min gap, current
+line finished, speech budget), then run the best item through
+`StreamBrain.handle_event`. Deferred turns compete like chat and are replayed
+at most twice. The window holds 50 items; extras evict the lowest score.
+
+Score (higher first): owner +500; support events +150; direct mention +100;
+question +40; trust trusted +30 / regular +15 / new_viewer -5 / suspicious -40;
++2 per priority point; spam -120, prompt injection -150; low-effort ("lol",
+emote-only) -40; duplicate text -15; minus one point per second of age. The
+viewer Shana answered last is skipped while anyone else is waiting.
+
+Busy chat: when at least 5 other messages arrived in the window, a summary of
+them is passed as stream context (a `chat_summary` argument, never read from
+the event body): counts, repeated topics (words in 2+ messages) and up to three
+viewers' questions quoted verbatim. Only messages whose text equals the raw
+message and passed input safety are quoted, and `quotes_are_verbatim` checks
+every quoted span against real messages. A plug-in summarizer (a small local
+model later) whose quotes fail that check is replaced by the deterministic
+summary.
+
 ## Stop Shana
 Add a true `Stop Shana` control separate from mute.
 

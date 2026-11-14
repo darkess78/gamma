@@ -1,6 +1,21 @@
-"""Stream speech pacing: minimum gaps, spam-quip cooldown, per-minute speech budget and the pending slot."""
+"""Stream speech pacing: minimum gaps, spam-quip cooldown, per-minute speech budget and the pending slot.
+
+The pacer is shared by every caller of ``StreamBrain.handle_event`` (the HTTP
+sync path, the chat-window picker thread, the proactive scheduler), so every
+public method takes ``self._lock``.
+
+Speech timing: ``apply`` reserves the speaking slot when it allows a turn (so
+two concurrent turns cannot both pass the gap check), and the brain confirms
+the reservation with ``confirm_spoken`` once the turn's speech output is
+actually dispatched, or releases it with ``release`` when the turn ended
+without speaking. The gap is therefore measured from dispatch, and
+``speaking_until`` (dispatch + estimated speech length) lets the chat picker
+wait for the current line to finish. Real playback-finished events from the
+TTS/performer side are not wired in yet; the estimate stands in for them.
+"""
 from __future__ import annotations
 
+import threading
 import time
 
 from .event_rules import _decision_would_speak, _estimate_speech_seconds, _metadata_without_canned_response, _twitch_control_enabled, _utc_now
@@ -35,13 +50,23 @@ class StreamSpeechPacer:
         self._last_spoken_at: float | None = None
         self._last_spam_quip_at: float | None = None
         self._pending: dict[str, dict] = {}
+        # slot -> {"event", "queued_at" (pacer clock), "options"}; lets the chat picker replay deferred turns.
+        self._pending_events: dict[str, dict] = {}
         self._speech_budget_events: list[tuple[float, float]] = []
+        self._speaking_until: float | None = None
+        # event_id -> (last_spoken_at before the reservation, reservation time)
+        self._reservations: dict[str, tuple[float | None, float]] = {}
+        self._lock = threading.RLock()
 
     def apply(self, event: StreamInputEvent, decision: TurnDecision) -> TurnDecision:
+        with self._lock:
+            return self._apply(event, decision)
+
+    def _apply(self, event: StreamInputEvent, decision: TurnDecision) -> TurnDecision:
         if not _decision_would_speak(decision):
             return decision
         if not _is_paced_stream_event(event):
-            self.mark_spoken()
+            self._reserve(event, self._now())
             return decision
         now = self._now()
         spam_cooldown_decision = self._spam_quip_cooldown_decision(event, decision, now)
@@ -69,12 +94,16 @@ class StreamSpeechPacer:
                         "replaced_event_id": pending.get("replaced_event_id"),
                     },
                 )
-        self.mark_spoken(now)
+        self._reserve(event, now)
         if decision.response_mode == "spam_quip":
             self._last_spam_quip_at = now
         return decision
 
     def apply_budget(self, event: StreamInputEvent, decision: TurnDecision, spoken_text: str) -> TurnDecision | None:
+        with self._lock:
+            return self._apply_budget(event, decision, spoken_text)
+
+    def _apply_budget(self, event: StreamInputEvent, decision: TurnDecision, spoken_text: str) -> TurnDecision | None:
         if not _decision_would_speak(decision) or not _is_paced_stream_event(event):
             return None
         if not _twitch_control_enabled(event, "voice_enabled", True):
@@ -130,6 +159,10 @@ class StreamSpeechPacer:
         max_seconds = _stream_max_speech_seconds_per_minute(event, self._default_max_speech_seconds_per_minute)
         if max_seconds <= 0:
             return self.apply_budget(event, decision, "")
+        with self._lock:
+            return self._budget_exhausted(event, decision, max_seconds)
+
+    def _budget_exhausted(self, event: StreamInputEvent, decision: TurnDecision, max_seconds: float) -> TurnDecision | None:
         now = self._now()
         self._prune_speech_budget(now)
         used_seconds = sum(seconds for _timestamp, seconds in self._speech_budget_events)
@@ -144,20 +177,90 @@ class StreamSpeechPacer:
             estimated_seconds=0.0,
         )
 
-    def mark_spoken(self, now: float | None = None) -> None:
-        self._last_spoken_at = self._now() if now is None else now
+    def mark_spoken(self, now: float | None = None, *, speech_seconds: float = 0.0) -> None:
+        with self._lock:
+            stamp = self._now() if now is None else now
+            self._last_spoken_at = stamp
+            if speech_seconds > 0:
+                until = stamp + speech_seconds
+                self._speaking_until = until if self._speaking_until is None else max(self._speaking_until, until)
+
+    def confirm_spoken(self, event_id: str, *, speech_seconds: float = 0.0) -> None:
+        """The turn's speech output was dispatched: start the gap from now."""
+        with self._lock:
+            self._reservations.pop(event_id, None)
+            self.mark_spoken(speech_seconds=speech_seconds)
+
+    def release(self, event_id: str) -> None:
+        """The turn ended without speaking: undo its reservation if nobody spoke since."""
+        with self._lock:
+            reservation = self._reservations.pop(event_id, None)
+            if reservation is None:
+                return
+            previous, reserved_at = reservation
+            if self._last_spoken_at == reserved_at and not any(
+                stamp == reserved_at for _prev, stamp in self._reservations.values()
+            ):
+                self._last_spoken_at = previous
+
+    def ready_in(self, event: StreamInputEvent) -> float:
+        """Seconds until a paced turn for ``event`` could speak (0.0 = now).
+
+        Covers the minimum gap, the line still being spoken and a spent
+        per-minute budget. Events that bypass pacing are always ready.
+        """
+        with self._lock:
+            if not _is_paced_stream_event(event):
+                return 0.0
+            now = self._now()
+            waits = [0.0]
+            if self._speaking_until is not None:
+                waits.append(self._speaking_until - now)
+            if event.priority < HIGH_PRIORITY_BYPASS_THRESHOLD and self._last_spoken_at is not None:
+                min_gap = _stream_min_gap_seconds(event, self._default_min_gap_seconds)
+                waits.append(min_gap - (now - self._last_spoken_at))
+            if _twitch_control_enabled(event, "voice_enabled", True):
+                max_seconds = _stream_max_speech_seconds_per_minute(event, self._default_max_speech_seconds_per_minute)
+                self._prune_speech_budget(now)
+                used = sum(seconds for _timestamp, seconds in self._speech_budget_events)
+                if max_seconds > 0 and used >= max_seconds and self._speech_budget_events:
+                    oldest = min(timestamp for timestamp, _seconds in self._speech_budget_events)
+                    waits.append(oldest + 60.0 - now)
+            return round(max(waits), 3)
+
+    def remember_pending_options(self, event_id: str, options: dict) -> None:
+        """Record how a deferred turn was requested (speech, fast mode) so it can be replayed."""
+        with self._lock:
+            for entry in self._pending_events.values():
+                if entry["event"].event_id == event_id:
+                    entry["options"] = dict(options)
+
+    def take_pending(self) -> list[dict]:
+        """Remove and return the deferred events (oldest first) for the chat picker to replay."""
+        with self._lock:
+            entries = sorted(self._pending_events.values(), key=lambda entry: entry["queued_at"])
+            self._pending_events.clear()
+            self._pending.clear()
+            return [dict(entry) for entry in entries]
 
     def pending_snapshot(self) -> dict:
-        return {
-            "updated_at": _utc_now(),
-            "slots": {
-                slot: dict(item)
-                for slot, item in sorted(self._pending.items())
-            },
-        }
+        with self._lock:
+            return {
+                "updated_at": _utc_now(),
+                "slots": {
+                    slot: dict(item)
+                    for slot, item in sorted(self._pending.items())
+                },
+            }
 
     def clear_pending(self) -> None:
-        self._pending.clear()
+        with self._lock:
+            self._pending.clear()
+            self._pending_events.clear()
+
+    def _reserve(self, event: StreamInputEvent, now: float) -> None:
+        self._reservations[event.event_id] = (self._last_spoken_at, now)
+        self._last_spoken_at = now
 
     def _store_pending(
         self,
@@ -189,6 +292,7 @@ class StreamSpeechPacer:
         if replaced:
             item["replaced_event_id"] = replaced.get("event_id")
         self._pending[slot] = item
+        self._pending_events[slot] = {"event": event, "queued_at": self._now(), "options": {}, "slot": slot}
         return item
 
     def _prune_speech_budget(self, now: float) -> None:

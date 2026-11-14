@@ -182,6 +182,23 @@ def _normalize_identity(value: object, *, limit: int = 200) -> str:
 
 MEMORY_CANDIDATES = 2000  # newest rows considered per search
 
+# Where a memory came from decides who may later be shown it.
+_VISIBILITY_BY_SCOPE = {"local_private": "owner_only", "public_stream": "stream", "public_discord": "discord"}
+
+
+def visibility_for(origin: MemoryOrigin | None) -> str:
+    if origin is None:
+        return "owner_only"  # internal callers (tools, CLI) write on the owner's behalf
+    return _VISIBILITY_BY_SCOPE.get(origin.privacy_scope, "unknown")
+
+
+def _visible(model, allowed: set[str]):
+    """SQL filter for an audience. NULL rows predate the column and count as owner_only."""
+    column = model.visibility
+    if "owner_only" in allowed:
+        return or_(column.in_(allowed), column.is_(None))
+    return column.in_(allowed)
+
 
 class MemoryService:
     """Persistent episodic/profile memory storage.
@@ -272,6 +289,7 @@ class MemoryService:
                     "subject_name": "TEXT",
                     "relationship_to_user": "TEXT",
                     "attribution": "TEXT",
+                    "visibility": "TEXT",
                     "created_at": "TEXT",
                 },
             )
@@ -284,6 +302,7 @@ class MemoryService:
                     "subject_name": "TEXT",
                     "relationship_to_user": "TEXT",
                     "attribution": "TEXT",
+                    "visibility": "TEXT",
                     "created_at": "TEXT",
                 },
             )
@@ -354,6 +373,7 @@ class MemoryService:
         subject_type: str | None = None,
         subject_name: str | None = None,
         cross_session: bool = False,
+        visibility: set[str] | None = None,
     ) -> list[EpisodicMemory]:
         """Episodes most relevant to ``query`` (see memory/retrieval.py).
 
@@ -370,6 +390,8 @@ class MemoryService:
                 statement = statement.where(EpisodicMemory.subject_type == subject_type)
             if subject_name:
                 statement = statement.where(EpisodicMemory.subject_name == _normalize_subject_name(subject_name))
+            if visibility is not None:
+                statement = statement.where(_visible(EpisodicMemory, visibility))
             candidates = list(session.exec(statement.order_by(EpisodicMemory.id.desc()).limit(MEMORY_CANDIDATES)))
         if not retrieval.terms(query):
             candidates.sort(key=lambda m: (m.importance, m.id or 0), reverse=True)
@@ -393,6 +415,7 @@ class MemoryService:
         subject_type: str | None = "primary_user",
         subject_name: str | None = None,
         pinned: int = 2,
+        visibility: set[str] | None = None,
     ) -> list[ProfileFact]:
         """The most important fact(s), then the facts most relevant to ``query``."""
         limit = limit or settings.memory_top_k
@@ -402,6 +425,8 @@ class MemoryService:
                 statement = statement.where(ProfileFact.subject_type == subject_type)
             if subject_name:
                 statement = statement.where(ProfileFact.subject_name == _normalize_subject_name(subject_name))
+            if visibility is not None:
+                statement = statement.where(_visible(ProfileFact, visibility))
             facts = list(session.exec(statement.order_by(ProfileFact.id.desc()).limit(MEMORY_CANDIDATES)))
         by_importance = sorted(facts, key=lambda f: (f.importance, f.confidence, f.id or 0), reverse=True)
         ranked = retrieval.rank(
@@ -435,15 +460,18 @@ class MemoryService:
         with Session(self._engine) as session:
             for candidate in candidates:
                 candidate, attribution = prepare_candidate(candidate, origin)
+                visibility = visibility_for(origin)
                 if candidate.type in {"profile", "fact", "preference", "project", "boundary"}:
-                    saved += self._upsert_profile_fact(session, candidate, attribution=attribution)
+                    saved += self._upsert_profile_fact(session, candidate, attribution=attribution, visibility=visibility)
                 elif candidate.type == "episodic":
-                    saved += self._upsert_episodic_memory(session, candidate, session_id=session_id, attribution=attribution)
+                    saved += self._upsert_episodic_memory(session, candidate, session_id=session_id,
+                                                          attribution=attribution, visibility=visibility)
                 session.flush()
             session.commit()  # Exact repeats may update rank/provenance while saved stays zero.
         return saved
 
-    def _upsert_profile_fact(self, session: Session, candidate: MemoryCandidate, *, attribution: str | None = None) -> int:
+    def _upsert_profile_fact(self, session: Session, candidate: MemoryCandidate, *, attribution: str | None = None,
+                             visibility: str = "owner_only") -> int:
         normalized_text = _canonicalize_profile_text(candidate.text)
         category = candidate.tags[0] if candidate.tags else "general"
         confidence = 0.0  # Selection strength is not evidence of truth.
@@ -524,6 +552,7 @@ class MemoryService:
                 confidence=confidence,
                 importance=importance,
                 attribution=attribution,
+                visibility=visibility,
                 subject_type=subject_type,
                 subject_name=subject_name,
                 relationship_to_user=relationship_to_user,
@@ -531,7 +560,8 @@ class MemoryService:
         )
         return 1
 
-    def _upsert_episodic_memory(self, session: Session, candidate: MemoryCandidate, session_id: str | None = None, *, attribution: str | None = None) -> int:
+    def _upsert_episodic_memory(self, session: Session, candidate: MemoryCandidate, session_id: str | None = None, *,
+                                attribution: str | None = None, visibility: str = "owner_only") -> int:
         normalized_summary = _normalize_whitespace(candidate.text.strip())
         normalized_tags = ",".join(candidate.tags)
         subject_type = candidate.subject_type or "primary_user"
@@ -591,6 +621,7 @@ class MemoryService:
                 session_id=session_id,
                 summary=normalized_summary,
                 attribution=attribution,
+                visibility=visibility,
                 importance=importance,
                 tags=normalized_tags,
                 subject_type=subject_type,
@@ -757,6 +788,7 @@ class MemoryService:
             if kind == "profile_fact":
                 item = ProfileFact(
                     attribution='{"kind":"manual","source":"manual"}',
+                    visibility="owner_only",
                     category=_normalize_identity(payload.get("category"), limit=80) or "manual",
                     fact_text=_canonicalize_profile_text(summary),
                     confidence=max(0.0, min(1.0, float(payload.get("confidence", 0.8)))),
@@ -767,6 +799,7 @@ class MemoryService:
             elif kind == "episodic":
                 item = EpisodicMemory(
                     attribution='{"kind":"manual","source":"manual"}',
+                    visibility="owner_only",
                     session_id=_normalize_identity(payload.get("session_id"), limit=120) or None,
                     summary=summary,
                     importance=max(0.0, min(1.0, float(payload.get("confidence", 0.5)))),

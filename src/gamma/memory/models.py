@@ -39,6 +39,9 @@ class ProfileFact(SQLModel, table=True):
     subject_name: str | None = Field(default=None, index=True)
     relationship_to_user: str | None = None
     attribution: str | None = Field(default=None, exclude=True)
+    # Which audience this came from: owner_only, stream, discord or unknown.
+    # NULL (rows written before 2026-11-14) is treated as owner_only.
+    visibility: str | None = Field(default=None, index=True, exclude=True)
     created_at: datetime = Field(default_factory=_utc_now, index=True)
 
 
@@ -67,6 +70,9 @@ class EpisodicMemory(SQLModel, table=True):
     subject_name: str | None = Field(default=None, index=True)
     relationship_to_user: str | None = None
     attribution: str | None = Field(default=None, exclude=True)
+    # Which audience this came from: owner_only, stream, discord or unknown.
+    # NULL (rows written before 2026-11-14) is treated as owner_only.
+    visibility: str | None = Field(default=None, index=True, exclude=True)
     created_at: datetime = Field(default_factory=_utc_now, index=True)
 
 

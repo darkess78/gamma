@@ -134,6 +134,14 @@ The goal is right; the priority is different from "richer profiles".
 
 Smallest step: visibility column + filter, speaker display name in shared prompts.
 
+**Foundation done (2026-11-14):** every new fact and episode records
+`visibility` (`owner_only`, `stream`, `discord`, `unknown`) from where it was
+said; older rows count as owner-only. Searches take a `visibility` filter;
+owner-private turns are unchanged. Shared turns are told who is speaking (W1).
+Next: decide what public viewers may write (their own facts, stream-visible
+only), then let shared turns read audience-matched memories about the speaker,
+and merge the two trust systems.
+
 ### W4. Twitch and other chats — **Do**
 
 Today: one blocking HTTP call per chat message; replies only when someone says
@@ -293,6 +301,8 @@ judge quality, so real-model testing waits for the GPU).
 3. Which game first? (A turn-based one with an existing mod is easiest.)
 4. When to deploy `rebuild/shana-foundation` to Gamma PC (it is not live yet).
 5. Which Discord servers/channels she should be in.
+7. Meaning-based memory search (catches "kitty" for cat) needs a small
+   embedding model download (~300–600 MB, runs on CPU or the 3060 Ti).
 6. An API caller that names no speaker is still treated as the owner (owner
    tools included). Production requires the API token, so only Gamma's own
    processes can do this, but every one of them could. Tightening it means

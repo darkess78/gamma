@@ -377,7 +377,8 @@ No GPU needed.
 
 1. Should Shana type in Twitch chat, or only speak?
 2. Which game first? (A turn-based one is easiest; it needs a small client, see games.md.)
-3. When to deploy `rebuild/shana-foundation` to Gamma PC (it is not live yet).
+3. When to deploy `rebuild/shana-foundation` to Gamma PC (it is not live yet;
+   the steps and rollback are in [deploy_rebuild.md](deploy_rebuild.md)).
 4. Which Discord servers/channels she should be in.
 
 Answered: self-coding uses local models only (2026-11-14). A caller that names

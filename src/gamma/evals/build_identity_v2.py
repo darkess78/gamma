@@ -177,7 +177,8 @@ def build(raw: Path) -> dict:
         picked = sourced.get(category, [])[:want]
         if len(picked) < want:  # not enough public examples: top up from v1
             shortfall[category] = want - len(picked)
-            extra = [c for c in v1 if c["category"] == category and c not in keep][: want - len(picked)]
+            kept_ids = {c["id"] for c in keep}
+            extra = [c for c in v1 if c["category"] == category and c["id"] not in kept_ids][: want - len(picked)]
             keep += [dict(c, source={"dataset": "gamma identity v1 (top-up)", "license": "project"}) for c in extra]
         for n, item in enumerate(picked, 1):
             case = {"id": f"v2-{category[:5]}-{n:02d}", "category": category, "prompt": item["prompt"],

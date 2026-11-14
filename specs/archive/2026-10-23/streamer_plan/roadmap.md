@@ -59,7 +59,7 @@ low-level controller and is outside this roadmap.
 
 ## Research Sources
 
-- `../Neuro-sama Deep Research Report.pdf`
-- `Neuro-sama Reverse-Engineering Report.pdf`
+- `../../../Neuro-sama Deep Research Report.pdf`
+- `../../../streamer_plan/Neuro-sama Reverse-Engineering Report.pdf`
 - `neuro_architecture_review.md`
 - public Neuro SDK concepts summarized in those documents

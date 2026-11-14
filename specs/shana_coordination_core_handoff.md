@@ -205,8 +205,8 @@ Create/reuse isolated checkouts starting at `refactor/shana-coordination-core`.
 Keep the original dirty Windows, production, and modular-candidate trees intact.
 Run Gamma tests, inference, GPU checks, and runtime validation on Gamma PC.
 
-Follow the user's worker requirement: read
-`C:/Users/darke/.codex/workers/README.md`, prefer scoped coding-workers jobs,
+When working through Codex, follow the user's worker requirement: read the
+Codex workers README in the Windows user's `.codex/workers` folder, prefer scoped coding-workers jobs,
 default to local Qwen, keep one active job per provider and at most five global
 jobs, respect the verified context/budget limits, and review source hashes,
 `proposal.diff`, `result.json`, and actual behavior before integration.

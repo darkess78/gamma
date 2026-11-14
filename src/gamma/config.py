@@ -535,6 +535,9 @@ class Settings:
     speech_filter_llm_enabled: bool = _bool("speech_filter_llm_enabled", default=False)
     speech_filter_llm_model: str = _str("speech_filter_llm_model", default="")
     speech_filter_llm_temperature: float = float(_raw("speech_filter_llm_temperature", default=0.0) )
+    # Empty follows local_llm_keep_alive. "0" unloads the reviewer after every check, which on an
+    # Ollama instance holding one model also evicts the main model (about 7 s per stream reply).
+    speech_filter_llm_keep_alive: str = _str("speech_filter_llm_keep_alive", default="")
     speech_filter_auto_rewrite: bool = _bool("speech_filter_auto_rewrite", default=True)
     speech_filter_banned_words_path: str = _str(
         "speech_filter_banned_words_path",

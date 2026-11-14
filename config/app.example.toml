@@ -150,6 +150,8 @@ speech_filter_heuristic_enabled = true
 speech_filter_llm_enabled = true
 speech_filter_llm_model = ""
 speech_filter_llm_temperature = 0.0
+# Empty follows local_llm_keep_alive; "0" unloads after every check.
+speech_filter_llm_keep_alive = ""
 speech_filter_auto_rewrite = true
 speech_filter_banned_words_path = "./config/safety_banned_words.txt"
 stream_filtered_audio_path = "./assets/audio/system/filtered.wav"

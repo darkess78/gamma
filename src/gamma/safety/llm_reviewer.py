@@ -35,16 +35,28 @@ class SpeechLLMReviewer:
         _parse_json_object: Parse JSON from response.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, model: str | None = None, endpoint: str | None = None, keep_alive: str | int | None = None) -> None:
         """Initialize LLM reviewer.
-        
+
         Reads model from settings, preferring speech_filter_llm_model, then local_llm_tagging_model.
+        ``model``, ``endpoint`` and ``keep_alive`` override settings (the reviewer benchmark uses them).
         """
-        self._model = (
+        self._model = (model or "").strip() or (
             (settings.speech_filter_llm_model or "").strip()
             or (settings.local_llm_tagging_model or "").strip()
             or (settings.local_llm_light_model or "").strip()
         )
+        self._endpoint = (endpoint or "").strip()
+        self._keep_alive = keep_alive
+
+    def endpoint(self) -> str:
+        return (self._endpoint or settings.local_llm_endpoint).rstrip("/")
+
+    def keep_alive(self) -> str | int:
+        value = self._keep_alive if self._keep_alive is not None else (
+            (settings.speech_filter_llm_keep_alive or "").strip() or settings.local_llm_keep_alive
+        )
+        return int(value) if isinstance(value, str) and value.strip().isdigit() else value
 
     def review(self, text: str) -> LLMReviewDecision:
         """Review text for safety.
@@ -83,17 +95,17 @@ class SpeechLLMReviewer:
             "stream": False,
             "think": False,
             "format": "json",
-            "keep_alive": 0,
+            "keep_alive": self.keep_alive(),
             "options": {"temperature": temperature, "num_ctx": 8192, "num_predict": 128},
         }
         req = request.Request(
-            settings.local_llm_endpoint.rstrip("/") + "/api/generate",
+            self.endpoint() + "/api/generate",
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
         try:
-            with backend_slot(settings.local_llm_endpoint, foreground=True,
+            with backend_slot(self.endpoint(), foreground=True,
                               timeout=min(settings.local_llm_timeout_seconds, 20)):
                 with request.urlopen(req, timeout=min(settings.local_llm_timeout_seconds, 20)) as resp:
                     raw = json.loads(resp.read().decode("utf-8")).get("response", "")

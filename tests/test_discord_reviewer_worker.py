@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 fake = ModuleType('_review_config.config')
-fake.settings = SimpleNamespace(speech_filter_llm_model='local-review',local_llm_tagging_model='',local_llm_light_model='',speech_filter_llm_enabled=True,speech_filter_llm_temperature=0,local_llm_endpoint='http://localhost:11434',local_llm_timeout_seconds=20)
+fake.settings = SimpleNamespace(speech_filter_llm_model='local-review',local_llm_tagging_model='',local_llm_light_model='',speech_filter_llm_enabled=True,speech_filter_llm_temperature=0,local_llm_endpoint='http://localhost:11434',local_llm_timeout_seconds=20,speech_filter_llm_keep_alive='',local_llm_keep_alive='30m')
 sys.modules['_review_config.config'] = fake
 # llm_reviewer also takes a backend admission slot; the real one coordinates
 # through on-disk lock files, so stand in a no-op for this isolated load.

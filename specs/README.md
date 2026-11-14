@@ -8,6 +8,7 @@ must be updated together when a public contract changes.
 
 ## Fresh foundation discussion
 
+- [Shana improvement plan](shana_plan.md): workstreams, verdicts and order (proposed 2026-11-14)
 - [Coordination core implementation handoff](shana_coordination_core_handoff.md)
 - [Coordination core](shana_coordination_core.md): what the first milestone does now
   records the authorized first isolated refactor, GitHub checkpoints, ownership,

@@ -1,8 +1,26 @@
 # Deploying the rebuild to Gamma PC
 
 How to switch Gamma PC from the old production code to
-`rebuild/shana-foundation`, and how to switch back. Nothing here has been run;
-every step that touches Gamma PC needs the owner's go-ahead.
+`rebuild/shana-foundation`, and how to switch back.
+
+**Deployed 2026-11-14** with the owner's go-ahead, following the steps below:
+- **Backups:**
+  - database: `data/memory/backups/gamma-pre-rebuild-20261114.db`, integrity ok;
+  - config: `~/gamma-app.local.toml.pre-rebuild` and `~/gamma-env.pre-rebuild`.
+- **Old code:** kept on the local branch `local/pre-rebuild-20261114`.
+- **`persona.yaml`:** the production edits were already in the rebuild; only
+  whitespace differed.
+- **Test suite** in a full copy of the checkout: 1601 passed, 0 failed.
+- **Dashboard:** restarted on the rebuild. Health is ok, the login works and
+  the log shows no errors.
+- **Verification endpoints:**
+  - `/dashboard` 303 and `/api/status` 401: the login is enforced. The locked
+    doc's checks predate it.
+  - `/v1/*` 502: the Shana API was already stopped before the deploy and was
+    left stopped.
+- **GPU:** no Gamma processes on it.
+- **Memories:** the live database held no facts or episodes before the deploy
+  (nor did any older backup), so there was nothing to embed.
 
 This follows [LOCKED_GAMMA_NETWORK_DEPLOYMENT.md](LOCKED_GAMMA_NETWORK_DEPLOYMENT.md):
 the rebuild runs in the same `~/Documents/gamma-main` checkout, from `src/`,

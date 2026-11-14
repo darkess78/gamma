@@ -169,6 +169,12 @@ anyone who speaks, can't be interrupted, and runs the full slow pipeline.
 2. Voice: decide who she's answering (name, owner, direct question), pacing,
    and interruption. Depends on W6 for speed. (M)
 
+**Step 1 done (2026-11-14):** @mentions of the bot and replies to her messages
+count as addressing her (other mentions become display names); messages during
+a reply queue (up to 3) instead of being dropped; "Shana is typing..." shows
+while she thinks; `discord_text_channel_ids` adds more channels; Discord no
+longer leaks into stream memory (done with W1).
+
 ### W6. Voice latency — **Later (needs GPU)**
 
 Each live turn starts a fresh Python process that reloads Whisper, the

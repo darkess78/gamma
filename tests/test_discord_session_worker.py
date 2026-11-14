@@ -53,16 +53,22 @@ class SessionTest(unittest.IsolatedAsyncioTestCase):
         self.kwargs['reply_enabled']=True; self.kwargs['approved_reply']=lambda _:None
         await module.DiscordSession(**self.kwargs).handle_message(self.message())
         self.assertEqual(self.sent,[])
-    async def test_busy_rejects_extra_work(self):
-        self.setup_session(); entered=asyncio.Event(); release=asyncio.Event()
-        async def slow(msg): entered.set(); await release.wait(); return {'ok':True,'result':{'approved':'done'}}
+    async def test_messages_during_a_reply_wait_their_turn(self):
+        self.setup_session(); entered=asyncio.Event(); release=asyncio.Event(); order=[]
+        async def slow(msg):
+            order.append(msg.content); entered.set(); await release.wait()
+            return {'ok':True,'result':{'approved':'re: '+msg.content}}
         self.kwargs['ingest']=slow; session=module.DiscordSession(**self.kwargs)
-        task=asyncio.create_task(session.handle_message(self.message()))
+        first=asyncio.create_task(session.handle_message(self.message('first')))
         await asyncio.wait_for(entered.wait(), timeout=1)
-        response=await asyncio.wait_for(session.handle_message(self.message(uid='2')),timeout=1)
-        self.assertEqual(response['reason'],'busy'); release.set(); await task
-        self.assertEqual(len(self.sent),1)
-        self.assertTrue((await session.handle_message(self.message()))['ok'])
+        waiting=[asyncio.create_task(session.handle_message(self.message(f'm{i}',uid='2'))) for i in range(module.MAX_WAITING)]
+        await asyncio.sleep(0)
+        overflow=await asyncio.wait_for(session.handle_message(self.message('too many',uid='2')),timeout=1)
+        self.assertEqual(overflow['reason'],'busy')
+        release.set(); results=await asyncio.gather(first,*waiting)
+        self.assertTrue(all(r['ok'] for r in results))
+        self.assertEqual(order,['first','m0','m1','m2'])
+        self.assertEqual([text for _,text in self.sent],['re: first','re: m0','re: m1','re: m2'])
     async def test_delivery_error_never_retries(self):
         self.setup_session(); self.kwargs['message_chunks']=lambda _:['one','two','three']
         async def fail(msg,text):
@@ -85,14 +91,17 @@ class SessionTest(unittest.IsolatedAsyncioTestCase):
         response=await module.DiscordSession(**self.kwargs).handle_message(self.message())
         self.assertFalse(response['ok']); self.assertEqual(self.sent,[])
         self.assertNotIn('private',str(response))
-    async def test_busy_includes_delivery(self):
+    async def test_next_turn_waits_until_delivery_finishes(self):
         self.setup_session(); entered=asyncio.Event(); release=asyncio.Event()
         async def slow(msg,text):entered.set(); await release.wait()
         self.kwargs['send']=slow; session=module.DiscordSession(**self.kwargs)
         task=asyncio.create_task(session.handle_message(self.message()))
         await asyncio.wait_for(entered.wait(),timeout=1)
-        response=await asyncio.wait_for(session.handle_message(self.message(uid='2')),timeout=1)
-        self.assertEqual(response['reason'],'busy'); release.set(); await task
+        second=asyncio.create_task(session.handle_message(self.message(uid='2')))
+        await asyncio.sleep(0.05)
+        self.assertEqual(len(self.calls),1)  # the second turn has not started
+        release.set(); await task; await asyncio.wait_for(second,timeout=1)
+        self.assertEqual(len(self.calls),2)
     async def test_command_delivery_error_must_remain_failure(self):
         self.setup_session()
         async def fail(msg,text):raise TimeoutError('private')

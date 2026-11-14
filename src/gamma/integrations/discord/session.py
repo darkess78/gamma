@@ -1,9 +1,11 @@
 """Bounded Discord conversation session with failclosed allowlisting."""
 
 import asyncio
+import contextlib
 
 COMMAND_PREFIX = "!shana"
 SUPPORTED_COMMANDS = {"join", "leave", "pause", "resume", "status"}
+MAX_WAITING = 3  # messages queued behind the current reply before new ones are refused
 
 
 def _positive_decimal(value):
@@ -53,6 +55,8 @@ class DiscordSession:
         approved_reply=None,
         message_chunks=None,
         voice_command=None,
+        text_channel_ids=(),
+        typing=None,
     ):
         if not _positive_decimal(guild_id):
             raise ValueError("guild_id must be a positive decimal identifier")
@@ -62,7 +66,7 @@ class DiscordSession:
             raise ValueError("owner_user_id must be a positive decimal identifier")
 
         self._guild_id = _id_text(guild_id)
-        self._channel_id = _id_text(text_channel_id)
+        self._channel_ids = {_id_text(text_channel_id), *(_id_text(c) for c in text_channel_ids if _positive_decimal(c))}
         self._owner_id = _id_text(owner_user_id)
         self._reply_enabled = bool(reply_enabled)
         self._ingest = ingest
@@ -70,7 +74,10 @@ class DiscordSession:
         self._approved_reply = approved_reply or (lambda result: result)
         self._message_chunks = message_chunks or (lambda text: [text])
         self._voice_command = voice_command
-        self._busy = False
+        self._typing = typing
+        # One reply at a time; later messages wait their turn instead of being dropped.
+        self._turn_lock = asyncio.Lock()
+        self._waiting = 0
 
     def _allowed(self, message):
         try:
@@ -86,7 +93,7 @@ class DiscordSession:
                 return False
             channel = getattr(message, "channel", None)
             channel_id = getattr(channel, "id", None) if channel else None
-            if _id_text(channel_id) != self._channel_id:
+            if _id_text(channel_id) not in self._channel_ids:
                 return False
             return _id_text(getattr(author, "id", None)) is not None
         except Exception:
@@ -129,12 +136,33 @@ class DiscordSession:
                 return {"ok": False, "ignored": False, "reason": "owner_required"}
             return await self._handle_voice_command(message, action)
 
-        if self._busy:
+        if self._waiting >= MAX_WAITING:
             return {"ok": False, "ignored": False, "reason": "busy"}
-
-        self._busy = True
+        self._waiting += 1
+        counted = True
         try:
-            result = await self._ingest(message)
+            async with self._turn_lock:
+                self._waiting -= 1
+                counted = False
+                return await self._reply_turn(message)
+        finally:
+            if counted:  # cancelled while still waiting for the lock
+                self._waiting -= 1
+
+    def _typing_indicator(self, message):
+        """Discord's "Shana is typing..." while she thinks; nothing if unavailable."""
+        if self._typing is None:
+            return contextlib.nullcontext()
+        try:
+            indicator = self._typing(message)
+        except Exception:
+            return contextlib.nullcontext()
+        return indicator if hasattr(indicator, "__aenter__") else contextlib.nullcontext()
+
+    async def _reply_turn(self, message):
+        try:
+            async with self._typing_indicator(message):
+                result = await self._ingest(message)
 
             if result is None:
                 return {"ok": True, "ignored": False, "result": None}
@@ -168,8 +196,6 @@ class DiscordSession:
             raise
         except Exception:
             return {"ok": False, "ignored": False, "reason": "input_error"}
-        finally:
-            self._busy = False
 
     async def _handle_voice_command(self, message, action):
         if self._voice_command is None:

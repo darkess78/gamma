@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import logging
 import time
 from pathlib import Path
@@ -99,7 +100,7 @@ class DiscordTextWorker:
             )
             return {"ok": True, "ignored": True, "reason": ignored_reason}
 
-        content = str(getattr(message, "content", "") or "")
+        content = addressed_content(message, str(getattr(getattr(self._client, "user", None), "id", "") or ""))
         if not content.strip():
             self._ignored_count += 1
             return {"ok": True, "ignored": True, "reason": "empty_content"}
@@ -265,6 +266,8 @@ class DiscordTextWorker:
                 approved_reply=approved_reply,
                 message_chunks=message_chunks,
                 voice_command=voice_command,
+                text_channel_ids=tuple(self.config.text_channel_ids),
+                typing=lambda message: message.channel.typing(),
             )
         return client
 
@@ -358,7 +361,7 @@ class DiscordTextWorker:
             return "self_message"
         if guild_id != self.config.guild_id:
             return "guild_not_allowed"
-        if channel_id != self.config.text_channel_id:
+        if channel_id not in self.config.text_channel_ids:
             return "channel_not_allowed"
         return None
 
@@ -379,6 +382,28 @@ class DiscordTextWorker:
             json.dumps(redact(payload), ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
+
+
+_MENTION = re.compile(r"<@!?(\d+)>")
+
+
+def addressed_content(message: Any, bot_user_id: str) -> str:
+    """Message text as Shana should read it.
+
+    An @mention of the bot becomes her name, so it counts as talking to her;
+    other user mentions become their display names; a reply to one of her own
+    messages is treated as addressed to her too.
+    """
+    text = str(getattr(message, "content", "") or "")
+    names = {str(getattr(m, "id", "")): str(getattr(m, "display_name", "") or getattr(m, "name", "") or "someone")
+             for m in (getattr(message, "mentions", None) or [])}
+    text = _MENTION.sub(lambda m: "Shana" if bot_user_id and m.group(1) == bot_user_id
+                        else "@" + names.get(m.group(1), "someone"), text).strip()
+    reference = getattr(message, "reference", None)
+    replied_to = getattr(getattr(getattr(reference, "resolved", None), "author", None), "id", None)
+    if bot_user_id and str(replied_to or "") == bot_user_id and "shana" not in text.lower():
+        text = f"Shana, {text}" if text else text
+    return text
 
 
 def discord_worker_state_path() -> Path:

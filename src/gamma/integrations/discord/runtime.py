@@ -20,6 +20,12 @@ class DiscordRuntimeConfig:
     output_enabled: bool = False
     voice_enabled: bool = False
     owner_user_id: str = ""
+    extra_text_channel_ids: tuple[str, ...] = ()
+
+    @property
+    def text_channel_ids(self) -> set[str]:
+        """Every text channel Shana listens in: the main one plus discord_text_channel_ids."""
+        return {c for c in (self.text_channel_id, *self.extra_text_channel_ids) if c}
 
     @classmethod
     def from_app_config(cls, config: dict[str, Any] | None = None) -> "DiscordRuntimeConfig":
@@ -34,6 +40,7 @@ class DiscordRuntimeConfig:
             output_enabled=_as_bool(config.get("discord_output_enabled", nested.get("output_enabled", False))),
             voice_enabled=_as_bool(config.get("discord_voice_enabled", nested.get("voice_enabled", False))),
             owner_user_id=str(config.get("discord_owner_user_id", nested.get("owner_user_id", "")) or ""),
+            extra_text_channel_ids=_id_list(config.get("discord_text_channel_ids", nested.get("text_channel_ids", ()))),
         )
 
 
@@ -138,3 +145,8 @@ def _as_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _id_list(value: Any) -> tuple[str, ...]:
+    items = value.split(",") if isinstance(value, str) else (value or ())
+    return tuple(str(item).strip() for item in items if str(item).strip().isdigit())

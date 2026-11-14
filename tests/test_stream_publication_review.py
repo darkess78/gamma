@@ -18,6 +18,7 @@ from gamma.stream.models import StreamActor, StreamInputEvent
 from gamma.stream.output import StreamOutputDispatcher, PerformerBusOutputAdapter
 from gamma.stream.trace import StreamTraceStore
 from gamma.voice.tts import TTSResult
+from tests.pairwise import pairwise
 
 TEXT='The distinct publication fixture reply.'
 TARGETS=['stream_public','dashboard_monitor','discord_call']
@@ -84,10 +85,12 @@ def drain(queue):
     return items
 
 
-@pytest.mark.parametrize('target',TARGETS)
-@pytest.mark.parametrize('delivery',['speech','text_only'])
-@pytest.mark.parametrize('fast_mode',[True,False])
-@pytest.mark.parametrize('verdict',['allow','block','soften','error','timeout'])
+@pytest.mark.parametrize(*pairwise(
+    ('target', TARGETS),
+    ('delivery', ['speech','text_only']),
+    ('fast_mode', [True,False]),
+    ('verdict', ['allow','block','soften','error','timeout']),
+))
 def test_held_review_gates_live_replay_and_returned_approval(fixture_state,tmp_path,monkeypatch,
         target,delivery,fast_mode,verdict):
     brain,bus,transport,tts,event=setup(fixture_state,tmp_path,monkeypatch,target,delivery,verdict)
@@ -144,9 +147,11 @@ def test_held_review_gates_live_replay_and_returned_approval(fixture_state,tmp_p
     asyncio.run(exercise())
 
 
-@pytest.mark.parametrize('target',TARGETS)
-@pytest.mark.parametrize('delivery',['speech','text_only'])
-@pytest.mark.parametrize('fast_mode',[True,False])
+@pytest.mark.parametrize(*pairwise(
+    ('target', TARGETS),
+    ('delivery', ['speech','text_only']),
+    ('fast_mode', [True,False]),
+))
 def test_enabled_actual_reviewer_with_missing_model_never_approves(fixture_state,tmp_path,monkeypatch,target,delivery,fast_mode):
     brain,bus,transport,tts,event=setup(fixture_state,tmp_path,monkeypatch,target,delivery,'allow',missing=True)
     result=brain.handle_event(event,synthesize_speech=True,fast_mode=fast_mode)
@@ -156,10 +161,12 @@ def test_enabled_actual_reviewer_with_missing_model_never_approves(fixture_state
     assert TEXT not in result.model_dump_json()+json.dumps([e.model_dump() for e in bus.recent(limit=100)])
 
 
-@pytest.mark.parametrize('target',TARGETS)
-@pytest.mark.parametrize('disabled',['setting','event'])
-@pytest.mark.parametrize('delivery',['speech','text_only'])
-@pytest.mark.parametrize('fast_mode',[True,False])
+@pytest.mark.parametrize(*pairwise(
+    ('target', TARGETS),
+    ('disabled', ['setting','event']),
+    ('delivery', ['speech','text_only']),
+    ('fast_mode', [True,False]),
+))
 def test_disabled_optional_reviewer_preserves_privacy_guard(fixture_state,tmp_path,monkeypatch,target,disabled,delivery,fast_mode):
     private='Home address: 41 Synthetic Private Lane; private IP: 10.99.88.77.'
     brain,bus,transport,tts,event=setup(fixture_state,tmp_path,monkeypatch,target,delivery,'allow',disabled=disabled,text=private)

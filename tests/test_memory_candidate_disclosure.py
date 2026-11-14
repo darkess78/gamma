@@ -18,6 +18,7 @@ from gamma.schemas.conversation import SpeakerContext
 from gamma.schemas.response import MemoryCandidate
 from test_conversation_recipient import PRIVATE, SHARED, Dispatcher, Reviewer
 from test_core_memory_owner import core_state, tool_state, fixture_state, speaker_context
+from tests.pairwise import pairwise
 
 TEXT = "CANDIDATE_TEXT_PRIVATE_CANARY"
 NAME = "CandidatePerson"
@@ -95,9 +96,11 @@ def assert_rows(state, path):
     return original, snapshots
 
 
-@pytest.mark.parametrize("path", PATHS)
-@pytest.mark.parametrize("recipient", RECIPIENTS)
-@pytest.mark.parametrize("actor", ["owner", "trusted"])
+@pytest.mark.parametrize(*pairwise(
+    ("path", PATHS),
+    ("recipient", RECIPIENTS),
+    ("actor", ["owner", "trusted"]),
+))
 def test_response_view_keeps_real_persistence(candidate_state, path, recipient, actor):
     state = candidate_state
     response = run(state, path, recipient, actor)

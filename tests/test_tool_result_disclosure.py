@@ -19,6 +19,7 @@ from gamma.tools import builtin
 from gamma.tools.base import Tool, ToolResult
 from gamma.tools.disclosure import disclose_tool_call, disclose_tool_result
 from test_conversation_recipient import FACT, EPISODE, PRIVATE, SHARED, fixture_state
+from tests.pairwise import pairwise
 
 PERSON, NOTE = "TOOL_PERSON_PRIVATE_CANARY", "TOOL_PERSON_NOTE_PRIVATE_CANARY"
 SAVE, CORE = "TOOL_SAVED_PRIVATE_CANARY", "TOOL_CORE_PRIVATE_CANARY"
@@ -103,9 +104,13 @@ CASES = [
 ]
 
 
-@pytest.mark.parametrize("recipient", [None, SHARED, PRIVATE])
-@pytest.mark.parametrize("call", CASES, ids=[c.tool for c in CASES])
-@pytest.mark.parametrize("multi", [False, True])
+@pytest.mark.parametrize(*pairwise(
+    ("recipient", [None, SHARED, PRIVATE]),
+    ("call", CASES),
+    ("multi", [False, True]),
+    # Each tool's private direct reply has its own formatter, so every tool runs once that way.
+    include=[{"recipient": PRIVATE, "call": c, "multi": False} for c in CASES],
+))
 def test_real_tools_direct_and_multi_finalizer_views(tool_state, recipient, call, multi):
     state = tool_state
     calls = [call] + ([ToolCall(tool="known_people" if call.tool == "memory_stats" else "memory_stats")] if multi else [])

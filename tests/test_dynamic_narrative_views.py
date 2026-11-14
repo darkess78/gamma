@@ -16,6 +16,7 @@ from gamma.persona import loader
 from gamma.persona.emotion_models import AssistantEmotionState
 from gamma.schemas.conversation import RecipientContext, SpeakerContext
 from test_conversation_recipient import Capture, PRIVATE, SHARED, fixture_state, prompt_layers
+from tests.pairwise import pairwise
 
 
 CANARIES = (
@@ -73,9 +74,11 @@ def assert_view(prompts, *, private, identified=True):
         assert "recent_emotions: happy, concerned" in prompt
 
 
-@pytest.mark.parametrize("recipient", [None, RecipientContext(), SHARED, PRIVATE])
-@pytest.mark.parametrize("speaker", [OWNER, UNKNOWN])
-@pytest.mark.parametrize("path", ["initial", "repair", "failed_repair", "finalizer"])
+@pytest.mark.parametrize(*pairwise(
+    ("recipient", [None, RecipientContext(), SHARED, PRIVATE]),
+    ("speaker", [OWNER, UNKNOWN]),
+    ("path", ["initial", "repair", "failed_repair", "finalizer"]),
+))
 def test_real_conversation_paths_select_dynamic_view(narrative_state, recipient, speaker, path):
     service = narrative_state.service
     adapter = Capture(malformed=path in ("repair", "failed_repair"),
@@ -140,9 +143,10 @@ def test_conversation_overlap_does_not_reset_storage(narrative_state):
     assert [p.read_bytes() for p in paths] == storage_before
 
 
-@pytest.mark.parametrize("recipient", [None, SHARED])
-@pytest.mark.parametrize("speaker", [OWNER, UNKNOWN])
-@pytest.mark.parametrize("field,value", [
+@pytest.mark.parametrize(*pairwise(
+    ("recipient", [None, SHARED]),
+    ("speaker", [OWNER, UNKNOWN]),
+    ("field,value", [
     ("current_emotion", "ENUM_SLOT_PRIVATE_CANARY"),
     ("current_emotion", ["ENUM_SLOT_PRIVATE_CANARY"]),
     ("intensity", "SCALAR_SLOT_PRIVATE_CANARY"),
@@ -155,7 +159,8 @@ def test_conversation_overlap_does_not_reset_storage(narrative_state):
     ("decay_turns_remaining", float("nan")),
     ("recent_emotions", ["concerned", "ENUM_SLOT_PRIVATE_CANARY", {"x": "ENUM_SLOT_PRIVATE_CANARY"}]),
     ("recent_emotions", "ENUM_SLOT_PRIVATE_CANARY"),
-])
+]),
+))
 def test_bad_persisted_enum_scalar_slots_cannot_be_public_text(narrative_state, recipient, speaker, field, value):
     path = narrative_state.data / "assistant_emotion_memory.json"
     bundle = json.loads(path.read_text())

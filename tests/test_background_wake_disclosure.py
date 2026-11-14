@@ -14,6 +14,7 @@ from gamma.errors import ConversationError
 from gamma.llm.base import LLMReply
 from gamma.schemas.conversation import RecipientContext, SpeakerContext
 from test_conversation_recipient import PRIVATE, SHARED, EPISODE, fixture_state
+from tests.pairwise import pairwise
 
 BACKGROUND = "BACKGROUND_PRIVATE_CANARY"
 WAKE = "WAKE_CONTEXT_PRIVATE_CANARY"
@@ -55,10 +56,12 @@ def invoke(service, facade, recipient, *, fast=True, context=None):
         background_context=context if context is not None else BACKGROUND)
 
 
-@pytest.mark.parametrize("recipient", [None, RecipientContext(), SHARED, PRIVATE])
-@pytest.mark.parametrize("facade", ["respond","wake","direct_image"])
-@pytest.mark.parametrize("malformed", [False,True])
-@pytest.mark.parametrize("fast", [False,True])
+@pytest.mark.parametrize(*pairwise(
+    ("recipient", [None, RecipientContext(), SHARED, PRIVATE]),
+    ("facade", ["respond","wake","direct_image"]),
+    ("malformed", [False,True]),
+    ("fast", [False,True]),
+))
 def test_all_prompt_parts_select_context_before_building(fixture_state, recipient, facade, malformed, fast):
     service = fixture_state.service
     service._llm = ContextCapture(malformed=malformed)

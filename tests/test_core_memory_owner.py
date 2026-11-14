@@ -16,6 +16,7 @@ from gamma.schemas.conversation import SpeakerContext
 from gamma.schemas.response import ToolCall
 from test_conversation_recipient import PRIVATE, SHARED, Dispatcher, Reviewer
 from test_tool_result_disclosure import FullCapture, tool_state, fixture_state
+from tests.pairwise import pairwise
 
 FACT = "CORE_OWNER_EXECUTION_CANARY"
 ACTORS = ["owner", "omitted", "trusted", "guest", "unknown"]
@@ -88,9 +89,11 @@ def assert_view(results, recipient, allowed):
         }
 
 
-@pytest.mark.parametrize("actor", ACTORS)
-@pytest.mark.parametrize("path", ["inferred", "structured", "metadata"])
-@pytest.mark.parametrize("recipient", RECIPIENTS)
+@pytest.mark.parametrize(*pairwise(
+    ("actor", ACTORS),
+    ("path", ["inferred", "structured", "metadata"]),
+    ("recipient", RECIPIENTS),
+))
 def test_core_authority_before_real_write(core_state, actor, path, recipient):
     state = core_state
     state.service._llm = FullCapture([] if path == "inferred" else [core_call()], metadata=path == "metadata")

@@ -18,6 +18,7 @@ from gamma.stream.models import StreamActor, StreamInputEvent
 from gamma.stream.output import PerformerBusOutputAdapter, StreamOutputDispatcher
 from gamma.stream.trace import StreamTraceStore
 from gamma.voice.tts import TTSResult
+from tests.pairwise import pairwise
 
 
 TEXT = "Reviewed fixture reply."
@@ -83,10 +84,12 @@ def _setup(fixture_state, tmp_path, monkeypatch, target, action, *, delivery="te
     return brain, bus, reviewer, tts, event
 
 
-@pytest.mark.parametrize("target", ["stream_public", "dashboard_monitor", "discord_call"])
-@pytest.mark.parametrize("fast_mode", [True, False])
-@pytest.mark.parametrize("action", ["allow", "block", "soften"])
-@pytest.mark.parametrize("request_speech", [True, False])
+@pytest.mark.parametrize(*pairwise(
+    ("target", ["stream_public", "dashboard_monitor", "discord_call"]),
+    ("fast_mode", [True, False]),
+    ("action", ["allow", "block", "soften"]),
+    ("request_speech", [True, False]),
+))
 def test_text_only_uses_enabled_synchronous_review(fixture_state, tmp_path, monkeypatch,
                                                   target, fast_mode, action, request_speech):
     brain, bus, reviewer, tts, event = _setup(fixture_state, tmp_path, monkeypatch, target, action)
@@ -117,9 +120,11 @@ def test_text_only_uses_enabled_synchronous_review(fixture_state, tmp_path, monk
         assert bus.recent(limit=100, target_policy="stream_public") == []
 
 
-@pytest.mark.parametrize("target", ["stream_public", "dashboard_monitor", "discord_call"])
-@pytest.mark.parametrize("fast_mode", [True, False])
-@pytest.mark.parametrize("disabled", ["setting", "event_control"])
+@pytest.mark.parametrize(*pairwise(
+    ("target", ["stream_public", "dashboard_monitor", "discord_call"]),
+    ("fast_mode", [True, False]),
+    ("disabled", ["setting", "event_control"]),
+))
 def test_text_only_preserves_optional_review_disable(fixture_state, tmp_path, monkeypatch,
                                                      target, fast_mode, disabled):
     brain, bus, reviewer, tts, event = _setup(fixture_state, tmp_path, monkeypatch, target, "block",

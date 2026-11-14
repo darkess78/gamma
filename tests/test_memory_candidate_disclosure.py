@@ -10,7 +10,7 @@ import pytest
 from sqlmodel import Session, select
 
 from gamma.config import settings
-from gamma.conversation.service import _memory_candidate_view
+from gamma.conversation.shared import _memory_candidate_view
 from gamma.errors import ConversationError
 from gamma.llm.base import LLMReply
 from gamma.memory.models import ProfileFact

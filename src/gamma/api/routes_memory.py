@@ -77,3 +77,18 @@ def memory_person_delete(person_id: int) -> dict:
     if not deps.get_memory_service().delete_known_person(person_id):
         raise HTTPException(status_code=404, detail="known person not found")
     return {"ok": True, "detail": "Known person deleted.", "id": person_id}
+
+
+@router.get("/v1/memory/viewers/{key}")
+def memory_viewer_notes(key: str) -> dict:
+    """What Shana remembers about one Twitch/Discord viewer (key like twitch:12345)."""
+    from ..memory.viewer_memory import ViewerMemory
+    memory = ViewerMemory(deps.get_memory_service()._engine)
+    return {"key": key, "stream": memory.recall(key, "stream", limit=30), "discord": memory.recall(key, "discord", limit=30)}
+
+
+@router.delete("/v1/memory/viewers/{key}")
+def memory_viewer_forget(key: str) -> dict:
+    """Forget everything a viewer told Shana."""
+    from ..memory.viewer_memory import ViewerMemory
+    return {"key": key, "forgotten": ViewerMemory(deps.get_memory_service()._engine).forget(key)}

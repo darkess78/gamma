@@ -16,6 +16,7 @@ from ...observability import bind_context, configure_logging, log_event, redact,
 from .client import GammaStreamClient
 from .irc import chat_message_from_irc, parse_irc_line
 from .normalize import normalize_chat_message
+from ...identity.standing import standing_for
 from .trust import ViewerTrustStore
 
 
@@ -103,8 +104,10 @@ class TwitchIrcWorker:
         fast_mode: bool = True,
         state_path: Path | None = None,
         logger: logging.Logger | None = None,
+        memory=None,
     ) -> None:
         self.config = config
+        self._memory = memory
         self.client = client or GammaStreamClient()
         self.trust_store = trust_store or ViewerTrustStore()
         self.synthesize_speech = config.voice_enabled if synthesize_speech is None else synthesize_speech
@@ -112,6 +115,16 @@ class TwitchIrcWorker:
         self.state_path = state_path or twitch_worker_state_path()
         self.logger = logger or configure_logging("twitch_irc")
         self._message_count = 0
+
+    def _person_records(self):
+        """People linked in the dashboard; their trust applies on Twitch too."""
+        if self._memory is None:
+            try:
+                from ...memory.service import MemoryService
+                self._memory = MemoryService()
+            except Exception:
+                return None
+        return self._memory
 
     def handle_line(self, line: str) -> dict | None:
         irc_message = parse_irc_line(line)
@@ -128,10 +141,12 @@ class TwitchIrcWorker:
                 message_id=chat_message.message_id,
             )
             return {"ignored": True, "reason": "ignored_bot", "display_name": chat_message.display_name}
-        trust_level = self.trust_store.trust_level_for(
-            platform="twitch",
-            platform_user_id=chat_message.platform_user_id,
-        )
+        trust_level = standing_for(
+            "twitch", chat_message.platform_user_id,
+            owner_ids={"twitch": self.config.owner_user_id},
+            memory=self._person_records(),
+            trust_store=self.trust_store,
+        ).level
         event = normalize_chat_message(
             chat_message,
             owner_user_id=self.config.owner_user_id,

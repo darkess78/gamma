@@ -85,11 +85,26 @@ class IdentityResolver:
             )
 
         if source == "discord":
-            return self._match_discord(platform_id)
+            matched = self._match_discord(platform_id)
+            if matched is not None:
+                return matched
         if source == "game":
             return self._match_game(platform_id)
-
+        if source in {"twitch", "discord"}:
+            return self._viewer_profile(source, platform_id)
         return None
+
+    def _viewer_profile(self, source: str, platform_id: str) -> SpeakerProfile | None:
+        """Unlinked viewers: the viewer trust store can raise them to guest, never higher."""
+        try:
+            from ..integrations.twitch.trust import ViewerTrustStore
+            from .standing import standing_for
+            standing = standing_for(source, platform_id, trust_store=ViewerTrustStore())
+        except Exception:
+            return None
+        if standing.identity_trust != "guest":
+            return None
+        return SpeakerProfile(name="Viewer", trust="guest", resolved_via=f"{source}_viewer_trust")
 
     def _match_discord(self, discord_id: str) -> SpeakerProfile | None:
         owner_ids = self._owner_platform_ids_cache

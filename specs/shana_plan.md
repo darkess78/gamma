@@ -138,9 +138,16 @@ Smallest step: visibility column + filter, speaker display name in shared prompt
 `visibility` (`owner_only`, `stream`, `discord`, `unknown`) from where it was
 said; older rows count as owner-only. Searches take a `visibility` filter;
 owner-private turns are unchanged. Shared turns are told who is speaking (W1).
-Next: decide what public viewers may write (their own facts, stream-visible
-only), then let shared turns read audience-matched memories about the speaker,
-and merge the two trust systems.
+**Viewer memory and one trust system done (2026-11-14):**
+`memory/viewer_memory.py` keeps only what a viewer says about themselves
+(favourites, pets, what they're learning, pronouns, job), refuses instructions
+and claims about others, keys notes by platform id, limits them to the
+audience they were said in, caps 3/day and 30/viewer, and skips suspicious or
+blocked viewers. Notes come back only when the same viewer speaks in the same
+audience. `GET/DELETE /v1/memory/viewers/{key}` shows or forgets them.
+`identity/standing.py` combines owner ids, linked person records and the Twitch
+trust store; linked people's trust now applies on Twitch, and unlinked viewers
+cap at guest.
 
 ### W4. Twitch and other chats — **Do**
 

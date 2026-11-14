@@ -11,6 +11,7 @@ from ..conversation.service import ConversationService
 from ..errors import ConversationError
 from ..safety.llm_reviewer import SpeechLLMReviewer
 from ..integrations.twitch.sanitize import safe_username_alias
+from ..memory.viewer_memory import ViewerMemory, viewer_key
 from ..schemas.conversation import RecipientContext
 from ..schemas.response import AssistantResponse
 from ..voice.tts import TTSResult, TTSService
@@ -201,12 +202,14 @@ class StreamBrain(PublicationReviewMixin):
                 "recipient": recipient,
                 "owner_verified": owner_channel and event.actor.source.strip().lower() == "local_monitor",
                 "speaker_label": _speaker_label(event),
+                "viewer_notes": self._viewer_notes_for(event, recipient),
             }
             if _is_public_stream_event(event) and event.actor.source.strip().lower() != "discord":
                 recent_context = self._assemble_recent_context()
                 if recent_context:
                     conversation_args["stream_context"] = recent_context
             response = self._conversation.respond(**conversation_args)
+            self._remember_viewer(event, recipient)
             action_plan = self._action_planner.plan_from_response(response)
         safety_decision = self._review_stream_output(
             event, response, include_llm=not (parallel_safety and response.speech_text)
@@ -268,6 +271,35 @@ class StreamBrain(PublicationReviewMixin):
                 executor=late_review[1],
             )
         return result
+
+    def _viewer_memory(self):
+        engine = getattr(getattr(self._conversation, "_memory", None), "_engine", None)
+        return ViewerMemory(engine) if engine is not None else None
+
+    def _viewer_notes_for(self, event: StreamInputEvent, recipient) -> list[str]:
+        audience = _AUDIENCE.get(recipient.privacy_scope)
+        key = viewer_key(event.actor.source, event.actor.platform_id)
+        memory = self._viewer_memory()
+        if not (audience and key and memory and event.kind == "chat_message"):
+            return []
+        try:
+            return memory.recall(key, audience)
+        except Exception:
+            return []
+
+    def _remember_viewer(self, event: StreamInputEvent, recipient) -> None:
+        audience = _AUDIENCE.get(recipient.privacy_scope)
+        key = viewer_key(event.actor.source, event.actor.platform_id)
+        memory = self._viewer_memory()
+        if not (audience and key and memory and event.kind == "chat_message"):
+            return
+        raw = str(event.metadata.get("raw_text") or event.text or "")
+        try:
+            memory.remember(key, raw, alias=_speaker_label(event) or "viewer", audience=audience,
+                            scope=recipient.privacy_scope,
+                            trust_level=str(event.metadata.get("trust_level") or "new_viewer"))
+        except Exception:
+            pass
 
     def _record_temp_memory(self, result: StreamTurnResult) -> None:
         if result.safety_decision.get("review_pending"):
@@ -587,3 +619,6 @@ _MODERATION_REQUEST_RE = re.compile(
     r"that\s+(?:guy|person|user|bot)|the\s+(?:spammer|bot|troll))\b"
     r"|\bdelete\s+(?:that|this|his|her|their)\s+message\b|\bmod\s+review\b"
 )
+
+
+_AUDIENCE = {"public_stream": "stream", "public_discord": "discord"}

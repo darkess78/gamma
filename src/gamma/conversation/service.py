@@ -79,6 +79,7 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
         owner_verified: bool = False,
         stream_context: str | None = None,
         speaker_label: str | None = None,
+        viewer_notes: list[str] | None = None,
     ) -> AssistantResponse:
         """Respond to a user text message.
         
@@ -143,6 +144,7 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                     background_context=background_context,
                     stream_context=stream_context,
                     speaker_label=speaker_label if not recipient.allows_private_memory else None,
+                    viewer_notes=viewer_notes if recipient.privacy_scope in SHARED_HISTORY_SCOPES else None,
                     persist_state=not evaluation_mode,
                     memory_origin=MemoryOrigin.from_speaker(speaker,
                         source=speaker_ctx.source if speaker_ctx is not None else "local",
@@ -482,6 +484,7 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
         tool_checkpoint: Callable[[], None] | None = None,
         stream_context: str | None = None,
         speaker_label: str | None = None,
+        viewer_notes: list[str] | None = None,
     ) -> AssistantResponse:
         recipient = _recipient_context(recipient, delivery_context=delivery_context)
         memory_origin = memory_origin or MemoryOrigin.from_speaker(
@@ -596,6 +599,10 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                 system_prompt += f"\n\n# Recent Stream Chat\n{stream_context.strip()}"
             if speaker_label:
                 system_prompt += f"\n\n# Speaking Now\n{speaker_label} (as shown in chat)"
+            if viewer_notes and recipient.privacy_scope in SHARED_HISTORY_SCOPES:
+                notes = "\n".join(f"- {note}" for note in viewer_notes)
+                system_prompt += (f"\n\n# What {speaker_label or 'this viewer'} Has Told You Before\n"
+                                  f"They said these things about themselves in this channel:\n{notes}")
             if brief_mode:
                 system_prompt += (
                     "\n\n# Live Voice Brevity\n"

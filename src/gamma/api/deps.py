@@ -12,6 +12,7 @@ from ..integrations.discord import DiscordRuntime
 from ..integrations.twitch.trust import ViewerTrustStore
 from ..memory.service import MemoryService
 from ..performer.bus import PerformerEventBus, get_performer_event_bus
+from ..performer.avatar3d import Avatar3DAdapter, Avatar3DRunner
 from ..performer.vtube_studio import VTubeStudioAdapter, VTubeStudioRunner
 from ..presence import PresenceService
 from ..proactive import ProactiveScheduler
@@ -84,6 +85,12 @@ vtube_studio_adapter = LazySingleton[VTubeStudioAdapter]()
 
 
 vtube_studio_runner = LazySingleton[VTubeStudioRunner]()
+
+
+avatar3d_adapter = LazySingleton[Avatar3DAdapter]()
+
+
+avatar3d_runner = LazySingleton[Avatar3DRunner]()
 
 
 discord_runtime = LazySingleton[DiscordRuntime]()
@@ -206,6 +213,16 @@ def get_vtube_studio_runner() -> VTubeStudioRunner:
         VTubeStudioRunner: Lazy singleton instance.
     """
     return vtube_studio_runner.get(lambda: VTubeStudioRunner(get_performer_bus(), get_vtube_studio_adapter()))
+
+
+def get_avatar3d_adapter() -> Avatar3DAdapter:
+    """Get the 3D avatar (VMC protocol) adapter instance."""
+    return avatar3d_adapter.get(Avatar3DAdapter)
+
+
+def get_avatar3d_runner() -> Avatar3DRunner:
+    """Get the 3D avatar (VMC protocol) runner instance."""
+    return avatar3d_runner.get(lambda: Avatar3DRunner(get_performer_bus(), get_avatar3d_adapter()))
 
 
 def get_discord_runtime() -> DiscordRuntime:

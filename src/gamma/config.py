@@ -291,6 +291,24 @@ class Settings:
     games_enabled: bool = _bool("games_enabled", default=False)
     games_key: str = _str("games_key", default="", strip=True)
     games_chooser: str = _str("games_chooser", default="model", strip=True, lower=True)
+    # 3D avatar over the VMC protocol (OSC/UDP), e.g. Warudo or VSeeFace on the
+    # streaming PC. See specs/avatar_3d.md. [avatar3d] table in app.toml.
+    avatar3d_enabled: bool = _bool("avatar3d", "enabled", default=False, env="SHANA_AVATAR3D_ENABLED")
+    avatar3d_host: str = _str("avatar3d", "host", default="127.0.0.1", env="SHANA_AVATAR3D_HOST", strip=True, fallback="127.0.0.1")
+    avatar3d_port: int = _int("avatar3d", "port", default=39539, env="SHANA_AVATAR3D_PORT")
+    # "vrm0" (Joy/Angry/Sorrow/Fun/A/I/U/E/O) or "vrm1" (happy/angry/sad/relaxed/aa/ih/ou/ee/oh)
+    avatar3d_naming: str = _str("avatar3d", "naming", default="vrm0", env="SHANA_AVATAR3D_NAMING", strip=True, lower=True, fallback="vrm0")
+    avatar3d_fps: int = _int("avatar3d", "fps", default=30, env="SHANA_AVATAR3D_FPS")
+    # "text" = Gamma moves the mouth from the spoken text; "off" = the avatar app does lip sync itself.
+    avatar3d_lipsync: str = _str("avatar3d", "lipsync", default="text", env="SHANA_AVATAR3D_LIPSYNC", strip=True, lower=True, fallback="text")
+    avatar3d_lipsync_chars_per_second: float = _float(
+        "avatar3d", "lipsync_chars_per_second", default=14.0, env="SHANA_AVATAR3D_LIPSYNC_CHARS_PER_SECOND"
+    )
+    avatar3d_lipsync_delay_ms: int = _int("avatar3d", "lipsync_delay_ms", default=0, env="SHANA_AVATAR3D_LIPSYNC_DELAY_MS")
+    avatar3d_auto_blink: bool = _bool("avatar3d", "auto_blink", default=True, env="SHANA_AVATAR3D_AUTO_BLINK")
+    avatar3d_target_policy: str = _str(
+        "avatar3d", "target_policy", default="stream_public", env="SHANA_AVATAR3D_TARGET_POLICY", strip=True, lower=True, fallback="stream_public"
+    )
 
     llm_provider: str = _str(
         "llm",

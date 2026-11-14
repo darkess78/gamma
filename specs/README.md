@@ -48,6 +48,7 @@ in effect until revisions are implemented, verified, and approved for activation
 - `games.md`
 - `shana_presence.md`
 - `shana_output_bus.md`
+- `avatar_3d.md` (3D avatar over VMC; model sheet in `../docs/shana_3d_model_sheet.md`)
 - `voice_dataset.md`
 - `platform.md`
 

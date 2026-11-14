@@ -1,4 +1,4 @@
-"""Performer output routes: event stream, targets, VTube Studio adapter and audio artifacts."""
+"""Performer output routes: event stream, targets, VTube Studio and 3D avatar adapters, audio artifacts."""
 from __future__ import annotations
 
 import asyncio
@@ -16,6 +16,7 @@ from ..performer.models import DEFAULT_TARGET_POLICY, KNOWN_TARGET_POLICIES
 router = APIRouter()
 
 _vtube_studio_runner_task: asyncio.Task[None] | None = None
+_avatar3d_runner_task: asyncio.Task[None] | None = None
 
 
 @router.get("/v1/performer/targets/{target_policy}/last-durable-output")
@@ -69,6 +70,7 @@ def performer_status() -> dict:
             "recent_turns": bus.recent_turns(limit=5),
             "adapters": {
                 "vtube_studio": {**deps.get_vtube_studio_adapter().status(), "runner": deps.get_vtube_studio_runner().status()},
+                "avatar3d": {**deps.get_avatar3d_adapter().status(), "runner": deps.get_avatar3d_runner().status()},
                 "discord": deps.get_discord_runtime().status(),
             },
         }
@@ -94,6 +96,37 @@ async def performer_vtube_studio_start() -> dict:
 async def performer_vtube_studio_stop() -> dict:
     try:
         runner = deps.get_vtube_studio_runner()
+        runner.stop()
+        return {"ok": True, "status": runner.status()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+async def start_avatar3d_runner() -> dict:
+    """Start the 3D avatar (VMC) runner if it is not already running."""
+    global _avatar3d_runner_task
+    runner = deps.get_avatar3d_runner()
+    if not runner.adapter.config.enabled:
+        return {"ok": False, "error": "avatar3d is disabled; set [avatar3d] enabled = true", "status": runner.status()}
+    if _avatar3d_runner_task is not None and not _avatar3d_runner_task.done():
+        return {"ok": True, "already_running": True, "status": runner.status()}
+    _avatar3d_runner_task = asyncio.create_task(runner.run_until_stopped())
+    await asyncio.sleep(0)
+    return {"ok": True, "already_running": False, "status": runner.status()}
+
+
+@router.post("/v1/performer/adapters/avatar-3d/start")
+async def performer_avatar3d_start() -> dict:
+    try:
+        return await start_avatar3d_runner()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/v1/performer/adapters/avatar-3d/stop")
+async def performer_avatar3d_stop() -> dict:
+    try:
+        runner = deps.get_avatar3d_runner()
         runner.stop()
         return {"ok": True, "status": runner.status()}
     except Exception as exc:

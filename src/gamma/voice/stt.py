@@ -173,17 +173,51 @@ class FasterWhisperSTTBackend(STTBackend):
             ExternalServiceError: If transcription fails.
         """
         try:
+            audio = decode_audio(source)
             try:
                 segments, _info = self._model.transcribe(
-                    source,
+                    audio,
                     initial_prompt=_STT_NAME_PROMPT,
                     hotwords="Shana Neety",
                 )
             except TypeError:
-                segments, _info = self._model.transcribe(source, initial_prompt=_STT_NAME_PROMPT)
+                segments, _info = self._model.transcribe(audio, initial_prompt=_STT_NAME_PROMPT)
         except Exception as exc:
             raise ExternalServiceError(f"STT transcription failed: {exc}") from exc
         return " ".join(segment.text.strip() for segment in segments).strip()
+
+
+def decode_audio(source: str, sampling_rate: int = 16000):
+    """faster-whisper's decoder, without the ``metadata_errors`` option PyAV 16+ removed.
+
+    faster-whisper 1.2.1 passes ``av.open(..., metadata_errors="ignore")``, which current
+    PyAV rejects, so every file transcription failed. Same steps otherwise: decode the
+    first audio stream, skip invalid frames, resample to 16 kHz mono, return float32.
+    """
+    import gc
+    import io
+
+    import av
+    import numpy as np
+    from faster_whisper.audio import _group_frames, _ignore_invalid_frames, _resample_frames
+
+    resampler = av.audio.resampler.AudioResampler(format="s16", layout="mono", rate=sampling_rate)
+    buffer, dtype = io.BytesIO(), None
+    try:
+        container = av.open(source, mode="r", metadata_errors="ignore")
+    except TypeError:
+        container = av.open(source, mode="r")
+    with container:
+        frames = _resample_frames(_group_frames(_ignore_invalid_frames(container.decode(audio=0)), 500000), resampler)
+        for frame in frames:
+            array = frame.to_ndarray()
+            dtype = array.dtype
+            buffer.write(array)
+    del resampler
+    gc.collect()
+    if dtype is None:
+        return np.zeros(0, dtype=np.float32)
+    return np.frombuffer(buffer.getbuffer(), dtype=dtype).astype(np.float32) / 32768.0
 
 
 class OpenAISTTBackend(STTBackend):

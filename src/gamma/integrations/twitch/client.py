@@ -24,15 +24,18 @@ class GammaStreamClient:
         *,
         synthesize_speech: bool = False,
         fast_mode: bool = True,
+        chat_window: bool = False,
     ) -> dict[str, Any]:
+        """Post one event. ``chat_window=True`` queues chat and returns a ticket at once."""
         request_id = str(event.metadata.get("request_id") or uuid4().hex)
         event.metadata.setdefault("request_id", request_id)
-        query = urllib.parse.urlencode(
-            {
-                "synthesize_speech": "true" if synthesize_speech else "false",
-                "fast_mode": "true" if fast_mode else "false",
-            }
-        )
+        params = {
+            "synthesize_speech": "true" if synthesize_speech else "false",
+            "fast_mode": "true" if fast_mode else "false",
+        }
+        if chat_window:
+            params["chat_window"] = "true"
+        query = urllib.parse.urlencode(params)
         request = urllib.request.Request(
             f"{self.base_url}/v1/stream/events?{query}",
             data=event.model_dump_json().encode("utf-8"),

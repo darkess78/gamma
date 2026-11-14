@@ -9,6 +9,7 @@ must be updated together when a public contract changes.
 ## Fresh foundation discussion
 
 - [Coordination core implementation handoff](shana_coordination_core_handoff.md)
+- [Coordination core](shana_coordination_core.md): what the first milestone does now
   records the authorized first isolated refactor, GitHub checkpoints, ownership,
   worker recovery, and acceptance requirements for the new implementation chat.
 - [Shana foundation direction](shana_foundation_direction.md) records the

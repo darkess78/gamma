@@ -1,1 +1,1 @@
-"""Offline checks of Shana quality: memory retrieval now, identity later (see specs/shana_plan.md W0)."""
+"""Offline checks of Shana quality: memory retrieval, memory privacy and identity (see specs/shana_plan.md W0)."""

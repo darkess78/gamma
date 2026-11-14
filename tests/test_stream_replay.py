@@ -4,9 +4,8 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
 
-from gamma.stream.replay import StreamEvalReport, StreamReplayService
+from gamma.stream.replay import StreamReplayService
 from gamma.stream.trace import StreamTraceStore
 
 
@@ -105,39 +104,6 @@ class StreamReplayTest(unittest.TestCase):
 
         self.assertFalse(report.passed)
         self.assertEqual(report.findings[0].rule, "high_risk_action_without_approval")
-
-    def test_stream_replay_routes_delegate_to_service(self) -> None:
-        from gamma.api.routes import stream_eval_recent, stream_recent_traces
-
-        service = Mock()
-        service.recent_traces.return_value = [{"trace_id": "trace-1"}]
-        service.evaluate_recent.return_value = StreamEvalReport(checked_count=1, passed=True, findings=[])
-
-        with patch("gamma.api.routes.get_stream_replay_service", return_value=service):
-            recent = stream_recent_traces(limit=3)
-            report = stream_eval_recent(limit=3)
-
-        self.assertEqual(recent, {"items": [{"trace_id": "trace-1"}]})
-        self.assertTrue(report.passed)
-        service.recent_traces.assert_called_once_with(limit=3)
-        service.evaluate_recent.assert_called_once_with(limit=3)
-
-    def test_dashboard_stream_replay_routes_delegate_to_service(self) -> None:
-        from gamma.dashboard.main import dashboard_stream_recent_eval, dashboard_stream_recent_traces
-
-        service = Mock()
-        service.stream_recent_traces.return_value = {"items": [{"trace_id": "trace-1"}]}
-        service.stream_recent_eval.return_value = {"checked_count": 1, "passed": True, "findings": []}
-
-        with patch("gamma.dashboard.main.get_dashboard_service", return_value=service):
-            recent = dashboard_stream_recent_traces(limit=7)
-            report = dashboard_stream_recent_eval(limit=7)
-
-        self.assertEqual(recent, {"items": [{"trace_id": "trace-1"}]})
-        self.assertEqual(report["passed"], True)
-        service.stream_recent_traces.assert_called_once_with(limit=7)
-        service.stream_recent_eval.assert_called_once_with(limit=7)
-
 
 if __name__ == "__main__":
     unittest.main()

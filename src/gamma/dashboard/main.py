@@ -29,28 +29,8 @@ SUBTITLE_OVERLAY_PAGE = STATIC_DIR / "overlay.html"
 LIVE_VOICE_PANEL = STATIC_DIR / "live_voice_panel.html"
 
 
-class ImprovementWorkCreateRequest(BaseModel):
-    goal: str = Field(min_length=12, max_length=1200)
-    selection_mode: str = Field(default="directed", pattern=r"^(directed|automatic)$")
-    focus_domains: tuple[str, ...] = ()
-    models: tuple[str, ...] = ("qwen3.8:27b", "gpt-oss:20b", "devstral-small-2:latest")
-    budget_minutes: int = Field(default=480, ge=15, le=720)
-    maximum_cycles: int = Field(default=5, ge=1, le=5)
-    maximum_attempts_per_series: int = Field(default=6, ge=1, le=10)
-
-
-class ImprovementWorkControlRequest(BaseModel):
-    action: str = Field(pattern=r"^(pause|resume|stop|reject)$")
-
-
 class DiscordVoiceControlRequest(BaseModel):
     command: str = Field(pattern=r"^(join|leave|pause|resume|status)$")
-
-
-class CodingPracticeCreateRequest(BaseModel):
-    model: str = Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/+-]*$")
-    maximum_attempts: int = Field(default=5, ge=1, le=10)
-    budget_seconds: int = Field(default=300, ge=30, le=1800)
 
 
 class CodingProjectCreateRequest(BaseModel):
@@ -60,16 +40,6 @@ class CodingProjectCreateRequest(BaseModel):
 
     checker_model: str = Field(default="gpt-oss:20b", pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,199}$")
 
-
-class CodingLessonEditRequest(BaseModel):
-    text: str = Field(min_length=1, max_length=2000)
-    active: bool
-
-
-class CodingIdlePolicyRequest(CodingPracticeCreateRequest):
-    enabled: bool
-    interval_seconds: int = Field(default=3600, ge=600, le=86400)
-    maximum_runs_per_day: int = Field(default=2, ge=1, le=10)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="dashboard-static")
 
@@ -238,7 +208,7 @@ def dashboard_memory_page(request: Request = None) -> HTMLResponse:
 
 @app.get("/dashboard/improvement")
 def dashboard_improvement_page(request: Request = None) -> HTMLResponse:
-    """Return the read-only self-improvement activity page."""
+    """Return the owner-reviewed coding page."""
     return _dashboard_page(INDEX_PAGE, dashboard_page="improvement", request=request)
 
 
@@ -545,12 +515,6 @@ def status_memory() -> dict:
     return get_dashboard_service().build_memory_status()
 
 
-@app.get("/api/improvement/status")
-def improvement_status() -> dict:
-    """Return bounded, sanitized improvement activity, queue, and safety state."""
-    return get_dashboard_service().build_improvement_status()
-
-
 @app.get("/api/coding/projects")
 def coding_projects() -> dict:
     from ..coding.repository import list_jobs
@@ -586,61 +550,6 @@ def continue_coding_with_checker(identifier: str) -> dict:
         return get_dashboard_service().continue_coding_with_checker(identifier)
     except (ValueError,FileNotFoundError) as exc:
         raise HTTPException(status_code=409, detail="Checker continuation unavailable") from exc
-
-
-@app.post("/api/coding/practice")
-def create_coding_practice(payload: CodingPracticeCreateRequest) -> dict:
-    """Run the fixed offline curriculum under existing dashboard authentication."""
-    try:
-        return get_dashboard_service().start_coding_practice(**payload.model_dump())
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.patch("/api/coding/lessons/{lesson_id}")
-def edit_coding_lesson(lesson_id: str, payload: CodingLessonEditRequest) -> dict:
-    try:
-        return get_dashboard_service().edit_coding_lesson(lesson_id, **payload.model_dump())
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="coding lesson not found") from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.put("/api/coding/idle-policy")
-def set_coding_idle_policy(payload: CodingIdlePolicyRequest) -> dict:
-    try:
-        return get_dashboard_service().set_coding_idle_policy(payload.model_dump())
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.post("/api/improvement/work")
-def create_improvement_work(payload: ImprovementWorkCreateRequest) -> dict:
-    """Queue one owner-authorized, bounded autonomous improvement request."""
-    try:
-        return get_dashboard_service().create_improvement_work(
-            goal=payload.goal,
-            selection_mode=payload.selection_mode,
-            focus_domains=payload.focus_domains,
-            models=payload.models,
-            budget_minutes=payload.budget_minutes,
-            maximum_cycles=payload.maximum_cycles,
-            maximum_attempts_per_series=payload.maximum_attempts_per_series,
-        )
-    except (OSError, TimeoutError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.post("/api/improvement/work/{request_id}/control")
-def control_improvement_work(request_id: str, payload: ImprovementWorkControlRequest) -> dict:
-    """Pause, resume, or cooperatively stop one bounded work request."""
-    try:
-        return get_dashboard_service().control_improvement_work(request_id, payload.action)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="improvement work request not found") from exc
-    except (OSError, TimeoutError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/presence")

@@ -300,7 +300,6 @@ def test_invalid_public_config_precedes_privacy_refusal_tts(fixture_state, monke
 def test_existing_snapshot_consumer_and_protections_accept_same_persona_path(tmp_path):
     from gamma.coding.project_policy import allowed_source
     from gamma.coding.project_verification import snapshot
-    from gamma.improvement.experiments import normalize_experiment_path
 
     source = tmp_path / "snapshot_source"
     (source / "config").mkdir(parents=True)
@@ -313,10 +312,6 @@ def test_existing_snapshot_consumer_and_protections_accept_same_persona_path(tmp
     wrapped = loader.yaml.safe_load(original)
     assert persona_view(wrapped, private=False) == wrapped["authored_public"]
     assert not allowed_source("config/persona.yaml")
-    for path in ("config/persona.yaml", "src/gamma/persona/disclosure.py",
-                 "src/gamma/persona/style.json", "src/gamma/persona/relationship_state.json"):
-        with pytest.raises(ValueError, match="^protected_experiment_path:"):
-            normalize_experiment_path(path)
 
 @pytest.mark.parametrize("recipient", [None, SHARED])
 def test_shared_view_does_not_read_private_relationship_file(fixture_state, monkeypatch, recipient):

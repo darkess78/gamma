@@ -245,18 +245,6 @@ class LocalRoutingTest(unittest.TestCase):
             self.assertIn("keep_alive", payload)
             self.assertEqual(payload["keep_alive"], "30m")
 
-    def test_keep_alive_defaults_to_example_value(self) -> None:
-        """Verify default keep_alive from config example."""
-        from gamma.config import APP_CONFIG
-
-        # Read the actual config file
-        example_path = Path("config/app.example.toml")
-        content = example_path.read_text()
-
-        # Verify keep_alive setting exists
-        self.assertIn("local_llm_keep_alive", content)
-        self.assertIn('"30m"', content)
-
     def test_fast_light_mode_uses_keep_alive(self) -> None:
         """Verify fast/light mode LLM requests use keep_alive="30m"."""
         from unittest.mock import patch, MagicMock

@@ -1443,7 +1443,7 @@ class ConversationService:
         if len(tool_results) == 1:
             result = tool_results[0]
             if result.tool == 'coding_goal':
-                return "I've queued that coding goal. I'll work through the tasks and record the checks in Improvement."
+                return "I've queued that coding goal. I'll work through the tasks and record the checks on the Coding page."
             if result.tool == 'coding_control':
                 return 'The coding control is requested for the next safe boundary.'
             if result.tool == 'coding_status':

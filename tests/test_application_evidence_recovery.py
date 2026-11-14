@@ -43,13 +43,11 @@ def crash(tmp_path,stop):
 
 def recover(project,data,root,identifier,monkeypatch):
     import gamma.config as config
-    import gamma.coding.project_activation as activation
     callbacks=[]
     def forbidden(*args,**kwargs):
         callbacks.append(True);raise AssertionError('Recovery must not dispatch/replay/activate')
     monkeypatch.setattr(config,'PROJECT_ROOT',project)
     monkeypatch.setattr(config.settings,'data_dir',data)
-    monkeypatch.setattr(activation,'activate_source',forbidden)
     monkeypatch.setattr(autonomous.RepositoryAgent,'execute',forbidden)
     monkeypatch.setattr(sys,'argv',['synthetic-coding-recovery','--once'])
     autonomous.main()
@@ -266,11 +264,10 @@ def test_minimal_update_failure_preserves_record_and_later_recovery(tmp_path,mon
     original=(job/'state.json').read_bytes();journal=(job/'application/journal.json').read_bytes();source=target.read_bytes()
     if failure=='unwritable':job.chmod(0o500)
     import gamma.config as config
-    import gamma.coding.project_activation as activation
     callbacks=[]
     def forbidden(*args,**kwargs):callbacks.append(True);raise AssertionError('No recovery effects')
     monkeypatch.setattr(config,'PROJECT_ROOT',project);monkeypatch.setattr(config.settings,'data_dir',data)
-    monkeypatch.setattr(activation,'activate_source',forbidden);monkeypatch.setattr(autonomous.RepositoryAgent,'execute',forbidden);monkeypatch.setattr(sys,'argv',['synthetic','--once'])
+    monkeypatch.setattr(autonomous.RepositoryAgent,'execute',forbidden);monkeypatch.setattr(sys,'argv',['synthetic','--once'])
     try:
         autonomous.main();first=(job/'state.json').read_bytes();autonomous.main()
         assert first==original==(job/'state.json').read_bytes() and store.read_job(root,identifier)['status']=='running'

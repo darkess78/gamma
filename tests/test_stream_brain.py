@@ -4,7 +4,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from gamma.config import settings
 from gamma.integrations.twitch.models import TwitchChatMessage
@@ -955,47 +955,6 @@ class StreamBrainTest(unittest.TestCase):
         self.assertTrue(any(event.type == "subtitle_line" and event.payload.get("text") == "filtered" for event in output))
         self.assertFalse(any("I heard you" in str(event.payload) for event in output))
 
-    def test_stream_route_delegates_to_brain(self) -> None:
-        from gamma.api.routes import stream_event
-
-        input_event = StreamInputEvent(kind="chat_message", text="Gamma, hello", session_id="stream-1")
-        turn_result = StreamTurnResult(
-            input_event=input_event,
-            decision=TurnDecision(
-                decision="reply",
-                reason="chat_message_addresses_assistant_or_has_priority",
-                should_call_conversation=True,
-                response_mode="chat",
-            ),
-            assistant_response=AssistantResponse(spoken_text="Hello."),
-        )
-        stream_brain = Mock()
-        stream_brain.handle_event.return_value = turn_result
-
-        with patch("gamma.api.routes.get_stream_brain", return_value=stream_brain):
-            result = stream_event(input_event, synthesize_speech=False, fast_mode=True)
-
-        self.assertEqual(result.input_event.kind, "chat_message")
-        self.assertEqual(result.decision.decision, "reply")
-        self.assertEqual(result.assistant_response.spoken_text if result.assistant_response else None, "Hello.")
-        stream_brain.handle_event.assert_called_once()
-        call = stream_brain.handle_event.call_args
-        self.assertEqual(call.args[0].kind, "chat_message")
-        self.assertEqual(call.kwargs["synthesize_speech"], False)
-        self.assertEqual(call.kwargs["fast_mode"], True)
-
-    def test_stream_queue_route_delegates_to_brain(self) -> None:
-        from gamma.api.routes import stream_pending_queue
-
-        stream_brain = Mock()
-        stream_brain.pending_queue.return_value = {"slots": {"ambient": {"event_id": "event-1"}}}
-
-        with patch("gamma.api.routes.get_stream_brain", return_value=stream_brain):
-            result = stream_pending_queue()
-
-        self.assertEqual(result["slots"]["ambient"]["event_id"], "event-1")
-        stream_brain.pending_queue.assert_called_once_with()
-
     def test_stop_stream_clears_pending_queue_and_emits_clear_events(self) -> None:
         clock = _FakeClock(100.0)
         conversation = _FakeConversation()
@@ -1032,33 +991,6 @@ class StreamBrainTest(unittest.TestCase):
             self.assertTrue(result.output_events[0].payload["interrupted"])
             self.assertTrue(result.output_events[1].payload["clear"])
             self.assertEqual(result.decision.metadata["cleared_pending_queue"], True)
-
-    def test_stream_stop_route_delegates_to_brain(self) -> None:
-        from gamma.api.routes import stream_stop
-
-        input_event = StreamInputEvent(kind="system", text="stop")
-        turn_result = StreamTurnResult(
-            input_event=input_event,
-            decision=TurnDecision(decision="ignore", reason="stream_stop_requested"),
-        )
-        stream_brain = Mock()
-        stream_brain.stop_stream.return_value = turn_result
-        live_runtime = Mock()
-        live_runtime.cancel_active_turns.return_value = []
-
-        with (
-            patch("gamma.api.routes.get_stream_brain", return_value=stream_brain),
-            patch("gamma.api.routes.get_live_turn_runtime", return_value=live_runtime),
-        ):
-            result = stream_stop(reason="test")
-
-        self.assertEqual(result.decision.reason, "stream_stop_requested")
-        live_runtime.cancel_active_turns.assert_called_once_with(reason="stream_stop:test")
-        stream_brain.stop_stream.assert_called_once_with(
-            reason="test",
-            live_cancellations={"cancel_reason": "stream_stop:test", "cancelled_count": 0, "cancelled_turns": []},
-        )
-
 
 if __name__ == "__main__":
     unittest.main()

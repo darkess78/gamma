@@ -231,11 +231,7 @@ and recovery planning. Machine maintenance did not activate this staged source.
 - Memory and known-person management.
 - Twitch/EventSub/Discord worker controls and stream operations.
 - Stream trace, output, queue, temporary-memory, self-goal, and rehearsal views.
-- Self-improvement visibility plus authenticated owner controls for durable,
-  bounded directed or evidence-selected work requests. Owners can choose a
-  goal, focus, local models, wall-clock budget, discovery cycles, and isolated
-  attempts, then queue, cooperatively pause, resume, or stop the worker. The
-  page cannot approve, promote, deploy, or mutate the live checkout.
+- Owner-reviewed repository coding pages with pause/resume/stop.
 - Machine/provider/process health, logs, timings, and routing status.
 - Vision analysis and image-aware replies.
 
@@ -255,37 +251,15 @@ and recovery planning. Machine maintenance did not activate this staged source.
   fictional exercises, local-only bounded proposals, protected regression and
   feature checks in a Linux sandbox, honest blocked/checker states, bounded
   capability summaries, a withheld generated-case verification gate, retained
-  review-only candidate solutions, editable observed lessons, and optional idle-only
-  practice. The Improvement dashboard exposes authenticated controls and
-  evidence. A separate owner-directed executor now discovers ordinary Python
+  review-only candidate solutions and editable observed lessons. Practice now
+  runs only under the coordination core. A separate owner-directed executor now discovers ordinary Python
   source, plans bounded dependent tasks, repairs executed failures, independently
-  reviews and applies verified source with rollback. A separate isolated QLoRA
-  trial trains candidate adapters and evaluates held-out tasks; production model
-  activation remains unavailable. See
+  reviews verified source and stops at owner review. See
   `coding_improvement.md` for implemented boundaries and outstanding work.
 
 - Linux-first runtime with Windows development/smoke-test compatibility.
 - Local proxy, Nginx templates, systemd templates, platform launchers.
 - Standalone TTS dataset preparation GUI and CLI pipeline.
-- Versioned improvement contract, bounded aggregate observer, isolated
-  baseline-versus-candidate evaluator, fictional conversation fixture catalog,
-  state-isolated evaluation requests, sanitized fixture artifacts, local-only-by-
-  default multi-model proposal analysis, observer-bound evidence, deterministic
-  proposal screening and consensus, pinned source hash/symbol/call/line
-  grounding, bounded verified source excerpts plus metric-adjacent same-file
-  callee bodies and explicit source-refuted outcomes for local grounding-only
-  plans,
-  proposal-only experiment manifests, scope validation, disabled-by-default
-  detached worktrees, hash- and citation-bound local-model candidate edits,
-  atomic isolated application receipts, and fixed safety/full regression
-  profiles inside a no-network, read-only-source Linux sandbox. It cannot edit
-  the live checkout, promote changes, or operate services. A bounded sanitized
-  dashboard reader exposes its ignored series and observation artifacts without
-  returning raw prompts, candidate patches, model transcripts, or artifact paths.
-  A durable separate worker can translate explicit bounded owner requests into
-  observation, local multi-model proposal, deterministic review, pinned source
-  grounding, and isolated candidate series. It stops successful work at
-  review-ready and provides no live promotion authority.
 - Pytest coverage for API, dashboard, conversation, memory, voice, stream, integrations, safety, routing, resources, and performer behavior.
 
 - Source-aware automatic private memory attribution separates reporter from subject, retains ingress/privacy/correlation metadata, qualifies all stored claims as unverified in authorized private retrieval, and separates profile importance from truth confidence. Source-separated deduplication preserves other reporters. Legacy/manual/unbound-tool origin remains explicit; name-based identity and foreign-subject tool authority remain limited. Additive schema tested only on disposable/copied SQLite; see `memory.md`.
@@ -300,31 +274,25 @@ and recovery planning. Machine maintenance did not activate this staged source.
 
 # Registered repository coding and Shana controls
 
-The Improvement dashboard can run local-model repository coding on the registered
+The Coding dashboard page can run local-model repository coding on the registered
 Discord status helper. Gamma produces a plan and edits, repairs failed protected
 checks, requests another local model's diagnosis after five failures, verifies
 withheld cases and applies the helper with baseline conflict protection and a
 rollback copy. This narrow scope does not establish general project autonomy or
 change model weights. Evidence and candidate examples remain in ignored runtime
-storage; successful lessons are editable in the Improvement dashboard.
+storage; successful lessons are recorded there.
 
 The Presence dashboard controls Shana's Discord bot lifecycle and voice join,
 leave, pause and resume. Commands are serialized with live bot receipts. Status
 executes the installed Gamma-authored pure helper and includes its source hash.
 Existing dashboard authentication and proxy access policies apply.
 
-## Autonomous coding and candidate learning
+## Autonomous coding
 
-The Improvement page accepts owner goals and exposes pause/resume/stop, executed
+The Coding page accepts owner goals and exposes pause/resume/stop, executed
 test receipts, installed-source application evidence and editable learning.
 Successful work retains frozen feature tests in the protected regression suite.
 Lesson revisions preserve provenance and owner edits. The runtime uses local
 Qwen3.8:27b for coding and GPT-OSS:20b for independent review. Protected controller,
 identity, safety and authentication code cannot be changed by the learner.
 
-The local candidate pilot uses the pinned Qwen3-4B-Instruct-2507 checkpoint in a
-separate training environment. A real 12-step NF4 LoRA trial changed adapter
-parameters, preserved the base model and scored 1/8 held-out tasks versus 0/8 for
-its base. It was rejected by the 80 percent pilot floor. This is hardware and
-pipeline proof, not a successful quality upgrade. No production adapter was
-activated; incumbent comparison and serving validation remain required.

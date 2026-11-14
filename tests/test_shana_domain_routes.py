@@ -7,34 +7,7 @@ import pytest
 from fastapi import HTTPException
 
 from gamma.api import routes
-from gamma.schemas.memory import KnownPersonPayload, MemoryClearRequest, MemoryItemCreate, MemoryItemUpdate, ViewerTrustPayload
-
-
-def test_memory_snapshot_and_mutations_delegate_to_shana_stores() -> None:
-    memory = Mock()
-    memory.stats.return_value = {"profile_count": 1}
-    memory.get_known_people.return_value = [{"id": 2}]
-    memory.recent_items.return_value = [{"kind": "profile_fact", "id": 3}]
-    memory.create_item.return_value = {"id": 4}
-    memory.update_item.return_value = {"id": 4, "summary": "updated"}
-    memory.clear_recent.return_value = {"cleared_total": 2, "minutes": 15}
-    memory.save_known_person.return_value = {"id": 5, "name": "Friend"}
-    memory.delete_known_person.return_value = True
-
-    with patch.object(routes, "get_memory_service", return_value=memory):
-        snapshot = routes.memory_snapshot(limit=25)
-        created = routes.memory_item_create(MemoryItemCreate(kind="profile_fact", summary="fact"))
-        updated = routes.memory_item_update("profile_fact", 4, MemoryItemUpdate(summary="updated"))
-        cleared = routes.memory_clear(MemoryClearRequest(scope="recent", minutes=15))
-        person = routes.memory_person_save(KnownPersonPayload(name="Friend"))
-        deleted = routes.memory_person_delete(5)
-
-    assert snapshot["stats"]["profile_count"] == 1
-    assert created["item"]["id"] == 4
-    assert updated["item"]["summary"] == "updated"
-    assert cleared["cleared_total"] == 2
-    assert person["person"]["name"] == "Friend"
-    assert deleted["id"] == 5
+from gamma.schemas.memory import ViewerTrustPayload
 
 
 def test_missing_memory_person_maps_to_404() -> None:

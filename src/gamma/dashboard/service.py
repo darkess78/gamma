@@ -22,10 +22,6 @@ from ..integrations.twitch.client import GammaStreamClient
 from ..integrations.twitch.eventsub import TwitchEventSubConfig, read_twitch_eventsub_state
 from ..integrations.twitch.replay import replay_jsonl_text
 from ..integrations.twitch.worker import TwitchWorkerConfig, read_twitch_worker_state
-from ..improvement.work_queue import ImprovementWorkStore
-from ..coding.practice import capability_summary
-from ..coding.lessons import LessonStore
-from ..coding.worker import read_policy, write_policy
 from ..presence import load_presence_state
 from ..resources import MachineResourceMonitor
 from ..resources.allocations import recent_sidecar_allocation_entries
@@ -35,14 +31,11 @@ from ..schemas.voice import VoiceRoundtripResponse
 from ..supervisor.manager import ProcessManager
 from ..system.cuda_env import prepend_cuda_library_path
 from ..voice.voice_profiles import get_voice_profile, list_voice_profiles, profile_template, save_voice_profile
-from .improvement_status import ImprovementStatusReader
-from .shana_client import ShanaApiClient, ShanaClientError
+from .shana_client import ShanaApiClient
 
 
 class DashboardService:
     SHANA_SYSTEMD_USER_UNIT = "gamma-shana.service"
-    IMPROVEMENT_WORKER_SERVICE = "improvement_worker"
-    IMPROVEMENT_WORKER_MODULE = "gamma.improvement.worker"
     TWITCH_WORKER_SERVICE = "twitch_worker"
     TWITCH_WORKER_MODULE = "gamma.integrations.twitch.worker"
     TWITCH_EVENTSUB_SERVICE = "twitch_eventsub"
@@ -68,8 +61,6 @@ class DashboardService:
     def __init__(self) -> None:
         self._shana = ShanaApiClient()
         self._process_manager = ProcessManager()
-        self._improvement_status = ImprovementStatusReader(project_root=settings.project_root)
-        self._improvement_work = ImprovementWorkStore(settings.data_dir / "improvement" / "control")
         self._resource_monitor = MachineResourceMonitor(
             project_root=settings.project_root,
             enable_gpu=lambda: settings.dashboard_enable_gpu,
@@ -90,63 +81,6 @@ class DashboardService:
         }
         self._stream_rehearsal_events: deque[dict[str, Any]] = deque(maxlen=25)
         self._stream_rehearsal_results: deque[dict[str, Any]] = deque(maxlen=25)
-
-    def build_improvement_status(self) -> dict[str, Any]:
-        """Return sanitized improvement activity, queue, and worker state."""
-        payload = self._improvement_status.build()
-        payload["coding_practice"] = capability_summary(settings.data_dir / "coding" / "practice")
-        payload["coding_practice"]["lessons"] = LessonStore(settings.data_dir / "coding" / "lessons").list()
-        payload["coding_practice"]["idle_policy"] = read_policy(settings.data_dir / "coding")
-        requests = self._improvement_work.list(limit=20)
-        worker = self._process_manager.module_status(
-            self.IMPROVEMENT_WORKER_SERVICE,
-            self.IMPROVEMENT_WORKER_MODULE,
-        )
-        payload["work_queue"] = {
-            "requests": [request.public_summary() for request in requests],
-            "queued_count": sum(request.status == "queued" for request in requests),
-            "running_count": sum(request.status == "running" for request in requests),
-            "worker_running": bool(worker.get("process", {}).get("running")),
-            "worker_pid": worker.get("process", {}).get("pid"),
-            "defaults": {
-                "models": ["qwen3.8:27b", "gpt-oss:20b", "devstral-small-2:latest"],
-                "budget_minutes": 480,
-                "maximum_cycles": 5,
-                "maximum_attempts_per_series": 6,
-            },
-            "limits": {
-                "minimum_budget_minutes": 15,
-                "maximum_budget_minutes": 720,
-                "maximum_cycles": 5,
-                "maximum_attempts_per_series": 10,
-            },
-        }
-        active_request = next(
-            (request for request in requests if request.status in {"running", "queued", "paused"}),
-            None,
-        )
-        if active_request is not None and payload.get("current_series") is None:
-            state_code = "running" if active_request.status == "running" else active_request.status
-            payload["state"] = {
-                "code": state_code,
-                "label": {
-                    "running": "Autonomous work running",
-                    "queued": "Work queued",
-                    "paused": "Work paused",
-                }[active_request.status],
-                "detail": f"{active_request.goal} Current stage: {active_request.stage}.",
-            }
-        for safeguard in payload.get("safeguards", []):
-            if safeguard.get("id") == "read_only_dashboard":
-                safeguard.update(
-                    {
-                        "id": "bounded_operator_controls",
-                        "label": "Bounded operator controls",
-                        "enforced": True,
-                        "detail": "The dashboard may queue, pause, resume, or stop bounded isolated work, but cannot approve, promote, deploy, or edit the live checkout.",
-                    }
-                )
-        return payload
 
     def start_coding_project(self, goal: str, model: str, checker_model: str = "gpt-oss:20b", checker_parent: str | None = None) -> dict[str, Any]:
         from ..coding.repository import submission_lock
@@ -174,85 +108,6 @@ class DashboardService:
         record = json.loads(path.read_text(encoding='utf-8'))
         if record.get('status') != 'needs_checker': raise ValueError('Job is not awaiting a checker')
         return self.start_coding_project(record['goal'],record['model'],record.get('checker_model','gpt-oss:20b'),identifier)
-
-    def start_coding_practice(self, *, model: str, maximum_attempts: int, budget_seconds: int) -> dict[str, Any]:
-        """Start one bounded fictional exercise, never edit the project or train weights."""
-        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/+-]{0,199}", model):
-            raise ValueError("invalid local practice model")
-        if not 1 <= maximum_attempts <= 10 or not 30 <= budget_seconds <= 1800:
-            raise ValueError("invalid coding practice limits")
-        return self._process_manager.start_module(
-            "coding_practice", "gamma.coding.cli",
-            ["practice", "--model", model, "--maximum-attempts", str(maximum_attempts),
-             "--budget-seconds", str(budget_seconds)],
-        )
-
-    def edit_coding_lesson(self, lesson_id: str, *, text: str, active: bool) -> dict[str, Any]:
-        return LessonStore(settings.data_dir / "coding" / "lessons").edit(lesson_id, text=text, active=active)
-
-    def set_coding_idle_policy(self, policy: dict[str, Any]) -> dict[str, Any]:
-        saved = write_policy(settings.data_dir / "coding", policy)
-        if saved["enabled"]:
-            self._process_manager.start_module("coding_idle", "gamma.coding.worker")
-        return saved
-
-    def create_improvement_work(
-        self,
-        *,
-        goal: str,
-        selection_mode: str,
-        focus_domains: tuple[str, ...],
-        models: tuple[str, ...],
-        budget_minutes: int,
-        maximum_cycles: int,
-        maximum_attempts_per_series: int,
-    ) -> dict[str, Any]:
-        request = self._improvement_work.create(
-            goal=goal,
-            selection_mode=selection_mode,  # type: ignore[arg-type]
-            focus_domains=focus_domains,
-            models=models,
-            budget_minutes=budget_minutes,
-            maximum_cycles=maximum_cycles,
-            maximum_attempts_per_series=maximum_attempts_per_series,
-        )
-        worker = self._process_manager.start_module(
-            self.IMPROVEMENT_WORKER_SERVICE,
-            self.IMPROVEMENT_WORKER_MODULE,
-            ["--idle-timeout-seconds", "300"],
-        )
-        return {
-            "ok": True,
-            "request": request.public_summary(),
-            "worker": {
-                "running": bool(worker.get("process", {}).get("running")),
-                "pid": worker.get("process", {}).get("pid"),
-                "detail": worker.get("detail"),
-            },
-        }
-
-    def control_improvement_work(self, request_id: str, action: str) -> dict[str, Any]:
-        request = self._improvement_work.control(request_id, action)  # type: ignore[arg-type]
-        worker: dict[str, Any] | None = None
-        if action == "resume":
-            worker = self._process_manager.start_module(
-                self.IMPROVEMENT_WORKER_SERVICE,
-                self.IMPROVEMENT_WORKER_MODULE,
-                ["--idle-timeout-seconds", "300"],
-            )
-        return {
-            "ok": True,
-            "request": request.public_summary(),
-            "worker": (
-                {
-                    "running": bool(worker.get("process", {}).get("running")),
-                    "pid": worker.get("process", {}).get("pid"),
-                    "detail": worker.get("detail"),
-                }
-                if worker is not None
-                else None
-            ),
-        }
 
     def build_status(self) -> dict[str, Any]:
         local_status = self._remote_system_status()
@@ -1942,22 +1797,6 @@ class DashboardService:
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(line + "\n")
 
-    def run_remote_live_voice_turn(
-        self,
-        *,
-        pcm_bytes: bytes,
-        session_id: str | None,
-        synthesize_speech: bool,
-        response_mode: str = "simple_chunked",
-    ) -> dict[str, Any]:
-        return self.start_remote_live_job(
-            pcm_bytes=pcm_bytes,
-            session_id=session_id,
-            synthesize_speech=synthesize_speech,
-            response_mode=response_mode,
-            turn_id=None,
-        )
-
     def run_remote_voice_roundtrip(
         self,
         *,
@@ -2259,12 +2098,6 @@ class DashboardService:
             "owner_command": "owner_command",
         }
         return mapping.get(event_type, "chat_message")
-
-    def live_idle_settings(self) -> dict[str, Any]:
-        return self.assistant_runtime_settings()
-
-    def record_remote_stream_event(self, event: dict[str, Any]) -> dict[str, Any]:
-        return self._post_remote_json("/v1/stream/events", event)
 
     def _post_live_audio(
         self,
@@ -2913,7 +2746,3 @@ class DashboardService:
             )
         return capabilities
 
-    def _api_headers(self) -> dict[str, str]:
-        if settings.api_auth_enabled and settings.api_bearer_token:
-            return {"Authorization": f"Bearer {settings.api_bearer_token}"}
-        return {}

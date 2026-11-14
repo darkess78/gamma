@@ -11,7 +11,6 @@ from difflib import SequenceMatcher
 
 from fastapi import WebSocket
 
-from .idle_policy import LiveIdlePolicy, LiveIdleSettings, LiveIdleState
 
 
 def _utc_now() -> str:
@@ -30,15 +29,11 @@ class LiveVoiceSession:
         job_fetcher: Callable[[str], dict],
         job_canceler: Callable[..., dict],
         partial_transcriber: Callable[..., dict] | None = None,
-        idle_settings_provider: Callable[[], dict] | None = None,
-        idle_event_recorder: Callable[[dict], dict] | None = None,
     ) -> None:
         self._job_starter = job_starter
         self._job_fetcher = job_fetcher
         self._job_canceler = job_canceler
         self._partial_transcriber = partial_transcriber
-        self._idle_settings_provider = idle_settings_provider
-        self._idle_event_recorder = idle_event_recorder
 
     async def handle(self, websocket: WebSocket) -> None:
         await websocket.accept()
@@ -64,90 +59,7 @@ class LiveVoiceSession:
         last_activity_monotonic = time.monotonic()
         last_user_text = ""
         last_assistant_text = ""
-        last_idle_decision_monotonic: float | None = None
-        proactive_attempts_for_topic = 0
-        user_recently_interrupted = False
-        idle_task: asyncio.Task | None = None
 
-        def idle_settings() -> LiveIdleSettings:
-            raw = self._idle_settings_provider() if self._idle_settings_provider else {}
-            return LiveIdleSettings(
-                enabled=bool(raw.get("proactive_idle_enabled", False)),
-                min_silence_seconds=float(raw.get("proactive_idle_min_silence_seconds", 30) or 30),
-                target_silence_seconds=float(raw.get("proactive_idle_target_silence_seconds", 60) or 60),
-                cooldown_seconds=float(raw.get("proactive_idle_cooldown_seconds", 180) or 180),
-                max_attempts_per_topic=max(1, int(raw.get("proactive_idle_max_attempts_per_topic", 2) or 2)),
-                tick_seconds=max(1.0, float(raw.get("proactive_idle_tick_seconds", 5) or 5)),
-                speech_enabled=bool(raw.get("proactive_idle_speech_enabled", False)),
-            )
-
-        async def idle_loop() -> None:
-            nonlocal last_idle_decision_monotonic, proactive_attempts_for_topic
-            while live_session_active:
-                settings = idle_settings()
-                await asyncio.sleep(settings.tick_seconds)
-                now = time.monotonic()
-                decision = LiveIdlePolicy(settings).evaluate(
-                    LiveIdleState(
-                        live_session_active=live_session_active,
-                        turn_open=turn_open,
-                        remote_turn_active=active_remote_turn_id is not None,
-                        has_completed_turn=bool(last_user_text or last_assistant_text),
-                        silence_seconds=max(0.0, now - last_activity_monotonic),
-                        seconds_since_last_idle_decision=None
-                        if last_idle_decision_monotonic is None
-                        else max(0.0, now - last_idle_decision_monotonic),
-                        proactive_attempts_for_topic=proactive_attempts_for_topic,
-                        user_recently_interrupted=user_recently_interrupted,
-                    )
-                )
-                if not decision.should_emit_event or self._idle_event_recorder is None:
-                    continue
-                event = {
-                    "kind": "conversation_lull",
-                    "text": None,
-                    "session_id": session_id,
-                    "actor": {
-                        "source": "local",
-                        "platform_id": "live_voice_idle",
-                        "display_name": "Live Idle Monitor",
-                        "roles": ["runtime"],
-                    },
-                    "metadata": {
-                        "runtime": "live_voice_session",
-                        "dry_run": True,
-                        "speech_enabled": settings.speech_enabled,
-                        "idle_policy_decision": decision.policy_decision,
-                        "idle_policy_reason": decision.reason,
-                        "silence_ms": round(max(0.0, now - last_activity_monotonic) * 1000, 1),
-                        "last_user_text": last_user_text,
-                        "last_assistant_text": last_assistant_text,
-                        "proactive_attempts_for_topic": proactive_attempts_for_topic,
-                        "user_recently_interrupted": user_recently_interrupted,
-                        "next_check_at": _utc_now(),
-                    },
-                }
-                try:
-                    result = await asyncio.to_thread(self._idle_event_recorder, event)
-                    await self._send_json(
-                        websocket,
-                        {
-                            "type": "idle_decision",
-                            "decision": decision.policy_decision,
-                            "reason": decision.reason,
-                            "would_reply": decision.would_reply,
-                            "stream": result,
-                        },
-                    )
-                except Exception as exc:
-                    await self._send_json(websocket, {"type": "idle_decision_error", "detail": str(exc)})
-                last_idle_decision_monotonic = now
-                if decision.would_reply:
-                    proactive_attempts_for_topic += 1
-
-        # Proactive evaluation is owned by the Shana process scheduler. The
-        # browser live-voice socket no longer starts an autonomy loop.
-        idle_task = None
 
         async def cancel_partial_loop() -> None:
             nonlocal partial_task
@@ -208,7 +120,7 @@ class LiveVoiceSession:
 
         async def poll_remote_job(remote_turn_id: str) -> None:
             nonlocal active_remote_turn_id, active_remote_state, last_activity_monotonic
-            nonlocal last_user_text, last_assistant_text, user_recently_interrupted
+            nonlocal last_user_text, last_assistant_text
             last_status: str | None = None
             while active_remote_turn_id == remote_turn_id:
                 try:
@@ -269,7 +181,6 @@ class LiveVoiceSession:
                         last_activity_monotonic = time.monotonic()
                         last_user_text = str(payload.get("transcript", "") or "").strip()
                         last_assistant_text = str(payload.get("reply_text", "") or "").strip()
-                        user_recently_interrupted = False
                         await self._send_json(
                             websocket,
                             {"type": "transcript", "text": payload.get("transcript", ""), "turn_id": remote_turn_id},
@@ -397,7 +308,6 @@ class LiveVoiceSession:
 
                     if event_type == "start_turn":
                         last_activity_monotonic = time.monotonic()
-                        user_recently_interrupted = False
                         await cancel_partial_loop()
                         audio_buffer.clear()
                         current_turn_id += 1
@@ -447,7 +357,6 @@ class LiveVoiceSession:
 
                     if event_type == "interrupt":
                         last_activity_monotonic = time.monotonic()
-                        user_recently_interrupted = True
                         turn_open = False
                         audio_buffer.clear()
                         await cancel_partial_loop()
@@ -500,12 +409,6 @@ class LiveVoiceSession:
                     poll_task = None
         finally:
             live_session_active = False
-            if idle_task is not None:
-                idle_task.cancel()
-                try:
-                    await idle_task
-                except asyncio.CancelledError:
-                    pass
             receive_task.cancel()
             await cancel_partial_loop()
             await cancel_polling()

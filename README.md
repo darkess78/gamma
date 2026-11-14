@@ -171,8 +171,7 @@ The wider dashboard retains:
 - Twitch, EventSub, Discord, stream replay, traces, and safety views
 - performer monitor and subtitle output views
 - local configuration, logs, timings, and resource status
-- bounded self-improvement work requests with owner goals or automatic measured
-  opportunity selection, overnight budgets, and cooperative pause/resume/stop
+- owner-reviewed repository coding tasks with pause/resume/stop
 
 The raw Shana API can use optional bearer authentication. The dashboard has
 separate session authentication and should be authenticated before network
@@ -185,38 +184,7 @@ exposure.
 .venv/bin/python -m gamma.run_stt_test test_audio/jfk.flac
 .venv/bin/python -m gamma.run_tts_test "Gamma TTS smoke test"
 .venv/bin/python -m gamma.run_voice_roundtrip test_audio/jfk.flac --skip-tts
-.venv/bin/python -m gamma.improvement.cli observe --runtime-dir data/runtime
-.venv/bin/python -m gamma.improvement.cli run-fixtures \
-  --output-runtime-dir data/improvement/runs/baseline-warm/runtime \
-  --thermal-state warm --repetitions 3
-.venv/bin/python -m gamma.improvement.cli propose \
-  --runtime-dir data/runtime \
-  --output data/improvement/proposals/local.json \
-  --model gpt-oss:20b --model qwen3.8:27b
-.venv/bin/python -m gamma.improvement.cli review-proposals \
-  --runtime-dir data/runtime \
-  --proposals data/improvement/proposals/local.json \
-  --output data/improvement/proposals/local.review.json
-.venv/bin/python -m gamma.improvement.cli ground-source \
-  --path src/gamma/conversation/service.py \
-  --target-metric conversation.draft_reply_ms \
-  --output data/improvement/grounding/conversation.json
 ```
-
-The improvement observer reports aggregate latency and route evidence without
-emitting conversation previews or changing the runtime. Proposal analysis is
-local/private by default, has no tools, binds metric evidence from the observer
-rather than trusting model numbers, and remains proposal-only. Deterministic
-review separates measurement manifests from ideas that first need source-code
-grounding. Source grounding pins hashes, symbols, calls, timing keys, line
-ranges, and bounded verified excerpts; grounded plans are also local-only by
-default and remain non-editing. Disabled-by-default experiment worktrees can
-turn one selected grounded plan into exact, hash-bound edits and validate the
-result with fixed safety and full test profiles in a no-network,
-read-only-source Linux sandbox. They still cannot edit the live checkout or
-promote, commit, restart, or deploy anything. Candidate comparisons and
-promotion boundaries are defined in
-[`specs/improvement.md`](specs/improvement.md).
 
 Direct text API check:
 
@@ -254,7 +222,7 @@ Start with [`specs/README.md`](specs/README.md), then read
 relevant domain spec. Future work is ordered in
 [`specs/roadmap.md`](specs/roadmap.md).
 
-The Improvement dashboard can assign repository coding work within the registered
+The Coding dashboard page can assign repository coding work within the registered
 Discord status scope. Gamma plans, edits, tests, repairs and applies that helper,
 with protected checks, independent checker help, evidence and rollback copies.
 The Presence dashboard controls Shana's Discord bot and voice connection.

@@ -48,37 +48,3 @@ async def control(identifier: str, request: ControlRequest):
         raise HTTPException(409, 'Work cannot accept that control') from None
 
 
-@router.get('/lessons/{identifier}/history')
-async def lesson_history(identifier: str):
-    def read():
-        from ..coding.lessons import LessonStore
-        return LessonStore(settings.data_dir/'coding'/'lessons').history(identifier)
-    try:
-        return {'history':await run_in_threadpool(read)}
-    except (ValueError, OSError, AttributeError):
-        raise HTTPException(409, 'Lesson history unavailable') from None
-
-
-@router.get('/candidates')
-async def candidates():
-    from ..coding.candidate_operator import list_candidates
-    return {'candidates': await run_in_threadpool(list_candidates, settings.data_dir / 'coding')}
-
-
-@router.post('/candidates')
-async def candidate_start():
-    from ..coding.candidate_operator import start_trial
-    from ..config import PROJECT_ROOT
-    try:
-        return await run_in_threadpool(start_trial, settings.data_dir / 'coding', PROJECT_ROOT)
-    except (OSError, ValueError):
-        raise HTTPException(409, 'Candidate trial unavailable while assigned work or inference is active') from None
-
-
-@router.post('/candidates/{identifier}/stop')
-async def candidate_stop(identifier: str):
-    from ..coding.candidate_operator import stop_trial
-    try:
-        return await run_in_threadpool(stop_trial, settings.data_dir / 'coding', identifier)
-    except (OSError, ValueError):
-        raise HTTPException(409, 'Candidate cannot accept that control') from None

@@ -1,6 +1,7 @@
 # Coding capability and model improvement
 
 Status: Initial coding-practice and assessment foundation, October 4, 2026.
+Idle practice, its dashboard controls and the LoRA candidate pilot were removed 2026-11-13.
 
 ## Intended outcome
 
@@ -66,31 +67,9 @@ Owner text and active-state edits override future automatic updates. Disabled
 lessons remain disabled. These records are practice guidance, not a replacement
 for Gamma's personal memory and not modifications to learned weights.
 
-The Improvement dashboard shows practice results and editable lessons, starts a
-bounded practice process, and configures idle practice through authenticated
-dashboard-owned `/api/coding/*` routes. Inference runs outside request handlers.
-
-Idle practice defaults to disabled. An enabled worker polls every 30 seconds,
-requires explicit sleeping Presence, gives queued/running/paused improvement
-requests priority, defers on unknown or occupied inference, and rechecks
-foreground activity between proposals. Defaults allow two starts per UTC day,
-at least one hour apart. Pausing prevents later starts; an in-flight bounded
-operation completes at its next checkpoint. The worker is supervisor-managed
-through its module process, but is not yet installed as a reboot-persistent service.
-Admission is advisory: this does not reserve Ollama against a foreground request
-arriving after the idle check.
-
-## Commands
-
-Run these on the Gamma PC with the repository virtual environment:
-
-```bash
-.venv/bin/python -m gamma.coding.cli practice --model qwen3.8:27b
-.venv/bin/python -m gamma.coding.cli assess
-.venv/bin/python -m gamma.coding.worker --once
-```
-
-The named model is a practice baseline, not a selected fine-tuning target.
+Practice now runs only under the [coordination core](shana_coordination_core.md).
+The dashboard practice controls, `gamma.coding.cli`, the idle practice worker and
+its `gamma-coding-idle.service` unit were removed on 2026-11-13.
 
 ## Outstanding implementation
 
@@ -186,14 +165,11 @@ authentication and proxy policy.
 Jobs, plans, model responses, frozen tests, repairs and application receipts are
 stored under ignored `data/coding/autonomous`. Verified examples explicitly say
 `training_approved: false` and `model_weights_changed: false`. Collecting examples
-and editable lessons does not change model weights. The separate isolated
-candidate trial below performs actual weight updates.
+and editable lessons does not change model weights.
 
 `deploy/gamma-coding-autonomous.service` is a user systemd unit for the Gamma PC
 checkout. It maintains one executor and survives user-session restarts when
-lingering is enabled. `deploy/gamma-coding-idle.service` provides the corresponding
-practice worker. Idle practice yields to queued, running, paused and deferred
-autonomous work as well as foreground conversation.
+lingering is enabled.
 
 ### Frozen owner checks and durable learning
 
@@ -212,63 +188,6 @@ an explicit skill produce `lesson-repository_verification`; valid explicit skill
 labels remain compatible. Owner text and disabled flags survive observations.
 The dashboard exposes bounded revision history with automatic/owner provenance.
 Observer failure is reported separately and cannot replay or undo applied work.
-
-### Isolated coding LoRA pilot
-
-`GET/POST /api/coding/candidates` and `POST /api/coding/candidates/{id}/stop`
-expose a manual bounded trial from Improvement. Training uses the separate
-`.venv-training` environment and pinned official `Qwen/Qwen3-4B-Instruct-2507`
-revision `cdbee75f17c01a7cc42f958dc650907174af0554`. Base safetensor hashes are
-verified before and after the trial. NF4 double quantization with BF16 compute,
-rank-8 LoRA on attention projections, frozen base parameters, assistant-only
-labels and a bounded AdamW schedule run on Gamma's 3090. The production models
-and audio models remain separate.
-
-Only re-executed, hash-matched fictional practice solutions enter the dataset;
-the known flawed command-dispatch example is excluded. Eight separate unfamiliar
-coding tasks never enter training. Each response must satisfy the JSON source
-protocol and execute protected tests in the offline sandbox. Admission requires
-free GPU headroom, no resident Ollama model and an exclusive candidate lock.
-Coding/idle practice yields while the lock is held; candidate execution checks
-for new owner work at stage/step boundaries. This is not global foreground
-GPU preemption. Stop does not replay an interrupted trial.
-
-The comparison requires matching checkpoint, revision, fixture hashes, unique
-task IDs, valid execution receipts, strict improvement, no case regressions and
-at least 80 percent candidate accuracy. Even a passing pilot does not activate a
-production model: incumbent comparison and serving compatibility remain open.
-The first actual 12-step trial changed 5,898,240 adapter parameters and scored
-1/8 versus its base's 0/8. The candidate was rejected and remains isolated.
-Protocol failures count as failures; these scores measure usable coding output,
-not code quality independent of response format. Three small training examples
-prove the pipeline, not a sufficient dataset for general coding competence.
-
-### Comparative task-board benchmark, 2026-10-04
-
-The bounded goal was a new pure `gamma.task_board.analyze_tasks` evaluator:
-dependency readiness, waiting reasons, status separation, stable priorities,
-strict input validation, no input mutation and iterative handling of 2,000 tasks.
-It is a benchmark module and is not connected to the dashboard or work scheduler.
-Codex wrote a reference and froze 75 independent checks before Gamma inference.
-Neither the reference nor those checks entered the first Gamma job's prompt.
-
-The reference passed 75/75. Gamma's first candidate passed 74/75, accepting an
-explicit null dependency list instead of rejecting it. Its local checker created
-contradictory assertions and rejected the valid reference on five of twenty
-checks. Attempts to satisfy these assertions reduced candidate correctness;
-the first autonomous job stopped at `needs_checker` without applying source.
-
-A separately recorded assisted job used 35 validated contract checks, without
-reference code. Gamma implemented and installed its own solution in two attempts.
-Both the installed Gamma solution and the reference passed a 75-check transfer
-suite containing 40 new generated boards withheld from that assisted job.
-Contract and transfer tests are retained as protected regressions. This result
-establishes one small pure-module success with human-supplied verification, not
-general project autonomy or a controlled ranking of the underlying models.
-Ignored artifacts under `data/coding/benchmarks/task-board-20261004` retain the
-original goal, frozen hashes, all seven first-run candidates, executed receipts,
-both comparison reports and installed-source application evidence.
-
 
 ## Staged interrupted application evidence reconciliation
 

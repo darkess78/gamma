@@ -43,7 +43,6 @@ in effect until revisions are implemented, verified, and approved for activation
 - `audio_understanding.md`
 - `llm_router.md`
 - `resource_routing.md`
-- `improvement.md`
 - `integrations.md`
 - `minecraft_companion.md`
 - `shana_presence.md`

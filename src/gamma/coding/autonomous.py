@@ -9,7 +9,7 @@ import difflib
 from pathlib import Path
 
 from . import autonomous_store as store
-from .learner import LocalPracticeLearner, PracticeInferenceUnavailable
+from .learner import LocalPracticeLearner
 from .project_policy import allowed_source, inventory, read_sources, source_path, validate_edits
 from .project_loop import _ordered
 from .project_transaction import apply_verified_changes, digest
@@ -69,7 +69,6 @@ class RepositoryAgent:
 
     def ask(self, model, instructions, payload, *, tokens=3072):
         self.checkpoint()
-        from .candidate_resources import candidate_busy
         client = LocalPracticeLearner(endpoint=self.endpoint, model=model, timeout_seconds=120)
         # These callbacks run during backend admission, not just the old idle probe.
         # A paused owner must not reserve a lease while waiting for resume.
@@ -83,13 +82,13 @@ class RepositoryAgent:
                 raise Stopped()
             return action != 'pause'
         def ready():
-            if not control_ready() or candidate_busy(self.root.parent):
+            if not control_ready():
                 return False
             try:
                 client.require_idle()
             except RuntimeError:
                 return False
-            return control_ready() and not candidate_busy(self.root.parent)
+            return control_ready()
         client.checkpoint = self.checkpoint
         client.admission_ready = ready
         requested_stage = self.record['stage']
@@ -97,8 +96,6 @@ class RepositoryAgent:
         while True:
             self.checkpoint()
             try:
-                if candidate_busy(self.root.parent):
-                    raise RuntimeError('Candidate resources are occupied')
                 client.require_idle()
                 break
             except RuntimeError:
@@ -318,9 +315,6 @@ class RepositoryAgent:
             self.checkpoint()
             client = LocalPracticeLearner(endpoint=self.endpoint, model=self.record['model'])
             try:
-                from .candidate_resources import candidate_busy
-                if candidate_busy(self.root.parent):
-                    raise RuntimeError('Candidate trial releasing inference resources')
                 client.require_idle()
             except RuntimeError:
                 self.record.update(status='deferred', reason='Local inference has priority; waiting without sending a request')

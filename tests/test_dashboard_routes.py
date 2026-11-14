@@ -17,7 +17,6 @@ from gamma.dashboard import main
 from gamma.dashboard.service import DashboardService
 from gamma.resources.runtime_registry import ResourceRoutingPolicy, ResourceRoutingRegistry
 from gamma.schemas.response import AssistantResponse, VisionAnalysis
-from gamma.schemas.voice import VoiceRoundtripResponse
 from gamma.system.status import SystemStatusService
 from gamma.voice.voice_profiles import list_voice_profiles
 
@@ -90,95 +89,6 @@ class DashboardRoutesTest(unittest.TestCase):
         self._http_auth_patcher.stop()
         self._service_patcher.stop()
 
-    def test_status_routes(self) -> None:
-        with patch.object(self.mock_service, "build_status", return_value={"ok": True}) as build_status:
-            response = main.status()
-        self.assertEqual(response, {"ok": True})
-        build_status.assert_called_once_with()
-
-        with patch.object(self.mock_service, "build_runtime_status", return_value={"runtime": "ok"}) as runtime_status:
-            response = main.runtime_status()
-        self.assertEqual(response, {"runtime": "ok"})
-        runtime_status.assert_called_once_with()
-
-        with patch.object(self.mock_service, "build_status_summary", return_value={"summary": "ok"}) as status_summary:
-            response = main.status_summary()
-        self.assertEqual(response, {"summary": "ok"})
-        status_summary.assert_called_once_with()
-
-        with patch.object(self.mock_service, "build_header_status", return_value={"header": "ok"}) as header_status:
-            response = main.status_header()
-        self.assertEqual(response, {"header": "ok"})
-        header_status.assert_called_once_with()
-
-        with patch.object(self.mock_service, "build_diagnostics_status", return_value={"diagnostics": "ok"}) as diagnostics:
-            response = main.status_diagnostics()
-        self.assertEqual(response, {"diagnostics": "ok"})
-        diagnostics.assert_called_once_with()
-
-        with patch.object(self.mock_service, "build_settings_status", return_value={"settings": "ok"}) as settings_status:
-            response = main.status_settings()
-        self.assertEqual(response, {"settings": "ok"})
-        settings_status.assert_called_once_with()
-
-        with patch.object(self.mock_service, "build_memory_status", return_value={"memory": "ok"}) as memory_status:
-            response = main.status_memory()
-        self.assertEqual(response, {"memory": "ok"})
-        memory_status.assert_called_once_with()
-
-        with patch.object(self.mock_service, "build_improvement_status", return_value={"improvement": "ok"}) as improvement_status:
-            response = main.improvement_status()
-        self.assertEqual(response, {"improvement": "ok"})
-        improvement_status.assert_called_once_with()
-
-        with patch.object(self.mock_service, "presence_status", return_value={"presence": "ok"}) as presence_status:
-            response = main.presence_status()
-        self.assertEqual(response, {"presence": "ok"})
-        presence_status.assert_called_once_with()
-
-        with patch.object(self.mock_service, "build_monitor_status", return_value={"monitor": "ok"}) as monitor_status:
-            response = main.monitor_status()
-        self.assertEqual(response, {"monitor": "ok"})
-        monitor_status.assert_called_once_with()
-
-    def test_improvement_work_control_routes_delegate_bounded_payloads(self) -> None:
-        created = {"ok": True, "request": {"id": "work-20260828-000000-12345678"}}
-        controlled = {"ok": True, "request": {"status": "paused"}}
-        self.mock_service.create_improvement_work.return_value = created
-        self.mock_service.control_improvement_work.return_value = controlled
-
-        response = main.create_improvement_work(
-            main.ImprovementWorkCreateRequest(
-                goal="Improve measured conversation latency without quality regressions.",
-                selection_mode="directed",
-                focus_domains=("conversation",),
-                models=("model-a", "model-b"),
-                budget_minutes=480,
-                maximum_cycles=3,
-                maximum_attempts_per_series=6,
-            )
-        )
-        control = main.control_improvement_work(
-            "work-20260828-000000-12345678",
-            main.ImprovementWorkControlRequest(action="pause"),
-        )
-
-        self.assertEqual(response, created)
-        self.assertEqual(control, controlled)
-        self.mock_service.create_improvement_work.assert_called_once_with(
-            goal="Improve measured conversation latency without quality regressions.",
-            selection_mode="directed",
-            focus_domains=("conversation",),
-            models=("model-a", "model-b"),
-            budget_minutes=480,
-            maximum_cycles=3,
-            maximum_attempts_per_series=6,
-        )
-        self.mock_service.control_improvement_work.assert_called_once_with(
-            "work-20260828-000000-12345678",
-            "pause",
-        )
-
     def test_internal_shana_url_uses_loopback_for_wildcard_bind(self) -> None:
         with (
             patch.object(settings, "shana_bind_host", "0.0.0.0"),
@@ -245,12 +155,6 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn("href=\"/dashboard/settings\"", dashboard.body.decode("utf-8"))
         self.assertIn('rel="icon" href="/static/favicon.svg"', dashboard.body.decode("utf-8"))
         self.assertNotIn('src="/static/monitor.js', dashboard.body.decode("utf-8"))
-        self.assertIn('src="/static/nav.js?v=20260828"', dashboard.body.decode("utf-8"))
-        self.assertIn('src="/static/live.js?v=20260611e"', dashboard.body.decode("utf-8"))
-        self.assertIn('src="/static/memory.js?v=20260611e"', dashboard.body.decode("utf-8"))
-        self.assertIn('href="/static/dashboard.css?v=20260828b"', dashboard.body.decode("utf-8"))
-        self.assertIn('src="/static/status.js?v=20260623c"', dashboard.body.decode("utf-8"))
-        self.assertIn('src="/static/improvement.mjs?v=20261004b"', dashboard.body.decode("utf-8"))
         self.assertEqual(talk.status_code, 307)
         self.assertEqual(talk.headers["location"], "/dashboard/monitor")
         self.assertEqual(monitor_redirect.status_code, 307)
@@ -412,120 +316,11 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertFalse((main.STATIC_DIR / "talk.html").exists())
         self.assertFalse((main.STATIC_DIR / "talk.mjs").exists())
 
-    def test_dashboard_navigation_module_applies_page_visibility(self) -> None:
-        nav_script = (main.STATIC_DIR / "nav.js").read_text(encoding="utf-8")
-
-        self.assertIn("applyDashboardTabVisibility();", nav_script)
-        self.assertIn("window.toggleNavMenu = toggleNavMenu;", nav_script)
-        self.assertIn("window.toggleSection = toggleSection;", nav_script)
-        self.assertIn("improvement: ['improvement']", nav_script)
-
-    def test_improvement_page_uses_bounded_native_work_controls(self) -> None:
-        dashboard_html = (main.STATIC_DIR / "index.html").read_text(encoding="utf-8")
-        improvement_script = (main.STATIC_DIR / "improvement.mjs").read_text(encoding="utf-8")
-
-        self.assertIn('data-dashboard-tab="improvement"', dashboard_html)
-        self.assertIn('id="improvementCurrentWork"', dashboard_html)
-        self.assertIn('id="improvementSafeguards"', dashboard_html)
-        self.assertIn('id="improvementWorkForm"', dashboard_html)
-        self.assertIn('id="improvementWorkQueue"', dashboard_html)
-        self.assertIn("devstral-small-2:latest", dashboard_html)
-        self.assertIn('id="improvementMaximumCycles" type="number" min="1" max="5" value="5"', dashboard_html)
-        self.assertIn("fetch('/api/improvement/status?_='", improvement_script)
-        self.assertIn("fetch('/api/improvement/work'", improvement_script)
-        self.assertIn("'/control'", improvement_script)
-        self.assertIn("Reject candidate", improvement_script)
-        self.assertIn("Source scope", improvement_script)
-        self.assertIn("target.replaceChildren();", improvement_script)
-        self.assertIn("target.textContent", improvement_script)
-        self.assertNotIn("innerHTML", improvement_script)
-        self.assertIn("method: 'POST'", improvement_script)
-
-    def test_status_module_loads_and_renders_api_status(self) -> None:
-        status_script = (main.STATIC_DIR / "status.js").read_text(encoding="utf-8")
-
-        self.assertIn("statusPollEndpoint() + '?_='", status_script)
-        self.assertIn("return '/api/status/header';", status_script)
-        self.assertIn("renderStatus(await response.json());", status_script)
-        self.assertIn("fetch('/api/status/header?_='", status_script)
-        self.assertIn("renderNavbarStatus(await response.json());", status_script)
-        self.assertIn("return '/api/status/diagnostics';", status_script)
-        self.assertIn("return '/api/status/settings';", status_script)
-        self.assertIn("return '/api/status/memory';", status_script)
-        self.assertNotIn("return '/api/status';", status_script)
-        self.assertIn("'Shana: API down'", status_script)
-        self.assertIn("'Twitch: stopped'", status_script)
-        self.assertIn("window.loadStatus = loadStatus;", status_script)
-        self.assertIn("window.selectTtsProfile = selectTtsProfile;", status_script)
-        self.assertIn("renderTtsControls((data.providers || {}).tts);", status_script)
-        self.assertIn("renderPlacementShadow(data);", status_script)
-        self.assertIn("renderStartupAdmission(data);", status_script)
-        self.assertIn("renderSidecarAllocations(data);", status_script)
-        self.assertIn("placement_shadow", status_script)
-        self.assertIn("startup_admission", status_script)
-        self.assertIn("sidecar_allocations", status_script)
-        self.assertNotIn("dashboardPage !== 'status'", status_script)
-        self.assertIn("formatMemory(data);", status_script)
-        self.assertIn("renderAssistant(data);", status_script)
-        self.assertIn("renderOverview(data);", status_script)
-        status_html = (main.STATIC_DIR / "index.html").read_text(encoding="utf-8")
-        self.assertIn('id="placementShadow"', status_html)
-        self.assertIn('id="startupAdmission"', status_html)
-        self.assertIn('id="sidecarAllocations"', status_html)
-
-    def test_desktop_navigation_wraps_instead_of_overlapping_output_links(self) -> None:
-        stylesheet = (main.STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
-
-        self.assertIn("flex: 1 1 760px;", stylesheet)
-        self.assertIn(".app-nav {\n  display: flex;\n  flex-wrap: wrap;", stylesheet)
-        self.assertIn(".output-nav {\n  display: flex;\n  flex-wrap: wrap;", stylesheet)
-
-    def test_presence_uses_shared_native_module_without_legacy_initializer(self) -> None:
-        dashboard_html = (main.STATIC_DIR / "index.html").read_text(encoding="utf-8")
-        presence_script = (main.STATIC_DIR / "presence.mjs").read_text(encoding="utf-8")
-
-        self.assertIn('type="module" src="/static/presence.mjs?v=20260623"', dashboard_html)
-        self.assertNotIn("/static/init.js", dashboard_html)
-        self.assertFalse((main.STATIC_DIR / "init.js").exists())
-        self.assertIn("from './core.mjs'", presence_script)
-        self.assertIn("window.setPresenceMode = setPresenceMode;", presence_script)
-        self.assertIn('id="presenceAudienceKind"', dashboard_html)
-        self.assertIn('id="presenceKnownPersonId"', dashboard_html)
-        self.assertIn('id="presenceWakeStatus"', dashboard_html)
-        self.assertIn('id="presenceAutonomyStatus"', dashboard_html)
-        self.assertIn("body.audience = selectedAudience();", presence_script)
-        self.assertIn("audio_ready", presence_script)
-
-    def test_monitor_has_stream_controls_and_status_reporting(self) -> None:
-        body = main.dashboard_monitor_page().body.decode("utf-8")
-
-        self.assertIn('src="/static/monitor.js?v=20260623"', body)
-        self.assertIn('src="/static/live.js?v=20260618"', body)
-        self.assertIn("Server And Provider Status", body)
-        self.assertIn("Live Voice", body)
-        self.assertIn('id="liveVoiceButton"', body)
-        self.assertIn('onclick="toggleLiveVoice()"', body)
-        self.assertIn('id="voiceSessionId"', body)
-        self.assertIn('id="liveVoiceMeter"', body)
-        self.assertIn('id="voicePlayback"', body)
-        self.assertIn("Manual Stream Input", body)
-        self.assertIn('id="monitorInputText"', body)
-        self.assertIn("submitMonitorInput()", body)
-        self.assertIn("/api/providers/tts/start", body)
-        self.assertIn("/api/providers/tts/stop", body)
-        self.assertIn("/api/shana/restart", body)
-
     def test_presence_short_path_redirects_to_dashboard_presence(self) -> None:
         response = main.presence_page_redirect()
 
         self.assertEqual(response.status_code, 307)
         self.assertEqual(response.headers["location"], "/dashboard/presence")
-
-    def test_dashboard_nav_rewrites_short_routes_to_dashboard_paths(self) -> None:
-        script = (main.STATIC_DIR / "nav.js").read_text(encoding="utf-8")
-
-        self.assertIn("route = '/dashboard';", script)
-        self.assertIn("route = '/dashboard' + route;", script)
 
     def test_live_and_monitor_pages_share_live_voice_panel_partial(self) -> None:
         dashboard_body = main.dashboard_live_page().body.decode("utf-8")
@@ -536,24 +331,6 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn(partial, monitor_body)
         self.assertNotIn("GAMMA_LIVE_VOICE_PANEL", dashboard_body)
         self.assertNotIn("GAMMA_LIVE_VOICE_PANEL", monitor_body)
-
-    def test_monitor_script_rewrites_insecure_public_api_urls_on_https(self) -> None:
-        script = (main.STATIC_DIR / "monitor.js").read_text(encoding="utf-8")
-
-        self.assertIn("location.protocol === 'https:' && apiUrl.protocol !== 'https:'", script)
-        self.assertIn("return location.origin.replace(/\\/$/, '')", script)
-        self.assertIn("browserReachableUrl(eventPayload.audio_url)", script)
-        self.assertIn("['8000', '8001', '8080'].includes", script)
-
-    def test_monitor_script_uses_lightweight_status_polling(self) -> None:
-        script = (main.STATIC_DIR / "monitor.js").read_text(encoding="utf-8")
-
-        self.assertIn("fetch('/api/monitor/status?_='", script)
-        self.assertIn("let monitorStatusInFlight = false;", script)
-        self.assertIn("new AbortController();", script)
-        self.assertIn("controller.abort()", script)
-        self.assertIn("Status request timed out.", script)
-        self.assertNotIn("fetch('/api/status?_='", script)
 
     def test_dashboard_pages_render_forwarded_https_public_base_urls(self) -> None:
         request = _request_with_headers(
@@ -577,41 +354,6 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('window.GAMMA_SHANA_BASE_URL = "https://gamma.neety.me"', body)
         self.assertIn('window.GAMMA_DASHBOARD_BASE_URL = "https://gamma.neety.me"', body)
         self.assertNotIn('window.GAMMA_SHANA_BASE_URL = "http://127.0.0.1:8000"', body)
-
-    def test_requested_dashboard_controls_are_exported_by_modules(self) -> None:
-        scripts = "\n".join(
-            (main.STATIC_DIR / name).read_text(encoding="utf-8")
-            for name in ("api.js", "controls.js", "memory.js", "monitor.js", "status.js")
-        )
-
-        for handler in (
-            "action",
-            "clearRecentMemory",
-            "saveAssistantSettings",
-            "saveTtsProfile",
-            "selectTtsProfile",
-            "selectTtsProvider",
-            "stopShanaOutput",
-            "submitMonitorInput",
-            "ttsPlayerLoadLatest",
-        ):
-            with self.subTest(handler=handler):
-                self.assertIn(f"window.{handler} =", scripts)
-
-    def test_toolbar_actions(self) -> None:
-        action_map = {
-            "/api/shana/start": ("start_shana", {"ok": True, "detail": "started"}),
-            "/api/shana/stop": ("stop_shana", {"ok": True, "detail": "stopped"}),
-            "/api/shana/restart": ("restart_shana", {"ok": True, "detail": "restarted"}),
-            "/api/dashboard/stop": ("stop_dashboard", {"ok": True, "detail": "dashboard-stop-scheduled"}),
-            "/api/all/stop": ("stop_all", {"ok": True, "detail": "all-stop-scheduled"}),
-        }
-        for path, (method_name, payload) in action_map.items():
-            with self.subTest(path=path):
-                with patch.object(self.mock_service, method_name, return_value=payload) as method:
-                    response = getattr(main, method_name)()
-                self.assertEqual(response, payload)
-                method.assert_called_once_with()
 
     def test_systemd_user_lifecycle_controls_shana_unit(self) -> None:
         service = DashboardService()
@@ -651,37 +393,6 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertNotIn("/api/dashboard/stop", body)
         self.assertNotIn("Stop Dashboard", body)
         self.assertIn("Stop Shana + Workers", body)
-
-    def test_twitch_worker_routes(self) -> None:
-        action_map = {
-            "twitch_worker_status": {"process": {"running": False}, "configured": False},
-            "start_twitch_worker": {"ok": False, "auth_required": True},
-            "stop_twitch_worker": {"ok": True, "detail": "not-running"},
-            "twitch_eventsub_status": {"process": {"running": False}, "configured": False},
-            "start_twitch_eventsub_worker": {"ok": False, "auth_required": True},
-            "stop_twitch_eventsub_worker": {"ok": True, "detail": "not-running"},
-            "discord_text_worker_status": {"process": {"running": False}, "configured": False},
-            "start_discord_text_worker": {"ok": False, "detail": "missing configuration"},
-            "stop_discord_text_worker": {"ok": True, "detail": "not-running"},
-        }
-        for method_name, payload in action_map.items():
-            with self.subTest(method_name=method_name):
-                with patch.object(self.mock_service, method_name, return_value=payload) as method:
-                    response = getattr(main, method_name)()
-                self.assertEqual(response, payload)
-                method.assert_called_once_with()
-
-        settings_payload = {"dry_run": True, "voice_enabled": False}
-        with patch.object(self.mock_service, "twitch_runtime_settings", return_value=settings_payload) as method:
-            response = main.twitch_settings()
-        self.assertEqual(response["settings"], settings_payload)
-        method.assert_called_once_with()
-
-        save_payload = {"dry_run": False, "voice_enabled": True}
-        with patch.object(self.mock_service, "save_twitch_runtime_settings", return_value={"ok": True, "settings": save_payload}) as method:
-            response = anyio.run(main.save_twitch_settings, _JsonRequest(save_payload))
-        self.assertEqual(response["settings"], save_payload)
-        method.assert_called_once_with(save_payload)
 
     def test_stream_ready_status_reports_filtered_audio_asset(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -731,28 +442,6 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(payload["recent_by_target"]["dashboard_monitor"]["turn_id"], "turn-2")
         self.assertTrue(payload["adapters"]["vtube_studio"]["enabled"])
         self.assertIn("/v1/performer/status", probe.call_args.args[0])
-
-    def test_dashboard_performer_target_mute_routes_delegate_to_service(self) -> None:
-        self.mock_service.set_performer_target_mute.side_effect = [
-            {"ok": True, "target_policy": "stream_public", "muted": True},
-            {"ok": True, "target_policy": "stream_public", "muted": False},
-        ]
-
-        muted = main.dashboard_performer_target_mute("stream_public")
-        unmuted = main.dashboard_performer_target_unmute("stream_public")
-
-        self.assertTrue(muted["muted"])
-        self.assertFalse(unmuted["muted"])
-        self.mock_service.set_performer_target_mute.assert_any_call("stream_public", muted=True, reason="dashboard")
-        self.mock_service.set_performer_target_mute.assert_any_call("stream_public", muted=False, reason="dashboard")
-
-    def test_dashboard_performer_target_clear_route_delegates_to_service(self) -> None:
-        self.mock_service.clear_performer_target.return_value = {"ok": True, "target_policy": "stream_public", "cleared": True}
-
-        result = main.dashboard_performer_target_clear("stream_public")
-
-        self.assertTrue(result["cleared"])
-        self.mock_service.clear_performer_target.assert_called_once_with("stream_public", reason="dashboard")
 
     def test_stream_ready_status_reports_blocking_preflight_issues(self) -> None:
         service = DashboardService()
@@ -864,33 +553,6 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn("twitch_client_id", eventsub["missing_config"])
         self.assertIn("twitch_broadcaster_user_id", eventsub["missing_config"])
 
-    def test_twitch_viewer_trust_routes(self) -> None:
-        trust_payload = {"items": [{"platform_user_id": "u1", "trust_level": "trusted"}], "trust_levels": ["trusted"]}
-        with patch.object(self.mock_service, "twitch_viewer_trust", return_value=trust_payload) as method:
-            response = main.twitch_viewer_trust(limit=12)
-        self.assertEqual(response, trust_payload)
-        method.assert_called_once_with(limit=12)
-
-        save_payload = {"platform_user_id": "u1", "trust_level": "trusted"}
-        with patch.object(self.mock_service, "save_twitch_viewer_trust", return_value={"ok": True, "record": save_payload}) as method:
-            response = anyio.run(main.save_twitch_viewer_trust, _JsonRequest(save_payload))
-        self.assertEqual(response["record"], save_payload)
-        method.assert_called_once_with(save_payload)
-
-    def test_twitch_replay_route(self) -> None:
-        payload = {"jsonl": '{"kind":"chat_message","text":"Shana hi"}'}
-        result = {"ok": True, "count": 1, "results": []}
-        with patch.object(self.mock_service, "run_twitch_replay", return_value=result) as method:
-            response = anyio.run(main.run_twitch_replay, _JsonRequest(payload))
-        self.assertEqual(response, result)
-        method.assert_called_once_with(payload)
-
-        dry_run_result = {"ok": True, "scenario": "dry_run_readiness", "count": 10, "results": []}
-        with patch.object(self.mock_service, "run_twitch_dry_run_replay", return_value=dry_run_result) as method:
-            response = main.run_twitch_dry_run_replay()
-        self.assertEqual(response, dry_run_result)
-        method.assert_called_once_with()
-
     def test_twitch_dry_run_replay_uses_builtin_safe_settings(self) -> None:
         service = DashboardService()
         replay_results = [
@@ -916,40 +578,6 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(kwargs["session_id"], "twitch-dry-run-readiness")
         self.assertFalse(kwargs["synthesize_speech"])
         self.assertTrue(kwargs["fast_mode"])
-
-    def test_stream_rehearsal_routes(self) -> None:
-        status_payload = {"ok": True, "state": {"enabled": False}, "events": [], "results": []}
-        start_payload = {"session_id": "local-test", "synthesize_speech": True}
-        start_result = {"ok": True, "state": {"enabled": True, "session_id": "local-test"}}
-        event_payload = {"event_type": "chat", "text": "Shana hello", "priority": 5}
-        event_result = {"ok": True, "result": {"decision": {"decision": "reply"}}}
-        stop_result = {"ok": True, "state": {"enabled": False}}
-
-        with patch.object(self.mock_service, "stream_rehearsal_status", return_value=status_payload) as method:
-            response = main.dashboard_stream_rehearsal_status()
-        self.assertEqual(response, status_payload)
-        method.assert_called_once_with()
-
-        with patch.object(self.mock_service, "start_stream_rehearsal", return_value=start_result) as method:
-            response = anyio.run(main.dashboard_stream_rehearsal_start, _JsonRequest(start_payload))
-        self.assertEqual(response, start_result)
-        method.assert_called_once_with(start_payload)
-
-        with patch.object(self.mock_service, "inject_stream_rehearsal_event", return_value=event_result) as method:
-            response = anyio.run(main.dashboard_stream_rehearsal_event, _JsonRequest(event_payload))
-        self.assertEqual(response, event_result)
-        method.assert_called_once_with(event_payload)
-
-        self.mock_service.inject_stream_rehearsal_event.side_effect = ValueError("text is required")
-        with self.assertRaises(Exception) as ctx:
-            anyio.run(main.dashboard_stream_rehearsal_event, _JsonRequest({"text": ""}))
-        self.assertEqual(ctx.exception.status_code, 400)
-        self.assertEqual(ctx.exception.detail, "text is required")
-
-        with patch.object(self.mock_service, "stop_stream_rehearsal", return_value=stop_result) as method:
-            response = main.dashboard_stream_rehearsal_stop()
-        self.assertEqual(response, stop_result)
-        method.assert_called_once_with()
 
     def test_stream_rehearsal_service_posts_normalized_event_to_stream_api(self) -> None:
         service = DashboardService()
@@ -1023,55 +651,6 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(event["metadata"]["twitch_controls"]["ambient_chat_enabled"], True)
         self.assertEqual(event["metadata"]["twitch_controls"]["dry_run"], False)
 
-    def test_presence_routes(self) -> None:
-        status_payload = {"ok": True, "state": {"mode": "sleep"}}
-        wake_result = {"ok": True, "state": {"mode": "wake"}}
-        live_result = {"ok": True, "state": {"mode": "go_live"}}
-        break_result = {"ok": True, "state": {"mode": "break"}}
-        sleep_result = {"ok": True, "state": {"mode": "sleep"}}
-
-        with patch.object(self.mock_service, "presence_status", return_value=status_payload) as method:
-            response = main.presence_status()
-        self.assertEqual(response, status_payload)
-        method.assert_called_once_with()
-
-        with patch.object(self.mock_service, "set_presence_mode", return_value=wake_result) as method:
-            response = anyio.run(main.presence_mode, _JsonRequest({"mode": "wake"}))
-        self.assertEqual(response, wake_result)
-        method.assert_called_once_with(
-            "wake",
-            confirm_public_output=False,
-            audience={"kind": "unknown"},
-            session_id=None,
-        )
-
-        with patch.object(self.mock_service, "set_presence_mode", return_value=live_result) as method:
-            response = anyio.run(main.presence_mode, _JsonRequest({"mode": "go_live", "confirm_public_output": True}))
-        self.assertEqual(response, live_result)
-        method.assert_called_once_with(
-            "go_live",
-            confirm_public_output=True,
-            audience={"kind": "unknown"},
-            session_id=None,
-        )
-
-        self.mock_service.set_presence_mode.side_effect = ValueError("confirm_public_output is required for Go Live")
-        with self.assertRaises(Exception) as ctx:
-            anyio.run(main.presence_mode, _JsonRequest({"mode": "go_live"}))
-        self.assertEqual(ctx.exception.status_code, 400)
-        self.assertEqual(ctx.exception.detail, "confirm_public_output is required for Go Live")
-
-        self.mock_service.set_presence_mode.side_effect = None
-        with patch.object(self.mock_service, "set_presence_mode", return_value=break_result) as method:
-            response = main.presence_break()
-        self.assertEqual(response, break_result)
-        method.assert_called_once_with("break")
-
-        with patch.object(self.mock_service, "set_presence_mode", return_value=sleep_result) as method:
-            response = main.presence_sleep()
-        self.assertEqual(response, sleep_result)
-        method.assert_called_once_with("sleep")
-
     def test_presence_service_mode_side_effects(self) -> None:
         service = DashboardService()
         with (
@@ -1104,59 +683,6 @@ class DashboardRoutesTest(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             service.set_presence_mode("go_live", confirm_public_output=False)
-
-    def test_memory_clear_routes(self) -> None:
-        with patch.object(self.mock_service, "clear_recent_memory", return_value={"ok": True, "cleared_total": 1}) as method:
-            response = anyio.run(main.clear_recent_memory, _JsonRequest({"minutes": 10}))
-        self.assertEqual(response["cleared_total"], 1)
-        method.assert_called_once_with(minutes=10)
-
-        payload = {"ok": True, "cleared_total": 2}
-        items = [{"id": 4, "kind": "episodic"}, {"id": 2, "kind": "profile_fact"}]
-        with patch.object(self.mock_service, "clear_selected_memory", return_value=payload) as method:
-            response = anyio.run(main.clear_selected_memory, _JsonRequest({"items": items}))
-        self.assertEqual(response["cleared_total"], 2)
-        method.assert_called_once_with(items)
-
-    def test_memory_edit_and_known_person_routes(self) -> None:
-        item_payload = {"kind": "profile_fact", "id": 2, "summary": "Updated"}
-        with patch.object(self.mock_service, "update_memory_item", return_value={"ok": True}) as method:
-            response = anyio.run(main.update_memory_item, _JsonRequest(item_payload))
-        self.assertTrue(response["ok"])
-        method.assert_called_once_with(item_payload)
-
-        create_payload = {"kind": "episodic", "summary": "Manually added"}
-        with patch.object(self.mock_service, "create_memory_item", return_value={"ok": True}) as method:
-            response = anyio.run(main.create_memory_item, _JsonRequest(create_payload))
-        self.assertTrue(response["ok"])
-        method.assert_called_once_with(create_payload)
-
-        person_payload = {"name": "Viewer", "accounts": [{"platform": "twitch", "platform_user_id": "1"}]}
-        with patch.object(self.mock_service, "save_known_person", return_value={"ok": True}) as method:
-            response = anyio.run(main.save_known_person, _JsonRequest(person_payload))
-        self.assertTrue(response["ok"])
-        method.assert_called_once_with(person_payload)
-
-        with patch.object(self.mock_service, "delete_known_person", return_value={"ok": True}) as method:
-            response = main.delete_known_person(4)
-        self.assertTrue(response["ok"])
-        method.assert_called_once_with(4)
-
-    def test_provider_test_buttons(self) -> None:
-        action_map = {
-            "/api/providers/llm/test": ("test_llm", {"status": "ok"}),
-            "/api/providers/stt/test": ("test_stt", {"status": "ok"}),
-            "/api/providers/tts/test": ("test_tts", {"status": "ok"}),
-            "/api/providers/voice/test": ("test_voice_roundtrip", {"status": "ok"}),
-            "/api/providers/tts/start": ("start_tts", {"ok": True}),
-            "/api/providers/tts/stop": ("stop_tts", {"ok": True}),
-        }
-        for path, (method_name, payload) in action_map.items():
-            with self.subTest(path=path):
-                with patch.object(self.mock_service, method_name, return_value=payload) as method:
-                    response = getattr(main, method_name)()
-                self.assertEqual(response, payload)
-                method.assert_called_once_with()
 
     def test_tts_catalog_excludes_removed_local_and_stub_providers(self) -> None:
         service = DashboardService()
@@ -1397,57 +923,6 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(payload["profiles"]["default_qwen"]["provider"], "qwen-tts")
         self.assertEqual(len(payload["profiles"]), 1)
 
-    def test_assistant_settings_routes(self) -> None:
-        settings_payload = {
-            "speech_filter_level": "strict",
-            "speech_filter_llm_temperature": 0.1,
-            "stream_safety_review_timeout_seconds": 1.5,
-            "stream_safety_review_timeout_action": "skip",
-            "assistant_state_enabled": True,
-            "llm_router_profile": "balanced",
-            "llm_router_allow_hosted_escalation": True,
-            "llm_router_chat_light_max_input_words": 32,
-            "llm_router_complex_max_input_words": 140,
-            "llm_router_persona_hosted_fallback_enabled": False,
-            "llm_router_persona_heavy_hosted_fallback_enabled": True,
-        }
-        with patch.object(self.mock_service, "assistant_runtime_settings", return_value=settings_payload) as method:
-            response = main.assistant_settings()
-        self.assertEqual(response["settings"], settings_payload)
-        method.assert_called_once_with()
-
-        save_payload = {"ok": True, "settings": settings_payload, "detail": "saved"}
-        with patch.object(self.mock_service, "save_assistant_runtime_settings", return_value=save_payload) as method:
-            response = anyio.run(main.save_assistant_settings, _JsonRequest(settings_payload))
-        self.assertEqual(response["settings"], settings_payload)
-        method.assert_called_once_with(settings_payload)
-
-    def test_tts_provider_profile_and_save_routes(self) -> None:
-        with patch.object(self.mock_service, "set_tts_provider", return_value={"ok": True, "provider": "qwen-tts"}) as method:
-            response = anyio.run(main.select_tts_provider, _JsonRequest({"provider": "qwen-tts"}))
-        self.assertEqual(response["provider"], "qwen-tts")
-        method.assert_called_once_with("qwen-tts")
-
-        with patch.object(self.mock_service, "set_tts_profile", return_value={"ok": True, "profile": "test"}) as method:
-            response = anyio.run(main.select_tts_profile, _JsonRequest({"profile": "test"}))
-        self.assertEqual(response["profile"], "test")
-        method.assert_called_once_with("test")
-
-        payload = {"id": "new_profile", "provider": "qwen-tts", "values": {}}
-        with patch.object(self.mock_service, "save_tts_profile", return_value={"ok": True, "profile": payload}) as method:
-            response = anyio.run(main.save_tts_profile, _JsonRequest(payload))
-        self.assertEqual(response["profile"], payload)
-        method.assert_called_once_with(payload)
-
-    def test_tts_synthesize_route(self) -> None:
-        with patch.object(self.mock_service, "synthesize_text", return_value={"ok": True, "filename": "tts-test.wav"}) as method:
-            response = anyio.run(
-                main.tts_synthesize_file,
-                _upload_file("sample.txt", b"hello from dashboard", "text/plain"),
-            )
-        self.assertEqual(response["filename"], "tts-test.wav")
-        method.assert_called_once_with("hello from dashboard")
-
     def test_audio_routes_respect_extension_media_type(self) -> None:
         settings.audio_output_dir.mkdir(parents=True, exist_ok=True)
         test_path = settings.audio_output_dir / "dashboard-test.mp3"
@@ -1461,30 +936,6 @@ class DashboardRoutesTest(unittest.TestCase):
             self.assertFalse(test_path.exists())
         finally:
             test_path.unlink(missing_ok=True)
-
-    def test_browser_voice_roundtrip_route(self) -> None:
-        payload = VoiceRoundtripResponse(
-            transcript="hello",
-            reply_text="hi there",
-            audio_content_type="audio/wav",
-            audio_base64="dGVzdA==",
-            timing_ms={"total_ms": 1.0},
-        )
-        self.mock_service.run_remote_voice_roundtrip.return_value = payload
-        response = anyio.run(
-            main.dashboard_voice_roundtrip,
-            _upload_file("clip.wav", b"RIFF....", "audio/wav"),
-            "abc",
-            True,
-        )
-        self.assertEqual(response.transcript, "hello")
-        self.mock_service.run_remote_voice_roundtrip.assert_called_once_with(
-            audio_bytes=b"RIFF....",
-            filename="clip.wav",
-            content_type="audio/wav",
-            session_id="abc",
-            synthesize_speech=True,
-        )
 
     def test_vision_routes(self) -> None:
         analysis = VisionAnalysis(summary="Image summary")

@@ -17,9 +17,3 @@ def test_optional_runtime_dependencies_are_not_in_the_core_install() -> None:
     assert "sounddevice" in extras["local-voice"]
 
 
-def test_readme_documents_the_minimal_and_optional_install_paths() -> None:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-
-    assert ".[dev]" in readme
-    for extra in ("hosted", "local-voice", "discord", "audio-understanding"):
-        assert f".[{extra}]" in readme

@@ -407,10 +407,6 @@ class ContinuityService:
             self._prune_owner_registry_locked(session, limit=limit)
         return count
 
-    def mark_pending_interrupted(self, *, limit: int = 100) -> int:
-        """Compatibility entry point; construction never invokes recovery."""
-        return self.reconcile_interrupted(limit=limit)
-
     @staticmethod
     def _prune_owner_registry_locked(session: Session, *, limit: int = 100) -> None:
         pending_owner = select(ConversationJournalEntry.id).where(

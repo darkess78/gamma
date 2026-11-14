@@ -12,7 +12,7 @@ import time
 import tomllib
 from pathlib import Path
 
-from ..improvement.validation import build_candidate_sandbox_command, _minimal_launcher_environment
+from .sandbox_command import build_test_sandbox_command, launcher_environment
 
 
 def snapshot(project, destination):
@@ -38,7 +38,7 @@ def snapshot(project, destination):
                 files.append(path)
     for relative in ['pyproject.toml', 'README.md', 'AGENTS.md', 'config/app.example.toml',
                      'config/voices.example.toml', 'config/voices.presets.toml',
-                     'config/persona.yaml', 'config/safety_banned_words.txt', 'config/improvement.toml',
+                     'config/persona.yaml', 'config/safety_banned_words.txt',
                      'config/models.toml', 'config/memory.toml',
                      'images/shana/jacket shana mouth closed eyes open.png']:
         path = project / relative
@@ -91,7 +91,7 @@ def run_checks(workspace, *, acceptance=None, full_suite=False, timeout=180):
     report = dict(passed=False, infrastructure_error=False, count=0, exit_code=-1, output_tail='')
     started = time.monotonic()
     try:
-        command = build_candidate_sandbox_command(workspace, profile='full_suite', timeout_seconds=timeout)
+        command = build_test_sandbox_command(workspace, timeout_seconds=timeout)
         # Keep the existing isolation and limits; replace only its fixed pytest invocation.
         at = command.index('/opt/gamma-venv/bin/python')
         targets = ['tests'] if full_suite else [acceptance]
@@ -114,7 +114,7 @@ sys.exit(int(code))
             try:
                 result = subprocess.run(command, stdin=subprocess.DEVNULL, stdout=stream,
                                         stderr=subprocess.STDOUT, timeout=timeout,
-                                        env=_minimal_launcher_environment(), check=False)
+                                        env=launcher_environment(), check=False)
                 report['exit_code'] = result.returncode
             except subprocess.TimeoutExpired:
                 report['exit_code'] = 124

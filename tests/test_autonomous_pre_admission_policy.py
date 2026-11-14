@@ -5,7 +5,7 @@ from urllib import request
 
 import pytest
 
-from gamma.coding import autonomous, autonomous_store as store, learner, candidate_resources
+from gamma.coding import autonomous, autonomous_store as store, learner
 from test_autonomous_pre_admission_wait import owner_job
 
 
@@ -28,13 +28,9 @@ def busy_environment(tmp_path, monkeypatch, resource):
     monkeypatch.setattr(autonomous, 'time', SimpleNamespace(
         monotonic=lambda: clock.now, time=lambda: 1000 + clock.now, sleep=clock.sleep))
     work.deadline = 6.25
-    probes = {'candidate': [], 'resident': []}
+    probes = {'resident': []}
     checkpoints, posts, admissions = [], [], []
     eligible = [float('inf')]
-    def candidate_busy(root):
-        probes['candidate'].append(clock.now)
-        return resource == 'candidate' and clock.now < eligible[0]
-    monkeypatch.setattr(candidate_resources, 'candidate_busy', candidate_busy)
     class Opener:
         def open(self, req, **kwargs):
             if req.data is not None:
@@ -67,7 +63,7 @@ def assert_probe_cadence(probes):
         assert all(later-earlier >= 2-1e-8 for earlier, later in zip(times, times[1:])), probes
 
 
-@pytest.mark.parametrize('resource', ['resident', 'candidate'])
+@pytest.mark.parametrize('resource', ['resident'])
 def test_busy_probe_cadence_and_budget_controls(tmp_path, monkeypatch, resource):
     work, source, clock, _, probes, checkpoints, posts, admissions = busy_environment(tmp_path, monkeypatch, resource)
     with pytest.raises(TimeoutError, match='Authorized time budget ended'):
@@ -82,7 +78,7 @@ def test_busy_probe_cadence_and_budget_controls(tmp_path, monkeypatch, resource)
         'checkpoints': checkpoints, 'budget_deadline': work.deadline, 'returned_at': clock.now}, indent=2))
 
 
-@pytest.mark.parametrize('resource', ['resident', 'candidate'])
+@pytest.mark.parametrize('resource', ['resident'])
 def test_pause_resume_then_stop_prevents_later_generation(tmp_path, monkeypatch, resource):
     work, source, clock, eligible, probes, _, posts, admissions = busy_environment(tmp_path, monkeypatch, resource)
     work.deadline = 12
@@ -113,7 +109,7 @@ def test_pause_resume_then_stop_prevents_later_generation(tmp_path, monkeypatch,
     assert not posts and not admissions and source.read_text() == 'value = 1\n'
 
 
-@pytest.mark.parametrize('resource', ['resident', 'candidate'])
+@pytest.mark.parametrize('resource', ['resident'])
 def test_expired_budget_cannot_resume_into_generation(tmp_path, monkeypatch, resource):
     work, source, clock, _, probes, _, posts, admissions = busy_environment(tmp_path, monkeypatch, resource)
     work.deadline = 3

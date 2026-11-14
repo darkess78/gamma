@@ -303,8 +303,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, default=None, help="report path (default data/evals/identity-<time>.json)")
     parser.add_argument("--only", choices=CATEGORIES, help="run one category")
     parser.add_argument("--limit", type=int, default=None, help="run the first N cases")
+    parser.add_argument("--cases", type=Path, default=CASES,
+                        help="case file (default: the v1 set; v2 is built by gamma.evals.build_identity_v2)")
     args = parser.parse_args(argv)
-    cases = load_cases()
+    cases = load_cases(args.cases)
     problems = validate(cases)
     if args.check or problems:
         for problem in problems:

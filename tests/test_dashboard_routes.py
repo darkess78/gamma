@@ -14,6 +14,7 @@ from starlette.requests import Request
 import gamma.config as config_module
 from gamma.config import settings
 from gamma.dashboard import main
+from gamma.dashboard import auth, deps, pages, routes_stream, routes_voice
 from gamma.dashboard.service import DashboardService
 from gamma.resources.runtime_registry import ResourceRoutingPolicy, ResourceRoutingRegistry
 from gamma.schemas.response import AssistantResponse, VisionAnalysis
@@ -77,9 +78,9 @@ def _request_with_headers(headers: dict[str, str]) -> Request:
 class DashboardRoutesTest(unittest.TestCase):
     def setUp(self) -> None:
         self._http_auth_patcher = patch.object(main, "is_authenticated", return_value=True)
-        self._ws_auth_patcher = patch.object(main, "websocket_is_authenticated", return_value=True)
+        self._ws_auth_patcher = patch.object(auth, "websocket_is_authenticated", return_value=True)
         self.mock_service = Mock()
-        self._service_patcher = patch.object(main, "get_dashboard_service", return_value=self.mock_service)
+        self._service_patcher = patch.object(deps, "get_dashboard_service", return_value=self.mock_service)
         self._http_auth_patcher.start()
         self._ws_auth_patcher.start()
         self._service_patcher.start()
@@ -118,7 +119,7 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(payload, {"ok": False, "detail": "sidecar-not-running"})
 
     def test_favicon_is_served(self) -> None:
-        response = main.favicon()
+        response = pages.favicon()
 
         self.assertEqual(response.media_type, "image/svg+xml")
         self.assertEqual(Path(response.path), main.STATIC_DIR / "favicon.svg")
@@ -132,12 +133,12 @@ class DashboardRoutesTest(unittest.TestCase):
             patch.object(settings, "dashboard_public_port", 8001),
             patch.object(settings, "dashboard_public_scheme", "http"),
         ):
-            dashboard = main.dashboard()
-            talk = main.dashboard_talk_page()
-            monitor_redirect = main.monitor_page()
-            monitor = main.dashboard_monitor_page()
-            performer = main.performer_redirect()
-            overlay = main.subtitle_overlay_page()
+            dashboard = pages.dashboard()
+            talk = pages.dashboard_talk_page()
+            monitor_redirect = pages.monitor_page()
+            monitor = pages.dashboard_monitor_page()
+            performer = pages.performer_redirect()
+            overlay = pages.subtitle_overlay_page()
 
         self.assertEqual(dashboard.status_code, 200)
         self.assertIn('window.GAMMA_SHANA_BASE_URL = "http://192.168.1.50:8000"', dashboard.body.decode("utf-8"))
@@ -191,15 +192,15 @@ class DashboardRoutesTest(unittest.TestCase):
 
     def test_dashboard_app_public_page_routes_return_html(self) -> None:
         page_paths = [
-            (main.dashboard, "dashboard"),
-            (main.dashboard_live_page, "live"),
-            (main.dashboard_monitor_page, "monitor"),
-            (main.dashboard_presence_page, "presence"),
-            (main.dashboard_status_page, "status"),
-            (main.dashboard_stream_page, "stream"),
-            (main.dashboard_memory_page, "memory"),
-            (main.dashboard_improvement_page, "improvement"),
-            (main.dashboard_settings_page, "settings"),
+            (pages.dashboard, "dashboard"),
+            (pages.dashboard_live_page, "live"),
+            (pages.dashboard_monitor_page, "monitor"),
+            (pages.dashboard_presence_page, "presence"),
+            (pages.dashboard_status_page, "status"),
+            (pages.dashboard_stream_page, "stream"),
+            (pages.dashboard_memory_page, "memory"),
+            (pages.dashboard_improvement_page, "improvement"),
+            (pages.dashboard_settings_page, "settings"),
         ]
         with (
             patch.object(settings, "dashboard_public_scheme", "https"),
@@ -219,7 +220,7 @@ class DashboardRoutesTest(unittest.TestCase):
         This ensures browser navigation never uses absolute localhost URLs
         that would fail on production or misconfigured deployments.
         """
-        response = main.dashboard()
+        response = pages.dashboard()
         body = response.body.decode("utf-8")
         
         # All navbar links should use relative same-origin paths
@@ -249,7 +250,7 @@ class DashboardRoutesTest(unittest.TestCase):
             patch.object(settings, "shana_public_host", "gamma.neety.me"),
             patch.object(settings, "shana_public_port", 443),
         ):
-            response = main.dashboard()
+            response = pages.dashboard()
 
         self.assertIn(
             'window.GAMMA_SHANA_BASE_URL = "https://gamma.neety.me"',
@@ -263,7 +264,7 @@ class DashboardRoutesTest(unittest.TestCase):
             patch.object(settings, "dashboard_public_host", "gamma.neety.me"),
             patch.object(settings, "dashboard_public_port", 443),
         ):
-            response = main.dashboard()
+            response = pages.dashboard()
         body = response.body.decode("utf-8")
         
         # Navbar links should be relative same-origin paths
@@ -295,20 +296,20 @@ class DashboardRoutesTest(unittest.TestCase):
         }
         for route_name, page_name in page_routes.items():
             with self.subTest(route_name=route_name):
-                response = getattr(main, route_name)()
+                response = getattr(pages, route_name)()
                 self.assertEqual(response.status_code, 200)
                 body = response.body.decode("utf-8")
                 self.assertIn(f'window.GAMMA_DASHBOARD_PAGE = "{page_name}"', body)
                 self.assertIn('class="app-nav"', body)
                 self.assertIn('Stop Output', body)
 
-        twitch_redirect = main.dashboard_twitch_page()
+        twitch_redirect = pages.dashboard_twitch_page()
         self.assertEqual(twitch_redirect.status_code, 307)
         self.assertEqual(twitch_redirect.headers["location"], "/dashboard/stream")
 
     def test_talk_routes_redirect_to_monitor(self) -> None:
-        response = main.talk_page_redirect()
-        dashboard_response = main.dashboard_talk_page()
+        response = pages.talk_page_redirect()
+        dashboard_response = pages.dashboard_talk_page()
 
         self.assertEqual(response.status_code, 307)
         self.assertEqual(response.headers["location"], "/dashboard/monitor")
@@ -317,15 +318,15 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertFalse((main.STATIC_DIR / "talk.mjs").exists())
 
     def test_presence_short_path_redirects_to_dashboard_presence(self) -> None:
-        response = main.presence_page_redirect()
+        response = pages.presence_page_redirect()
 
         self.assertEqual(response.status_code, 307)
         self.assertEqual(response.headers["location"], "/dashboard/presence")
 
     def test_live_and_monitor_pages_share_live_voice_panel_partial(self) -> None:
-        dashboard_body = main.dashboard_live_page().body.decode("utf-8")
-        monitor_body = main.dashboard_monitor_page().body.decode("utf-8")
-        partial = main.LIVE_VOICE_PANEL.read_text(encoding="utf-8").strip()
+        dashboard_body = pages.dashboard_live_page().body.decode("utf-8")
+        monitor_body = pages.dashboard_monitor_page().body.decode("utf-8")
+        partial = pages.LIVE_VOICE_PANEL.read_text(encoding="utf-8").strip()
 
         self.assertIn(partial, dashboard_body)
         self.assertIn(partial, monitor_body)
@@ -348,7 +349,7 @@ class DashboardRoutesTest(unittest.TestCase):
             patch.object(settings, "dashboard_public_host", "127.0.0.1"),
             patch.object(settings, "dashboard_public_port", 8001),
         ):
-            response = main.dashboard_monitor_page(request)
+            response = pages.dashboard_monitor_page(request)
 
         body = response.body.decode("utf-8")
         self.assertIn('window.GAMMA_SHANA_BASE_URL = "https://gamma.neety.me"', body)
@@ -360,7 +361,7 @@ class DashboardRoutesTest(unittest.TestCase):
         completed = Mock(returncode=0, stdout="", stderr="")
         with (
             patch.dict("os.environ", {"GAMMA_LIFECYCLE_MANAGER": "systemd-user"}),
-            patch("gamma.dashboard.service.subprocess.run", return_value=completed) as run,
+            patch("gamma.dashboard.lifecycle.subprocess.run", return_value=completed) as run,
         ):
             payload = service.stop_shana()
 
@@ -388,7 +389,7 @@ class DashboardRoutesTest(unittest.TestCase):
         schedule_stop.assert_not_called()
 
     def test_dashboard_page_omits_self_stop_control(self) -> None:
-        body = main.dashboard().body.decode("utf-8")
+        body = pages.dashboard().body.decode("utf-8")
 
         self.assertNotIn("/api/dashboard/stop", body)
         self.assertNotIn("Stop Dashboard", body)
@@ -496,8 +497,8 @@ class DashboardRoutesTest(unittest.TestCase):
             patch.object(settings, "twitch_eventsub_enabled", True),
             patch.object(service._shana, "safe_get", return_value={"status": "ok"}),
             patch.object(service._process_manager, "module_status", return_value={"process": {"running": True}}),
-            patch("gamma.dashboard.service.read_twitch_worker_state", return_value={"connected": True, "updated_at": stale_at, "message_count": 2}),
-            patch("gamma.dashboard.service.read_twitch_eventsub_state", return_value={"connected": True, "updated_at": stale_at, "notification_count": 1}),
+            patch("gamma.dashboard.integrations_admin.read_twitch_worker_state", return_value={"connected": True, "updated_at": stale_at, "message_count": 2}),
+            patch("gamma.dashboard.integrations_admin.read_twitch_eventsub_state", return_value={"connected": True, "updated_at": stale_at, "notification_count": 1}),
         ):
             payload = service.stream_ready_status()
 
@@ -517,15 +518,15 @@ class DashboardRoutesTest(unittest.TestCase):
             patch.object(settings, "twitch_broadcaster_user_id", "broadcaster"),
             patch.object(settings, "twitch_eventsub_enabled", True),
             patch.object(settings, "twitch_voice_enabled", True),
-            patch("gamma.dashboard.service.load_app_file_config", return_value={"twitch_voice_enabled": True}),
+            patch("gamma.dashboard.integrations_admin.load_app_file_config", return_value={"twitch_voice_enabled": True}),
             patch.object(service._shana, "safe_get", return_value={"status": "ok"}),
             patch.object(service._process_manager, "module_status", return_value={"process": {"running": True}}),
             patch(
-                "gamma.dashboard.service.read_twitch_worker_state",
+                "gamma.dashboard.integrations_admin.read_twitch_worker_state",
                 return_value={"connected": True, "updated_at": updated_at, "message_count": 2, "last_post_error": "api down"},
             ),
             patch(
-                "gamma.dashboard.service.read_twitch_eventsub_state",
+                "gamma.dashboard.integrations_admin.read_twitch_eventsub_state",
                 return_value={"connected": True, "updated_at": updated_at, "notification_count": 1, "last_post_error": "api down"},
             ),
         ):
@@ -565,7 +566,7 @@ class DashboardRoutesTest(unittest.TestCase):
                 "decision": {"decision": "acknowledge"},
             },
         ]
-        with patch("gamma.dashboard.service.replay_jsonl_text", return_value=replay_results) as replay:
+        with patch("gamma.dashboard.integrations_admin.replay_jsonl_text", return_value=replay_results) as replay:
             payload = service.run_twitch_dry_run_replay()
 
         self.assertEqual(payload["scenario"], "dry_run_readiness")
@@ -626,7 +627,7 @@ class DashboardRoutesTest(unittest.TestCase):
         payload = {"input_mode": "owner_mic", "text": "Shana, can you hear me?", "session_id": "monitor-local-stream"}
         route_result = {"ok": True, "result": {"decision": {"decision": "reply"}}}
         with patch.object(self.mock_service, "submit_monitor_stream_input", return_value=route_result) as method:
-            response = anyio.run(main.dashboard_monitor_input, _JsonRequest(payload))
+            response = anyio.run(routes_stream.dashboard_monitor_input, _JsonRequest(payload))
 
         self.assertEqual(response, route_result)
         method.assert_called_once_with(payload)
@@ -888,7 +889,7 @@ class DashboardRoutesTest(unittest.TestCase):
             }),
             patch.object(service, "build_runtime_status", return_value={"shana": {}, "machine": {}}),
             patch(
-                "gamma.dashboard.service.load_desired_tts_selection",
+                "gamma.dashboard.voice_admin.load_desired_tts_selection",
                 return_value={"tts_provider": "stub", "tts_profile": ""},
             ),
             patch.object(settings, "tts_provider", "qwen"),
@@ -928,10 +929,10 @@ class DashboardRoutesTest(unittest.TestCase):
         test_path = settings.audio_output_dir / "dashboard-test.mp3"
         test_path.write_bytes(b"fake audio")
         try:
-            response = main.serve_audio(test_path.name)
+            response = routes_voice.serve_audio(test_path.name)
             self.assertEqual(response.media_type, "audio/mpeg")
 
-            delete_response = main.delete_audio(test_path.name)
+            delete_response = routes_voice.delete_audio(test_path.name)
             self.assertEqual(delete_response["ok"], True)
             self.assertFalse(test_path.exists())
         finally:
@@ -941,7 +942,7 @@ class DashboardRoutesTest(unittest.TestCase):
         analysis = VisionAnalysis(summary="Image summary")
         with patch.object(self.mock_service, "analyze_remote_image", return_value=analysis) as method:
             response = anyio.run(
-                main.dashboard_vision_analyze,
+                routes_voice.dashboard_vision_analyze,
                 _upload_file("image.png", b"png", "image/png"),
                 "what is this?",
                 "photo",
@@ -952,7 +953,7 @@ class DashboardRoutesTest(unittest.TestCase):
         assistant_response = AssistantResponse(spoken_text="Looks good.")
         with patch.object(self.mock_service, "respond_remote_image", return_value=assistant_response) as method:
             response = anyio.run(
-                main.dashboard_vision_respond,
+                routes_voice.dashboard_vision_respond,
                 _upload_file("image.png", b"png", "image/png"),
                 "ask gamma",
                 "screen",
@@ -970,7 +971,7 @@ class DashboardRoutesTest(unittest.TestCase):
 
         live_voice_session = Mock()
         live_voice_session.handle = AsyncMock(side_effect=fake_handle)
-        with patch.object(main, "get_live_voice_session", return_value=live_voice_session):
+        with patch.object(deps, "get_live_voice_session", return_value=live_voice_session):
             websocket = _FakeWebSocket()
             anyio.run(main.dashboard_live_voice, websocket)
         self.assertEqual(websocket.sent, [{"type": "ready"}])
@@ -1006,9 +1007,9 @@ class DashboardRoutesTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "app.local.toml"
             with (
-                patch("gamma.dashboard.service.app_local_config_path", return_value=path),
+                patch("gamma.dashboard.settings_admin.app_local_config_path", return_value=path),
                 patch(
-                    "gamma.dashboard.service.load_app_file_config",
+                    "gamma.dashboard.integrations_admin.load_app_file_config",
                     return_value={
                         "speech_filter_heuristic_enabled": False,
                         "speech_filter_llm_enabled": True,
@@ -1317,7 +1318,7 @@ class DashboardRoutesTest(unittest.TestCase):
             registry = ResourceRoutingRegistry(policy=ResourceRoutingPolicy(sidecar_allocation_ttl_seconds=300), targets=())
             with (
                 patch.object(settings, "data_dir", Path(temp_dir)),
-                patch("gamma.dashboard.service.load_resource_routing_registry", return_value=registry),
+                patch("gamma.dashboard.status_views.load_resource_routing_registry", return_value=registry),
             ):
                 allocations = service._recent_sidecar_allocations(limit=10)
 

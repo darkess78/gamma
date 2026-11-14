@@ -1177,9 +1177,9 @@ class TwitchIntegrationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "app.local.toml"
             with (
-                patch("gamma.dashboard.service.app_local_config_path", return_value=path),
+                patch("gamma.dashboard.integrations_admin.app_local_config_path", return_value=path),
                 patch(
-                    "gamma.dashboard.service.load_app_file_config",
+                    "gamma.dashboard.integrations_admin.load_app_file_config",
                     return_value={
                         "twitch_dry_run": False,
                         "twitch_voice_enabled": True,

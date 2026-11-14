@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gamma Login</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(145deg, #0e1218 0%, #111720 45%, #16202d 100%);
+      color: #ecf2f8;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+    .card {
+      width: min(420px, 92vw);
+      padding: 28px;
+      border-radius: 20px;
+      background: rgba(19, 26, 35, 0.92);
+      border: 1px solid rgba(182, 206, 230, 0.1);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.32);
+    }
+    label {
+      display: block;
+      margin: 14px 0 6px;
+      color: #9aa8b7;
+      font-size: 14px;
+    }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(182, 206, 230, 0.1);
+      background: rgba(24, 32, 43, 0.92);
+      color: #ecf2f8;
+      font: inherit;
+    }
+    button {
+      margin-top: 18px;
+      width: 100%;
+      padding: 12px 16px;
+      border: 0;
+      border-radius: 999px;
+      background: #33c3b3;
+      color: white;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <form class="card" method="post" action="/login">
+    <h1>Gamma Dashboard Login</h1>
+    <p>Sign in before using the dashboard.</p>
+    <!--STATUS-->
+    <label for="username">Username</label>
+    <input id="username" name="username" autocomplete="username" required>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit">Sign In</button>
+  </form>
+</body>
+</html>

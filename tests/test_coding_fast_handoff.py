@@ -24,15 +24,15 @@ def test_owner_coding_goal_queues_without_conversation_inference():
 
 
 def test_monitor_input_does_not_block_event_loop():
-    from gamma.dashboard import main
+    from gamma.dashboard import deps, routes_stream
     entered=threading.Event();release=threading.Event()
     def blocking(payload):
         entered.set();assert release.wait(2);return {'ok':True}
     async def payload(request):return {'text':'hello'}
     manager=Mock();manager.submit_monitor_stream_input=blocking
     async def run():
-        with patch.object(main,'_json_object_payload',payload),patch.object(main,'get_dashboard_service',return_value=manager):
-            task=asyncio.create_task(main.dashboard_monitor_input(Mock()))
+        with patch.object(deps,'json_object_payload',payload),patch.object(deps,'get_dashboard_service',return_value=manager):
+            task=asyncio.create_task(routes_stream.dashboard_monitor_input(Mock()))
             try:
                 await asyncio.sleep(0.05)
                 assert entered.is_set() and not task.done()

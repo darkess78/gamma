@@ -19,8 +19,16 @@ async def lifespan(_app: FastAPI):
     try:
         await recovery.start()
         await scheduler.start()
+        if settings.avatar3d_enabled:
+            from .api.routes_performer import start_avatar3d_runner
+
+            await start_avatar3d_runner()
         yield
     finally:
+        if settings.avatar3d_enabled:
+            from .api.deps import get_avatar3d_runner
+
+            get_avatar3d_runner().stop()
         try:
             await scheduler.stop()
         finally:

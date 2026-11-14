@@ -256,6 +256,25 @@ auth_token = ""
 expression_hotkeys = {}
 motion_hotkeys = {}
 
+# 3D avatar over the VMC protocol (Warudo / VSeeFace on the streaming PC).
+# See specs/avatar_3d.md. Gamma sends UDP to host:port; nothing listens here.
+[avatar3d]
+enabled = false
+host = "127.0.0.1"          # the Windows PC running the avatar app
+port = 39539                # the app's VMC receiver port
+naming = "vrm0"             # "vrm0" (Joy, A, Blink...) or "vrm1" (happy, aa, blink...)
+fps = 30
+lipsync = "text"            # "text" = Gamma moves the mouth; "off" = the app's own audio lip sync
+lipsync_chars_per_second = 14.0
+lipsync_delay_ms = 0        # delay the mouth if the audio starts later than Gamma expects
+auto_blink = true
+target_policy = "stream_public"
+
+# Optional: replace an emotion's blendshapes with your own clips, e.g.
+# [avatar3d.expressions]
+# teasing = { Shana_Smug = 1.0 }
+# embarrassed = { Joy = 0.3, Shana_Blush = 1.0 }
+
 [discord]
 enabled = false
 bot_token = ""

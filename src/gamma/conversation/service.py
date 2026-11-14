@@ -15,7 +15,7 @@ from ..llm.base import LLMCallContext, LLMReply
 from ..llm.capabilities import estimate_text_tokens
 from ..llm.context_budget import ContextBudgetManager, prompt_layers_from_system_prompt
 from ..llm.factory import build_llm_adapter
-from ..llm.router_adapter import begin_route_trace, take_route_trace
+from ..llm.route_trace import begin_route_trace, take_route_trace
 from ..memory.attribution import MemoryOrigin
 from ..memory.continuity import ContinuityService, JournalOwnershipError
 from ..memory.service import MemoryService

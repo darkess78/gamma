@@ -825,7 +825,7 @@ class DashboardRoutesTest(unittest.TestCase):
 
         self.assertNotIn("payload", payload["shana"]["system_status"])
         self.assertNotIn("values", payload["providers"]["tts"]["available_profiles"][0])
-        self.assertEqual(len(payload["llm_routing"]["placement_shadow"]["entries"]), 4)
+        self.assertNotIn("llm_routing", payload)
         self.assertEqual(payload["timings"], {"summary": {"count": 1}})
         self.assertLess(len(json.dumps(payload)), 20_000)
 
@@ -1086,98 +1086,6 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertEqual(startup_admission["summary"]["selected_count"], 1)
         self.assertEqual(startup_admission["summary"]["target_counts"], {"qwen-gpu": 1})
         self.assertEqual(sidecar_allocations["summary"]["count"], 0)
-
-    def test_recent_llm_routes_extracts_placement_shadow_status(self) -> None:
-        service = DashboardService()
-        with tempfile.TemporaryDirectory() as temp_dir:
-            runtime_dir = Path(temp_dir) / "runtime"
-            runtime_dir.mkdir(parents=True, exist_ok=True)
-            routes_log = runtime_dir / "llm.routes.jsonl"
-            payloads = [
-                {"status": "ok", "provider": "local", "route_family": "chat_light"},
-                {"status": "ok", "provider": "local", "route_family": "metadata", "placement_shadow": "bad"},
-                {
-                    "timestamp": "2026-06-15T12:00:00Z",
-                    "purpose": "conversation",
-                    "status": "ok",
-                    "provider": "local",
-                    "model": "gpt-oss:20b",
-                    "route_family": "chat_default",
-                    "placement_shadow": {
-                        "status": "selected",
-                        "snapshot_age_seconds": 0.42,
-                        "reservation_id": "reservation-1",
-                        "reservation_expires_at": "2026-06-15T12:00:30Z",
-                        "reservation_ttl_seconds": 30,
-                        "selected": {
-                            "target_id": "ollama_gpu_1",
-                            "provider": "local",
-                            "kind": "ollama",
-                            "endpoint_ref": "local_ollama_gpu_1",
-                            "device": "cuda:1",
-                            "gpu_index": 1,
-                            "gpu_uuid": "GPU-1",
-                            "free_vram_mb": 12000,
-                            "projected_headroom_mb": 6400,
-                            "advisory_reserved_vram_mb": 2000,
-                            "warm": True,
-                            "reason": "gpu-headroom",
-                            "score": 7400.0,
-                        },
-                        "rejected": {"ollama_gpu_0": "insufficient_vram_headroom"},
-                    },
-                    "placement_shadow_comparison": {
-                        "actual_provider": "local",
-                        "actual_model": "gpt-oss:20b",
-                        "actual_endpoint_ref": "local_llm_endpoint",
-                        "advisory_target_id": "ollama_gpu_1",
-                        "advisory_provider": "local",
-                        "advisory_model": "gpt-oss:20b",
-                        "advisory_endpoint_ref": "local_ollama_gpu_1",
-                        "provider_match": True,
-                        "model_match": True,
-                        "endpoint_ref_match": False,
-                    },
-                },
-                {
-                    "status": "ok",
-                    "provider": "local",
-                    "route_family": "vision",
-                    "placement_shadow": {
-                        "status": "no_fit",
-                        "selected": None,
-                        "rejected": {"ollama_gpu_0": "modality_unavailable", "ollama_gpu_1": "model_unavailable"},
-                    },
-                },
-            ]
-            with routes_log.open("w", encoding="utf-8") as handle:
-                handle.write("{not json}\n")
-                for payload in payloads:
-                    handle.write(json.dumps(payload) + "\n")
-
-            with patch.object(settings, "data_dir", Path(temp_dir)):
-                routes = service._recent_llm_routes(limit=10)
-
-        shadow = routes["placement_shadow"]
-        self.assertEqual(shadow["summary"]["count"], 2)
-        self.assertEqual(shadow["summary"]["selected_count"], 1)
-        self.assertEqual(shadow["summary"]["no_fit_count"], 1)
-        self.assertEqual(shadow["summary"]["target_counts"], {"ollama_gpu_1": 1})
-        selected = shadow["entries"][0]
-        self.assertEqual(selected["target_id"], "ollama_gpu_1")
-        self.assertEqual(selected["endpoint_ref"], "local_ollama_gpu_1")
-        self.assertEqual(selected["device"], "cuda:1")
-        self.assertEqual(selected["free_vram_mb"], 12000)
-        self.assertEqual(selected["projected_headroom_mb"], 6400)
-        self.assertEqual(selected["advisory_reserved_vram_mb"], 2000)
-        self.assertEqual(selected["reservation_id"], "reservation-1")
-        self.assertEqual(selected["reservation_ttl_seconds"], 30)
-        self.assertEqual(selected["comparison"]["actual_endpoint_ref"], "local_llm_endpoint")
-        self.assertTrue(selected["comparison"]["provider_match"])
-        self.assertFalse(selected["comparison"]["endpoint_ref_match"])
-        self.assertTrue(selected["warm"])
-        self.assertEqual(selected["rejected_count"], 1)
-        self.assertEqual(shadow["entries"][1]["shadow_status"], "no_fit")
 
     def test_recent_startup_admission_extracts_supervisor_decisions(self) -> None:
         service = DashboardService()

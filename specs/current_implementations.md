@@ -238,7 +238,7 @@ and recovery planning. Machine maintenance did not activate this staged source.
 ## Resource Routing
 
 - Shared CPU, RAM, disk, GPU, and GPU-process telemetry.
-- Target registry and deterministic shadow placement policy.
+- Target registry and deterministic placement policy for sidecar startup admission.
 - Advisory LLM route metadata and temporary reservations.
 - Optional endpoint-aware local LLM routing.
 - Optional startup admission for auto-placed Qwen and audio-understanding sidecars.

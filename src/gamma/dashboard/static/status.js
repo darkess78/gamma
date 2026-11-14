@@ -374,68 +374,6 @@
     return value.replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
   }
 
-  function renderPlacementShadow(data) {
-    var target = element('placementShadow');
-    if (!target) return;
-    var shadow = ((data.llm_routing || {}).placement_shadow || {});
-    var entries = Array.isArray(shadow.entries) ? shadow.entries.slice().reverse() : [];
-    var summary = shadow.summary || {};
-    if (!entries.length) {
-      target.innerHTML = '<div class="empty-state">No placement shadow route-log entries have been recorded.</div>';
-      return;
-    }
-    var lines = [
-      'Recent entries: ' + Number(summary.count || entries.length),
-      'Selected: ' + Number(summary.selected_count || 0)
-        + ' / no fit: ' + Number(summary.no_fit_count || 0)
-        + ' / stale snapshot: ' + Number(summary.snapshot_stale_count || 0)
-    ];
-    var targetCounts = summary.target_counts || {};
-    var targetNames = Object.keys(targetCounts);
-    if (targetNames.length) {
-      lines.push('Targets: ' + targetNames.map(function (name) {
-        return name + ': ' + targetCounts[name];
-      }).join(' / '));
-    }
-    target.innerHTML = '<div class="shadow-summary">' + escapeHtml(lines.join('\n')) + '</div>'
-      + entries.map(function (entry) {
-        var selected = entry.target_id
-          ? entry.target_id + ' (' + (entry.endpoint_ref || entry.device || entry.target_kind || 'target') + ')'
-          : 'No advisory target';
-        var age = entry.snapshot_age_seconds == null ? 'n/a' : Number(entry.snapshot_age_seconds).toFixed(1) + ' sec';
-        var vram = entry.free_vram_mb == null
-          ? 'n/a'
-          : Number(entry.free_vram_mb) + ' MB free / ' + Number(entry.projected_headroom_mb || 0) + ' MB projected';
-        var reservation = entry.reservation_id
-          ? 'Reservation: ' + entry.reservation_id + ' / ttl: ' + Number(entry.reservation_ttl_seconds || 0) + ' sec'
-            + ' / advisory reserved: ' + Number(entry.advisory_reserved_vram_mb || 0) + ' MB'
-          : 'Reservation: none';
-        var comparison = entry.comparison || {};
-        var compareText = comparison.actual_provider
-          ? 'Actual: ' + (comparison.actual_provider || 'provider') + ' / ' + (comparison.actual_model || 'model')
-            + ' / ' + (comparison.actual_endpoint_ref || 'endpoint')
-            + ' | Matches: provider ' + (comparison.provider_match ? 'yes' : 'no')
-            + ', model ' + (comparison.model_match ? 'yes' : 'no')
-            + ', endpoint ref ' + (comparison.endpoint_ref_match ? 'yes' : 'no')
-          : 'Actual comparison: n/a';
-        var rejected = entry.rejected_count
-          ? 'Rejected: ' + Object.keys(entry.rejected || {}).map(function (id) {
-            return id + '=' + entry.rejected[id];
-          }).join(', ')
-          : 'Rejected: none';
-        return '<div class="shadow-route-row">'
-          + '<strong>' + escapeHtml(entry.shadow_status || 'unknown') + '</strong>'
-          + '<span>' + escapeHtml(selected) + '</span>'
-          + '<span>' + escapeHtml((entry.route_family || 'route') + ' / ' + (entry.provider || 'provider') + ' / ' + (entry.model || 'model')) + '</span>'
-          + '<span>' + escapeHtml('VRAM: ' + vram + ' / warm: ' + (entry.warm ? 'yes' : 'no') + ' / snapshot age: ' + age) + '</span>'
-          + '<span>' + escapeHtml(reservation) + '</span>'
-          + '<span>' + escapeHtml(compareText) + '</span>'
-          + '<span>' + escapeHtml('Reason: ' + (entry.reason || entry.shadow_status || 'n/a')) + '</span>'
-          + '<span>' + escapeHtml(rejected) + '</span>'
-          + '</div>';
-      }).join('');
-  }
-
   function renderStartupAdmission(data) {
     var target = element('startupAdmission');
     if (!target) return;
@@ -600,7 +538,6 @@
       window.renderPresenceStatus(data.presence || {});
     }
     renderTwitch(data);
-    renderPlacementShadow(data);
     renderStartupAdmission(data);
     renderSidecarAllocations(data);
   }

@@ -3,15 +3,13 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from gamma.config import settings
 from gamma.errors import ContextOverflowError
 from gamma.llm.base import LLMCallContext
 from gamma.llm.base import LLMReply
-from gamma.llm.router_adapter import RouterLLMAdapter, begin_route_trace, take_route_trace
-from gamma.resources.models import PlacementCandidate, PlacementDecision, RuntimeEndpoint, RuntimeTarget, WorkloadSpec
-from gamma.resources.runtime_registry import ResourceRoutingPolicy, ResourceRoutingRegistry
+from gamma.llm.route_trace import begin_route_trace, take_route_trace
+from gamma.llm.router_adapter import RouterLLMAdapter
 
 
 class _FakeAdapter:
@@ -494,99 +492,6 @@ class RouterLLMAdapterTest(unittest.TestCase):
 
         self.assertTrue(events)
         self.assertFalse((settings.data_dir / "runtime" / "llm.routes.jsonl").exists())
-
-    def test_shadow_placement_metadata_does_not_change_route(self) -> None:
-        router = _TestRouter()
-        shadow_payload = {
-            "status": "selected",
-            "provider": "local",
-            "model": "qwen2.5:7b",
-            "selected": {"target_id": "ollama-gpu1", "provider": "local", "endpoint_ref": "local_ollama_gpu_1"},
-            "rejected": {},
-        }
-        with patch("gamma.llm.router_adapter.llm_shadow_placement_payload", return_value=shadow_payload) as shadow:
-            reply = router.generate_reply(
-                system_prompt="conversation prompt",
-                user_text="hello",
-                call_context=LLMCallContext(purpose="conversation"),
-            )
-
-        self.assertEqual(reply.text, "local:hello")
-        self.assertEqual(reply.metadata["route"]["provider"], "local")
-        self.assertEqual(reply.metadata["route"]["placement_shadow"], shadow_payload)
-        comparison = reply.metadata["route"]["placement_shadow_comparison"]
-        self.assertEqual(comparison["actual_provider"], "local")
-        self.assertEqual(comparison["advisory_target_id"], "ollama-gpu1")
-        self.assertTrue(comparison["provider_match"])
-        self.assertTrue(comparison["model_match"])
-        self.assertFalse(comparison["endpoint_ref_match"])
-        shadow.assert_called()
-
-    def test_active_resource_endpoint_routing_uses_endpoint_override_when_enabled(self) -> None:
-        router = _TestRouter()
-        target = RuntimeTarget(
-            id="ollama-gpu1",
-            kind="ollama",
-            provider="local",
-            endpoint_ref="local_ollama_gpu_1",
-            device="cuda:1",
-            models=("qwen2.5:7b",),
-        )
-        endpoint = RuntimeEndpoint(
-            id="local_ollama_gpu_1",
-            url="http://127.0.0.1:11435",
-            kind="ollama",
-            provider="local",
-        )
-        registry = ResourceRoutingRegistry(
-            policy=ResourceRoutingPolicy(active_llm_routing=True, shadow_mode=True),
-            targets=(target,),
-            endpoints=(endpoint,),
-        )
-        placement = PlacementDecision(
-            workload=WorkloadSpec(id="llm:chat_light", kind="llm", provider="local", model="qwen2.5:7b"),
-            selected=PlacementCandidate(
-                target=target,
-                score=100.0,
-                reason="gpu-headroom",
-                gpu_index=1,
-                gpu_uuid="GPU-1",
-                free_vram_mb=12000,
-                projected_headroom_mb=9000,
-            ),
-            status="selected",
-            reservation_id="active-reservation",
-            reservation_ttl_seconds=30,
-        )
-
-        class _FakeCoordinator:
-            def __init__(self, *, registry):
-                self.registry = registry
-
-            def rank_and_reserve(self, workload):
-                return placement
-
-        with (
-            patch("gamma.llm.router_adapter.load_resource_routing_registry", return_value=registry),
-            patch("gamma.llm.router_adapter.ResourcePlacementCoordinator", _FakeCoordinator),
-            patch("gamma.llm.router_adapter.release_advisory_reservation") as release,
-        ):
-            reply = router.generate_reply(
-                system_prompt="conversation prompt",
-                user_text="hello",
-                call_context=LLMCallContext(purpose="conversation"),
-            )
-
-        self.assertEqual(reply.text, "local:hello")
-        self.assertEqual(reply.metadata["route"]["provider"], "local")
-        self.assertEqual(reply.metadata["route"]["model"], "qwen2.5:7b")
-        self.assertEqual(reply.metadata["route"]["endpoint_ref"], "local_ollama_gpu_1")
-        self.assertEqual(reply.metadata["route"]["endpoint"], "http://127.0.0.1:11435")
-        self.assertEqual(reply.metadata["route"]["placement_shadow"]["reservation_id"], "active-reservation")
-        self.assertEqual(reply.metadata["route"]["placement_shadow_comparison"]["actual_endpoint_ref"], "local_ollama_gpu_1")
-        self.assertTrue(reply.metadata["route"]["placement_shadow_comparison"]["endpoint_ref_match"])
-        self.assertEqual(router.fake_adapters["local"].calls[-1]["kwargs"]["endpoint_override"], "http://127.0.0.1:11435")
-        release.assert_called_with("active-reservation")
 
     def test_persona_sensitive_chat_chain_avoids_hosted_fallback(self) -> None:
         settings.llm_router_allow_hosted_escalation = True

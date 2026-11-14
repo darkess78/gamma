@@ -255,10 +255,7 @@ class StatusViewsMixin:
             if isinstance(profile, dict)
         ]
 
-        routing = payload.get("llm_routing") or {}
-        shadow = dict(routing.get("placement_shadow") or {})
-        shadow["entries"] = list(shadow.get("entries") or [])[-4:]
-        payload["llm_routing"] = {"placement_shadow": shadow}
+        payload.pop("llm_routing", None)
         for key in ("startup_admission", "sidecar_allocations"):
             section = dict(payload.get(key) or {})
             section["entries"] = list(section.get("entries") or [])[-4:]
@@ -307,7 +304,7 @@ class StatusViewsMixin:
         }
         payload["memory_db"] = {"stats": {}, "known_people": [], "recent_items": []}
         payload["timings"] = {"summary": (payload.get("timings") or {}).get("summary", {})}
-        payload["llm_routing"] = {"placement_shadow": {"entries": [], "summary": {}}}
+        payload.pop("llm_routing", None)
         payload["startup_admission"] = {"entries": [], "summary": {}}
         payload["sidecar_allocations"] = {"entries": [], "summary": {}}
         payload["recent_artifacts"] = list(payload.get("recent_artifacts") or [])[-10:]
@@ -460,7 +457,6 @@ class StatusViewsMixin:
             return {
                 "entries": [],
                 "summary": {"count": 0, "status_counts": {}, "provider_counts": {}, "route_family_counts": {}},
-                "placement_shadow": self._placement_shadow_routes([]),
             }
         entries_deque: deque[dict[str, Any]] = deque(maxlen=max(1, limit))
         with log_path.open("r", encoding="utf-8", errors="replace") as handle:
@@ -496,11 +492,7 @@ class StatusViewsMixin:
             "route_family_counts": route_family_counts,
             "avg_duration_ms": round(sum(durations) / len(durations), 1) if durations else None,
         }
-        return {
-            "entries": entries,
-            "summary": summary,
-            "placement_shadow": self._placement_shadow_routes(entries),
-        }
+        return {"entries": entries, "summary": summary}
 
     def _recent_startup_admission(self, limit: int = 12) -> dict[str, Any]:
         log_path = settings.data_dir / "runtime" / "logs" / "supervisor.jsonl"
@@ -632,76 +624,6 @@ class StatusViewsMixin:
                 "estimated_vram_mb": estimated_total,
                 "allocation_delta_mb": observed_total - estimated_total,
             },
-        }
-
-    def _placement_shadow_routes(self, entries: list[dict[str, Any]], *, limit: int = 8) -> dict[str, Any]:
-        shadow_entries: deque[dict[str, Any]] = deque(maxlen=max(1, limit))
-        for entry in entries:
-            shadow = entry.get("placement_shadow")
-            if not isinstance(shadow, dict):
-                continue
-            flattened = self._format_placement_shadow_entry(entry, shadow)
-            if flattened is None:
-                continue
-            shadow_entries.append(flattened)
-        entries_list = list(shadow_entries)
-        status_counts: dict[str, int] = {}
-        target_counts: dict[str, int] = {}
-        for shadow_entry in entries_list:
-            shadow_status = str(shadow_entry.get("shadow_status") or "unknown")
-            status_counts[shadow_status] = status_counts.get(shadow_status, 0) + 1
-            target_id = shadow_entry.get("target_id")
-            if target_id:
-                target_key = str(target_id)
-                target_counts[target_key] = target_counts.get(target_key, 0) + 1
-        summary = {
-            "count": len(entries_list),
-            "selected_count": status_counts.get("selected", 0),
-            "no_fit_count": status_counts.get("no_fit", 0),
-            "snapshot_stale_count": status_counts.get("snapshot_stale", 0),
-            "status_counts": status_counts,
-            "target_counts": target_counts,
-        }
-        return {"entries": entries_list, "summary": summary}
-
-    def _format_placement_shadow_entry(self, entry: dict[str, Any], shadow: dict[str, Any]) -> dict[str, Any] | None:
-        shadow_status = str(shadow.get("status") or "").strip()
-        if not shadow_status:
-            return None
-        selected = shadow.get("selected")
-        selected_payload = selected if isinstance(selected, dict) else {}
-        rejected = shadow.get("rejected")
-        rejected_payload = rejected if isinstance(rejected, dict) else {}
-        comparison = entry.get("placement_shadow_comparison")
-        comparison_payload = comparison if isinstance(comparison, dict) else {}
-        return {
-            "timestamp": entry.get("timestamp"),
-            "purpose": entry.get("purpose"),
-            "route_family": entry.get("route_family"),
-            "provider": entry.get("provider"),
-            "model": entry.get("model"),
-            "status": entry.get("status"),
-            "shadow_status": shadow_status,
-            "snapshot_age_seconds": shadow.get("snapshot_age_seconds"),
-            "reservation_id": shadow.get("reservation_id"),
-            "reservation_expires_at": shadow.get("reservation_expires_at"),
-            "reservation_ttl_seconds": shadow.get("reservation_ttl_seconds"),
-            "comparison": comparison_payload,
-            "target_id": selected_payload.get("target_id"),
-            "target_provider": selected_payload.get("provider"),
-            "target_kind": selected_payload.get("kind"),
-            "endpoint_ref": selected_payload.get("endpoint_ref"),
-            "device": selected_payload.get("device"),
-            "gpu_index": selected_payload.get("gpu_index"),
-            "gpu_uuid": selected_payload.get("gpu_uuid"),
-            "free_vram_mb": selected_payload.get("free_vram_mb"),
-            "projected_headroom_mb": selected_payload.get("projected_headroom_mb"),
-            "advisory_reserved_vram_mb": selected_payload.get("advisory_reserved_vram_mb"),
-            "warm": selected_payload.get("warm"),
-            "reason": selected_payload.get("reason"),
-            "score": selected_payload.get("score"),
-            "rejected_count": len(rejected_payload),
-            "rejected": rejected_payload,
         }
 
     def _format_router_backoff_entries(self, backoff_state: dict[str, Any]) -> list[dict[str, Any]]:

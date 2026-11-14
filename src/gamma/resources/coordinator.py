@@ -5,7 +5,6 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
 
 from ..config import settings
 from .models import PlacementDecision, WorkloadSpec
@@ -39,10 +38,6 @@ class ResourcePlacementCoordinator:
             enable_gpu=lambda: settings.dashboard_enable_gpu,
             refresh_interval_seconds=lambda: settings.dashboard_metrics_interval_seconds,
         )
-
-    def shadow_enabled(self) -> bool:
-        registry = self._registry or load_resource_routing_registry()
-        return registry.policy.shadow_mode and bool(registry.targets)
 
     def rank(self, workload: WorkloadSpec) -> PlacementDecision:
         return self._rank(workload, reserve=False)
@@ -127,28 +122,3 @@ class ResourcePlacementCoordinator:
         )
 
 
-def llm_shadow_placement_payload(
-    *,
-    provider: str,
-    model: str | None,
-    route_family: str,
-    has_images: bool,
-    coordinator: ResourcePlacementCoordinator | None = None,
-    reserve: bool = True,
-) -> dict[str, Any] | None:
-    placement = coordinator or ResourcePlacementCoordinator()
-    if not placement.shadow_enabled():
-        return None
-    workload = WorkloadSpec(
-        id=f"llm:{route_family}",
-        kind="llm",
-        provider=provider,
-        model=model,
-        modality="vision" if has_images else "text",
-    )
-    decision = placement.rank_and_reserve(workload) if reserve else placement.rank(workload)
-    return decision.as_payload()
-
-
-def release_advisory_reservation(reservation_id: str | None) -> None:
-    ResourcePlacementCoordinator.release_advisory_reservation(reservation_id)

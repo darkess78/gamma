@@ -1,104 +1,22 @@
 from __future__ import annotations
 
-import json
-import os
-import threading
 import time
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Literal
 
-from ..config import settings
 from ..errors import ConfigurationError, ContextBudgetError, ContextOverflowError
-from ..resources import ResourcePlacementCoordinator, llm_shadow_placement_payload, release_advisory_reservation
-from ..resources.models import WorkloadSpec
-from ..resources.runtime_registry import load_resource_routing_registry
 from .base import LLMAdapter, LLMCallContext, LLMImageInput, LLMReply
 from .capabilities import estimate_text_tokens, model_capability
-
-_ROUTE_TRACE = threading.local()
-RouteErrorClass = Literal[
-    "context_budget",
-    "capability_mismatch",
-    "provider_unavailable",
-    "context_overflow",
-    "provider_error",
-]
+from .provider_health import ProviderHealthMixin
+from .route_events import RouteEventsMixin
+from .route_policy import RoutePolicyMixin
 
 
-@dataclass(slots=True)
-class RouteDecision:
-    """Routing decision for model selection.
-    
-    Attributes:
-        provider: LLM provider to use.
-        model: Model name or None.
-        reason: Why this route was chosen.
-        route_family: Type of turn (chat, voice, metadata, etc.).
-    """
-    provider: str
-    model: str | None
-    reason: str
-    route_family: str = "chat_default"
-    endpoint_ref: str | None = None
-    endpoint: str | None = None
-    resource_placement: dict[str, object] | None = None
-    resource_reservation_id: str | None = None
+class RouterLLMAdapter(RoutePolicyMixin, ProviderHealthMixin, RouteEventsMixin, LLMAdapter):
+    """Routes each request between local Ollama models and hosted providers.
 
-
-def begin_route_trace(*, persist: bool = True) -> None:
-    """Initialize a route trace and choose whether its events reach production logs."""
-    _ROUTE_TRACE.events = []
-    _ROUTE_TRACE.persist = bool(persist)
-
-
-def take_route_trace() -> list[dict[str, object]]:
-    """Retrieve and clear route trace events.
-    
-    Returns:
-        list[dict[str, object]]: List of route event records.
-    """
-    events = list(getattr(_ROUTE_TRACE, "events", []))
-    _ROUTE_TRACE.events = []
-    _ROUTE_TRACE.persist = True
-    return events
-
-
-class RouterLLMAdapter(LLMAdapter):
-    """Router LLM adapter for multi-provider routing.
-
-    Routes requests between local Ollama models and hosted services.
-
-    Attributes:
-        supports_vision: Whether any provider supports vision.
-
-    Methods:
-        __init__: Initialize adapters and health cache.
-        supports_vision: Check vision capability.
-        generate_reply: Route and generate reply text.
-        _route_candidates: Build routing candidates.
-        _route_request: Make primary routing decision.
-        _classify_route_family: Classify turn type.
-        _build_route_chain: Build fallback chain.
-        _route_for_vision: Route for vision requests.
-        _route_for_capabilities: Route by capability.
-        _hosted_route: Get hosted provider route.
-        _default_provider: Get default provider.
-        _default_model: Get default model.
-        _provider_supports_vision: Check vision capability.
-        _provider_availability: Check provider health.
-        _check_local_llm_health: Check local Ollama health.
-        _record_route_event: Record route decision event.
-        _mark_provider_failure: Add provider backoff.
-        _clear_provider_backoff: Clear backoff for provider.
-        _profile: Get routing profile.
-        _backoff_key: Generate backoff key.
-        _adapter_for_provider: Get adapter for provider.
-        _build_provider_adapter: Build new adapter.
-        _is_lightweight_text: Check lightweight text.
-        _persona_heavy_hosted_fallback_enabled: Persona fallback config.
-        _should_escalate_to_hosted: Escalation decision.
-        provider_backoff_state: Get backoff state.
+    generate_reply walks the route chain, checks each candidate's context budget
+    and availability, calls the provider adapter and retries once with a
+    compacted prompt on context overflow. Route choice lives in route_policy,
+    health and backoff in provider_health, and logging in route_events.
     """
 
     _provider_backoff_until_global: dict[str, float] = {}
@@ -156,7 +74,6 @@ class RouterLLMAdapter(LLMAdapter):
             if key in seen:
                 continue
             seen.add(key)
-            decision = self._active_resource_route_decision(decision=decision, has_images=bool(image_inputs))
             capability = model_capability(decision.provider, decision.model)
             candidate_system_prompt = system_prompt
             candidate_user_text = user_text
@@ -188,7 +105,6 @@ class RouterLLMAdapter(LLMAdapter):
                         fallback_index=index,
                         prompt_metrics=prompt_metrics,
                     )
-                    release_advisory_reservation(decision.resource_reservation_id)
                     continue
                 prompt_metrics.update(built_metrics)
                 prompt_metrics["estimated_input_tokens"] = estimate_text_tokens(
@@ -215,7 +131,6 @@ class RouterLLMAdapter(LLMAdapter):
                     fallback_index=index,
                     prompt_metrics=prompt_metrics,
                 )
-                release_advisory_reservation(decision.resource_reservation_id)
                 continue
             availability = self._provider_availability(
                 provider=decision.provider,
@@ -225,7 +140,6 @@ class RouterLLMAdapter(LLMAdapter):
                 endpoint=decision.endpoint,
             )
             if not availability.get("ok"):
-                placement_shadow = decision.resource_placement
                 self._record_route_event(
                     decision=decision,
                     call_context=call_context,
@@ -236,17 +150,9 @@ class RouterLLMAdapter(LLMAdapter):
                     detail=str(availability.get("detail", "unavailable")),
                     error_class="provider_unavailable",
                     fallback_index=index,
-                    placement_shadow=placement_shadow,
                     prompt_metrics=prompt_metrics,
                 )
-                release_advisory_reservation(decision.resource_reservation_id)
                 continue
-            placement_shadow = llm_shadow_placement_payload(
-                provider=decision.provider,
-                model=decision.model,
-                route_family=decision.route_family,
-                has_images=bool(image_inputs),
-            ) if decision.resource_placement is None else decision.resource_placement
             started_at = time.perf_counter()
             try:
                 adapter = self._adapter_for_provider(decision.provider)
@@ -268,7 +174,6 @@ class RouterLLMAdapter(LLMAdapter):
                     duration_ms=duration_ms,
                     detail=str(availability.get("detail", "ready")),
                     fallback_index=index,
-                    placement_shadow=placement_shadow,
                     prompt_metrics=prompt_metrics,
                 )
                 metadata = dict(reply.metadata or {})
@@ -298,7 +203,6 @@ class RouterLLMAdapter(LLMAdapter):
                     detail=str(exc),
                     error_class="context_overflow",
                     fallback_index=index,
-                    placement_shadow=placement_shadow,
                     prompt_metrics=overflow_metrics,
                 )
                 if call_context.prompt_builder is not None:
@@ -335,7 +239,6 @@ class RouterLLMAdapter(LLMAdapter):
                                 duration_ms=retry_duration,
                                 detail="context-overflow-compacted-retry",
                                 fallback_index=index,
-                                placement_shadow=placement_shadow,
                                 prompt_metrics=retry_metrics,
                             )
                             metadata = dict(retry_reply.metadata or {})
@@ -354,7 +257,6 @@ class RouterLLMAdapter(LLMAdapter):
                                 detail=f"compacted retry failed: {retry_exc}",
                                 error_class="context_overflow",
                                 fallback_index=index,
-                                placement_shadow=placement_shadow,
                                 prompt_metrics={**overflow_metrics, "overflow_retry_budget": retry_budget},
                             )
                         except Exception as retry_exc:
@@ -374,7 +276,6 @@ class RouterLLMAdapter(LLMAdapter):
                                 detail=f"compacted retry provider failure: {retry_exc}",
                                 error_class="provider_error",
                                 fallback_index=index,
-                                placement_shadow=placement_shadow,
                                 prompt_metrics={**overflow_metrics, "overflow_retry_budget": retry_budget},
                             )
             except Exception as exc:
@@ -395,655 +296,11 @@ class RouterLLMAdapter(LLMAdapter):
                     detail=str(exc),
                     error_class="provider_error",
                     fallback_index=index,
-                    placement_shadow=placement_shadow,
                     prompt_metrics=prompt_metrics,
                 )
-            finally:
-                reservation_id = None
-                if isinstance(placement_shadow, dict):
-                    reservation_id = str(placement_shadow.get("reservation_id") or "") or None
-                reservation_id = decision.resource_reservation_id or reservation_id
-                release_advisory_reservation(reservation_id)
         if last_exc is not None:
             raise last_exc
         raise ConfigurationError("No usable routed LLM provider is available.")
-
-    def _route_candidates(
-        self,
-        *,
-        system_prompt: str,
-        user_text: str,
-        image_inputs: list[LLMImageInput] | None,
-        call_context: LLMCallContext | None,
-        model_override: str | None,
-    ) -> list[RouteDecision]:
-        """Build list of route candidates.
-        
-        Args:
-            system_prompt: System prompt.
-            user_text: User text.
-            image_inputs: Optional image inputs.
-            call_context: Call context.
-            model_override: Optional model override.
-            
-        Returns:
-            list[RouteDecision]: Primary candidate plus fallbacks.
-        """
-        route_family = self._classify_route_family(
-            user_text=user_text,
-            image_inputs=image_inputs,
-            call_context=call_context,
-            model_override=model_override,
-        )
-        primary = self._route_request(
-            system_prompt=system_prompt,
-            user_text=user_text,
-            image_inputs=image_inputs,
-            call_context=call_context,
-            model_override=model_override,
-            route_family=route_family,
-        )
-        return self._build_route_chain(primary=primary, route_family=route_family, has_images=bool(image_inputs))
-
-    def _active_resource_route_decision(self, *, decision: RouteDecision, has_images: bool) -> RouteDecision:
-        if has_images or decision.provider not in {"local", "ollama"}:
-            return decision
-        registry = load_resource_routing_registry()
-        if not registry.policy.active_llm_routing or registry.validation_errors:
-            return decision
-        placement = ResourcePlacementCoordinator(registry=registry).rank_and_reserve(
-            WorkloadSpec(
-                id=f"llm:{decision.route_family}",
-                kind="llm",
-                provider=decision.provider,
-                model=decision.model,
-                modality="text",
-            )
-        )
-        selected = placement.selected
-        if selected is None:
-            return decision
-        endpoint = registry.endpoint_for_target(selected.target)
-        if endpoint is None:
-            release_advisory_reservation(placement.reservation_id)
-            return decision
-        return RouteDecision(
-            provider=decision.provider,
-            model=decision.model,
-            reason=f"{decision.reason}+resource-endpoint",
-            route_family=decision.route_family,
-            endpoint_ref=endpoint.id,
-            endpoint=endpoint.url,
-            resource_placement=placement.as_payload(),
-            resource_reservation_id=placement.reservation_id,
-        )
-
-    def _route_request(
-        self,
-        *,
-        system_prompt: str,
-        user_text: str,
-        image_inputs: list[LLMImageInput] | None,
-        call_context: LLMCallContext | None,
-        model_override: str | None,
-        route_family: str | None = None,
-    ) -> RouteDecision:
-        """Make primary route decision for request parameters.
-        
-        Args:
-            system_prompt: System prompt.
-            user_text: User text.
-            image_inputs: Optional image inputs.
-            call_context: Call context.
-            model_override: Optional model override.
-            route_family: Optional route family classification.
-            
-        Returns:
-            RouteDecision: Primary route decision.
-        """
-        route_family = route_family or self._classify_route_family(
-            user_text=user_text,
-            image_inputs=image_inputs,
-            call_context=call_context,
-            model_override=model_override,
-        )
-        if model_override:
-            default_provider = self._default_provider()
-            return RouteDecision(
-                provider=default_provider,
-                model=model_override,
-                reason="explicit-model-override",
-                route_family=route_family,
-            )
-
-        if image_inputs:
-            return self._route_for_vision()
-
-        purpose = (call_context.purpose if call_context else "conversation").strip().lower()
-        profile = self._profile()
-        if route_family == "metadata":
-            tagging_model = (settings.local_llm_tagging_model or "").strip()
-            if tagging_model:
-                return RouteDecision(provider="local", model=tagging_model, reason="metadata-tagging-model", route_family=route_family)
-        if route_family == "voice_fast":
-            light_or_tagging = (settings.local_llm_tagging_model or "").strip() or (settings.local_llm_light_model or "").strip()
-            if light_or_tagging:
-                return RouteDecision(provider="local", model=light_or_tagging, reason="voice-helper-local-worker", route_family=route_family)
-        if route_family == "tool_finalize":
-            light_model = (settings.local_llm_light_model or "").strip()
-            if light_model:
-                return RouteDecision(provider="local", model=light_model, reason="tool-finalizer-light-model", route_family=route_family)
-        if route_family == "presence_wake":
-            return RouteDecision(
-                provider=self._default_provider(),
-                model=self._default_model(),
-                reason="presence-wake-primary-quality",
-                route_family=route_family,
-            )
-
-        light_model = (settings.local_llm_light_model or "").strip()
-        fast_requested = bool(call_context and (call_context.fast_mode or call_context.brief_mode or call_context.micro_mode))
-        if profile == "high_quality" and route_family in {"chat_light", "chat_default", "reasoning_heavy"}:
-            hosted = self._hosted_route(force=True)
-            if hosted is not None:
-                return RouteDecision(provider=hosted.provider, model=hosted.model, reason="high-quality-hosted-default", route_family=route_family)
-
-        if fast_requested and light_model and route_family in {"chat_light", "voice_fast"} and profile in {"balanced", "low_latency_voice", "local_only", "offline_safe"}:
-            return RouteDecision(provider="local", model=light_model, reason="fast-mode-light-model", route_family=route_family)
-
-        if light_model and route_family == "chat_light" and profile in {"balanced", "low_latency_voice", "local_only", "offline_safe"}:
-            return RouteDecision(provider="local", model=light_model, reason="lightweight-turn", route_family=route_family)
-
-        if (
-            profile == "low_latency_voice"
-            and route_family in {"chat_light", "chat_persona"}
-            and light_model
-            and len((user_text or "").split()) <= min(settings.llm_router_chat_light_max_input_words, 24)
-        ):
-            return RouteDecision(provider="local", model=light_model, reason="low-latency-short-turn", route_family=route_family)
-
-        if route_family not in {"chat_persona", "reasoning_heavy_persona"} and self._should_escalate_to_hosted(user_text=user_text, purpose=purpose):
-            hosted = self._hosted_route()
-            if hosted is not None:
-                hosted.route_family = route_family
-                return hosted
-
-        return RouteDecision(
-            provider=self._default_provider(),
-            model=self._default_model(),
-            reason="default-route",
-            route_family=route_family,
-        )
-
-    def _classify_route_family(
-        self,
-        *,
-        user_text: str,
-        image_inputs: list[LLMImageInput] | None,
-        call_context: LLMCallContext | None,
-        model_override: str | None,
-    ) -> str:
-        """Classify turn into route family.
-        
-        Args:
-            user_text: User text.
-            image_inputs: Optional image inputs.
-            call_context: Call context.
-            model_override: Optional model override.
-            
-        Returns:
-            str: Route family name.
-        """
-        if model_override:
-            return "explicit_override"
-        if image_inputs:
-            return "vision"
-        purpose = (call_context.purpose if call_context else "conversation").strip().lower()
-        if purpose == "metadata_extraction":
-            return "metadata"
-        if purpose in {"voice_reply_planner", "voice_sentence_generator"}:
-            return "voice_fast"
-        if purpose == "tool_finalizer":
-            return "tool_finalize"
-        if purpose == "presence_wake":
-            return "presence_wake"
-        reasoning_depth = (call_context.reasoning_depth if call_context else "normal").strip().lower()
-        persona_sensitive = bool(call_context and call_context.persona_sensitive)
-        fast_requested = bool(call_context and (call_context.fast_mode or call_context.brief_mode or call_context.micro_mode))
-        if reasoning_depth == "heavy" or self._should_escalate_to_hosted(user_text=user_text, purpose=purpose):
-            return "reasoning_heavy_persona" if persona_sensitive else "reasoning_heavy"
-        if persona_sensitive and not fast_requested:
-            return "chat_persona"
-        if fast_requested or self._is_lightweight_text(user_text):
-            return "chat_light"
-        return "chat_default"
-
-    def _build_route_chain(self, *, primary: RouteDecision, route_family: str, has_images: bool) -> list[RouteDecision]:
-        """Build chain of route candidates with fallbacks.
-        
-        Args:
-            primary: Primary route decision.
-            route_family: Route family type.
-            has_images: Whether request has images.
-            
-        Returns:
-            list[RouteDecision]: Chain of candidates for fallback.
-        """
-        candidates = [primary]
-        default_route = RouteDecision(
-            provider=self._default_provider(),
-            model=self._default_model(),
-            reason="default-route-fallback",
-            route_family=route_family,
-        )
-        local_primary = (settings.local_llm_model or "").strip() or None
-        light_model = (settings.local_llm_light_model or "").strip() or None
-        tagging_model = (settings.local_llm_tagging_model or "").strip() or None
-
-        if route_family == "voice_fast":
-            if light_model and (primary.provider, primary.model) != ("local", light_model):
-                candidates.append(RouteDecision(provider="local", model=light_model, reason="voice-light-fallback", route_family=route_family))
-            if local_primary and (primary.provider, primary.model) != ("local", local_primary):
-                candidates.append(RouteDecision(provider="local", model=local_primary, reason="voice-primary-fallback", route_family=route_family))
-        elif route_family == "metadata":
-            if tagging_model and (primary.provider, primary.model) != ("local", tagging_model):
-                candidates.append(RouteDecision(provider="local", model=tagging_model, reason="metadata-tagging-fallback", route_family=route_family))
-            if local_primary and (primary.provider, primary.model) != ("local", local_primary):
-                candidates.append(RouteDecision(provider="local", model=local_primary, reason="metadata-primary-fallback", route_family=route_family))
-        elif route_family == "tool_finalize":
-            if light_model and (primary.provider, primary.model) != ("local", light_model):
-                candidates.append(RouteDecision(provider="local", model=light_model, reason="tool-light-fallback", route_family=route_family))
-            if local_primary and (primary.provider, primary.model) != ("local", local_primary):
-                candidates.append(RouteDecision(provider="local", model=local_primary, reason="tool-primary-fallback", route_family=route_family))
-        elif route_family == "presence_wake":
-            if local_primary and (primary.provider, primary.model) != ("local", local_primary):
-                candidates.append(RouteDecision(provider="local", model=local_primary, reason="presence-wake-primary-fallback", route_family=route_family))
-            if light_model and (primary.provider, primary.model) != ("local", light_model):
-                candidates.append(RouteDecision(provider="local", model=light_model, reason="presence-wake-persona-fallback", route_family=route_family))
-            if self._persona_heavy_hosted_fallback_enabled():
-                hosted_primary = self._hosted_route()
-                if hosted_primary is not None and (hosted_primary.provider, hosted_primary.model) != (primary.provider, primary.model):
-                    hosted_primary.reason = "presence-wake-hosted-fallback"
-                    hosted_primary.route_family = route_family
-                    candidates.append(hosted_primary)
-        elif route_family in {"chat_light", "chat_persona", "chat_default", "reasoning_heavy", "reasoning_heavy_persona"}:
-            if route_family in {"chat_light", "chat_persona"} and light_model and (primary.provider, primary.model) != ("local", light_model):
-                candidates.append(RouteDecision(provider="local", model=light_model, reason="local-light-fallback", route_family=route_family))
-            if local_primary and (primary.provider, primary.model) != ("local", local_primary):
-                candidates.append(RouteDecision(provider="local", model=local_primary, reason="local-primary-fallback", route_family=route_family))
-            if route_family == "reasoning_heavy_persona" and self._persona_heavy_hosted_fallback_enabled():
-                hosted_primary = self._hosted_route()
-                if hosted_primary is not None and (hosted_primary.provider, hosted_primary.model) != (primary.provider, primary.model):
-                    hosted_primary.reason = "persona-heavy-hosted-fallback"
-                    hosted_primary.route_family = route_family
-                    candidates.append(hosted_primary)
-
-        if (default_route.provider, default_route.model) != (primary.provider, primary.model):
-            candidates.append(default_route)
-        hosted = self._hosted_route()
-        if (
-            hosted is not None
-            and route_family not in {"chat_persona", "reasoning_heavy_persona", "presence_wake", "voice_fast", "metadata"}
-            and (hosted.provider, hosted.model) != (primary.provider, primary.model)
-        ):
-            hosted.reason = "hosted-escalation-fallback"
-            hosted.route_family = route_family
-            candidates.append(hosted)
-        if not has_images and self._default_provider() != "mock" and route_family != "presence_wake":
-            candidates.append(RouteDecision(provider="mock", model=None, reason="mock-last-resort", route_family=route_family))
-        return candidates
-
-    def _route_for_vision(self) -> RouteDecision:
-        """Route for vision input request.
-        
-        Returns:
-            RouteDecision: Provider supporting vision.
-        """
-        default_provider = self._default_provider()
-        if self._provider_supports_vision(default_provider):
-            return RouteDecision(provider=default_provider, model=self._default_model(), reason="default-vision-route", route_family="vision")
-        hosted = self._hosted_route()
-        if hosted is not None and self._provider_supports_vision(hosted.provider):
-            return RouteDecision(provider=hosted.provider, model=hosted.model, reason="hosted-vision-route", route_family="vision")
-        if settings.local_llm_supports_vision:
-            return RouteDecision(
-                provider="local",
-                model=(settings.local_llm_vision_model or "").strip() or None,
-                reason="local-vision-route",
-                route_family="vision",
-            )
-        return RouteDecision(provider=default_provider, model=self._default_model(), reason="fallback-vision-route", route_family="vision")
-
-    def _route_for_capabilities(self, *, has_images: bool) -> RouteDecision:
-        """Route based on capability requirements.
-        
-        Args:
-            has_images: Whether request has image inputs.
-            
-        Returns:
-            RouteDecision: Route decision.
-        """
-        if has_images:
-            return self._route_for_vision()
-        return RouteDecision(provider=self._default_provider(), model=self._default_model(), reason="default-capability-route")
-
-    def _hosted_route(self, *, force: bool = False) -> RouteDecision | None:
-        """Get hosted provider route.
-        
-        Args:
-            force: Force hosted even if config disabled.
-            
-        Returns:
-            RouteDecision | None: Hosted route or None.
-        """
-        if not force and not settings.llm_router_allow_hosted_escalation:
-            return None
-        if self._profile() in {"local_only", "offline_safe"}:
-            return None
-        provider = (settings.llm_router_hosted_provider or "").strip().lower()
-        if not provider:
-            return None
-        model = (settings.llm_router_hosted_model or "").strip() or None
-        if provider == "openai" and not (model or settings.llm_model.strip()):
-            return None
-        return RouteDecision(provider=provider, model=model, reason="hosted-escalation")
-
-    def _default_provider(self) -> str:
-        """Get default provider based on profile.
-        
-        Returns:
-            str: Provider name.
-        """
-        profile = self._profile()
-        if profile in {"local_only", "offline_safe"}:
-            return "local"
-        provider = (settings.llm_router_default_provider or "").strip().lower()
-        if provider:
-            return provider
-        return settings.llm_provider.strip().lower()
-
-    def _default_model(self) -> str | None:
-        """Get default model for current provider.
-        
-        Returns:
-            str | None: Model name or None.
-        """
-        provider = self._default_provider()
-        configured = (settings.llm_router_default_model or "").strip()
-        if configured:
-            return configured
-        if provider in {"local", "ollama"}:
-            return (settings.local_llm_model or "").strip() or None
-        if provider == "openai":
-            return (settings.llm_model or "").strip() or None
-        return None
-
-    def _provider_supports_vision(self, provider: str) -> bool:
-        """Check if provider supports vision inputs.
-        
-        Args:
-            provider: Provider name.
-            
-        Returns:
-            bool: Whether vision is supported.
-        """
-        if provider == "openai":
-            return True
-        if provider in {"local", "ollama"}:
-            return settings.local_llm_supports_vision
-        return False
-
-    def _provider_availability(
-        self,
-        *,
-        provider: str,
-        model: str | None,
-        has_images: bool,
-        route_family: str | None = None,
-        endpoint: str | None = None,
-    ) -> dict[str, object]:
-        """Check provider health and availability.
-        
-        Args:
-            provider: Provider name.
-            model: Model for hosted providers.
-            has_images: Whether request has images.
-            route_family: Route family for backoff key.
-            endpoint: Optional local endpoint override.
-            
-        Returns:
-            dict[str, object]: Health check result.
-        """
-        normalized = provider.strip().lower()
-        now = time.time()
-        backoff_key = self._backoff_key(provider=normalized, has_images=has_images, route_family=route_family)
-        backoff_until = self._provider_backoff_until_global.get(backoff_key, 0.0)
-        if backoff_until > now:
-            return {"ok": False, "detail": f"backoff-active:{backoff_key}:{round(backoff_until - now, 1)}s"}
-        cache_key = (normalized, "vision" if has_images else "text", endpoint or "")
-        cached = self._health_cache.get(cache_key)
-        if cached and (now - cached[0]) < 5:
-            return cached[1]
-        if normalized == "openai":
-            api_key = settings.openai_api_key or os.getenv("OPENAI_API_KEY")
-            result = {"ok": bool(api_key and (model or settings.llm_model).strip()), "detail": "ready" if api_key else "missing-openai-api-key"}
-        elif normalized in {"local", "ollama"}:
-            local_health = self._check_local_llm_health(endpoint=endpoint)
-            if not local_health.get("ok"):
-                result = local_health
-            elif has_images and not self._provider_supports_vision(normalized):
-                result = {"ok": False, "detail": "vision-not-supported"}
-            else:
-                result = {"ok": True, "detail": str(local_health.get("detail", "ready"))}
-        elif normalized == "mock":
-            result = {"ok": not has_images, "detail": "ready" if not has_images else "mock-no-vision"}
-        else:
-            result = {"ok": False, "detail": f"unsupported-provider: {provider}"}
-        self._health_cache[cache_key] = (now, result)
-        return result
-
-    def _check_local_llm_health(self, *, endpoint: str | None = None) -> dict[str, object]:
-        """Check local Ollama service health.
-        
-        Returns:
-            dict[str, object]: Health check with ok/detail flags.
-        """
-        from ..system.status import probe_ollama_health
-
-        health = probe_ollama_health(endpoint or settings.local_llm_endpoint, timeout_seconds=5)
-        if health.get("ok"):
-            return {"ok": True, "detail": "ready"}
-        return {"ok": False, "detail": str(health.get("detail", "local-llm-unhealthy"))}
-
-    def _record_route_event(
-        self,
-        *,
-        decision: RouteDecision,
-        call_context: LLMCallContext,
-        user_text: str,
-        has_images: bool,
-        status: str,
-        duration_ms: float,
-        detail: str,
-        fallback_index: int,
-        error_class: RouteErrorClass | None = None,
-        placement_shadow: dict[str, object] | None = None,
-        prompt_metrics: dict[str, object] | None = None,
-    ) -> dict[str, object]:
-        """Record route event for logging and metrics.
-        
-        Args:
-            decision: Route decision.
-            call_context: Call context.
-            user_text: User text.
-            has_images: Whether request has images.
-            status: Route status.
-            duration_ms: Execution duration.
-            detail: Event detail (truncated).
-            fallback_index: Fallback index or 0.
-            error_class: Stable non-content failure taxonomy, or None for success.
-            
-        Returns:
-            dict[str, object]: Logged event data.
-        """
-        event = {
-            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            "purpose": call_context.purpose,
-            "route_family": decision.route_family,
-            "provider": decision.provider,
-            "model": decision.model,
-            "endpoint_ref": decision.endpoint_ref,
-            "endpoint": decision.endpoint,
-            "reason": decision.reason,
-            "profile": self._profile(),
-            "status": status,
-            "error_class": error_class,
-            "detail": detail[:240],
-            "duration_ms": duration_ms,
-            "input_words": len((user_text or "").split()),
-            "has_images": has_images,
-            "fast_mode": bool(call_context.fast_mode),
-            "brief_mode": bool(call_context.brief_mode),
-            "micro_mode": bool(call_context.micro_mode),
-            "reasoning_depth": call_context.reasoning_depth,
-            "persona_sensitive": bool(call_context.persona_sensitive),
-            "interaction_mode": call_context.interaction_mode,
-            "cost_sensitive": bool(call_context.cost_sensitive),
-            "quality_tier": call_context.quality_tier,
-            "minimum_context_tokens": call_context.minimum_context_tokens,
-            "fallback_index": fallback_index,
-        }
-        if prompt_metrics:
-            event.update(prompt_metrics)
-        if placement_shadow is not None:
-            event["placement_shadow"] = placement_shadow
-            event["placement_shadow_comparison"] = self._placement_shadow_comparison(
-                decision=decision,
-                placement_shadow=placement_shadow,
-            )
-        current = list(getattr(_ROUTE_TRACE, "events", []))
-        current.append(event)
-        _ROUTE_TRACE.events = current
-        persist_event = bool(getattr(_ROUTE_TRACE, "persist", True)) and call_context.interaction_mode not in {
-            "evaluation",
-            "improvement",
-        }
-        if persist_event:
-            log_dir = settings.data_dir / "runtime"
-            log_dir.mkdir(parents=True, exist_ok=True)
-            log_path = log_dir / "llm.routes.jsonl"
-            with log_path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(event, ensure_ascii=False) + "\n")
-        return event
-
-    def _placement_shadow_comparison(
-        self,
-        *,
-        decision: RouteDecision,
-        placement_shadow: dict[str, object],
-    ) -> dict[str, object]:
-        selected = placement_shadow.get("selected")
-        selected_payload = selected if isinstance(selected, dict) else {}
-        actual_endpoint_ref, actual_endpoint = self._actual_endpoint_for_decision(decision)
-        advisory_provider = str(selected_payload.get("provider") or placement_shadow.get("provider") or "")
-        advisory_model = str(placement_shadow.get("model") or "")
-        advisory_endpoint_ref = str(selected_payload.get("endpoint_ref") or "")
-        return {
-            "actual_provider": decision.provider,
-            "actual_model": decision.model,
-            "actual_endpoint_ref": actual_endpoint_ref,
-            "actual_endpoint": actual_endpoint,
-            "advisory_status": placement_shadow.get("status"),
-            "advisory_target_id": selected_payload.get("target_id"),
-            "advisory_provider": advisory_provider,
-            "advisory_model": advisory_model,
-            "advisory_endpoint_ref": advisory_endpoint_ref,
-            "provider_match": bool(advisory_provider and advisory_provider == decision.provider),
-            "model_match": bool(advisory_model and advisory_model == (decision.model or "")),
-            "endpoint_ref_match": bool(advisory_endpoint_ref and advisory_endpoint_ref == actual_endpoint_ref),
-        }
-
-    def _actual_endpoint_for_decision(self, decision: RouteDecision) -> tuple[str, str]:
-        if decision.endpoint_ref or decision.endpoint:
-            return decision.endpoint_ref or "resource_endpoint", decision.endpoint or ""
-        provider = (decision.provider or "").strip().lower()
-        if provider in {"local", "ollama"}:
-            return "local_llm_endpoint", settings.local_llm_endpoint
-        if provider == "openai":
-            return "openai", ""
-        return provider or "unknown", ""
-
-    def _mark_provider_failure(self, provider: str, *, has_images: bool, route_family: str | None = None) -> None:
-        """Add failure backoff for provider.
-        
-        Args:
-            provider: Provider name.
-            has_images: Whether request had image inputs.
-            route_family: Route family for backoff key.
-        """
-        backoff_seconds = max(0, int(settings.llm_router_failure_backoff_seconds))
-        if backoff_seconds <= 0:
-            return
-        key = self._backoff_key(
-            provider=provider.strip().lower(),
-            has_images=has_images,
-            route_family=route_family,
-        )
-        self._provider_backoff_until_global[key] = time.time() + backoff_seconds
-
-    def _clear_provider_backoff(self, provider: str, *, has_images: bool, route_family: str | None = None) -> None:
-        """Clear failure backoff for provider.
-        
-        Args:
-            provider: Provider name.
-            has_images: Whether request had image inputs.
-            route_family: Route family for backoff key.
-        """
-        key = self._backoff_key(
-            provider=provider.strip().lower(),
-            has_images=has_images,
-            route_family=route_family,
-        )
-        self._provider_backoff_until_global.pop(key, None)
-
-    def _profile(self) -> str:
-        """Get routing profile name.
-        
-        Returns:
-            str: Profile name or 'balanced' default.
-        """
-        profile = (settings.llm_router_profile or "").strip().lower()
-        if profile in {"balanced", "local_only", "low_latency_voice", "high_quality", "offline_safe"}:
-            return profile
-        return "balanced"
-
-    @classmethod
-    def provider_backoff_state(cls) -> dict[str, float]:
-        """Get current provider backoff state.
-        
-        Returns:
-            dict[str, float]: Provider names and remaining backoff seconds.
-        """
-        now = time.time()
-        return {
-            provider: round(until - now, 1)
-            for provider, until in cls._provider_backoff_until_global.items()
-            if until > now
-        }
-
-    def _backoff_key(self, *, provider: str, has_images: bool, route_family: str | None) -> str:
-        """Generate unique backoff key for provider.
-        
-        Args:
-            provider: Provider name.
-            has_images: Whether using vision endpoint.
-            route_family: Route family.
-            
-        Returns:
-            str: Backoff key string.
-        """
-        scope = "vision" if has_images else (route_family or "text")
-        return f"{provider}:{scope}"
 
     def _adapter_for_provider(self, provider: str) -> LLMAdapter:
         """Get or create adapter for provider.
@@ -1082,70 +339,3 @@ class RouterLLMAdapter(LLMAdapter):
             return MockLLMAdapter()
         raise ConfigurationError(f"Unsupported routed LLM provider: {provider}")
 
-    def _is_lightweight_text(self, user_text: str) -> bool:
-        """Check if text is light/simple for routing.
-        
-        Args:
-            user_text: User text.
-            
-        Returns:
-            bool: True if text is lightweight.
-        """
-        lowered = (user_text or "").lower()
-        if len(lowered.split()) > settings.llm_router_chat_light_max_input_words:
-            return False
-        complex_markers = (
-            "why ",
-            "how ",
-            "compare ",
-            "plan ",
-            "debug ",
-            "error ",
-            "remember ",
-            "tool ",
-            "provider ",
-            "memory ",
-            "code ",
-        )
-        return not any(marker in lowered for marker in complex_markers)
-
-    def _persona_heavy_hosted_fallback_enabled(self) -> bool:
-        """Check if persona-heavy routing allows hosted fallback.
-        
-        Returns:
-            bool: True if fallback enabled.
-        """
-        return bool(settings.llm_router_allow_hosted_escalation and settings.llm_router_persona_heavy_hosted_fallback_enabled)
-
-    def _should_escalate_to_hosted(self, *, user_text: str, purpose: str) -> bool:
-        """Check if should escalate to hosted provider.
-        
-        Args:
-            user_text: User text.
-            purpose: Call purpose.
-            
-        Returns:
-            bool: True if escalation warranted.
-        """
-        if not settings.llm_router_allow_hosted_escalation:
-            return False
-        if purpose not in {"conversation", "conversation_draft"}:
-            return False
-        lowered = (user_text or "").lower()
-        if len(lowered.split()) > settings.llm_router_complex_max_input_words:
-            return True
-        escalation_markers = (
-            "write code",
-            "debug",
-            "traceback",
-            "stack trace",
-            "refactor",
-            "architecture",
-            "design a system",
-            "compare",
-            "tradeoff",
-            "step by step",
-            "plan",
-            "analyze",
-        )
-        return any(marker in lowered for marker in escalation_markers)

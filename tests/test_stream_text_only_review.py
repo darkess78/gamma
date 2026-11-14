@@ -12,7 +12,7 @@ from gamma.llm.base import LLMReply
 from gamma.performer.bus import PerformerEventBus
 from gamma.safety.llm_reviewer import LLMReviewDecision
 from gamma.schemas.response import ConversationTurnDraft
-from gamma.stream import brain as brain_module
+
 from gamma.stream.brain import StreamBrain
 from gamma.stream.models import StreamActor, StreamInputEvent
 from gamma.stream.output import PerformerBusOutputAdapter, StreamOutputDispatcher

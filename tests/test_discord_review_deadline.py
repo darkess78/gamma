@@ -24,7 +24,7 @@ def test_cold_reviewer_can_finish_for_discord_without_extending_live_stream_dead
         def shutdown(self,**kwargs):pass
     brain=SimpleNamespace(_safety_reviewer=SimpleNamespace(review=lambda text:None))
     event=StreamInputEvent(kind="chat_message",text="hello",actor=StreamActor(source=source,platform_id="1"))
-    with patch.object(settings,"speech_filter_llm_enabled",True),patch.object(settings,"stream_safety_review_timeout_seconds",5),patch.object(settings,"stream_safety_review_timeout_action","skip"),patch('gamma.stream.brain.ThreadPoolExecutor',Executor):
+    with patch.object(settings,"speech_filter_llm_enabled",True),patch.object(settings,"stream_safety_review_timeout_seconds",5),patch.object(settings,"stream_safety_review_timeout_action","skip"),patch('gamma.stream.publication_review.ThreadPoolExecutor',Executor):
         result=StreamBrain._review_stream_output_with_llm(brain,event,"Hello")
     assert result["action"]==action
     assert result["playback_approved"] is (action=="allow")

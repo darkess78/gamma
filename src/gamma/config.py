@@ -287,6 +287,10 @@ class Settings:
     )
     api_auth_enabled: bool = _bool("api_auth_enabled", default=False)
     api_bearer_token: str = _str("api_bearer_token", default="")
+    # Neuro SDK game protocol at ws://<host>:8000/v1/games/neuro?key=<games_neuro_key>
+    games_neuro_enabled: bool = _bool("games_neuro_enabled", default=False)
+    games_neuro_key: str = _str("games_neuro_key", default="", strip=True)
+    games_neuro_chooser: str = _str("games_neuro_chooser", default="model", strip=True, lower=True)
 
     llm_provider: str = _str(
         "llm",

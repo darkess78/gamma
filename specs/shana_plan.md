@@ -208,6 +208,11 @@ already run their own servers for it (Gary, Jippity).
 
 Smallest step: protocol server + Randy, no GPU.
 
+**First version done (2026-11-14):** see [games.md](games.md). Server side of
+the protocol at `ws://<host>:8000/v1/games/neuro?key=…`, off by default, with a
+random chooser for testing mods and a model chooser for real play. Speech
+messages, speaking her move commentary, and a real-mod trial remain.
+
 ### W8. Shana coding her own improvements — **Do, changed**
 
 The goal is reachable; the current approach can't get there. The existing

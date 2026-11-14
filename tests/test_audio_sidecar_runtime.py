@@ -11,7 +11,8 @@ from unittest.mock import patch
 from gamma.config import settings
 from gamma.resources.models import PlacementCandidate, PlacementDecision, RuntimeTarget, WorkloadSpec
 from gamma.resources.runtime_registry import ResourceRoutingPolicy, ResourceRoutingRegistry
-from gamma.supervisor.manager import ProcessManager, SidecarVramEstimate
+from gamma.supervisor.manager import ProcessManager
+from gamma.supervisor.sidecars import SidecarVramEstimate
 
 
 class AudioSidecarRuntimeTest(unittest.TestCase):
@@ -70,7 +71,7 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
             patch.object(settings, "speaker_emotion_device", "cuda:0"),
             patch.object(settings, "audio_event_device", "cpu"),
             patch.object(manager, "_admitted_sidecar_device", return_value="cuda:1") as admitted,
-            patch("gamma.supervisor.manager.log_event"),
+            patch("gamma.supervisor.sidecars.log_event"),
         ):
             env = manager._audio_understanding_admission_env()
 
@@ -103,7 +104,7 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
             patch.dict("os.environ", {"QWEN_TTS_DEVICE": "cuda:0"}, clear=False),
             patch.object(settings, "qwen_tts_device", "auto"),
             patch.object(manager, "_admitted_sidecar_device", return_value="cuda:1") as admitted,
-            patch("gamma.supervisor.manager.log_event"),
+            patch("gamma.supervisor.sidecars.log_event"),
         ):
             env = manager._qwen_tts_admission_env()
 
@@ -138,7 +139,7 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
             patch.dict("os.environ", {}, clear=True),
             patch.object(settings, "qwen_tts_device", "cpu"),
             patch.object(manager, "_admitted_sidecar_device", return_value="cuda:1") as admitted,
-            patch("gamma.supervisor.manager.log_event"),
+            patch("gamma.supervisor.sidecars.log_event"),
         ):
             env = manager._qwen_tts_admission_env()
 
@@ -149,9 +150,9 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
         manager = ProcessManager()
         registry = ResourceRoutingRegistry(policy=ResourceRoutingPolicy(startup_admission=False), targets=())
         with (
-            patch("gamma.supervisor.manager.load_resource_routing_registry", return_value=registry),
-            patch("gamma.supervisor.manager.ResourcePlacementCoordinator") as coordinator,
-            patch("gamma.supervisor.manager.log_event"),
+            patch("gamma.supervisor.sidecars.load_resource_routing_registry", return_value=registry),
+            patch("gamma.supervisor.sidecars.ResourcePlacementCoordinator") as coordinator,
+            patch("gamma.supervisor.sidecars.log_event"),
         ):
             device = manager._admitted_sidecar_device(
                 provider="qwen-tts",
@@ -177,9 +178,9 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
             targets=(target,),
         )
         with (
-            patch("gamma.supervisor.manager.load_resource_routing_registry", return_value=registry),
-            patch("gamma.supervisor.manager.ResourcePlacementCoordinator") as coordinator,
-            patch("gamma.supervisor.manager.log_event") as log_event,
+            patch("gamma.supervisor.sidecars.load_resource_routing_registry", return_value=registry),
+            patch("gamma.supervisor.sidecars.ResourcePlacementCoordinator") as coordinator,
+            patch("gamma.supervisor.sidecars.log_event") as log_event,
         ):
             coordinator.return_value.rank.return_value = decision
             device = manager._admitted_sidecar_device(
@@ -218,9 +219,9 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
             targets=(),
         )
         with (
-            patch("gamma.supervisor.manager.load_resource_routing_registry", return_value=registry),
-            patch("gamma.supervisor.manager.ResourcePlacementCoordinator") as coordinator,
-            patch("gamma.supervisor.manager.log_event") as log_event,
+            patch("gamma.supervisor.sidecars.load_resource_routing_registry", return_value=registry),
+            patch("gamma.supervisor.sidecars.ResourcePlacementCoordinator") as coordinator,
+            patch("gamma.supervisor.sidecars.log_event") as log_event,
         ):
             coordinator.return_value.rank.return_value = decision
             device = manager._admitted_sidecar_device(
@@ -264,7 +265,7 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
             )
             with (
                 patch.object(settings, "data_dir", data_dir),
-                patch("gamma.supervisor.manager.load_resource_routing_registry", return_value=registry),
+                patch("gamma.supervisor.sidecars.load_resource_routing_registry", return_value=registry),
             ):
                 estimate = manager._sidecar_vram_estimate("qwen-tts")
 
@@ -300,7 +301,7 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
             )
             with (
                 patch.object(settings, "data_dir", data_dir),
-                patch("gamma.supervisor.manager.load_resource_routing_registry", return_value=registry),
+                patch("gamma.supervisor.sidecars.load_resource_routing_registry", return_value=registry),
             ):
                 estimate = manager._sidecar_vram_estimate("audio-understanding")
 
@@ -329,7 +330,7 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
             },
         )
         with (
-            patch("gamma.supervisor.manager.collect_resource_snapshot", return_value=snapshot),
+            patch("gamma.supervisor.sidecars.collect_resource_snapshot", return_value=snapshot),
             patch.object(manager, "process_payload", return_value={"running": True, "pid": 1234}),
         ):
             payload = manager._sidecar_allocation_payload(
@@ -350,7 +351,7 @@ class AudioSidecarRuntimeTest(unittest.TestCase):
         manager = ProcessManager()
         with (
             patch.object(manager, "_sidecar_allocation_payload", return_value={"provider": "qwen-tts", "kind": "qwen-tts"}) as payload,
-            patch("gamma.supervisor.manager.log_event") as log_event,
+            patch("gamma.supervisor.sidecars.log_event") as log_event,
         ):
             result = manager._log_sidecar_allocation(
                 provider="qwen-tts",

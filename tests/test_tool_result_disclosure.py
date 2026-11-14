@@ -265,11 +265,11 @@ def test_real_sqlite_concurrent_reads_keep_storage(tool_state):
 def test_http_client_recipient_spoof_is_ignored(tool_state, monkeypatch):
     from fastapi.testclient import TestClient
     from gamma.main import app
-    from gamma.api import routes
+    from gamma.api import deps
     state = tool_state
     state.service._llm = FullCapture([CASES[0], CASES[1]])
     monkeypatch.setattr(settings, "api_auth_enabled", False)
-    monkeypatch.setattr(routes, "get_conversation_service", lambda: state.service)
+    monkeypatch.setattr(deps, "get_conversation_service", lambda: state.service)
     client = TestClient(app)
     try:
         response = client.post("/v1/conversation/respond", json={"user_text":"fixture topic", "fast_mode":True,

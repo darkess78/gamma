@@ -147,12 +147,12 @@ def test_direct_executor_requires_complete_owner_profile(core_state, profile, re
 @pytest.mark.parametrize("path", ["structured", "metadata", "inferred"])
 def test_authenticated_http_preserves_actor_resolution(core_state, monkeypatch, actor, path):
     from fastapi.testclient import TestClient
-    from gamma.api import routes
+    from gamma.api import deps, routes_stream
     from gamma.main import app
     state = core_state
     monkeypatch.setattr(settings, "api_auth_enabled", True)
     monkeypatch.setattr(settings, "api_bearer_token", "synthetic-core-token")
-    monkeypatch.setattr(routes, "get_conversation_service", lambda: state.service)
+    monkeypatch.setattr(deps, "get_conversation_service", lambda: state.service)
     state.service._llm = FullCapture([] if path == "inferred" else [core_call()], metadata=path == "metadata")
     payload = {"user_text": "remember: " + FACT if path == "inferred" else
                "Please record a permanent synthetic fact with all necessary context for a durable conversation.",
@@ -180,16 +180,16 @@ def test_authenticated_http_preserves_actor_resolution(core_state, monkeypatch, 
 @pytest.mark.parametrize("path", ["structured", "inferred"])
 def test_stream_http_checks_actor_before_core_write(core_state, monkeypatch, actor, path):
     from fastapi.testclient import TestClient
-    from gamma.api import routes
+    from gamma.api import deps, routes_stream
     from gamma.main import app
     from gamma.stream.brain import StreamBrain
     state = core_state
     monkeypatch.setattr(settings, "api_auth_enabled", True)
     monkeypatch.setattr(settings, "api_bearer_token", "synthetic-core-token")
-    monkeypatch.setattr(routes, "get_stream_brain", lambda: StreamBrain(
+    monkeypatch.setattr(deps, "get_stream_brain", lambda: StreamBrain(
         conversation=state.service, output_dispatcher=Dispatcher(), safety_reviewer=Reviewer()))
-    monkeypatch.setattr(routes, "load_presence_state", lambda **kwargs: {})
-    monkeypatch.setattr(routes, "apply_presence_to_stream_event", lambda event, **kwargs: (event, False))
+    monkeypatch.setattr(routes_stream, "load_presence_state", lambda **kwargs: {})
+    monkeypatch.setattr(routes_stream, "apply_presence_to_stream_event", lambda event, **kwargs: (event, False))
     state.service._llm = FullCapture([] if path == "inferred" else [core_call()])
     context = speaker_context(actor)
     payload = {"kind": "chat_message", "text": "remember: " + FACT + " Shana" if path == "inferred" else

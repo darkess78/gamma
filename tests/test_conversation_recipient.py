@@ -324,10 +324,10 @@ def test_private_recipient_keeps_existing_other_person_subject_filter(fixture_st
 def test_real_http_bearer_and_json_do_not_grant_private_recipient(fixture_state, monkeypatch, auth_enabled):
     from fastapi.testclient import TestClient
     from gamma.main import app
-    from gamma.api import routes
+    from gamma.api import deps
     monkeypatch.setattr(settings, "api_auth_enabled", auth_enabled)
     monkeypatch.setattr(settings, "api_bearer_token", "fixture-token-only")
-    monkeypatch.setattr(routes, "get_conversation_service", lambda: fixture_state.service)
+    monkeypatch.setattr(deps, "get_conversation_service", lambda: fixture_state.service)
     # No lifespan start: this exercises the real route/auth middleware without starting workers.
     client = TestClient(app)
     try:

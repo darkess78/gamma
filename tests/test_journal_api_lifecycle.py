@@ -39,7 +39,7 @@ def test_authenticated_asgi_lifespan_runs_actual_scoped_recovery(tmp_path, monke
     import sys
     from fastapi.testclient import TestClient
     from sqlmodel import Session, select
-    from gamma.api import routes
+    from gamma.api import deps
     from gamma.conversation.service import ConversationService
     from gamma.memory.continuity import ContinuityService, ConversationJournalEntry
     from gamma.memory.journal_lifecycle import JournalRecovery
@@ -69,7 +69,7 @@ os._exit(23)
     monkeypatch.setattr(main, "get_proactive_scheduler", Scheduler)
     monkeypatch.setattr(main, "start_minecraft_coordinator", lambda: "fixture")
     monkeypatch.setattr(main, "reset_minecraft_coordinator", lambda _: None)
-    monkeypatch.setattr(routes, "get_conversation_service", lambda: conversation)
+    monkeypatch.setattr(deps, "get_conversation_service", lambda: conversation)
     with TestClient(main.app) as client:
         assert client.get("/health").status_code == 401
         response = client.get("/v1/conversation/sessions/live/continuity",

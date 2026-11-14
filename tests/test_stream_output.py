@@ -352,14 +352,14 @@ class StreamOutputTest(unittest.TestCase):
         self.assertEqual(recent[0]["output_event"]["payload"]["text"], "Two")
 
     def test_performer_recent_events_route_reads_bus(self) -> None:
-        from gamma.api.routes import audio_artifact, performer_recent_events, performer_status, performer_target_clear, performer_target_mute, performer_target_unmute
+        from gamma.api.routes_performer import audio_artifact, performer_recent_events, performer_status, performer_target_clear, performer_target_mute, performer_target_unmute
 
         bus = PerformerEventBus()
         PerformerBusOutputAdapter(bus).handle(
             StreamOutputEvent(input_event_id="in-1", turn_id="turn-1", type="subtitle_line", payload={"text": "Monitor this."})
         )
         bus.publish(PerformerOutputEvent(type="subtitle_update", turn_id="monitor-1", target_policy="dashboard_monitor", payload={"text": "Private"}))
-        with patch("gamma.api.routes.get_performer_bus", return_value=bus):
+        with patch("gamma.api.deps.get_performer_bus", return_value=bus):
             result = performer_recent_events(limit=5)
             after_result = performer_recent_events(limit=5, after_sequence=1)
             status = performer_status()
@@ -378,7 +378,7 @@ class StreamOutputTest(unittest.TestCase):
         self.assertEqual([item["turn_id"] for item in after_result["items"]], ["monitor-1"])
         self.assertFalse(after_result["replay"]["gap"])
 
-        with patch("gamma.api.routes.get_performer_bus", return_value=bus):
+        with patch("gamma.api.deps.get_performer_bus", return_value=bus):
             mute_result = performer_target_mute("stream_public", reason="test")
             unmute_result = performer_target_unmute("stream_public", reason="test")
             clear_result = performer_target_clear("stream_public", reason="test")

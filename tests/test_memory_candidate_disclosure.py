@@ -133,12 +133,12 @@ def test_private_view_does_not_create_write_permission(candidate_state, path, ac
 @pytest.mark.parametrize("path", PATHS)
 def test_actual_http_does_not_accept_candidate_private_claims(candidate_state, monkeypatch, path):
     from fastapi.testclient import TestClient
-    from gamma.api import routes
+    from gamma.api import deps, routes_stream
     from gamma.main import app
     state = candidate_state
     monkeypatch.setattr(settings, "api_auth_enabled", True)
     monkeypatch.setattr(settings, "api_bearer_token", "synthetic-candidate-token")
-    monkeypatch.setattr(routes, "get_conversation_service", lambda: state.service)
+    monkeypatch.setattr(deps, "get_conversation_service", lambda: state.service)
     state.service._llm = CandidateProvider(path, claims=True)
     text = "My brother CandidatePerson likes CANDIDATE_HEURISTIC_TEA." if path == "heuristic" else (
         "Please consider this durable synthetic fact carefully and offer a helpful thoughtful response for us today.")
@@ -161,7 +161,7 @@ def test_actual_http_does_not_accept_candidate_private_claims(candidate_state, m
 @pytest.mark.parametrize("producer", ["twitch", "discord_message", "discord_voice"])
 def test_actual_stream_http_and_discord_forward_empty_view(candidate_state, monkeypatch, producer):
     from fastapi.testclient import TestClient
-    from gamma.api import routes
+    from gamma.api import deps, routes_stream
     from gamma.main import app
     from gamma.stream.brain import StreamBrain
     from gamma.stream.models import StreamInputEvent, StreamActor
@@ -170,10 +170,10 @@ def test_actual_stream_http_and_discord_forward_empty_view(candidate_state, monk
     state = candidate_state
     monkeypatch.setattr(settings, "api_auth_enabled", True)
     monkeypatch.setattr(settings, "api_bearer_token", "synthetic-candidate-token")
-    monkeypatch.setattr(routes, "get_stream_brain", lambda: StreamBrain(
+    monkeypatch.setattr(deps, "get_stream_brain", lambda: StreamBrain(
         conversation=state.service, output_dispatcher=Dispatcher(), safety_reviewer=Reviewer()))
-    monkeypatch.setattr(routes, "load_presence_state", lambda **kwargs: {})
-    monkeypatch.setattr(routes, "apply_presence_to_stream_event", lambda event, **kwargs: (event, False))
+    monkeypatch.setattr(routes_stream, "load_presence_state", lambda **kwargs: {})
+    monkeypatch.setattr(routes_stream, "apply_presence_to_stream_event", lambda event, **kwargs: (event, False))
     state.service._llm = CandidateProvider("fast_structured", claims=True)
     text = "Shana, please consider this durable synthetic fact carefully."
     metadata = {"output_target_policy": "stream_public" if producer == "twitch" else "discord_call",

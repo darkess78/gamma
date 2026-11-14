@@ -7,7 +7,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from .config import settings
-from .api.routes import get_proactive_scheduler, reset_minecraft_coordinator, router, start_minecraft_coordinator
+from .api.deps import get_proactive_scheduler
+from .api.routes import reset_minecraft_coordinator, router, start_minecraft_coordinator
 from .observability import configure_logging, install_request_logging
 from .memory.journal_lifecycle import JournalRecovery
 

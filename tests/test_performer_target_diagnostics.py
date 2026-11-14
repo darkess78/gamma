@@ -9,7 +9,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from gamma.config import settings
 from gamma.main import app
-from gamma.api import routes
+from gamma.api import deps
 from gamma.performer.bus import PerformerEventBus
 from gamma.performer.models import DEFAULT_TARGET_POLICY, KNOWN_TARGET_POLICIES, PerformerOutputEvent
 
@@ -25,9 +25,9 @@ def output_state(tmp_path, monkeypatch):
     bus = PerformerEventBus(history_limit=12, state_path=tmp_path/"bus-state.json")
     monkeypatch.setattr(settings, "api_auth_enabled", True)
     monkeypatch.setattr(settings, "api_bearer_token", TOKEN)
-    monkeypatch.setattr(routes, "get_performer_bus", lambda: bus)
+    monkeypatch.setattr(deps, "get_performer_bus", lambda: bus)
     for name in ("get_vtube_studio_adapter", "get_vtube_studio_runner", "get_discord_runtime"):
-        monkeypatch.setattr(routes, name, lambda: SimpleNamespace(status=lambda: {"synthetic": True}))
+        monkeypatch.setattr(deps, name, lambda: SimpleNamespace(status=lambda: {"synthetic": True}))
     for target, count in (("stream_public", 2), ("discord_call", 2),
                           ("dashboard_monitor", 2), ("unknown_target", 1)):
         for index in range(count):

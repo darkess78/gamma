@@ -16,6 +16,7 @@ with patch.object(status_module, "SystemStatusService", autospec=True), patch.ob
     roundtrip_module, "VoiceRoundtripService", autospec=True
 ), patch.object(live_jobs_module, "LiveVoiceJobManager", autospec=True):
     from gamma.api import routes
+    from gamma.api import deps, pages, routes_conversation
     from gamma.main import app as api_app
 
 
@@ -41,9 +42,9 @@ class ApiRoutesTest(unittest.TestCase):
         )
         conversation_service = Mock()
         conversation_service.respond.return_value = assistant_response
-        with patch("gamma.api.routes.get_conversation_service", return_value=conversation_service):
-            response = routes.conversation_respond(
-                routes.ConversationRequest(
+        with patch("gamma.api.deps.get_conversation_service", return_value=conversation_service):
+            response = routes_conversation.conversation_respond(
+                routes_conversation.ConversationRequest(
                     user_text="hello",
                     session_id="sess-1",
                     synthesize_speech=True,
@@ -72,9 +73,9 @@ class ApiRoutesTest(unittest.TestCase):
     def test_conversation_respond_maps_conversation_error_to_400(self) -> None:
         conversation_service = Mock()
         conversation_service.respond.side_effect = ConversationError("bad request")
-        with patch("gamma.api.routes.get_conversation_service", return_value=conversation_service):
+        with patch("gamma.api.deps.get_conversation_service", return_value=conversation_service):
             with self.assertRaises(HTTPException) as ctx:
-                routes.conversation_respond(routes.ConversationRequest(user_text="hello"))
+                routes_conversation.conversation_respond(routes_conversation.ConversationRequest(user_text="hello"))
 
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertEqual(ctx.exception.detail, "bad request")
@@ -82,9 +83,9 @@ class ApiRoutesTest(unittest.TestCase):
     def test_conversation_respond_maps_external_service_error_to_502(self) -> None:
         conversation_service = Mock()
         conversation_service.respond.side_effect = ExternalServiceError("upstream unavailable")
-        with patch("gamma.api.routes.get_conversation_service", return_value=conversation_service):
+        with patch("gamma.api.deps.get_conversation_service", return_value=conversation_service):
             with self.assertRaises(HTTPException) as ctx:
-                routes.conversation_respond(routes.ConversationRequest(user_text="hello"))
+                routes_conversation.conversation_respond(routes_conversation.ConversationRequest(user_text="hello"))
 
         self.assertEqual(ctx.exception.status_code, 502)
         self.assertEqual(ctx.exception.detail, "upstream unavailable")
@@ -92,19 +93,19 @@ class ApiRoutesTest(unittest.TestCase):
     def test_conversation_respond_maps_configuration_error_to_500(self) -> None:
         conversation_service = Mock()
         conversation_service.respond.side_effect = ConfigurationError("misconfigured")
-        with patch("gamma.api.routes.get_conversation_service", return_value=conversation_service):
+        with patch("gamma.api.deps.get_conversation_service", return_value=conversation_service):
             with self.assertRaises(HTTPException) as ctx:
-                routes.conversation_respond(routes.ConversationRequest(user_text="hello"))
+                routes_conversation.conversation_respond(routes_conversation.ConversationRequest(user_text="hello"))
 
         self.assertEqual(ctx.exception.status_code, 500)
         self.assertEqual(ctx.exception.detail, "misconfigured")
 
     def test_performer_page_and_default_image_routes(self) -> None:
-        page = routes.performer_page()
-        image = routes.performer_default_image()
-        monitor = routes.monitor_page()
-        overlay = routes.subtitle_overlay_page()
-        favicon = routes.favicon()
+        page = pages.performer_page()
+        image = pages.performer_default_image()
+        monitor = pages.monitor_page()
+        overlay = pages.subtitle_overlay_page()
+        favicon = pages.favicon()
 
         self.assertEqual(page.media_type, "text/html")
         self.assertIn("window.GAMMA_SHANA_BASE_URL", page.body.decode("utf-8"))
@@ -119,15 +120,15 @@ class ApiRoutesTest(unittest.TestCase):
         self.assertIn("window.GAMMA_SHANA_BASE_URL", overlay.body.decode("utf-8"))
         self.assertIn("window.GAMMA_DASHBOARD_BASE_URL", overlay.body.decode("utf-8"))
         self.assertEqual(favicon.media_type, "image/svg+xml")
-        self.assertEqual(str(favicon.path), str(routes.DASHBOARD_STATIC_DIR / "favicon.svg"))
+        self.assertEqual(str(favicon.path), str(deps.DASHBOARD_STATIC_DIR / "favicon.svg"))
 
     def test_dashboard_subpage_routes_redirect_to_dashboard_app(self) -> None:
         with patch.object(routes.settings, "dashboard_public_host", "10.78.78.29"):
-            dashboard = routes.dashboard()
-            response = routes.dashboard_page_redirect("live")
-            presence = routes.presence_page_redirect()
-            talk = routes.talk_page_redirect()
-            twitch = routes.dashboard_page_redirect("twitch")
+            dashboard = pages.dashboard()
+            response = pages.dashboard_page_redirect("live")
+            presence = pages.presence_page_redirect()
+            talk = pages.talk_page_redirect()
+            twitch = pages.dashboard_page_redirect("twitch")
 
         self.assertEqual(dashboard.status_code, 307)
         self.assertIn("/dashboard", dashboard.headers["location"])
@@ -148,15 +149,15 @@ class ApiRoutesTest(unittest.TestCase):
 
     def test_public_dashboard_routes_on_api_app_do_not_json_404(self) -> None:
         page_paths = [
-            ("dashboard", routes.dashboard),
-            ("talk", routes.talk_page_redirect),
-            ("live", lambda: routes.dashboard_page_redirect("live")),
-            ("monitor", lambda: routes.dashboard_page_redirect("monitor")),
-            ("presence", lambda: routes.dashboard_page_redirect("presence")),
-            ("status", lambda: routes.dashboard_page_redirect("status")),
-            ("stream", lambda: routes.dashboard_page_redirect("stream")),
-            ("memory", lambda: routes.dashboard_page_redirect("memory")),
-            ("settings", lambda: routes.dashboard_page_redirect("settings")),
+            ("dashboard", pages.dashboard),
+            ("talk", pages.talk_page_redirect),
+            ("live", lambda: pages.dashboard_page_redirect("live")),
+            ("monitor", lambda: pages.dashboard_page_redirect("monitor")),
+            ("presence", lambda: pages.dashboard_page_redirect("presence")),
+            ("status", lambda: pages.dashboard_page_redirect("status")),
+            ("stream", lambda: pages.dashboard_page_redirect("stream")),
+            ("memory", lambda: pages.dashboard_page_redirect("memory")),
+            ("settings", lambda: pages.dashboard_page_redirect("settings")),
         ]
         with (
             patch.object(routes.settings, "dashboard_public_scheme", "https"),

@@ -219,7 +219,7 @@ class VTubeStudioAdapterTest(unittest.TestCase):
         anyio.run(_run)
 
     def test_performer_status_includes_vtube_studio_adapter(self) -> None:
-        from gamma.api.routes import performer_status
+        from gamma.api.routes_performer import performer_status
 
         bus = Mock()
         bus.recent.return_value = []
@@ -231,10 +231,10 @@ class VTubeStudioAdapterTest(unittest.TestCase):
         discord.status.return_value = {"enabled": False}
 
         with (
-            patch("gamma.api.routes.get_performer_bus", return_value=bus),
-            patch("gamma.api.routes.get_vtube_studio_adapter", return_value=adapter),
-            patch("gamma.api.routes.get_vtube_studio_runner", return_value=runner),
-            patch("gamma.api.routes.get_discord_runtime", return_value=discord),
+            patch("gamma.api.deps.get_performer_bus", return_value=bus),
+            patch("gamma.api.deps.get_vtube_studio_adapter", return_value=adapter),
+            patch("gamma.api.deps.get_vtube_studio_runner", return_value=runner),
+            patch("gamma.api.deps.get_discord_runtime", return_value=discord),
         ):
             status = performer_status()
 

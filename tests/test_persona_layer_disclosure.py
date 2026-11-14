@@ -326,7 +326,7 @@ def test_shared_view_does_not_read_private_relationship_file(fixture_state, monk
 @pytest.mark.parametrize("auth_enabled", [True, False])
 def test_real_http_body_cannot_select_private_persona_layers(fixture_state, monkeypatch, auth_enabled):
     from fastapi.testclient import TestClient
-    from gamma.api import routes
+    from gamma.api import deps
     from gamma.config import settings
     from gamma.main import app
 
@@ -334,7 +334,7 @@ def test_real_http_body_cannot_select_private_persona_layers(fixture_state, monk
     fixture_state.service._llm = LayerCapture()
     monkeypatch.setattr(settings, "api_auth_enabled", auth_enabled)
     monkeypatch.setattr(settings, "api_bearer_token", "synthetic-token")
-    monkeypatch.setattr(routes, "get_conversation_service", lambda: fixture_state.service)
+    monkeypatch.setattr(deps, "get_conversation_service", lambda: fixture_state.service)
     client = TestClient(app)
     try:
         response = client.post("/v1/conversation/respond", headers={"Authorization": "Bearer synthetic-token"},

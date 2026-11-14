@@ -7,15 +7,16 @@ import pytest
 from fastapi import HTTPException
 
 from gamma.api import routes
+from gamma.api import deps, routes_memory, routes_stream
 from gamma.schemas.memory import ViewerTrustPayload
 
 
 def test_missing_memory_person_maps_to_404() -> None:
     memory = Mock()
     memory.delete_known_person.return_value = False
-    with patch.object(routes, "get_memory_service", return_value=memory):
+    with patch.object(deps, "get_memory_service", return_value=memory):
         with pytest.raises(HTTPException) as caught:
-            routes.memory_person_delete(999)
+            routes_memory.memory_person_delete(999)
     assert caught.value.status_code == 404
 
 
@@ -33,9 +34,9 @@ def test_viewer_trust_routes_are_shana_owned() -> None:
     )
     store.list_records.return_value = [record]
     store.upsert.return_value = record
-    with patch.object(routes, "get_viewer_trust_store", return_value=store):
-        listed = routes.stream_viewer_trust()
-        saved = routes.stream_viewer_trust_save(
+    with patch.object(deps, "get_viewer_trust_store", return_value=store):
+        listed = routes_stream.stream_viewer_trust()
+        saved = routes_stream.stream_viewer_trust_save(
             ViewerTrustPayload(platform_user_id="u1", display_name="Viewer", trust_level="trusted")
         )
     assert listed["items"][0]["platform_user_id"] == "u1"

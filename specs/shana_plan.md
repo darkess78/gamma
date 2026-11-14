@@ -274,6 +274,24 @@ function, gets rebuilt here rather than patched.
 Smallest step: connect Monitor's private text to the core (needs a model to
 judge quality, so real-model testing waits for the GPU).
 
+### W11. 3D avatar — **Do (started 2026-11-14)**
+
+Shana gets a 3D VRM model built in VRoid Studio, shown in Warudo (VSeeFace as
+fallback) on the Windows streaming PC. Gamma drives the face over the VMC
+protocol (OSC over UDP): emotion → expression blendshapes, speech → mouth
+shapes, plus blinking. The avatar app does idle body motion and the OBS
+output. VTube Studio stays for 2D only; it has no 3D support.
+
+- Done: VMC adapter, off by default, with tests and a demo command. See
+  [avatar_3d.md](avatar_3d.md); model sheet and VRoid steps in
+  `docs/shana_3d_model_sheet.md`.
+- Owner: build and export the model, install Warudo, open UDP 39539 from
+  Gamma PC, then run the demo against it.
+- Later: lip sync at playback time (or the app's audio lip sync), gestures,
+  jacket switching.
+
+No GPU needed.
+
 ## Order
 
 **Phase 1 — no GPU needed**

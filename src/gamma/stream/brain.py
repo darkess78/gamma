@@ -341,9 +341,11 @@ class StreamBrain(PublicationReviewMixin):
             owner_ids = (_load_config().get("owner", {}) or {}).get("platform_ids", {}) or {}
             if event.actor.source.strip().lower() == "twitch" and settings.twitch_owner_user_id:
                 owner_ids = {**owner_ids, "twitch": settings.twitch_owner_user_id}
+            if getattr(self, "_trust_store", None) is None:
+                self._trust_store = ViewerTrustStore()  # one per brain, not one per chat message
             return standing_for(event.actor.source, event.actor.platform_id, owner_ids=owner_ids,
                                 memory=getattr(self._conversation, "_memory", None),
-                                trust_store=ViewerTrustStore()).level
+                                trust_store=self._trust_store).level
         except Exception:
             return "suspicious"  # unknown standing: store nothing about them
 

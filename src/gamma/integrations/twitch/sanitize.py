@@ -22,7 +22,16 @@ _PROMPT_INJECTION_RE = re.compile(
     r"\b(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+|your\s+|the\s+|my\s+)*"
     r"(?:previous\s+|prior\s+|earlier\s+|above\s+)?(?:instructions|rules|prompts?|guidelines)\b"
     r"|\bsystem\s+prompt\b|\bdeveloper\s+(?:message|mode)\b|\breveal\s+your\s+(?:prompt|instructions)\b"
-    r"|\bnew\s+instructions\s*:|\bjailbreak\b",
+    r"|\bnew\s+instructions\s*:|\bjailbreak\b"
+    # "Put words in her mouth" tricks seen in real injection data (deepset/prompt-injections,
+    # identity v2 run 2026-11-14). "Shana say hi to chat" stays ordinary chat: only a quoted
+    # line, "say that you/I ...", or a standing order counts.
+    r"|\bforget\s+(?:everything|all\s+(?:that|of\s+this|before|above))\b|\babandon\s+all\s+your\b"
+    r"|\brepeat\s+(?:after\s+me|this|exactly|the\s+following)\b"
+    r"|\bsay\s*[:\"'“‘]|\bsay\s+(?:that\s+)?(?:you|i)\s+(?:hate|love|are|am|support|think)\b"
+    r"|\b(?:answer|reply|respond)\s+(?:to\s+)?every\s+(?:question|message)\s+with\b"
+    r"|\bfrom\s+now\s+on,?\s+you\s+(?:are|will|must|only)\b"
+    r"|\b(?:type|write|print)\s+(?:exactly|the\s+following)\b",
     re.IGNORECASE,
 )
 _REACTION_WORDS = {"lol", "lmao", "haha", "hahaha", "wtf", "wow", "nice", "rip"}

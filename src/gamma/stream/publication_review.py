@@ -54,6 +54,18 @@ class PublicationReviewMixin:
                 "safe_output": "filtered",
                 "playback_approved": False,
             }
+        from ..safety.parroting import parroted
+        viewer_text = str(event.metadata.get("raw_text") or event.text or "")
+        if event.actor.source.strip().lower() not in {"local_monitor", "local"} and parroted(output_text, viewer_text):
+            return {
+                "action": "filtered",
+                "blocked": True,
+                "source": "chat_parroting",
+                "stage": "fast",
+                "matched_rules": ["reply_repeats_viewer_words"],
+                "safe_output": "filtered",
+                "playback_approved": False,
+            }
         fast_review = _fast_stream_safety_review(output_text)
         if fast_review["blocked"]:
             return {

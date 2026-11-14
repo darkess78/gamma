@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from contextlib import contextmanager
+from typing import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -303,10 +305,20 @@ class StreamTempMemoryStore:
             deleted = int(cursor.rowcount or 0)
         return {"ok": True, "deleted": deleted, "bucket": bucket}
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        """A connection that commits (or rolls back) and is closed when the ``with`` block ends.
+
+        ``with sqlite3.connect(...)`` alone only commits; the connection stays open until
+        garbage collection, which leaked file handles during busy streams.
+        """
         conn = sqlite3.connect(self.path)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def _ensure_schema(self) -> None:
         with self._connect() as conn:

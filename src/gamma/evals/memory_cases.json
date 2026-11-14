@@ -1,0 +1,407 @@
+{
+  "about": "Seeded memory history for retrieval checks. Ages are days before the run. Each question lists the memory ids a good search should return in its top 5; 'avoid' ids are older versions that a correct answer should not rank above the newer one. Questions marked 'paraphrase' share no keywords with the answer; keyword search is expected to miss them until meaning-based search exists.",
+  "episodes": [
+    {
+      "id": "e1",
+      "session": "dash-1",
+      "age": 40,
+      "importance": 0.6,
+      "summary": "Owner adopted a grey cat named Biscuit from the shelter",
+      "tags": "pets cat"
+    },
+    {
+      "id": "e2",
+      "session": "dash-1",
+      "age": 39,
+      "importance": 0.4,
+      "summary": "Owner said Biscuit keeps knocking cups off the desk",
+      "tags": "pets cat"
+    },
+    {
+      "id": "e3",
+      "session": "dash-2",
+      "age": 30,
+      "importance": 0.7,
+      "summary": "Owner started a new job as a backend developer at a logistics company",
+      "tags": "work job"
+    },
+    {
+      "id": "e4",
+      "session": "dash-2",
+      "age": 29,
+      "importance": 0.5,
+      "summary": "Owner complained the standup meetings at work run too long",
+      "tags": "work"
+    },
+    {
+      "id": "e5",
+      "session": "dash-3",
+      "age": 20,
+      "importance": 0.8,
+      "summary": "Owner's sister Mia is getting married in June",
+      "tags": "family wedding"
+    },
+    {
+      "id": "e6",
+      "session": "dash-3",
+      "age": 19,
+      "importance": 0.5,
+      "summary": "Owner needs to buy a suit for Mia's wedding",
+      "tags": "family wedding todo"
+    },
+    {
+      "id": "e7",
+      "session": "dash-4",
+      "age": 14,
+      "importance": 0.5,
+      "summary": "Owner and Shana played Balatro and lost on ante 6 to the boss blind",
+      "tags": "games balatro"
+    },
+    {
+      "id": "e8",
+      "session": "dash-4",
+      "age": 13,
+      "importance": 0.6,
+      "summary": "Owner wants to try a flush build next time in Balatro",
+      "tags": "games balatro plan"
+    },
+    {
+      "id": "e9",
+      "session": "dash-5",
+      "age": 10,
+      "importance": 0.4,
+      "summary": "Owner made ramen for dinner and burned the eggs",
+      "tags": "food cooking"
+    },
+    {
+      "id": "e10",
+      "session": "dash-5",
+      "age": 9,
+      "importance": 0.6,
+      "summary": "Owner is learning to cook and wants easy weeknight recipes",
+      "tags": "food cooking goal"
+    },
+    {
+      "id": "e11",
+      "session": "dash-6",
+      "age": 7,
+      "importance": 0.7,
+      "summary": "Owner has a dentist appointment on Thursday afternoon",
+      "tags": "appointment health"
+    },
+    {
+      "id": "e12",
+      "session": "dash-6",
+      "age": 6,
+      "importance": 0.3,
+      "summary": "Owner said the weather has been rainy all week",
+      "tags": "weather"
+    },
+    {
+      "id": "e13",
+      "session": "dash-7",
+      "age": 4,
+      "importance": 0.6,
+      "summary": "Owner is working on the manga localizer project and fighting OCR bugs",
+      "tags": "projects manga ocr"
+    },
+    {
+      "id": "e14",
+      "session": "dash-7",
+      "age": 3,
+      "importance": 0.5,
+      "summary": "Owner thinks the OCR model confuses small furigana with main text",
+      "tags": "projects manga ocr"
+    },
+    {
+      "id": "e15",
+      "session": "dash-8",
+      "age": 2,
+      "importance": 0.5,
+      "summary": "Owner watched a movie about space and loved the soundtrack",
+      "tags": "movies music"
+    },
+    {
+      "id": "e16",
+      "session": "dash-8",
+      "age": 1,
+      "importance": 0.4,
+      "summary": "Owner is tired and stayed up too late again",
+      "tags": "sleep mood"
+    },
+    {
+      "id": "e17",
+      "session": "dash-9",
+      "age": 60,
+      "importance": 0.5,
+      "summary": "Owner said their favourite game is Hollow Knight",
+      "tags": "games favourite"
+    },
+    {
+      "id": "e18",
+      "session": "dash-9",
+      "age": 2,
+      "importance": 0.6,
+      "summary": "Owner now says Balatro has become their favourite game, over Hollow Knight",
+      "tags": "games favourite"
+    },
+    {
+      "id": "e19",
+      "session": "dash-10",
+      "age": 50,
+      "importance": 0.5,
+      "summary": "Owner was planning to move to a bigger apartment",
+      "tags": "home move"
+    },
+    {
+      "id": "e20",
+      "session": "dash-10",
+      "age": 5,
+      "importance": 0.7,
+      "summary": "Owner signed the lease and moves into the new apartment next month",
+      "tags": "home move"
+    }
+  ],
+  "facts": [
+    {
+      "id": "f1",
+      "category": "identity",
+      "age": 90,
+      "importance": 0.9,
+      "text": "The owner's name is Neety"
+    },
+    {
+      "id": "f2",
+      "category": "preference",
+      "age": 80,
+      "importance": 0.5,
+      "text": "Prefers dark mode and quiet music while working"
+    },
+    {
+      "id": "f3",
+      "category": "pet",
+      "age": 40,
+      "importance": 0.6,
+      "text": "Has a grey cat called Biscuit"
+    },
+    {
+      "id": "f4",
+      "category": "work",
+      "age": 30,
+      "importance": 0.7,
+      "text": "Works as a backend developer"
+    },
+    {
+      "id": "f5",
+      "category": "family",
+      "age": 20,
+      "importance": 0.6,
+      "text": "Has a sister named Mia"
+    },
+    {
+      "id": "f6",
+      "category": "food",
+      "age": 15,
+      "importance": 0.4,
+      "text": "Allergic to peanuts"
+    },
+    {
+      "id": "f7",
+      "category": "hobby",
+      "age": 14,
+      "importance": 0.5,
+      "text": "Plays roguelike deckbuilders like Balatro and Slay the Spire"
+    },
+    {
+      "id": "f8",
+      "category": "schedule",
+      "age": 10,
+      "importance": 0.5,
+      "text": "Usually works out on Tuesday and Friday mornings"
+    },
+    {
+      "id": "f9",
+      "category": "project",
+      "age": 4,
+      "importance": 0.6,
+      "text": "Building a manga localization editor"
+    },
+    {
+      "id": "f10",
+      "category": "preference",
+      "age": 3,
+      "importance": 0.4,
+      "text": "Dislikes long lectures and unsolicited advice"
+    }
+  ],
+  "questions": [
+    {
+      "q": "what's my cat called again?",
+      "episodes": [
+        "e1"
+      ],
+      "facts": [
+        "f3"
+      ],
+      "session": "dash-11"
+    },
+    {
+      "q": "is Biscuit still being a menace with the cups",
+      "episodes": [
+        "e2"
+      ],
+      "session": "dash-11"
+    },
+    {
+      "q": "how's the new job going, the meetings are killing me",
+      "episodes": [
+        "e4",
+        "e3"
+      ],
+      "facts": [
+        "f4"
+      ],
+      "session": "dash-11"
+    },
+    {
+      "q": "when is my sister's wedding?",
+      "episodes": [
+        "e5"
+      ],
+      "facts": [
+        "f5"
+      ],
+      "session": "dash-11"
+    },
+    {
+      "q": "I still haven't bought the suit",
+      "episodes": [
+        "e6"
+      ],
+      "session": "dash-11"
+    },
+    {
+      "q": "want to play Balatro again tonight?",
+      "episodes": [
+        "e8",
+        "e7"
+      ],
+      "facts": [
+        "f7"
+      ],
+      "session": "dash-11"
+    },
+    {
+      "q": "what build was I going to try in Balatro",
+      "episodes": [
+        "e8"
+      ],
+      "session": "dash-11"
+    },
+    {
+      "q": "any ideas for dinner? I'm bad at cooking",
+      "episodes": [
+        "e10"
+      ],
+      "session": "dash-11"
+    },
+    {
+      "q": "remind me about my dentist appointment",
+      "episodes": [
+        "e11"
+      ],
+      "session": "dash-11"
+    },
+    {
+      "q": "the OCR keeps messing up the furigana",
+      "episodes": [
+        "e14",
+        "e13"
+      ],
+      "facts": [
+        "f9"
+      ],
+      "session": "dash-11"
+    },
+    {
+      "q": "what's my favourite game?",
+      "episodes": [
+        "e18"
+      ],
+      "avoid": [
+        "e17"
+      ],
+      "session": "dash-11"
+    },
+    {
+      "q": "when am I moving apartments?",
+      "episodes": [
+        "e20"
+      ],
+      "avoid": [
+        "e19"
+      ],
+      "session": "dash-11"
+    },
+    {
+      "q": "can you snack on peanuts with me",
+      "facts": [
+        "f6"
+      ],
+      "session": "dash-11"
+    },
+    {
+      "q": "when do I usually go to the gym",
+      "facts": [
+        "f8"
+      ],
+      "session": "dash-11"
+    },
+    {
+      "q": "I'm so tired today",
+      "episodes": [
+        "e16"
+      ],
+      "session": "dash-11"
+    },
+    {
+      "q": "what was that space movie I liked",
+      "episodes": [
+        "e15"
+      ],
+      "session": "dash-11"
+    },
+    {
+      "q": "how's my kitty doing?",
+      "episodes": [
+        "e1"
+      ],
+      "session": "dash-11",
+      "paraphrase": true
+    },
+    {
+      "q": "any plans coming up with my sibling?",
+      "episodes": [
+        "e5"
+      ],
+      "session": "dash-11",
+      "paraphrase": true
+    },
+    {
+      "q": "what do I do for a living?",
+      "facts": [
+        "f4"
+      ],
+      "session": "dash-11",
+      "paraphrase": true
+    },
+    {
+      "q": "anything I should avoid eating?",
+      "facts": [
+        "f6"
+      ],
+      "session": "dash-11",
+      "paraphrase": true
+    }
+  ]
+}

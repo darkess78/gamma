@@ -39,7 +39,7 @@ other memory and people work is invisible until it is done.
 
 ## Workstreams
 
-### W0. Measurement — **Do, first**
+### W0. Measurement — **Do, first** (memory retrieval set built 2026-11-14)
 
 Without numbers, "better memory" or "more like Shana" can't be judged, and a
 fine-tune can't be compared to a prompt.
@@ -96,6 +96,21 @@ the current session, with no recency (`memory/service.py:365-400`).
 4. Nightly reflection during sleep (D10) writes summary insights.
 
 Smallest step: (1) alongside the old search, measured with W0. No GPU needed.
+
+**First pass done (2026-11-14):** `memory/retrieval.py` ranks by BM25
+relevance (stopwords, light stemming) + recency (30-day half-life) +
+importance, across sessions with a small same-session boost. Facts are now
+chosen by relevance with the two most important pinned. Measured with
+`python -m gamma.evals.memory_retrieval` on a seeded 20-episode/10-fact history:
+
+| | episode recall@5 | fact recall@5 | changed facts | paraphrases |
+|---|---|---|---|---|
+| previous search | 0% | 57% | 0% | 25% |
+| current search | 100% | 100% | 100% | 25% |
+
+Paraphrases ("kitty" for cat, "for a living" for job) still miss: that needs
+embeddings, which need a model download (an owner decision). Supersession,
+reflection and the FTS5 index for large histories remain.
 
 ### W3. Knowing people — **Do, changed**
 

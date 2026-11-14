@@ -12,6 +12,7 @@ from sqlalchemy.pool import NullPool
 
 from ..config import settings
 from ..schemas.response import MemoryCandidate
+from . import retrieval
 from .models import EpisodicMemory, KnownPerson, PersonIdentity, ProfileFact
 from .attribution import MemoryOrigin, prepare_candidate, source_key, merge_origin, manual_origin
 
@@ -177,6 +178,9 @@ def _normalize_subject_name(value: str | None) -> str | None:
 
 def _normalize_identity(value: object, *, limit: int = 200) -> str:
     return " ".join(str(value or "").strip().split())[:limit]
+
+
+MEMORY_CANDIDATES = 2000  # newest rows considered per search
 
 
 class MemoryService:
@@ -349,55 +353,67 @@ class MemoryService:
         *,
         subject_type: str | None = None,
         subject_name: str | None = None,
+        cross_session: bool = False,
     ) -> list[EpisodicMemory]:
-        """Search memories by query.
-        
-        Args:
-            query: Search query terms.
-            session_id: Optional session filter.
-            limit: Optional max results (default from settings.memory_top_k).
-            subject_type: Optional subject type filter.
-            subject_name: Optional subject name filter.
-        
-        Returns:
-            list[EpisodicMemory]: Ranked memory results.
+        """Episodes most relevant to ``query`` (see memory/retrieval.py).
+
+        Without ``cross_session`` only ``session_id``'s episodes are searched;
+        with it, all sessions are searched and the current one gets a small boost.
+        An empty query returns the most important recent episodes.
         """
-        terms = [term.strip().lower() for term in query.split() if len(term.strip()) >= 3]
+        limit = limit or settings.memory_top_k
         with Session(self._engine) as session:
             statement = select(EpisodicMemory)
-            if session_id:
+            if session_id and not cross_session:
                 statement = statement.where(EpisodicMemory.session_id == session_id)
             if subject_type:
                 statement = statement.where(EpisodicMemory.subject_type == subject_type)
             if subject_name:
                 statement = statement.where(EpisodicMemory.subject_name == _normalize_subject_name(subject_name))
-            if terms:
-                term_filters = []
-                for term in terms:
-                    term_filters.extend(
-                        (
-                            func.lower(EpisodicMemory.summary).contains(term),
-                            func.lower(EpisodicMemory.tags).contains(term),
-                        )
-                    )
-                statement = statement.where(or_(*term_filters))
-            candidate_limit = max((limit or settings.memory_top_k) * 20, 100)
-            memories = list(
-                session.exec(
-                    statement.order_by(EpisodicMemory.importance.desc(), EpisodicMemory.id.desc()).limit(candidate_limit)
-                )
-            )
-        if not terms:
-            return memories[: limit or settings.memory_top_k]
+            candidates = list(session.exec(statement.order_by(EpisodicMemory.id.desc()).limit(MEMORY_CANDIDATES)))
+        if not retrieval.terms(query):
+            candidates.sort(key=lambda m: (m.importance, m.id or 0), reverse=True)
+            return candidates[:limit]
+        ranked = retrieval.rank(
+            query, candidates,
+            text=lambda m: f"{m.summary} {m.tags}",
+            importance=lambda m: m.importance,
+            created_at=lambda m: m.created_at,
+            session=lambda m: m.session_id,
+            session_id=session_id,
+            limit=limit,
+        )
+        return [s.item for s in ranked]
 
-        scored: list[tuple[int, EpisodicMemory]] = []
-        for memory in memories:
-            haystack = f"{memory.summary} {memory.tags}".lower()
-            score = sum(1 for term in terms if term in haystack)
-            if score:
-                scored.append((score, memory))
-        scored.sort(key=lambda item: (item[0], item[1].importance, item[1].id or 0), reverse=True)
-        return [memory for _score, memory in scored[: limit or settings.memory_top_k]]
+    def get_relevant_facts(
+        self,
+        query: str | None,
+        limit: int | None = None,
+        *,
+        subject_type: str | None = "primary_user",
+        subject_name: str | None = None,
+        pinned: int = 2,
+    ) -> list[ProfileFact]:
+        """The most important fact(s), then the facts most relevant to ``query``."""
+        limit = limit or settings.memory_top_k
+        with Session(self._engine) as session:
+            statement = select(ProfileFact)
+            if subject_type:
+                statement = statement.where(ProfileFact.subject_type == subject_type)
+            if subject_name:
+                statement = statement.where(ProfileFact.subject_name == _normalize_subject_name(subject_name))
+            facts = list(session.exec(statement.order_by(ProfileFact.id.desc()).limit(MEMORY_CANDIDATES)))
+        by_importance = sorted(facts, key=lambda f: (f.importance, f.confidence, f.id or 0), reverse=True)
+        ranked = retrieval.rank(
+            query or "", facts,
+            text=lambda f: f"{f.category} {f.fact_text} {f.relationship_to_user or ''}",
+            importance=lambda f: f.importance,
+            created_at=lambda f: f.created_at,
+            limit=limit,
+        )
+        if not ranked:
+            return by_importance[:limit]
+        return retrieval.merge_pinned(by_importance[:pinned], [s.item for s in ranked], key=lambda f: f.id, limit=limit)
 
     def persist_candidates(self, candidates: Iterable[MemoryCandidate], session_id: str | None = None, *, origin: MemoryOrigin | None = None) -> int:
         """Persist memory candidates.

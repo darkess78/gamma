@@ -26,6 +26,7 @@ class LiveTurnRuntime(ABC):
         synthesize_speech: bool,
         response_mode: str = "simple_chunked",
         turn_id: str | None = None,
+        owner_verified: bool = False,
     ) -> LiveVoiceJobResponse:
         raise NotImplementedError
 
@@ -58,6 +59,7 @@ class SubprocessLiveTurnRuntime(LiveTurnRuntime):
         synthesize_speech: bool,
         response_mode: str = "simple_chunked",
         turn_id: str | None = None,
+        owner_verified: bool = False,
     ) -> LiveVoiceJobResponse:
         return await self._manager.start_job(
             audio_file=audio_file,
@@ -65,6 +67,7 @@ class SubprocessLiveTurnRuntime(LiveTurnRuntime):
             synthesize_speech=synthesize_speech,
             response_mode=response_mode,
             turn_id=turn_id,
+            owner_verified=owner_verified,
         )
 
     def get_turn(self, turn_id: str) -> LiveVoiceJobResponse:

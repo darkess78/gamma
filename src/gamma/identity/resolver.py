@@ -38,14 +38,19 @@ class IdentityResolver:
     # Public API
     # ------------------------------------------------------------------
 
+    def owner_profile(self) -> SpeakerProfile:
+        """The owner. Callers must already know the speaker is the owner
+        (a verified owner channel, or a choice the owner made in the dashboard)."""
+        return self._owner
+
     def resolve(self, ctx: "SpeakerContext | None") -> SpeakerProfile:
         """Return the SpeakerProfile for the given context.
 
-        Falls back to the owner profile when ctx is None (local solo use).
-        Returns UNKNOWN_PUBLIC when the speaker cannot be identified.
+        Falls back to the owner profile when ctx is None (local solo use and
+        authenticated callers that omit a speaker). Returns UNKNOWN_PUBLIC when
+        the speaker cannot be identified.
         """
         if ctx is None:
-            # No context provided — local solo use, assume owner.
             return self._owner
 
         profile = self._resolve_by_platform(ctx)

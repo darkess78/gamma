@@ -5,7 +5,6 @@ import asyncio
 import mimetypes
 from pathlib import Path
 
-from fastapi import APIRouter
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 

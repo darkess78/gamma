@@ -1,10 +1,10 @@
 """Stream events, traces, queue, temporary memory, self-goals and viewer trust."""
 from __future__ import annotations
 
-from fastapi import APIRouter
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from . import deps
+from ..system import owner_channel
 from ..errors import ConfigurationError, ConversationError, ExternalServiceError, GammaError
 from ..integrations.twitch.trust import VALID_TRUST_LEVELS
 from ..observability import current_request_id
@@ -42,7 +42,9 @@ def stream_viewer_trust_save(payload: ViewerTrustPayload) -> dict:
 
 
 @router.post("/v1/stream/events", response_model=StreamTurnResult)
-def stream_event(event: StreamInputEvent, synthesize_speech: bool = False, fast_mode: bool = True) -> StreamTurnResult:
+def stream_event(
+    event: StreamInputEvent, synthesize_speech: bool = False, fast_mode: bool = True, http_request: Request = None,
+) -> StreamTurnResult:
     try:
         request_id = current_request_id()
         if request_id:
@@ -57,6 +59,8 @@ def stream_event(event: StreamInputEvent, synthesize_speech: bool = False, fast_
             event,
             synthesize_speech=synthesize_speech,
             fast_mode=fast_mode,
+            owner_channel=http_request is not None
+            and owner_channel.is_owner_channel(http_request.headers.get(owner_channel.HEADER)),
         )
     except ConversationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

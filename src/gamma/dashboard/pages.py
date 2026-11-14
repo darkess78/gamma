@@ -4,8 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import APIRouter
-from fastapi import Request
+from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from ..config import settings as _app_settings

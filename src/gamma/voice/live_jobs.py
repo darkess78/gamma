@@ -68,6 +68,7 @@ class LiveVoiceJobManager:
         synthesize_speech: bool,
         response_mode: str = "simple_chunked",
         turn_id: str | None = None,
+        owner_verified: bool = False,
     ) -> LiveVoiceJobResponse:
         self._prune_finished_jobs()
         actual_turn_id = turn_id or uuid4().hex
@@ -101,6 +102,7 @@ class LiveVoiceJobManager:
             response_mode=response_mode,
             stdout_log=stdout_log,
             stderr_log=stderr_log,
+            owner_verified=owner_verified,
         )
         created_at = _utc_now()
         job = LiveVoiceJob(
@@ -396,6 +398,7 @@ class LiveVoiceJobManager:
         response_mode: str,
         stdout_log: Path,
         stderr_log: Path,
+        owner_verified: bool = False,
     ) -> subprocess.Popen[str]:
         command = [
             self._foreground_python(),
@@ -416,6 +419,8 @@ class LiveVoiceJobManager:
         ]
         if session_id:
             command.extend(["--session-id", session_id])
+        if owner_verified:
+            command.append("--owner-verified")
         with stdout_log.open("ab") as stdout_handle, stderr_log.open("ab") as stderr_handle:
             kwargs: dict[str, Any] = {
                 "cwd": settings.project_root,

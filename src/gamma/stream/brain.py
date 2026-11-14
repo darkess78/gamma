@@ -111,7 +111,7 @@ class StreamBrain(PublicationReviewMixin):
         self._self_goal_store = self_goal_store or StreamSelfGoalStore()
 
     @staticmethod
-    def _recipient_for_event(event: StreamInputEvent) -> RecipientContext:
+    def _recipient_for_event(event: StreamInputEvent, *, owner_channel: bool = False) -> RecipientContext:
         target = str(event.metadata.get("output_target_policy") or "").strip().lower() or None
         if target not in {None, "dashboard_monitor", "stream_public", "discord_call"}:
             raise ConversationError("unknown_recipient_output_target")
@@ -120,6 +120,8 @@ class StreamBrain(PublicationReviewMixin):
             or event.actor.source.strip().lower() in {"twitch", "discord"}
             or _is_public_stream_event(event)
         )
+        if not shared and _is_owner_private_event(event, owner_channel=owner_channel):
+            return RecipientContext(kind="owner_private", target_policy=target, owner_authorized=True)
         return RecipientContext(kind="shared" if shared else "unknown", target_policy=target)
 
     def handle_event(
@@ -130,7 +132,9 @@ class StreamBrain(PublicationReviewMixin):
         fast_mode: bool = True,
         brief_mode: bool = False,
         micro_mode: bool = False,
+        owner_channel: bool = False,
     ) -> StreamTurnResult:
+        """owner_channel: the API verified the request came from the owner's dashboard."""
         started_at = time.perf_counter()
         decision = self.decide(event)
         response = None
@@ -171,6 +175,8 @@ class StreamBrain(PublicationReviewMixin):
             text = (event.text or "").strip()
             if not text:
                 raise ConversationError("stream event text must not be empty for reply decisions.")
+            recipient = self._recipient_for_event(event, owner_channel=owner_channel)
+            owner_private = recipient.allows_private_memory
             conversation_args = {
                 "user_text": text,
                 "session_id": event.session_id,
@@ -180,10 +186,15 @@ class StreamBrain(PublicationReviewMixin):
                 "brief_mode": brief_mode,
                 "micro_mode": micro_mode,
                 "defer_llm_safety_review": _is_public_stream_event(event),
-                "delivery_context": "ambient" if event.kind in {"conversation_lull", "audio_event", "system"} else "public_stream",
+                "delivery_context": (
+                    ("direct_voice" if synthesize_speech else "direct_text") if owner_private
+                    else "ambient" if event.kind in {"conversation_lull", "audio_event", "system"}
+                    else "public_stream"
+                ),
                 "speech_allowed": synthesize_speech,
                 "speech_requested": synthesize_speech,
-                "recipient": self._recipient_for_event(event),
+                "recipient": recipient,
+                "owner_verified": owner_channel and event.actor.source.strip().lower() == "local_monitor",
             }
             if _is_public_stream_event(event):
                 recent_context = self._assemble_recent_context()
@@ -537,3 +548,17 @@ class StreamBrain(PublicationReviewMixin):
         return TurnDecision(decision="ignore", reason="unhandled_event_kind", metadata={"event_kind": event.kind})
 
 
+OWNER_EVENT_KINDS = {"mic_transcript", "owner_command"}
+
+
+def _is_owner_private_event(event: StreamInputEvent, *, owner_channel: bool) -> bool:
+    """The owner speaking to Shana privately from the dashboard Monitor.
+
+    Needs the verified owner channel; the event's own actor and metadata are
+    claims from the request body and are not enough by themselves.
+    """
+    return (
+        owner_channel
+        and event.actor.source.strip().lower() == "local_monitor"
+        and event.kind in OWNER_EVENT_KINDS
+    )

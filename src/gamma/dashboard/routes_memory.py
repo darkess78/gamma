@@ -1,8 +1,7 @@
 """Memory and known-person routes, proxied to Shana."""
 from __future__ import annotations
 
-from fastapi import APIRouter
-from fastapi import HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from . import deps
 

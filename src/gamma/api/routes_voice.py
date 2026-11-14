@@ -1,10 +1,10 @@
 """Voice roundtrip, transcription and live voice turn routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 from . import deps
+from ..system import owner_channel
 from ..errors import ConfigurationError, ConversationError, ExternalServiceError, GammaError
 from ..schemas.voice import LiveVoiceJobResponse, VoiceRoundtripResponse, VoiceTranscriptionResponse
 
@@ -56,6 +56,7 @@ async def voice_live_start(
     synthesize_speech: bool = Form(default=True),
     response_mode: str = Form(default="simple_chunked"),
     turn_id: str | None = Form(default=None),
+    http_request: Request = None,
 ) -> LiveVoiceJobResponse:
     try:
         return await deps.get_live_turn_runtime().start_turn(
@@ -64,6 +65,8 @@ async def voice_live_start(
             synthesize_speech=synthesize_speech,
             response_mode=response_mode,
             turn_id=turn_id,
+            owner_verified=http_request is not None
+            and owner_channel.is_owner_channel(http_request.headers.get(owner_channel.HEADER)),
         )
     except GammaError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

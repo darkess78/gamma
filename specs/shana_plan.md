@@ -65,6 +65,15 @@ fine-tune can't be compared to a prompt.
 - Smallest step: dashboard text as owner-private, with a privacy test that
   Discord/Twitch turns still can't see it.
 
+**Step 1 done (2026-11-14):** the dashboard proves it is the owner with a
+secret header (`X-Gamma-Owner-Channel`, key in `data/runtime/owner-channel.key`,
+created on first use, never sent to a browser). With it, Monitor owner text
+(`mic_transcript`/`owner_command` with private output), dashboard live voice,
+image replies and `/v1/conversation/respond` run owner-private with the owner as
+speaker, so memory and history load. Stream-public output, rehearsed chat and
+Twitch/Discord sources stay shared even with the header. Remaining: shared
+channels' scoped history and stream context, and explicit speakers elsewhere.
+
 ### W2. Better memory selection — **Do**
 
 Current retrieval is OR-substring matching on any 3+ letter word, filtered to
@@ -244,6 +253,10 @@ judge quality, so real-model testing waits for the GPU).
 3. Which game first? (A turn-based one with an existing mod is easiest.)
 4. When to deploy `rebuild/shana-foundation` to Gamma PC (it is not live yet).
 5. Which Discord servers/channels she should be in.
+6. An API caller that names no speaker is still treated as the owner (owner
+   tools included). Production requires the API token, so only Gamma's own
+   processes can do this, but every one of them could. Tightening it means
+   updating the local command-line tools and about 25 tests that rely on it.
 
 ## Sources
 

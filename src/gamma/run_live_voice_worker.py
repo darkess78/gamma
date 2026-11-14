@@ -405,6 +405,7 @@ def _run_simple_chunked(
             delivery_context="direct_voice",
             speech_requested=synthesize_speech,
             speech_allowed=synthesize_speech,
+            owner_verified=bool(getattr(args, "owner_verified", False)),
         )
     else:
         response = None
@@ -553,7 +554,9 @@ def _run_incremental_experimental(
     audio_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     # Capture the existing local assumed identity once, before generation.
-    memory_origin = MemoryOrigin.from_speaker(conversation._identity.resolve(None),
+    speaker = (conversation._identity.owner_profile() if getattr(args, "owner_verified", False)
+               else conversation._identity.resolve(None))
+    memory_origin = MemoryOrigin.from_speaker(speaker,
         source="live_voice", session_id=args.session_id, turn_id=args.turn_id)
     speech_filter = SpeechSafetyFilter(settings.speech_filter_level)
     stream_event = _live_voice_stream_event(
@@ -757,6 +760,8 @@ def main() -> int:
     parser.add_argument("--session-id")
     parser.add_argument("--synthesize-speech", choices={"true", "false"}, default="true")
     parser.add_argument("--response-mode", choices={"simple_chunked", "incremental_experimental"})
+    parser.add_argument("--owner-verified", action="store_true",
+                        help="the API verified this turn came from the owner's dashboard")
     args = parser.parse_args()
 
     audio_path = Path(args.audio_path)

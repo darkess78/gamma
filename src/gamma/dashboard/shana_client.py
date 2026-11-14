@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from ..config import settings
+from ..system import owner_channel
 
 
 @dataclass(slots=True)
@@ -27,7 +28,7 @@ class ShanaApiClient:
         timeout: float = 30.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
-        headers: dict[str, str] = {}
+        headers: dict[str, str] = {owner_channel.HEADER: owner_channel.owner_channel_secret()}
         if settings.api_auth_enabled and settings.api_bearer_token:
             headers["Authorization"] = f"Bearer {settings.api_bearer_token}"
         self._client = httpx.Client(

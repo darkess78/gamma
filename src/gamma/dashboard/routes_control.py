@@ -1,8 +1,7 @@
 """Status, presence, Monitor status, client logs, coding projects and Shana lifecycle routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter
-from fastapi import HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from . import deps
 

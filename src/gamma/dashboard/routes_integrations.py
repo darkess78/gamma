@@ -1,8 +1,7 @@
 """Twitch and Discord worker routes, viewer trust and replay."""
 from __future__ import annotations
 
-from fastapi import APIRouter
-from fastapi import HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from . import deps

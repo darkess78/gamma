@@ -1,8 +1,7 @@
 """Stream, rehearsal, Monitor input and performer routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter
-from fastapi import HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from . import deps
 

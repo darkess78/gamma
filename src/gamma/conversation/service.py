@@ -71,6 +71,7 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
         speech_allowed: bool = True,
         speech_requested: bool | None = None,
         recipient: RecipientContext | None = None,
+        owner_verified: bool = False,
     ) -> AssistantResponse:
         """Respond to a user text message.
         
@@ -85,12 +86,17 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
             defer_llm_safety_review: Defer LLM safety review.
             background_context: Optional trusted background note for the system prompt.
             evaluation_mode: Run without durable state, tools, or production timing logs.
+            owner_verified: The caller proved this turn comes from the owner (the
+                dashboard's owner channel). The speaker is then the owner and, unless a
+                recipient is given, the reply is owner-private, so memory and history load.
             
         Returns:
             AssistantResponse with spoken text and timing.
         """
+        if owner_verified and recipient is None and delivery_context != "public_stream":
+            recipient = RecipientContext(kind="owner_private", owner_authorized=True)
         recipient = _recipient_context(recipient, delivery_context=delivery_context)
-        speaker = self._identity.resolve(speaker_ctx)
+        speaker = self._identity.owner_profile() if owner_verified else self._identity.resolve(speaker_ctx)
         exchange_id = None
         tool_checkpoint = None
         presence_snapshot = None
@@ -233,6 +239,7 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
         synthesize_speech: bool = False,
         speaker_ctx: SpeakerContext | None = None,
         recipient: RecipientContext | None = None,
+        owner_verified: bool = False,
     ) -> AssistantResponse:
         """Respond to a user message with image analysis.
         
@@ -249,6 +256,8 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
         Returns:
             AssistantResponse with vision analysis and reply.
         """
+        if owner_verified and recipient is None:
+            recipient = RecipientContext(kind="owner_private", owner_authorized=True)
         recipient = _recipient_context(recipient)
         load_persona_config(private=recipient.allows_private_memory)
         image = self._vision.prepare_image(
@@ -262,7 +271,7 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
             user_text=user_text,
             mode=vision_mode,
         )
-        image_speaker = self._identity.resolve(speaker_ctx)
+        image_speaker = self._identity.owner_profile() if owner_verified else self._identity.resolve(speaker_ctx)
         return self._respond(
             memory_origin=MemoryOrigin.from_speaker(image_speaker,
                 source=speaker_ctx.source if speaker_ctx is not None else "local",

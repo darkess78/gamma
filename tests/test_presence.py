@@ -90,7 +90,7 @@ def test_unknown_audience_wake_is_text_only_and_excludes_private_memory() -> Non
 def test_owner_wake_receives_bounded_selected_memory_and_recent_openings() -> None:
     owner = SpeakerProfile(name="Owner", trust="owner", is_owner=True)
     identity = Mock()
-    identity.resolve.return_value = owner
+    identity.owner_profile.return_value = owner
     conversation = Mock()
     conversation.respond_presence_wake.return_value = AssistantResponse(spoken_text="Back to it?")
     memory = Mock()

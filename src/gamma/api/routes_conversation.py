@@ -1,10 +1,10 @@
 """Conversation, presence, system status and vision routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 from . import deps
+from ..system import owner_channel
 from ..errors import ConfigurationError, ConversationError, ExternalServiceError, GammaError
 from ..schemas.conversation import ConversationRequest
 from ..schemas.presence import PresenceModeRequest, PresenceWakeRequest
@@ -12,6 +12,10 @@ from ..schemas.response import AssistantResponse, VisionAnalysis
 
 
 router = APIRouter()
+
+
+def _owner_verified(http_request: Request | None) -> bool:
+    return http_request is not None and owner_channel.is_owner_channel(http_request.headers.get(owner_channel.HEADER))
 
 @router.get("/v1/assistant/demo", response_model=AssistantResponse)
 def assistant_demo() -> AssistantResponse:
@@ -35,7 +39,7 @@ def system_status() -> dict:
 
 
 @router.post("/v1/conversation/respond", response_model=AssistantResponse)
-def conversation_respond(request: ConversationRequest) -> AssistantResponse:
+def conversation_respond(request: ConversationRequest, http_request: Request = None) -> AssistantResponse:
     try:
         return deps.get_conversation_service().respond(
             user_text=request.user_text,
@@ -44,6 +48,7 @@ def conversation_respond(request: ConversationRequest) -> AssistantResponse:
             speaker_ctx=request.speaker,
             fast_mode=request.fast_mode,
             evaluation_mode=request.evaluation_mode,
+            owner_verified=_owner_verified(http_request),
         )
     except ConversationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -100,6 +105,7 @@ async def conversation_respond_with_image(
     vision_mode: str | None = Form(default="auto"),
     session_id: str | None = Form(default=None),
     synthesize_speech: bool = Form(default=False),
+    http_request: Request = None,
 ) -> AssistantResponse:
     try:
         image_bytes = await image_file.read()
@@ -111,6 +117,7 @@ async def conversation_respond_with_image(
             vision_mode=vision_mode,
             session_id=session_id,
             synthesize_speech=synthesize_speech,
+            owner_verified=_owner_verified(http_request),
         )
     except ConversationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

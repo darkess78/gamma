@@ -474,7 +474,7 @@ class PresenceService:
         if audience.kind == "unknown":
             return UNKNOWN_PUBLIC
         if audience.kind == "owner":
-            return self._identity.resolve(None)
+            return self._identity.owner_profile()
         person = self._memory.get_known_person(int(audience.known_person_id or 0))
         if person is None:
             raise ValueError("known person not found")
@@ -493,7 +493,7 @@ class PresenceService:
         if audience.kind == "unknown":
             return {"kind": "unknown", "known_person_id": None, "display_name": "Unknown"}
         if audience.kind == "owner":
-            owner = self._identity.resolve(None)
+            owner = self._identity.owner_profile()
             return {"kind": "owner", "known_person_id": None, "display_name": owner.name}
         person = self._memory.get_known_person(int(audience.known_person_id or 0))
         if person is None:

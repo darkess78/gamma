@@ -1,7 +1,6 @@
 """Piper TTS backend: runs the local piper binary."""
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import time
@@ -92,8 +91,6 @@ class PiperTTSBackend(BaseFileTTSBackend):
             "capture_output": True,
             "check": True,
         }
-        if os.name == "nt":
-            run_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
         try:
             subprocess.run(command, **run_kwargs)

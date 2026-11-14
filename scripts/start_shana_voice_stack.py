@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import socket
 import subprocess
-import sys
 import time
 import urllib.error
 import urllib.request
@@ -52,14 +50,7 @@ def _spawn_detached(command: list[str], *, cwd: Path, stdout_path: Path, stderr_
             "stdout": stdout_handle,
             "stderr": stderr_handle,
         }
-        if os.name == "nt":
-            kwargs["creationflags"] = (
-                getattr(subprocess, "DETACHED_PROCESS", 0)
-                | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            )
-        else:
-            kwargs["start_new_session"] = True
+        kwargs["start_new_session"] = True
         subprocess.Popen(command, **kwargs)
 
 

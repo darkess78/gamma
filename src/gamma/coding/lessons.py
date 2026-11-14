@@ -1,6 +1,7 @@
 """Editable, evidence-linked lessons from fictional coding practice."""
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import tempfile
@@ -28,24 +29,11 @@ class LessonStore:
         if path.is_symlink():
             raise ValueError("invalid lesson lock")
         with path.open("a+b") as stream:
-            if os.name == "nt":
-                import msvcrt
-                if path.stat().st_size == 0:
-                    stream.write(b"0")
-                    stream.flush()
-                stream.seek(0)
-                msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
             try:
                 yield
             finally:
-                if os.name == "nt":
-                    stream.seek(0)
-                    msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
-                else:
-                    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
     def _path(self, identifier):
         _identifier(identifier)

@@ -332,29 +332,6 @@ def test_feeling_normalization_and_unreadable_json_defaults_unchanged(tmp_path):
     assert EmotionMemoryService(path).load_bundle()["state"].current_emotion == "neutral"
 
 
-@pytest.mark.parametrize("raise_inside", [False, True])
-def test_windows_branch_lock_and_unlock_protocol_on_gamma(tmp_path, monkeypatch, raise_inside):
-    # This checks the selected Windows API protocol with a fake msvcrt module.
-    # Native Windows locking remains a separate runtime verification.
-    from types import SimpleNamespace
-    calls = []
-    fake = SimpleNamespace(LK_LOCK=1, LK_UNLCK=2)
-    def locking(fd, operation, length):
-        calls.append((operation, length, os.lseek(fd, 0, os.SEEK_CUR), os.fstat(fd).st_size))
-    fake.locking = locking
-    monkeypatch.setitem(sys.modules, "msvcrt", fake)
-    monkeypatch.setattr(state_io, "os", SimpleNamespace(name="nt", fstat=os.fstat))
-    path = tmp_path / "state.json"
-    def use():
-        with state_io.state_file_lock(path):
-            if raise_inside: raise ValueError("body")
-    if raise_inside:
-        with pytest.raises(ValueError, match="body"): use()
-    else: use()
-    assert calls == [(1, 1, 0, 1), (2, 1, 0, 1)]
-    assert path.with_name(path.name + ".lock").read_bytes() == b"0"
-
-
 @pytest.mark.parametrize("kind", KINDS)
 @pytest.mark.parametrize("alias_kind", ["absolute", "relative", "absolute_missing_parent", "relative_missing_parent"])
 def test_canonical_destination_preserves_seeded_state_through_lexical_alias(

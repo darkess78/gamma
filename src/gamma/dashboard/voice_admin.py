@@ -459,8 +459,6 @@ class VoiceAdminMixin:
             "check": True,
             "env": env,
         }
-        if os.name == "nt":
-            run_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         return subprocess.run(command, **run_kwargs)
 
     def _wait_for_qwen_tts_ready(self, profile_id: str | None, *, timeout_seconds: int) -> dict[str, Any]:

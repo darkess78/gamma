@@ -1,6 +1,7 @@
 """Per-file writer locking and complete JSON publication for persona state."""
 from __future__ import annotations
 
+import fcntl
 import os
 import stat
 import tempfile
@@ -15,27 +16,11 @@ def state_file_lock(path: Path):
     target.parent.mkdir(parents=True, exist_ok=True)
     # Never unlink this file: every contender must lock the same file identity.
     with target.with_name(target.name + ".lock").open("a+b") as stream:
-        if os.name == "nt":
-            import msvcrt
-
-            if os.fstat(stream.fileno()).st_size == 0:
-                stream.write(b"0")
-                stream.flush()
-            stream.seek(0)
-            msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
-            try:
-                yield
-            finally:
-                stream.seek(0)
-                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-
-            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
 def atomic_write_text(path: Path, text: str) -> None:

@@ -58,12 +58,11 @@ def _qwen_python(repo_root: Path) -> str:
     candidates = [
         Path(configured).expanduser() if configured else None,
         repo_root / ".venv" / "bin" / "python",
-        repo_root / ".venv" / "Scripts" / "python.exe",
     ]
     for candidate in candidates:
         if candidate and candidate.exists():
             return str(candidate)
-    return resolve_python_executable(repo_root, prefer_windowless=True)
+    return resolve_python_executable(repo_root)
 
 
 def main() -> int:
@@ -126,14 +125,7 @@ def main() -> int:
             "stdout": stdout_handle,
             "stderr": stderr_handle,
         }
-        if os.name == "nt":
-            kwargs["creationflags"] = (
-                getattr(subprocess, "DETACHED_PROCESS", 0)
-                | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            )
-        else:
-            kwargs["start_new_session"] = True
+        kwargs["start_new_session"] = True
         process = subprocess.Popen([python_exe, str(server_script)], **kwargs)
 
     print(f"Qwen3-TTS server started. Waiting for model to load (may take up to 90s)...")

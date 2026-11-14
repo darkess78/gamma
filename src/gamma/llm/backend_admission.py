@@ -1,12 +1,13 @@
 """Cooperative, process-safe admission for a configured local inference origin."""
-from contextlib import contextmanager
 import errno
+import fcntl
 import hashlib
 import os
-from pathlib import Path
 import time
-from urllib.parse import urlsplit
 import uuid
+from contextlib import contextmanager
+from pathlib import Path
+from urllib.parse import urlsplit
 
 
 def _coordination_root():
@@ -31,13 +32,7 @@ def _open(path):
 
 def _try_lock(stream):
     try:
-        if os.name == 'nt':
-            import msvcrt
-            stream.seek(0)
-            msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         return True
     except OSError as exc:
         if exc.errno in (errno.EACCES, errno.EAGAIN):
@@ -46,13 +41,7 @@ def _try_lock(stream):
 
 
 def _unlock(stream):
-    if os.name == 'nt':
-        import msvcrt
-        stream.seek(0)
-        msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
-    else:
-        import fcntl
-        fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
 def _foreground_waiting(root, key):
@@ -77,7 +66,7 @@ def backend_slot(endpoint, *, foreground, timeout, checkpoint=None, ready=None):
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     if root.is_symlink():
         raise ValueError('Invalid inference admission storage')
-    if os.name != 'nt' and (root.stat().st_uid != os.getuid() or root.stat().st_mode & 0o077):
+    if root.stat().st_uid != os.getuid() or root.stat().st_mode & 0o077:
         raise ValueError('Inference admission storage must be private')
     key = _resource_key(endpoint)
     deadline = time.monotonic() + max(0, float(timeout))

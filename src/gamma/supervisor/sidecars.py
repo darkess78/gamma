@@ -170,12 +170,6 @@ class SidecarsMixin:
             env = os.environ.copy()
             env.update(env_overlay)
             kwargs["env"] = env
-        if os.name == "nt":
-            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            si = subprocess.STARTUPINFO()
-            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            si.wShowWindow = 0  # SW_HIDE
-            kwargs["startupinfo"] = si
         return subprocess.run(command, **kwargs)
 
     def _qwen_tts_admission_env(self) -> dict[str, str]:

@@ -14,7 +14,7 @@ class ControlMailbox:
         if any(p.is_symlink() for p in (self.root, *self.root.parents)):
             raise ValueError('Invalid command storage')
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if os.name != 'nt': os.chmod(self.root, 0o700)
+        os.chmod(self.root, 0o700)
 
     def _path(self, identifier):
         if not isinstance(identifier, str) or not re.fullmatch('[a-f0-9]{32}', identifier):

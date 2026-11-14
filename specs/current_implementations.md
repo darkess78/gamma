@@ -239,7 +239,7 @@ and recovery planning. Machine maintenance did not activate this staged source.
   reviews verified source and stops at owner review. See
   `coding_improvement.md` for implemented boundaries and outstanding work.
 
-- Linux-first runtime with Windows development/smoke-test compatibility.
+- Linux-only runtime on Gamma PC; see `platform.md`.
 - Local proxy, Nginx templates, systemd templates, platform launchers.
 - Standalone TTS dataset preparation GUI and CLI pipeline.
 - Pytest coverage for API, dashboard, conversation, memory, voice, stream, integrations, safety, routing, resources, and performer behavior.

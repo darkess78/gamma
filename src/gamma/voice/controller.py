@@ -254,29 +254,10 @@ class AudioPlayback:
     def play(self, audio_path: str | None) -> bool:
         if not audio_path:
             return False
-        if self._system == "Windows":
-            return self._play_windows(audio_path)
         return self._play_with_binary(audio_path)
 
     def _default_binary(self) -> str | None:
-        if self._system == "Darwin":
-            return "afplay"
-        if self._system == "Windows":
-            return None
-        return "aplay"
-
-    def _play_windows(self, audio_path: str) -> bool:
-        if Path(audio_path).suffix.lower() != ".wav":
-            print(f"[warn] Windows playback currently supports WAV files only; synthesized audio saved at {audio_path}")
-            return False
-        try:
-            import winsound
-
-            winsound.PlaySound(audio_path, winsound.SND_FILENAME)
-        except Exception as exc:
-            print(f"[warn] Windows audio playback failed ({exc}); synthesized audio saved at {audio_path}")
-            return False
-        return True
+        return "afplay" if self._system == "Darwin" else "aplay"
 
     def _play_with_binary(self, audio_path: str) -> bool:
         if not self._binary:
@@ -450,8 +431,6 @@ class VoiceModeController:
 
 
 def _build_capture_backend() -> ArecordCaptureBackend | SoundDeviceCaptureBackend:
-    if platform.system() == "Windows":
-        return SoundDeviceCaptureBackend()
     try:
         return ArecordCaptureBackend()
     except MissingBinaryError as arecord_error:

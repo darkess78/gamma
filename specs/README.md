@@ -47,7 +47,7 @@ in effect until revisions are implemented, verified, and approved for activation
 - `shana_presence.md`
 - `shana_output_bus.md`
 - `voice_dataset.md`
-- `linux_portability.md`
+- `platform.md`
 
 ## Streamer Research And Target
 

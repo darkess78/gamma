@@ -32,7 +32,6 @@ def _audio_python(repo_root: Path) -> Path:
     candidates = [
         Path(configured).expanduser() if configured else None,
         repo_root / ".venv-audio" / "bin" / "python",
-        repo_root / ".venv-audio" / "Scripts" / "python.exe",
     ]
     for candidate in candidates:
         if candidate and candidate.exists():
@@ -98,14 +97,7 @@ def main() -> int:
             env=env,
             stdout=stdout_handle,
             stderr=stderr_handle,
-            start_new_session=os.name != "nt",
-            creationflags=(
-                getattr(subprocess, "DETACHED_PROCESS", 0)
-                | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-                if os.name == "nt"
-                else 0
-            ),
+            start_new_session=True,
         )
 
     deadline = time.monotonic() + 120

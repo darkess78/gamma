@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import threading
@@ -208,8 +207,6 @@ def _run_nvidia_smi(command: list[str]) -> subprocess.CompletedProcess[str]:
         "timeout": 5,
         "check": True,
     }
-    if os.name == "nt":
-        run_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     return subprocess.run(command, **run_kwargs)
 
 

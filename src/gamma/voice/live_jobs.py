@@ -423,14 +423,7 @@ class LiveVoiceJobManager:
                 "stderr": stderr_handle,
                 "env": self._worker_env(),
             }
-            if os.name == "nt":
-                kwargs["creationflags"] = (
-                    subprocess.CREATE_NEW_PROCESS_GROUP
-                    | subprocess.DETACHED_PROCESS
-                    | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-                )
-            else:
-                kwargs["start_new_session"] = True
+            kwargs["start_new_session"] = True
             return subprocess.Popen(command, **kwargs)
 
     def _selected_tts_env(self) -> dict[str, str]:

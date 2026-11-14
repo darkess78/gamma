@@ -58,11 +58,8 @@ def discover_rvc_python(explicit: str | None, rvc_root: Path | None) -> Path | N
     if rvc_root is not None:
         candidates.extend(
             [
-                rvc_root / ".venv" / "Scripts" / "python.exe",
                 rvc_root / ".venv" / "bin" / "python",
-                rvc_root.parent / ".venv" / "Scripts" / "python.exe",
                 rvc_root.parent / ".venv" / "bin" / "python",
-                rvc_root / "runtime" / "python.exe",
             ]
         )
 

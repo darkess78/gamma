@@ -27,14 +27,7 @@ def main() -> int:
         "stdout": subprocess.DEVNULL,
         "stderr": subprocess.DEVNULL,
     }
-    if os.name == "nt":
-        kwargs["creationflags"] = (
-            getattr(subprocess, "DETACHED_PROCESS", 0)
-            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        )
-    else:
-        kwargs["start_new_session"] = True
+    kwargs["start_new_session"] = True
     subprocess.Popen([sys.executable, "-m", "gamma.supervisor.cli", "start", "dashboard"], **kwargs)
     webbrowser.open(settings.dashboard_base_url)
     return 0

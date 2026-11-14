@@ -1,7 +1,6 @@
 """Optional post-processing of synthesized WAV: spectral denoise and RVC voice conversion."""
 from __future__ import annotations
 
-import os
 import subprocess
 import time
 import wave
@@ -183,8 +182,6 @@ class TTSPostProcessingMixin:
             "text": True,
             "check": True,
         }
-        if os.name == "nt":
-            run_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
         try:
             subprocess.run(command, **run_kwargs)

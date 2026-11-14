@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import hashlib
 import math
-import os
 import re
 import shutil
 import subprocess
@@ -68,12 +67,6 @@ def run_practice_check(workspace, spec):
             bootstrap = f"import runpy; runpy.run_module({spec.module!r},run_name='__main__'); print({receipt!r})"
         command = command[:command.index("-B") + 1] + ["-c", bootstrap]
         kwargs = {}
-        if os.name == "nt":
-            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-            info = subprocess.STARTUPINFO()
-            info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            info.wShowWindow = subprocess.SW_HIDE
-            kwargs["startupinfo"] = info
         with tempfile.TemporaryFile() as log:
             try:
                 completed = subprocess.run(command, stdin=subprocess.DEVNULL, stdout=log,

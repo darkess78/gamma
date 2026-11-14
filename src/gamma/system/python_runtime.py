@@ -34,19 +34,14 @@ def python_candidates(project_root: Path, *, env_var: str = "SHANA_PYTHON") -> l
     candidates.extend(
         [
             project_root / ".venv" / "bin" / "python",
-            project_root / ".venv" / "Scripts" / "python.exe",
             project_root / ".venv312" / "bin" / "python",
-            project_root / ".venv312" / "Scripts" / "python.exe",
         ]
     )
 
-    if os.name == "nt":
-        candidates.append(Path.home() / "AppData" / "Local" / "Programs" / "Python" / "Python312" / "python.exe")
-    else:
-        for command_name in ("python3", "python"):
-            discovered = shutil.which(command_name)
-            if discovered:
-                candidates.append(Path(discovered))
+    for command_name in ("python3", "python"):
+        discovered = shutil.which(command_name)
+        if discovered:
+            candidates.append(Path(discovered))
 
     return _unique_paths(candidates)
 
@@ -55,14 +50,9 @@ def resolve_python_executable(
     project_root: Path,
     *,
     env_var: str = "SHANA_PYTHON",
-    prefer_windowless: bool = False,
 ) -> str:
     for candidate in python_candidates(project_root, env_var=env_var):
         if not candidate.exists():
             continue
-        if prefer_windowless and os.name == "nt":
-            pythonw = candidate.parent / "pythonw.exe"
-            if pythonw.exists():
-                return str(pythonw)
         return str(candidate)
     return sys.executable

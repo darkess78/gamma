@@ -1,16 +1,18 @@
 """Durable owner goals for autonomous repository work."""
 from __future__ import annotations
 
+import fcntl
+import hashlib
 import json
 import logging
 import math
-import hashlib
 import os
 import re
 import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
+
 
 ACTIVE = {'queued', 'running', 'deferred', 'paused'}
 
@@ -137,23 +139,11 @@ def execution_lock(root):
     if path.is_symlink():
         raise ValueError('Unsafe executor lock')
     with path.open('a+b') as stream:
-        if os.name == 'nt':
-            import msvcrt
-            if path.stat().st_size == 0:
-                stream.write(b'0'); stream.flush()
-            stream.seek(0)
-            msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
-            try:
-                yield
-            finally:
-                stream.seek(0); msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            try:
-                yield
-            finally:
-                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            yield
+        finally:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
 _HEX_RE = re.compile(r'^[0-9a-f]{64}$')

@@ -4,12 +4,13 @@ One SQLite table of JSON records keyed by (kind, id). Effects that matter
 (replies, activity changes) are committed with the owner token from
 ``claim()``, so a replaced or released core cannot publish late results.
 """
-from contextlib import contextmanager
+import fcntl
 import json
 import os
-from pathlib import Path
 import sqlite3
 import uuid
+from contextlib import contextmanager
+from pathlib import Path
 
 
 class OwnershipLost(RuntimeError):
@@ -35,24 +36,11 @@ def process_lock(path):
     with os.fdopen(fd, 'r+b', buffering=0) as stream:
         if os.fstat(fd).st_size == 0:
             stream.write(b'0')
-        if os.name == 'nt':
-            import msvcrt
-            stream.seek(0)
-            try:
-                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
-            except PermissionError as exc:  # Windows reports a held lock as EACCES.
-                raise BlockingIOError(str(exc)) from exc
-        else:
-            import fcntl
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         try:
             yield
         finally:
-            if os.name == 'nt':
-                stream.seek(0)
-                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
-            else:
-                fcntl.flock(fd, fcntl.LOCK_UN)
+            fcntl.flock(fd, fcntl.LOCK_UN)
 
 
 INITIAL_BRAIN = {
@@ -71,8 +59,7 @@ class Store:
                        '(kind TEXT, id TEXT, body TEXT NOT NULL, PRIMARY KEY(kind, id))')
             if self.get(db, 'brain', 'state') is None:
                 self.put(db, 'brain', 'state', dict(INITIAL_BRAIN))
-        if os.name != 'nt':
-            self.path.chmod(0o600)
+        self.path.chmod(0o600)
 
     @contextmanager
     def transaction(self, token=None):

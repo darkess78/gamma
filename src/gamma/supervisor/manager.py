@@ -164,29 +164,14 @@ class ProcessManager(SidecarsMixin):
             runtime_env.update(self._audio_understanding_admission_env())
 
         with stdout_log.open("ab") as stdout_handle, stderr_log.open("ab") as stderr_handle:
-            if os.name == "nt":
-                creationflags = (
-                    subprocess.CREATE_NEW_PROCESS_GROUP
-                    | subprocess.DETACHED_PROCESS
-                    | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-                )
-                process = subprocess.Popen(
-                    command,
-                    cwd=settings.project_root,
-                    stdout=stdout_handle,
-                    stderr=stderr_handle,
-                    env=runtime_env,
-                    creationflags=creationflags,
-                )
-            else:
-                process = subprocess.Popen(
-                    command,
-                    cwd=settings.project_root,
-                    stdout=stdout_handle,
-                    stderr=stderr_handle,
-                    env=runtime_env,
-                    start_new_session=True,
-                )
+            process = subprocess.Popen(
+                command,
+                cwd=settings.project_root,
+                stdout=stdout_handle,
+                stderr=stderr_handle,
+                env=runtime_env,
+                start_new_session=True,
+            )
 
         self.pid_file(name).write_text(str(process.pid), encoding="utf-8")
         time.sleep(2)
@@ -293,14 +278,7 @@ class ProcessManager(SidecarsMixin):
                 stdout=stdout_handle,
                 stderr=stderr_handle,
                 env=runtime_env,
-                start_new_session=os.name != "nt",
-                creationflags=(
-                    subprocess.CREATE_NEW_PROCESS_GROUP
-                    | subprocess.DETACHED_PROCESS
-                    | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-                    if os.name == "nt"
-                    else 0
-                ),
+                start_new_session=True,
             )
         self.pid_file(name).write_text(str(process.pid), encoding="utf-8")
         time.sleep(0.5)
@@ -561,7 +539,6 @@ class ProcessManager(SidecarsMixin):
         candidates = [
             Path(configured).expanduser() if configured else None,
             settings.project_root / ".venv-audio" / "bin" / "python",
-            settings.project_root / ".venv-audio" / "Scripts" / "python.exe",
         ]
         for candidate in candidates:
             if candidate and candidate.exists():

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 from pathlib import Path
 
@@ -20,7 +19,7 @@ def main() -> int:
 
     repo_root = Path(__file__).resolve().parents[1]
     venv_path = (repo_root / args.venv).resolve()
-    python_path = venv_path / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    python_path = venv_path / ("bin/python")
 
     if not python_path.exists():
         _run([args.python, "-m", "venv", str(venv_path)], cwd=repo_root)

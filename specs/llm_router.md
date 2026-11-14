@@ -101,6 +101,5 @@ An outer publication-review timeout may return before its held reviewer transpor
 ends; the accepted publication gate still withholds the original response.
 
 Threaded and separate-process synthetic transport checks on Gamma validate this
-staged ordering and cleanup. Linux execution is verified; the Windows lock branch
-has source review only. Production activation, audible playback, live inference
+staged ordering and cleanup. Linux execution is verified. Production activation, audible playback, live inference
 quality and actual GPU contention are not established by these checks.

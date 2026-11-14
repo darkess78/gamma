@@ -88,6 +88,7 @@ def test_dashboard_sends_the_owner_secret(fixture_state):
 def test_live_voice_worker_is_told_only_when_verified(fixture_state, tmp_path, verified):
     manager = live_jobs.LiveVoiceJobManager.__new__(live_jobs.LiveVoiceJobManager)
     manager._foreground_python = lambda: "python"
+    manager._standby, manager._standby_lock = None, __import__("threading").Lock()  # cold path; standby path: test_live_voice_standby
     with patch.object(live_jobs.subprocess, "Popen") as popen:
         manager._spawn_worker(turn_id="t", input_path=tmp_path / "a.wav", output_path=tmp_path / "o",
                               status_path=tmp_path / "s", session_id="mixed", synthesize_speech=False,

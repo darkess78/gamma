@@ -14,6 +14,23 @@ from .capabilities import model_capability
 from .context_budget import is_context_overflow_message
 
 
+
+def reasoning_effort(model: str, call_context: LLMCallContext | None) -> str | None:
+    """gpt-oss reasoning effort for a call, or None to keep the model default.
+
+    Real-time turns (voice, stream, Discord: ``fast_mode``) and light helper calls
+    think at ``local_llm_fast_reasoning`` (default "low"). Measured 2026-11-14 on the
+    3090: draft time for a short voice reply fell from 2.4-6.1 s to 1.8-2.1 s with
+    replies of the same quality. Heavy-reasoning turns keep the default.
+    """
+    level = (settings.local_llm_fast_reasoning or "").strip().lower()
+    if not level or call_context is None or not model.startswith("gpt-oss"):
+        return None
+    depth = (call_context.reasoning_depth or "normal").strip().lower()
+    if depth == "light" or (call_context.fast_mode and depth != "heavy"):
+        return level
+    return None
+
 class LocalLLMAdapter(LLMAdapter):
     """Ollama-backed local adapter.
 
@@ -50,7 +67,7 @@ class LocalLLMAdapter(LLMAdapter):
             system_prompt: System prompt for the model.
             user_text: User message text.
             image_inputs: Optional list of image inputs.
-            call_context: Ignored (for interface compatibility).
+            call_context: Sets gpt-oss reasoning effort for real-time turns (see reasoning_effort).
             model_override: Optional model name override.
             endpoint_override: Optional Ollama endpoint override.
             
@@ -62,7 +79,6 @@ class LocalLLMAdapter(LLMAdapter):
             or if model capability check fails.
             ExternalServiceError: If request fails or returns empty response.
         """
-        _ = call_context
         endpoint = (endpoint_override or settings.local_llm_endpoint).rstrip("/")
         if image_inputs:
             if not self.supports_vision:
@@ -96,6 +112,9 @@ class LocalLLMAdapter(LLMAdapter):
             "stream": False,
             "keep_alive": settings.local_llm_keep_alive,
         }
+        effort = reasoning_effort(target_model, call_context)
+        if effort:
+            payload["think"] = effort
         runtime_context_tokens = model_capability("local", target_model).runtime_context_tokens
         if runtime_context_tokens is not None:
             payload["options"] = {"num_ctx": runtime_context_tokens}

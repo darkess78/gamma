@@ -49,6 +49,16 @@ class LiveVoiceJob:
     performer_last_status: str | None = None
 
 
+@dataclass
+class _StandbyWorker:
+    """A worker that has loaded its models and waits on stdin for the next turn."""
+    process: subprocess.Popen[str]
+    key: str
+    started: float
+    stdout_log: Path
+    stderr_log: Path
+
+
 class LiveVoiceJobManager:
     history_rotate_bytes = 5 * 1024 * 1024
 
@@ -59,6 +69,8 @@ class LiveVoiceJobManager:
         self._runtime_dir.mkdir(parents=True, exist_ok=True)
         self._history_path = self._runtime_dir / "history.current.jsonl"
         self._performer_bus = performer_bus or get_performer_event_bus()
+        self._standby: _StandbyWorker | None = None
+        self._standby_lock = threading.Lock()
 
     async def start_job(
         self,
@@ -400,6 +412,24 @@ class LiveVoiceJobManager:
         stderr_log: Path,
         owner_verified: bool = False,
     ) -> subprocess.Popen[str]:
+        claimed = self._claim_standby()
+        if claimed is not None:
+            job = {"turn_id": turn_id, "audio_path": str(input_path), "output_path": str(output_path),
+                   "status_path": str(status_path), "session_id": session_id, "synthesize_speech": synthesize_speech,
+                   "response_mode": response_mode, "owner_verified": owner_verified}
+            try:
+                assert claimed.process.stdin is not None
+                claimed.process.stdin.write(json.dumps(job) + "\n")
+                claimed.process.stdin.close()
+            except (OSError, ValueError, AssertionError):
+                self._kill_process_tree(claimed.process.pid)
+            else:
+                for source, target in ((claimed.stdout_log, stdout_log), (claimed.stderr_log, stderr_log)):
+                    try:
+                        os.replace(source, target)  # the worker keeps writing to the same open file
+                    except OSError:
+                        pass
+                return claimed.process
         command = [
             self._foreground_python(),
             "-m",
@@ -431,6 +461,73 @@ class LiveVoiceJobManager:
             kwargs["start_new_session"] = True
             return subprocess.Popen(command, **kwargs)
 
+    def _standby_key(self) -> str:
+        """What a standby worker was started with; a change means it must not take the next turn."""
+        config_dir = Path(settings.project_root) / "config"
+        try:
+            mtimes = sorted((p.name, p.stat().st_mtime_ns) for p in config_dir.iterdir() if p.is_file())
+        except OSError:
+            mtimes = []
+        return json.dumps({"python": self._foreground_python(), "tts": self._selected_tts_env(),
+                           "stt": self._selected_stt_env(), "config": mtimes}, sort_keys=True)
+
+    def _claim_standby(self) -> _StandbyWorker | None:
+        """The waiting worker if it is alive, current and young enough; otherwise None (and it is stopped)."""
+        with self._standby_lock:
+            standby, self._standby = self._standby, None
+        if standby is None:
+            return None
+        fresh = time.monotonic() - standby.started <= max(0, int(settings.live_voice_standby_max_age_seconds))
+        if standby.process.poll() is None and fresh and standby.key == self._standby_key():
+            return standby
+        self._discard_standby(standby)
+        return None
+
+    def _discard_standby(self, standby: _StandbyWorker) -> None:
+        if standby.process.poll() is None:
+            try:
+                if standby.process.stdin is not None:
+                    standby.process.stdin.close()  # a loaded standby exits on end of input
+            except OSError:
+                pass
+            self._kill_process_tree(standby.process.pid)
+        for path in (standby.stdout_log, standby.stderr_log):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def _standby_command(self) -> list[str]:
+        return [self._foreground_python(), "-m", "gamma.run_live_voice_worker", "--standby"]
+
+    def _ensure_standby(self) -> None:
+        """Start a standby worker when none is waiting and no turn is running.
+
+        Waiting for idle keeps two copies of the speech-to-text model off the GPU at once.
+        """
+        if not settings.live_voice_standby_worker:
+            return
+        with self._lock:
+            busy = any(job.process is not None and job.process.poll() is None for job in self._jobs.values())
+        with self._standby_lock:
+            if busy or (self._standby is not None and self._standby.process.poll() is None):
+                return
+            stale, self._standby = self._standby, None
+        if stale is not None:
+            self._discard_standby(stale)
+        name = f"standby-{uuid4().hex[:12]}"
+        stdout_log, stderr_log = self._runtime_dir / f"{name}.stdout.log", self._runtime_dir / f"{name}.stderr.log"
+        command = self._standby_command()
+        with stdout_log.open("ab") as stdout_handle, stderr_log.open("ab") as stderr_handle:
+            process = subprocess.Popen(command, cwd=settings.project_root, stdin=subprocess.PIPE, stdout=stdout_handle,
+                                       stderr=stderr_handle, env=self._worker_env(), start_new_session=True, text=True)
+        standby = _StandbyWorker(process, self._standby_key(), time.monotonic(), stdout_log, stderr_log)
+        with self._standby_lock:
+            if self._standby is None:
+                self._standby = standby
+                return
+        self._discard_standby(standby)
+
     def _selected_tts_env(self) -> dict[str, str]:
         selected = load_desired_tts_selection()
         provider = selected.get("tts_provider") or settings.tts_provider
@@ -457,7 +554,12 @@ class LiveVoiceJobManager:
         }
         # Only set device_index for GPU STT. For CPU, omit it entirely (ctranlate2 uses default 0).
         if not stt_device.lower().startswith("cpu"):
-            env["SHANA_STT_DEVICE_INDEX"] = str(settings._as_int(os.environ.get("SHANA_STT_DEVICE_INDEX", settings.stt_device_index or 0), default=0))
+            raw_index = os.environ.get("SHANA_STT_DEVICE_INDEX", settings.stt_device_index or 0)
+            try:
+                index = int(str(raw_index).strip() or 0)
+            except ValueError:
+                index = 0
+            env["SHANA_STT_DEVICE_INDEX"] = str(index)
         return env
 
     def _worker_env(self) -> dict[str, str]:
@@ -536,6 +638,10 @@ class LiveVoiceJobManager:
         self._maybe_log_history(job, status_payload, returncode)
         self._cleanup_completed_input(job)
         self._append_lifecycle_event(job.turn_id, "completed" if returncode == 0 else "failed", {"returncode": returncode})
+        try:
+            self._ensure_standby()
+        except Exception:
+            pass  # a standby is only a speed-up; the next turn starts cold instead
 
     def _maybe_log_history(self, job: LiveVoiceJob, status_payload: dict[str, Any], returncode: int) -> None:
         if status_payload.get("history_logged"):

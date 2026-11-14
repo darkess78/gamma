@@ -380,8 +380,13 @@ class Settings:
     local_llm_supports_vision: bool = _bool("local_llm_supports_vision", default=False)
     local_llm_vision_model: str | None = _raw("local_llm_vision_model", default="")
     local_llm_keep_alive: str = _str("local_llm_keep_alive", default="30m")
+    # gpt-oss reasoning effort for real-time turns (fast_mode) and light helpers: low|medium|high, empty = model default.
+    local_llm_fast_reasoning: str = _str("local_llm_fast_reasoning", default="low")
     local_llm_timeout_seconds: int = _int("local_llm_timeout_seconds", default=120)
     live_voice_response_mode: str = _str("live_voice_response_mode", default="simple_chunked")
+    # Keep one live voice worker loaded and waiting, which saves about 1.4 s of start-up per turn.
+    live_voice_standby_worker: bool = _bool("live_voice_standby_worker", default=True)
+    live_voice_standby_max_age_seconds: int = _int("live_voice_standby_max_age_seconds", default=300)
     proactive_idle_enabled: bool = _bool("proactive_idle_enabled", default=False)
     proactive_idle_min_silence_seconds: int = _int("proactive_idle_min_silence_seconds", default=30)
     proactive_idle_target_silence_seconds: int = _int("proactive_idle_target_silence_seconds", default=60)

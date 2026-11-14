@@ -5,6 +5,7 @@ from .memory.attribution import MemoryOrigin
 import argparse
 import base64
 import json
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -757,18 +758,58 @@ def _run_incremental_experimental(
     return payload
 
 
+def _read_standby_job(stream: Any) -> dict[str, Any] | None:
+    """One JSON line with the turn's arguments, or None when the manager closed the pipe."""
+    line = stream.readline()
+    if not line or not line.strip():
+        return None
+    job = json.loads(line)
+    if not isinstance(job, dict):
+        raise ValueError("standby job must be a JSON object")
+    missing = {"turn_id", "audio_path", "output_path", "status_path"} - set(job)
+    if missing:
+        raise ValueError(f"standby job is missing {sorted(missing)}")
+    return job
+
+
+def _apply_standby_job(args: argparse.Namespace, job: dict[str, Any]) -> None:
+    args.turn_id = str(job["turn_id"])
+    args.audio_path = str(job["audio_path"])
+    args.output_path = str(job["output_path"])
+    args.status_path = str(job["status_path"])
+    args.session_id = job.get("session_id")
+    args.synthesize_speech = "true" if job.get("synthesize_speech", True) else "false"
+    args.response_mode = job.get("response_mode")
+    args.owner_verified = bool(job.get("owner_verified", False))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--turn-id", required=True)
-    parser.add_argument("--audio-path", required=True)
-    parser.add_argument("--output-path", required=True)
-    parser.add_argument("--status-path", required=True)
+    parser.add_argument("--standby", action="store_true",
+                        help="load models first, then read this turn's arguments as one JSON line on stdin")
+    parser.add_argument("--turn-id")
+    parser.add_argument("--audio-path")
+    parser.add_argument("--output-path")
+    parser.add_argument("--status-path")
     parser.add_argument("--session-id")
     parser.add_argument("--synthesize-speech", choices={"true", "false"}, default="true")
     parser.add_argument("--response-mode", choices={"simple_chunked", "incremental_experimental"})
     parser.add_argument("--owner-verified", action="store_true",
                         help="the API verified this turn came from the owner's dashboard")
     args = parser.parse_args()
+    if not args.standby and not all((args.turn_id, args.audio_path, args.output_path, args.status_path)):
+        parser.error("--turn-id, --audio-path, --output-path and --status-path are required without --standby")
+
+    # Loading models and services takes about 1.4 s; a standby worker does it before the turn arrives.
+    stt = STTService()
+    audio_understanding = AudioUnderstandingService()
+    conversation = ConversationService()
+    stream_brain = StreamBrain(conversation=conversation)
+    if args.standby:
+        job = _read_standby_job(sys.stdin)
+        if job is None:
+            return 0
+        _apply_standby_job(args, job)
 
     audio_path = Path(args.audio_path)
     output_path = Path(args.output_path)
@@ -778,10 +819,6 @@ def main() -> int:
     if response_mode not in {"simple_chunked", "incremental_experimental"}:
         response_mode = "simple_chunked"
 
-    stt = STTService()
-    audio_understanding = AudioUnderstandingService()
-    conversation = ConversationService()
-    stream_brain = StreamBrain(conversation=conversation)
     planner = ReplyPlanner(conversation) if response_mode == "incremental_experimental" else None
     sentence_generator = SentenceGenerator(conversation) if response_mode == "incremental_experimental" else None
     started_at = time.perf_counter()

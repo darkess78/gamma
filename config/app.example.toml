@@ -108,7 +108,12 @@ local_llm_supports_vision = false
 local_llm_vision_model = ""
 local_llm_timeout_seconds = 120
 local_llm_keep_alive = "30m"
+# gpt-oss reasoning effort for real-time turns (voice, stream, Discord) and light helpers; empty = model default.
+local_llm_fast_reasoning = "low"
 live_voice_response_mode = "simple_chunked"
+# Keep one live voice worker loaded and waiting (saves about 1.4 s per turn); replaced after 300 s or a config change.
+live_voice_standby_worker = true
+live_voice_standby_max_age_seconds = 300
 proactive_idle_enabled = false
 proactive_idle_min_silence_seconds = 30
 proactive_idle_target_silence_seconds = 60

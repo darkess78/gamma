@@ -83,7 +83,7 @@ def fixture(tmp_path,monkeypatch):
  timeline=Timeline();tool=CoreTool(core,timeline);registry=ToolRegistry.__new__(ToolRegistry);registry._tools={'save_core_memory':tool}
  service=ConversationService.__new__(ConversationService);service._continuity=continuity;service._memory=MemoryService.__new__(MemoryService);service._memory._engine=continuity._engine;service._tools=registry;service._turn_parser=StructuredTurnParser()
  state=SimpleNamespace(service=service,continuity=continuity,core=core,tool=tool,timeline=timeline,profile=OWNER,seed=seed,seed_hash=seed_hash)
- service._identity=SimpleNamespace(resolve=lambda context:state.profile)
+ service._identity=SimpleNamespace(resolve=lambda context:state.profile,owner_profile=lambda:state.profile)
  service._speech_filter=SimpleNamespace(apply=lambda text,**kwargs:SpeechFilterResult(spoken_text=text,blocked=False,matched_rules=[],action='allow',layers=[]))
  service._append_timing_log=lambda **kwargs:None;service._background_memory_save=lambda *args,**kwargs:None
  def forbidden(*args,**kwargs):raise AssertionError('forbidden_voice_presence_or_model_runtime')

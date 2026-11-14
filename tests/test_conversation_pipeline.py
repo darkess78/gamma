@@ -230,7 +230,7 @@ class ConversationPipelineTest(unittest.TestCase):
         with patch("gamma.conversation.service.build_system_prompt", return_value="prompt"), patch.object(
             service, "_append_timing_log", return_value=None
         ):
-            response = service.respond("look it up", synthesize_speech=True, fast_mode=True)
+            response = service.respond("look it up", synthesize_speech=True, fast_mode=True, owner_verified=True)
 
         self.assertEqual(response.speech_text, "I couldn’t complete that lookup.")
         self.assertEqual(fake_tts.calls[0][0], "I couldn’t complete that lookup.")

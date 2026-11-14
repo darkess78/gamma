@@ -59,9 +59,9 @@ fine-tune can't be compared to a prompt.
   become owner-private, so memory, history and core memories load.
 - Shared channels (Discord, Twitch) get scoped history and the stream's recent
   context, which is built today but stripped.
-- Live voice currently passes no speaker at all, and a missing speaker is
-  treated as the owner by the identity resolver (`identity/resolver.py:47`)
-  while the prompt treats it as unknown. Both need an explicit speaker.
+- Live voice passed no speaker, and a missing speaker was treated as the
+  owner. Fixed 2026-11-14: no speaker means unknown; live voice and the
+  voice round-trip are owner turns only through the owner channel.
 - Smallest step: dashboard text as owner-private, with a privacy test that
   Discord/Twitch turns still can't see it.
 
@@ -366,16 +366,15 @@ No GPU needed.
 
 ## Decisions for the owner
 
-1. Hosted model budget for self-coding (and possibly judging evals): yes/no,
-   and a monthly cap.
-2. Should Shana type in Twitch chat, or only speak?
-3. Which game first? (A turn-based one is easiest; it needs a small client, see games.md.)
-4. When to deploy `rebuild/shana-foundation` to Gamma PC (it is not live yet).
-5. Which Discord servers/channels she should be in.
-6. An API caller that names no speaker is still treated as the owner (owner
-   tools included). Production requires the API token, so only Gamma's own
-   processes can do this, but every one of them could. Tightening it means
-   updating the local command-line tools and about 25 tests that rely on it.
+1. Should Shana type in Twitch chat, or only speak?
+2. Which game first? (A turn-based one is easiest; it needs a small client, see games.md.)
+3. When to deploy `rebuild/shana-foundation` to Gamma PC (it is not live yet).
+4. Which Discord servers/channels she should be in.
+
+Answered: self-coding uses local models only (2026-11-14). A caller that names
+no speaker is no longer the owner (2026-11-14): the owner is recognised only
+through the owner channel, in-process code that builds the owner-private
+recipient (the local command-line tools), or a stored platform id.
 
 ## Sources
 

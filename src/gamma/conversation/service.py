@@ -104,7 +104,7 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
         if owner_verified and recipient is None and delivery_context != "public_stream":
             recipient = RecipientContext(kind="owner_private", owner_authorized=True)
         recipient = _recipient_context(recipient, delivery_context=delivery_context)
-        speaker = self._identity.owner_profile() if owner_verified else self._identity.resolve(speaker_ctx)
+        speaker = self._speaker(speaker_ctx, recipient, owner_verified)
         exchange_id = None
         tool_checkpoint = None
         presence_snapshot = None
@@ -282,7 +282,7 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
             user_text=user_text,
             mode=vision_mode,
         )
-        image_speaker = self._identity.owner_profile() if owner_verified else self._identity.resolve(speaker_ctx)
+        image_speaker = self._speaker(speaker_ctx, recipient, owner_verified)
         return self._respond(
             memory_origin=MemoryOrigin.from_speaker(image_speaker,
                 source=speaker_ctx.source if speaker_ctx is not None else "local",
@@ -296,6 +296,14 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
             delivery_context="direct_voice" if synthesize_speech else "direct_text",
             recipient=recipient,
         )
+
+    def _speaker(self, speaker_ctx, recipient: RecipientContext, owner_verified: bool) -> SpeakerProfile:
+        """Who is talking. The owner only when proven: the owner channel, or in-process code
+        that built an owner-private recipient (HTTP callers can't supply one). Naming no
+        speaker otherwise means an unknown speaker, never the owner."""
+        if owner_verified or (speaker_ctx is None and recipient.kind == "owner_private" and recipient.owner_authorized):
+            return self._identity.owner_profile()
+        return self._identity.resolve(speaker_ctx)
 
     def respond_presence_wake(
         self,

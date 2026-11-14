@@ -41,8 +41,9 @@ Execution authority remains separate from recipient disclosure. Valid owners
 can save core memory in normal, fast, brief and micro modes, including shared or
 unbound recipient contexts. Shared results retain the existing finite
 acknowledgments; explicit authorized private views retain full results. Inferred
-owner remember calls and the existing omitted-speaker local-owner resolution
-remain compatible. General tool permissions, evaluation no-effects behavior and
+owner remember calls remain compatible. A turn that names no speaker is an
+unknown speaker unless it arrives through the owner channel or in-process code
+builds the owner-private recipient. General tool permissions, evaluation no-effects behavior and
 coding checks are unchanged. This staged repair has not been activated.
 
 Foreign-subject search/save authority, private HTTP/voice ingress and

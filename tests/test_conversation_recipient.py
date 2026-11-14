@@ -195,7 +195,7 @@ def test_image_and_wake_use_same_explicit_recipient(fixture_state, monkeypatch, 
         service.respond_with_image(user_text="fixture topic", image_bytes=b"fixture", image_media_type="image/png",
                                    session_id="mixed", recipient=recipient)
     else:
-        service.respond_presence_wake(session_id="mixed", speaker=service._identity.resolve(None),
+        service.respond_presence_wake(session_id="mixed", speaker=service._identity.owner_profile(),
                                      wake_context="Safe wake context.", synthesize_speech=False, recipient=recipient)
     first = service._llm.calls[0]["system"]
     assert (FACT in first) == (recipient is PRIVATE)
@@ -245,7 +245,7 @@ def test_repair_fallback_and_finalizer_keep_same_frozen_recipient(fixture_state,
     assert any(c["purpose"] == "conversation_structured_repair" for c in service._llm.calls)
     assert all(FACT not in p and PRIVATE_WORK not in p for p in prompt_layers(service._llm))
     service._llm = Capture(tools=True)
-    service.respond("fixture topic", recipient=SHARED, fast_mode=True)
+    service.respond("fixture topic", recipient=SHARED, fast_mode=True, owner_verified=True)  # owner speaking in shared
     assert any(c["purpose"] == "tool_finalizer" for c in service._llm.calls)
     assert all(FACT not in p and PRIVATE_WORK not in p for p in prompt_layers(service._llm))
     assert all(value is SHARED for value in seen)

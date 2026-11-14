@@ -277,6 +277,6 @@ def test_http_client_recipient_spoof_is_ignored(tool_state, monkeypatch):
         assert response.status_code == 200
         assert all(secret not in response.text for secret in SECRETS)
         assert all(secret not in json.dumps(state.service._llm.calls) for secret in SECRETS)
-        assert state.executed
+        assert not state.executed  # no speaker named, no owner channel: no owner tools either
     finally:
         client.close()

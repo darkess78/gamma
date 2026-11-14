@@ -16,12 +16,15 @@ async def voice_roundtrip(
     audio_file: UploadFile = File(...),
     session_id: str | None = Form(default=None),
     synthesize_speech: bool = Form(default=True),
+    http_request: Request = None,
 ) -> VoiceRoundtripResponse:
     try:
         return await deps.get_voice_roundtrip_service().run(
             audio_file=audio_file,
             session_id=session_id,
             synthesize_speech=synthesize_speech,
+            owner_verified=http_request is not None
+            and owner_channel.is_owner_channel(http_request.headers.get(owner_channel.HEADER)),
         )
     except ConversationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

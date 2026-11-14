@@ -46,12 +46,13 @@ class IdentityResolver:
     def resolve(self, ctx: "SpeakerContext | None") -> SpeakerProfile:
         """Return the SpeakerProfile for the given context.
 
-        Falls back to the owner profile when ctx is None (local solo use and
-        authenticated callers that omit a speaker). Returns UNKNOWN_PUBLIC when
-        the speaker cannot be identified.
+        A caller that names no speaker is unknown, never the owner: the owner is
+        recognised only by a verified owner channel (``owner_profile``) or a
+        stored platform id. Returns UNKNOWN_PUBLIC when the speaker cannot be
+        identified.
         """
         if ctx is None:
-            return self._owner
+            return UNKNOWN_PUBLIC
 
         profile = self._resolve_by_platform(ctx)
         if profile is not None:

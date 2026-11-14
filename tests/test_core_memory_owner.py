@@ -98,10 +98,13 @@ def test_core_authority_before_real_write(core_state, actor, path, recipient):
         "Please record a permanent synthetic fact with all necessary context for a durable conversation.")
     response = state.service.respond(text, speaker_ctx=speaker_context(actor), recipient=recipient,
                                      session_id="core-authority", fast_mode=path != "metadata")
-    allowed = actor in ("owner", "omitted")
+    # Naming no speaker is the owner only when in-process code built the owner-private
+    # recipient; otherwise it is an unknown speaker.
+    allowed = actor == "owner" or (actor == "omitted" and recipient is PRIVATE)
     assert_effect(state, allowed)
     core_results = [r for r in response.tool_results if r.tool == "save_core_memory"]
-    if (path == "inferred" and not allowed) or actor in ("guest", "unknown"):
+    unknown = actor in ("guest", "unknown") or (actor == "omitted" and not allowed)
+    if (path == "inferred" and not allowed) or unknown:
         assert core_results == []
     else:
         assert len(core_results) == 1
@@ -170,7 +173,7 @@ def test_authenticated_http_preserves_actor_resolution(core_state, monkeypatch, 
         result = client.post("/v1/conversation/respond",
                              headers={"Authorization": "Bearer synthetic-core-token"}, json=payload)
         assert result.status_code == 200
-        assert_effect(state, actor in ("owner", "omitted"))
+        assert_effect(state, actor == "owner")
         assert FACT not in json.dumps(result.json()["tool_results"])
     finally:
         client.close()
@@ -231,7 +234,8 @@ def test_core_denial_preserves_trusted_general_tools(core_state):
     assert any(f.fact_text == "TRUSTED_ORDINARY_SAVE" for f in state.service._memory.get_profile_facts(limit=100, subject_type="other_person", subject_name="Alice"))
 
 
-def test_actual_voice_roundtrip_keeps_legacy_owner_execution(core_state):
+@pytest.mark.parametrize("verified", [True, False])
+def test_voice_roundtrip_is_owner_only_through_the_owner_channel(core_state, verified):
     from gamma.voice.roundtrip import VoiceRoundtripService
     from gamma.schemas.voice import VoiceTranscriptionResponse
     state = core_state
@@ -242,6 +246,6 @@ def test_actual_voice_roundtrip_keeps_legacy_owner_execution(core_state):
     state.service._llm = FullCapture([])
     response = asyncio.run(voice.run(audio_file=UploadFile(
         filename="synthetic.wav", file=BytesIO(b"synthetic-only")),
-        session_id="voice-core", synthesize_speech=False))
-    assert_effect(state, True)
-    assert FACT not in response.reply_text
+        session_id="voice-core", synthesize_speech=False, owner_verified=verified))
+    assert_effect(state, verified)
+    assert (FACT in response.reply_text) == verified  # the owner hears what was saved; nobody else does

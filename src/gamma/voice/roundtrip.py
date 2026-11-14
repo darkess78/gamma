@@ -28,6 +28,7 @@ class VoiceRoundtripService:
         audio_file: UploadFile,
         session_id: str | None = None,
         synthesize_speech: bool = True,
+        owner_verified: bool = False,
     ) -> VoiceRoundtripResponse:
         started_at = time.perf_counter()
         temp_path = await self.save_upload(audio_file)
@@ -47,6 +48,7 @@ class VoiceRoundtripService:
                 synthesize_speech=synthesize_speech,
                 fast_mode=True,
                 background_context=build_audio_prompt_context(audio_context) if audio_context else None,
+                owner_verified=owner_verified,
             )
             timing["conversation_ms"] = round((time.perf_counter() - conversation_started) * 1000, 1)
             if response.timing_ms:

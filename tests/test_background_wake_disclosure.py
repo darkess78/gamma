@@ -42,12 +42,12 @@ class ContextCapture:
 
 def invoke(service, facade, recipient, *, fast=True, context=None):
     if facade == "wake":
-        return service.respond_presence_wake(session_id="mixed", speaker=service._identity.resolve(None),
+        return service.respond_presence_wake(session_id="mixed", speaker=service._identity.owner_profile(),
             wake_context=context if context is not None else WAKE, synthesize_speech=False, recipient=recipient)
     if facade == "direct_image":
         image = SimpleNamespace(filename="safe.png",stored_path=None,to_llm_input=lambda: {"fixture_image":"safe"})
         return service._respond(user_text="fixture topic", session_id="mixed", synthesize_speech=False,
-            speaker=service._identity.resolve(None), recipient=recipient,
+            speaker=service._identity.owner_profile(), recipient=recipient,
             background_context=context if context is not None else BACKGROUND, image=image,
             fast_mode=fast, persist_state=False, interaction_mode="stream")
     return service.respond("fixture topic", recipient=recipient, fast_mode=fast, evaluation_mode=True,
@@ -104,7 +104,7 @@ def test_private_shared_overlap_does_not_mutate_context_or_identity(fixture_stat
     private, public = fixture_state.service, ConversationService()
     barrier = Barrier(2)
     private._llm, public._llm = ContextCapture(overlap=barrier), ContextCapture(overlap=barrier)
-    owner = private._identity.resolve(None)
+    owner = private._identity.owner_profile()
     identity_before = vars(owner).copy()
     original = WAKE if facade == "wake" else BACKGROUND
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -168,7 +168,7 @@ def test_direct_mode_and_owner_do_not_grant_context(fixture_state, mode):
     service = fixture_state.service
     service._llm = ContextCapture()
     service._respond(user_text="fixture topic", session_id="mixed", synthesize_speech=False,
-        speaker=service._identity.resolve(None),
+        speaker=service._identity.owner_profile(),
         background_context=BACKGROUND, interaction_mode=mode, fast_mode=True,persist_state=False)
     assert all(BACKGROUND not in json.dumps(c) for c in service._llm.calls)
 
@@ -199,7 +199,7 @@ def test_actual_presence_producer_context_is_retained_but_default_wake_omits_it(
     assert seen and EPISODE in seen[0] and WAKE in seen[0]
     assert result["wake"]["status"] == "text_only"
     assert all(EPISODE not in json.dumps(c) and WAKE not in json.dumps(c) for c in state.service._llm.calls)
-    assert EPISODE in producer._build_wake_context(state=presence.load_presence_state(),speaker=state.service._identity.resolve(None))
+    assert EPISODE in producer._build_wake_context(state=presence.load_presence_state(),speaker=state.service._identity.owner_profile())
     state.service._llm = ContextCapture()
     invoke(state.service,"wake",PRIVATE,context=seen[0])
     assert EPISODE in state.service._llm.calls[0]["system"] and WAKE in state.service._llm.calls[0]["system"]

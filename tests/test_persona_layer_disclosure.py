@@ -94,7 +94,7 @@ def test_configuration_views_across_real_model_paths(fixture_state, monkeypatch,
     state.service._llm = capture
     before = {str(p): p.read_bytes() for folder in (state.config, state.persona) for p in folder.iterdir()}
     if path == "wake":
-        state.service.respond_presence_wake(session_id="mixed", speaker=state.service._identity.resolve(None),
+        state.service.respond_presence_wake(session_id="mixed", speaker=state.service._identity.owner_profile(),
                                            wake_context="fixture context", synthesize_speech=False, recipient=recipient)
     elif path == "image":
         monkeypatch.setattr(state.service._vision, "prepare_image", lambda **kwargs: None)
@@ -102,6 +102,9 @@ def test_configuration_views_across_real_model_paths(fixture_state, monkeypatch,
         state.service.respond_with_image(user_text="fixture topic", image_bytes=b"fixture",
                                          image_media_type="image/png", recipient=recipient)
     else:
+        if path == "finalizer":  # tools need a tool-capable speaker; the recipient alone decides disclosure
+            owner = state.service._identity.owner_profile()
+            monkeypatch.setattr(state.service, "_speaker", lambda *_args: owner)
         state.service.respond("fixture topic", fast_mode=True, recipient=recipient, evaluation_mode=path != "finalizer")
     assert capture.inputs and capture.budget_parts
     if path in ("repair", "fallback"):
@@ -149,7 +152,7 @@ def test_public_invalid_contract_is_bounded_and_generation_free(fixture_state, m
         if path == "image":
             state.service.respond_with_image(user_text="fixture topic", image_bytes=b"fixture", image_media_type="image/png")
         elif path == "wake":
-            state.service.respond_presence_wake(session_id="mixed", speaker=state.service._identity.resolve(None),
+            state.service.respond_presence_wake(session_id="mixed", speaker=state.service._identity.owner_profile(),
                                                wake_context="", synthesize_speech=False)
         else:
             state.service.respond("fixture topic", fast_mode=True, evaluation_mode=True)

@@ -324,7 +324,8 @@ class VoiceModeController:
                 )
 
             response_started_at = perf_counter()
-            response = self._conversation.respond(transcript, synthesize_speech=config.synthesize_speech, fast_mode=True)
+            response = self._conversation.respond(transcript, synthesize_speech=config.synthesize_speech, fast_mode=True,
+                                                owner_verified=True)  # local mic loop run by hand on Gamma PC
             response_seconds = perf_counter() - response_started_at
             response_timing_ms = response.timing_ms if isinstance(response.timing_ms, dict) else {}
             playback_attempted = False

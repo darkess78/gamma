@@ -49,6 +49,7 @@ def main() -> None:
     response = conversation.respond(
         transcript,
         synthesize_speech=not args.skip_tts,
+        owner_verified=True,  # run by hand on Gamma PC, whose shell already has full access
     )
 
     payload = {

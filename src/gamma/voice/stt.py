@@ -6,8 +6,29 @@ import re
 
 from ..config import settings
 from ..errors import ConfigurationError, ExternalServiceError
-from ..system.cuda_env import prepend_cuda_library_path
+from ..system.cuda_env import preload_cuda12_libraries
 from ..system.torch_devices import resolve_torch_device
+
+
+def _ctranslate2_device(device: str, index) -> tuple[str, int | None]:
+    """("cuda", index) when a CUDA device is asked for and ctranslate2 sees it, else ("cpu", None)."""
+    wanted = str(device or "cpu").strip().lower()
+    if not wanted.startswith("cuda") and wanted != "auto":
+        return "cpu", None
+    try:
+        import ctranslate2
+        count = ctranslate2.get_cuda_device_count()
+    except Exception:
+        count = 0
+    if wanted.startswith("cuda:"):
+        index = int(wanted.split(":", 1)[1])
+    index = int(index) if str(index or "").strip() not in {"", "None"} else 0
+    if count and 0 <= index < count:
+        return "cuda", index
+    if count and wanted == "auto":
+        return "cuda", 0
+    log.warning(f"STT asked for {device} (index {index}) but ctranslate2 sees {count} CUDA device(s); using CPU.")
+    return "cpu", None
 
 
 log = logging.getLogger(__name__)
@@ -86,7 +107,6 @@ class FasterWhisperSTTBackend(STTBackend):
         Uses configured CUDA device if available.
         """
         try:
-            prepend_cuda_library_path()
             resolved_device = settings.stt_device
             resolved_index = settings.stt_device_index
             try:
@@ -109,12 +129,18 @@ class FasterWhisperSTTBackend(STTBackend):
                     # Keep original config (cpu, auto, or non-cuda device)
                     resolved_device = resolved_spec or "cpu"
                     resolved_index = None
+            except ImportError:
+                # The main venv has no torch; faster-whisper runs on ctranslate2, which can
+                # report CUDA devices itself.
+                resolved_device, resolved_index = _ctranslate2_device(settings.stt_device, settings.stt_device_index)
             except Exception:
                 log.warning(
                     f"Failed to resolve device '{settings.stt_device}'. Falling back to CPU."
                 )
                 resolved_device = "cpu"
                 resolved_index = None
+            if resolved_device == "cuda":
+                preload_cuda12_libraries()
             from faster_whisper import WhisperModel
 
             # For CPU STT, omit device_index (default is 0). For GPU, pass explicit index.

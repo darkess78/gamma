@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import anyio
 from starlette.requests import Request
+from starlette.routing import Match
 
 import gamma.config as config_module
 from gamma.config import settings
@@ -21,6 +22,16 @@ from gamma.resources.runtime_registry import ResourceRoutingPolicy, ResourceRout
 from gamma.schemas.response import AssistantResponse, VisionAnalysis
 from gamma.system.status import SystemStatusService
 from gamma.voice.voice_profiles import list_voice_profiles
+
+
+def _route_is_registered(app, path: str, method: str = "GET") -> bool:
+    """Whether a request for ``path`` reaches a route on ``app``.
+
+    Newer FastAPI includes routers lazily, so ``app.routes`` holds router
+    wrappers without a ``path``; asking each route to match works either way.
+    """
+    scope = {"type": "http", "path": path, "root_path": "", "method": method, "headers": [], "query_string": b""}
+    return any(route.matches(scope)[0] == Match.FULL for route in app.routes)
 
 
 class _JsonRequest:
@@ -204,10 +215,10 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertIn('window.GAMMA_DASHBOARD_BASE_URL = "http://192.168.1.50:8001"', overlay.body.decode("utf-8"))
 
     def test_dashboard_app_public_page_routes_are_registered(self) -> None:
-        registered_paths = {getattr(route, "path", "") for route in main.app.routes}
         for path in [*DASHBOARD_NAV_PATHS, *LEGACY_PAGE_REDIRECTS]:
             with self.subTest(path=path):
-                self.assertIn(path, registered_paths)
+                self.assertTrue(_route_is_registered(main.app, path), path)
+        self.assertFalse(_route_is_registered(main.app, "/dashboard/not-a-real-page"))
 
     def test_dashboard_app_public_page_routes_return_html(self) -> None:
         with (

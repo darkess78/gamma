@@ -14,7 +14,16 @@ from gamma.safety.privacy_guard import PRIVACY_REFUSAL, review_private_info_requ
 from gamma.safety.speech_filter import SpeechSafetyFilter
 from gamma.voice.expressive_text import build_qwen_instruct, strip_hidden_style_tags
 from gamma.voice.tts_qwen import QwenTTSBackend
-from scripts.qwen_tts_server import _normalize_generation_params, _pop_output_peak
+try:
+    from scripts.qwen_tts_server import _normalize_generation_params, _pop_output_peak
+except ModuleNotFoundError as exc:  # scripts/ is not shipped with every test copy
+    if exc.name not in {"scripts", "scripts.qwen_tts_server"}:
+        raise
+    _normalize_generation_params = _pop_output_peak = None
+
+_requires_qwen_server_script = unittest.skipIf(
+    _normalize_generation_params is None, "scripts/qwen_tts_server.py is not present"
+)
 
 
 class ExpressiveTextTest(unittest.TestCase):
@@ -92,6 +101,7 @@ class ExpressiveTextTest(unittest.TestCase):
         self.assertEqual(excited["speed"], 0.87)
         self.assertAlmostEqual(excited["output_peak"], 0.68)
 
+    @_requires_qwen_server_script
     def test_qwen_server_allows_longer_generation_for_long_text(self) -> None:
         text = (
             "Okay. I am going to try that again more quietly. This should sound like I am speaking to you from nearby, "
@@ -104,6 +114,7 @@ class ExpressiveTextTest(unittest.TestCase):
         self.assertGreaterEqual(params["max_new_tokens"], 360)
         self.assertGreater(params["max_new_tokens"], params["min_new_tokens"])
 
+    @_requires_qwen_server_script
     def test_qwen_server_output_peak_is_server_local(self) -> None:
         extra = {"temperature": 0.4, "output_peak": 0.72}
 

@@ -1,4 +1,5 @@
 """Independent local-worker contract for bounded safety review."""
+import contextlib
 import importlib.util
 import json
 from pathlib import Path
@@ -10,6 +11,11 @@ from unittest.mock import patch
 fake = ModuleType('_review_config.config')
 fake.settings = SimpleNamespace(speech_filter_llm_model='local-review',local_llm_tagging_model='',local_llm_light_model='',speech_filter_llm_enabled=True,speech_filter_llm_temperature=0,local_llm_endpoint='http://localhost:11434',local_llm_timeout_seconds=20)
 sys.modules['_review_config.config'] = fake
+# llm_reviewer also takes a backend admission slot; the real one coordinates
+# through on-disk lock files, so stand in a no-op for this isolated load.
+admission = ModuleType('_review_config.llm.backend_admission')
+admission.backend_slot = lambda *args, **kwargs: contextlib.nullcontext()
+sys.modules['_review_config.llm.backend_admission'] = admission
 spec=importlib.util.spec_from_file_location('_review_config.safety.llm_reviewer',Path(__file__).parents[1]/'src/gamma/safety/llm_reviewer.py')
 module=importlib.util.module_from_spec(spec);sys.modules[spec.name]=module;spec.loader.exec_module(module)
 

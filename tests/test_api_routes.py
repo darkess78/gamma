@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
+from starlette.routing import Match
 
 import gamma.system.status as status_module
 import gamma.voice.live_jobs as live_jobs_module
@@ -19,6 +22,16 @@ with patch.object(status_module, "SystemStatusService", autospec=True), patch.ob
     from gamma.api import routes
     from gamma.api import deps, pages, routes_conversation
     from gamma.main import app as api_app
+
+
+def _route_is_registered(app, path: str, method: str = "GET") -> bool:
+    """Whether a request for ``path`` reaches a route on ``app``.
+
+    Newer FastAPI includes routers lazily, so ``app.routes`` holds router
+    wrappers without a ``path``; asking each route to match works either way.
+    """
+    scope = {"type": "http", "path": path, "root_path": "", "method": method, "headers": [], "query_string": b""}
+    return any(route.matches(scope)[0] == Match.FULL for route in app.routes)
 
 
 class ApiRoutesTest(unittest.TestCase):
@@ -102,8 +115,17 @@ class ApiRoutesTest(unittest.TestCase):
         self.assertEqual(ctx.exception.detail, "misconfigured")
 
     def test_performer_page_and_default_image_routes(self) -> None:
+        self.assertTrue(str(deps.SHANA_DEFAULT_IMAGE).endswith("jacket shana mouth closed eyes open.png"))
         page = pages.performer_page()
-        image = pages.performer_default_image()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            stand_in = Path(temp_dir) / deps.SHANA_DEFAULT_IMAGE.name
+            stand_in.write_bytes(b"PNG-STAND-IN")
+            with patch.object(deps, "SHANA_DEFAULT_IMAGE", stand_in):
+                image = pages.performer_default_image()
+            with patch.object(deps, "SHANA_DEFAULT_IMAGE", Path(temp_dir) / "missing.png"):
+                with self.assertRaises(HTTPException) as missing:
+                    pages.performer_default_image()
+        self.assertEqual(missing.exception.status_code, 404)
         monitor = pages.monitor_page()
         overlay = pages.subtitle_overlay_page()
         favicon = pages.favicon()
@@ -142,11 +164,10 @@ class ApiRoutesTest(unittest.TestCase):
         self.assertIn("/dashboard/stream", twitch.headers["location"])
 
     def test_public_dashboard_routes_are_registered_on_api_app(self) -> None:
-        registered_paths = {getattr(route, "path", "") for route in api_app.routes}
-        self.assertIn("/dashboard", registered_paths)
-        self.assertIn("/dashboard/{page_name}", registered_paths)
-        self.assertIn("/presence", registered_paths)
-        self.assertIn("/talk", registered_paths)
+        for path in ["/dashboard", "/dashboard/live", "/dashboard/any-page", "/presence", "/talk"]:
+            with self.subTest(path=path):
+                self.assertTrue(_route_is_registered(api_app, path), path)
+        self.assertFalse(_route_is_registered(api_app, "/not-a-real-page"))
 
     def test_public_dashboard_routes_on_api_app_do_not_json_404(self) -> None:
         page_paths = [

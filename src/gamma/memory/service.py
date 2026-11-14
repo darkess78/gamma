@@ -14,6 +14,7 @@ from ..config import settings
 from ..schemas.response import MemoryCandidate
 from . import embeddings, retrieval, triage
 from .models import EpisodicMemory, KnownPerson, PersonIdentity, ProfileFact
+from .sqlite_setup import enable_wal, ensure_sqlite_parent
 from .attribution import MemoryOrigin, prepare_candidate, source_key, merge_origin, manual_origin
 
 
@@ -238,6 +239,7 @@ class MemoryService:
         if settings.database_url.startswith("sqlite"):
             connect_args["check_same_thread"] = False
             engine_kwargs["poolclass"] = NullPool
+        ensure_sqlite_parent(settings.database_url)
         self._engine = create_engine(settings.database_url, connect_args=connect_args, **engine_kwargs)
         if settings.database_url.startswith("sqlite"):
             event.listen(self._engine, "connect", self._configure_sqlite_connection)
@@ -263,10 +265,10 @@ class MemoryService:
         """
         cursor = dbapi_connection.cursor()
         try:
-            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            enable_wal(cursor)
             cursor.execute("PRAGMA synchronous=NORMAL")
             cursor.execute("PRAGMA foreign_keys=ON")
-            cursor.execute("PRAGMA busy_timeout=5000")
         finally:
             cursor.close()
 

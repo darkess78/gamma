@@ -13,6 +13,7 @@ from sqlmodel import Field, Session, SQLModel, create_engine, delete, select
 from ..config import settings
 from ..llm.capabilities import estimate_text_tokens
 from .journal_identity import capture_identity, owner_is_dead
+from .sqlite_setup import enable_wal, ensure_sqlite_parent
 
 
 def _utc_now() -> datetime:
@@ -124,6 +125,7 @@ class ContinuityService:
         url = database_url or settings.database_url
         connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
         engine_kwargs = {"poolclass": NullPool} if url.startswith("sqlite") else {}
+        ensure_sqlite_parent(url)
         self._engine = create_engine(url, connect_args=connect_args, **engine_kwargs)
         self._owner_id = uuid4().hex
         self._host, self._pid, self._process_started = capture_identity()
@@ -188,9 +190,9 @@ class ContinuityService:
     def _configure_sqlite(connection, _record) -> None:
         cursor = connection.cursor()
         try:
-            cursor.execute("PRAGMA journal_mode=WAL")
-            cursor.execute("PRAGMA synchronous=NORMAL")
             cursor.execute("PRAGMA busy_timeout=5000")
+            enable_wal(cursor)
+            cursor.execute("PRAGMA synchronous=NORMAL")
         finally:
             cursor.close()
 

@@ -18,3 +18,12 @@ def test_owner_only_by_owner_channel_or_in_process_owner_recipient():
     assert not service._speaker(None, shared, False).is_owner
     assert service._speaker(None, private, False).is_owner
     assert service._speaker(None, shared, True).is_owner
+
+
+def test_live_voice_worker_is_owner_only_with_the_verified_flag():
+    from types import SimpleNamespace
+    from gamma.run_live_voice_worker import live_speaker
+    service = SimpleNamespace(_identity=IdentityResolver())
+    assert live_speaker(service, SimpleNamespace(owner_verified=True)).is_owner
+    assert not live_speaker(service, SimpleNamespace(owner_verified=False)).is_owner
+    assert not live_speaker(service, SimpleNamespace()).is_owner

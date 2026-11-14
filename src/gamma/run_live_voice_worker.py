@@ -27,6 +27,14 @@ from .voice.stt import STTService
 from .voice.expressive_text import strip_hidden_style_tags
 from .voice.tts import TTSService
 from .safety.speech_filter import SpeechSafetyFilter
+from .identity.profile import SpeakerProfile
+
+
+def live_speaker(conversation: ConversationService, args: Any) -> SpeakerProfile:
+    """The owner only when the API saw the owner channel (``--owner-verified``); otherwise unknown."""
+    if getattr(args, "owner_verified", False):
+        return conversation._identity.owner_profile()
+    return conversation._identity.resolve(None)
 
 
 def _utc_now() -> str:
@@ -553,9 +561,7 @@ def _run_incremental_experimental(
     turn_state: AssistantTurnState,
     audio_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    # Capture the existing local assumed identity once, before generation.
-    speaker = (conversation._identity.owner_profile() if getattr(args, "owner_verified", False)
-               else conversation._identity.resolve(None))
+    speaker = live_speaker(conversation, args)  # decided once, before generation
     memory_origin = MemoryOrigin.from_speaker(speaker,
         source="live_voice", session_id=args.session_id, turn_id=args.turn_id)
     speech_filter = SpeechSafetyFilter(settings.speech_filter_level)

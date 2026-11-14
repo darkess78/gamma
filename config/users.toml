@@ -1,4 +1,7 @@
-# Speaker identity profiles
+# Speaker identity profiles (TEMPLATE - this file is public in the repo)
+#
+# Put real names, notes and platform ids in config/users.local.toml, which git ignores.
+# It uses the same layout and its values override these.
 #
 # trust levels:
 #   owner        - full access, personal memory, established relationship
@@ -10,16 +13,18 @@
 #   discord      - Discord user ID (integer as string)
 #   game         - comma-separated list of known in-game usernames
 #
-# If no speaker context is provided (e.g. local solo use), owner is assumed.
+# A caller that names no speaker is an unknown speaker, never the owner. The owner is
+# recognised through the dashboard's owner channel, the local command-line tools, or the
+# platform ids below. Only the owner can save memories about the owner.
 
 [owner]
-name = "darkess78"
+name = "Owner"
 trust = "owner"
-notes = "The primary user. Apply the established relationship and full memory access."
+notes = ""
 
 [owner.platform_ids]
 discord = ""          # fill in your Discord user ID
-game = "darkess78"    # comma-separated game usernames
+game = ""    # comma-separated game usernames
 
 # --- Trusted guests ---
 # Copy this block and adjust for each person you want to recognize.

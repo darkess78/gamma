@@ -14,10 +14,20 @@ if TYPE_CHECKING:
 _CONFIG_PATH = settings.project_root / "config" / "users.toml"
 
 
+def _merge(base: dict, override: dict) -> dict:
+    out = dict(base)
+    for key, value in override.items():
+        out[key] = _merge(out[key], value) if isinstance(value, dict) and isinstance(out.get(key), dict) else value
+    return out
+
+
 def _load_config() -> dict:
-    if not _CONFIG_PATH.exists():
-        return {}
-    return tomllib.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
+    """``users.toml`` (a tracked template) with ``users.local.toml`` (untracked: real names and ids) on top."""
+    config: dict = {}
+    for path in (_CONFIG_PATH, _CONFIG_PATH.with_name("users.local.toml")):
+        if path.exists():
+            config = _merge(config, tomllib.loads(path.read_text(encoding="utf-8")))
+    return config
 
 
 def _parse_game_usernames(raw: str) -> list[str]:

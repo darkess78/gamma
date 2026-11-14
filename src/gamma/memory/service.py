@@ -13,7 +13,7 @@ from ..schemas.response import MemoryCandidate
 from . import embeddings, retrieval, triage
 from .models import EpisodicMemory, ProfileFact
 from .sqlite_setup import enable_wal, ensure_sqlite_parent
-from .attribution import MemoryOrigin, prepare_candidate, source_key, merge_origin
+from .attribution import MemoryOrigin, claims_about_owner, prepare_candidate, source_key, merge_origin
 from .people import PeopleMixin
 from .admin import MemoryAdminMixin
 from .fact_text import _canonicalize_profile_text, _episodic_signature, _fact_key, _normalize_subject_name, _normalize_whitespace
@@ -37,6 +37,18 @@ def _visible(model, allowed: set[str]):
     if "owner_only" in allowed:
         return or_(column.in_(allowed), column.is_(None))
     return column.in_(allowed)
+
+
+def _owner_names() -> tuple[str, ...]:
+    """The owner's configured name and game handles, to refuse others' claims about them."""
+    try:
+        from ..identity.resolver import _load_config, _parse_game_usernames
+        owner = _load_config().get("owner", {}) or {}
+        names = [str(owner.get("name") or "")]
+        names += _parse_game_usernames(str((owner.get("platform_ids") or {}).get("game") or ""))
+        return tuple(n for n in names if n.strip())
+    except Exception:
+        return ()
 
 
 class MemoryService(PeopleMixin, MemoryAdminMixin):
@@ -341,6 +353,8 @@ class MemoryService(PeopleMixin, MemoryAdminMixin):
             for candidate in candidates:
                 if not self._worth_keeping(candidate, origin):
                     continue
+                if claims_about_owner(candidate, origin, _owner_names()):
+                    continue  # only the owner writes memories about the owner
                 candidate, attribution = prepare_candidate(candidate, origin)
                 visibility = visibility_for(origin)
                 if candidate.type in {"profile", "fact", "preference", "project", "boundary"}:

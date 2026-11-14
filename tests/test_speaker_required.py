@@ -27,3 +27,13 @@ def test_live_voice_worker_is_owner_only_with_the_verified_flag():
     assert live_speaker(service, SimpleNamespace(owner_verified=True)).is_owner
     assert not live_speaker(service, SimpleNamespace(owner_verified=False)).is_owner
     assert not live_speaker(service, SimpleNamespace()).is_owner
+
+
+def test_real_identity_lives_in_the_untracked_local_file(tmp_path, monkeypatch):
+    from gamma.identity import resolver
+    (tmp_path / "users.toml").write_text('[owner]\nname = "Owner"\ntrust = "owner"\n[owner.platform_ids]\ngame = ""\n')
+    (tmp_path / "users.local.toml").write_text('[owner]\nname = "RealName"\n[owner.platform_ids]\ngame = "realhandle"\n')
+    monkeypatch.setattr(resolver, "_CONFIG_PATH", tmp_path / "users.toml")
+    config = resolver._load_config()
+    assert config["owner"]["name"] == "RealName" and config["owner"]["trust"] == "owner"
+    assert config["owner"]["platform_ids"]["game"] == "realhandle"

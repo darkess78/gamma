@@ -93,6 +93,29 @@ def prepare_candidate(candidate, origin):
             data['turn_id'] = origin.turn_id
     return candidate.model_copy(update={'subject_type': subject_type, 'subject_name': subject_name}), json.dumps(data, sort_keys=True)
 
+def _name(value):
+    return " ".join(str(value).split()).casefold() if value is not None and str(value).strip() else None
+
+
+def claims_about_owner(candidate, origin, owner_names=()):
+    """True when someone other than the owner would be writing a memory about the owner.
+
+    Only the owner may say things about the owner. A non-owner's candidate marked
+    ``primary_user`` (the owner) for anyone but themselves, or naming the owner,
+    is refused instead of stored. Self-reports ("I like tea" from Alice) still
+    become facts about the speaker. Internal writes with no reporter (manual
+    edits, unbound tools) are not affected.
+    """
+    if origin is None or origin.is_owner or not origin.reporter_name:
+        return False
+    reporter = _name(origin.reporter_name)
+    subject = _name(getattr(candidate, "subject_name", None))
+    owner = {n for n in (_name(x) for x in owner_names) if n and n != reporter}
+    if subject is not None and subject in owner:
+        return True
+    return getattr(candidate, "subject_type", None) == "primary_user" and subject is not None and subject != reporter
+
+
 def bind_subject(candidate, origin):
     c = candidate
     t = getattr(c, "subject_type", None)

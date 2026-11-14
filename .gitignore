@@ -2,6 +2,8 @@
 .env
 config/app.local.toml
 config/voices.local.toml
+# Real names and platform ids for speaker identity (users.toml is only the template)
+config/users.local.toml
 # Gamma repo-local virtual environment
 .venv/
 .venv*/

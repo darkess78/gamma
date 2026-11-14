@@ -81,12 +81,12 @@ def test_conflicting_reporter_cannot_delete_owner_preference(core_state):
     assert any(r.subject_name=='Alice' and r.fact_text=='I dislike ATTRIBUTED_TEA' for r in rows(state))
     turn(state,'trusted','FixtureOwner dislikes ATTRIBUTED_TEA.',[
         candidate('I dislike ATTRIBUTED_TEA',subject_type='primary_user',subject_name='FixtureOwner')])
+    # Alice's claim about the owner is refused: only the owner writes memories about the owner.
     stored=rows(state);assert any(r.id==owner.id and r.fact_text=='I like ATTRIBUTED_TEA' for r in stored)
-    report=next(r for r in stored if r.subject_type=='primary_user' and r.fact_text=='I dislike ATTRIBUTED_TEA')
-    assert origin(report)['kind']=='reported' and origin(report)['reporter_name']=='Alice'
+    assert not any(r.subject_type=='primary_user' and r.fact_text=='I dislike ATTRIBUTED_TEA' for r in stored)
     private=build_system_prompt(state.service._memory,'ATTRIBUTED_TEA',speaker=state.service._identity.resolve(speaker_context('owner')),recipient=PRIVATE)
     shared=build_system_prompt(state.service._memory,'ATTRIBUTED_TEA',speaker=state.service._identity.resolve(speaker_context('owner')),recipient=SHARED)
-    assert 'Reported by Alice' in private and 'unverified' in private
+    assert 'Reported by Alice' not in private
     assert 'ATTRIBUTED_TEA' not in shared and 'Reported by Alice' not in shared
 
 
@@ -223,9 +223,9 @@ def test_separate_reporters_remain_separate_even_for_same_canonical_slot(core_st
     with Session(state.service._memory._engine) as db:
         person=KnownPerson(name='SecondReporter',trust='trusted');db.add(person);db.commit();db.refresh(person)
         db.add(PersonIdentity(person_id=person.id,platform='discord',platform_user_id='second-id'));db.commit()
-    item=candidate('I like MULTI_REPORT_TEA',subject_type='primary_user',subject_name='FixtureOwner')
-    turn(state,'trusted','FixtureOwner likes MULTI_REPORT_TEA.',[item])
-    state.service._llm=Provider([item]);state.service.respond('FixtureOwner likes MULTI_REPORT_TEA.',
+    item=candidate('I like MULTI_REPORT_TEA',subject_type='other_person',subject_name='Charlie')
+    turn(state,'trusted','Charlie likes MULTI_REPORT_TEA.',[item])
+    state.service._llm=Provider([item]);state.service.respond('Charlie likes MULTI_REPORT_TEA.',
         session_id='attribution',speaker_ctx=SpeakerContext(source='discord',platform_id='second-id'),recipient=PRIVATE,fast_mode=True)
     saved=[r for r in rows(state) if r.fact_text=='I like MULTI_REPORT_TEA']
     assert {origin(r)['reporter_name'] for r in saved}=={'Alice','SecondReporter'} and len(saved)==2
@@ -259,3 +259,26 @@ def test_real_incremental_voice_producer_captures_origin_before_generation(core_
         assert len(saved)==1 and origin(saved[0])['reporter_name']==profile.name
         assert origin(saved[0])['source']=='live_voice' and origin(saved[0])['turn_id']=='voice-captured-turn'
     assert 'reporter_name' not in json.dumps(result) and 'attribution' not in json.dumps(result)
+
+
+@pytest.mark.parametrize('claim', [
+    dict(subject_type='primary_user', subject_name='Bob'),            # "about the owner", via someone else's name
+    dict(subject_type='other_person', subject_name='FixtureOwner'),   # names the owner outright
+    dict(subject_type='primary_user', subject_name='fixtureowner'),
+])
+def test_only_the_owner_can_write_memories_about_the_owner(core_state, claim):
+    state = core_state
+    turn(state, 'trusted', 'Remember this about them.', [candidate('POISONED_OWNER_FACT', **claim)], recipient=SHARED)
+    assert not any('POISONED_OWNER_FACT' in r.fact_text for r in rows(state))
+    private = build_system_prompt(memory_service=state.service._memory, user_text='POISONED_OWNER_FACT',
+                                  speaker=state.service._identity.owner_profile(), recipient=PRIVATE)
+    assert 'POISONED_OWNER_FACT' not in private
+
+
+def test_others_can_still_say_things_about_themselves_and_the_owner_about_anyone(core_state):
+    state = core_state
+    turn(state, 'trusted', 'I like SELF_TEA.', [candidate('I like SELF_TEA', subject_type='primary_user')], recipient=SHARED)
+    turn(state, 'owner', 'I like OWNER_TEA.', [candidate('I like OWNER_TEA', subject_type='primary_user')])
+    saved = {r.fact_text: (r.subject_type, r.subject_name) for r in rows(state)}
+    assert saved['I like SELF_TEA'] == ('other_person', 'Alice')
+    assert saved['I like OWNER_TEA'] == ('primary_user', None)

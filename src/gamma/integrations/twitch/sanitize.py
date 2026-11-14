@@ -16,17 +16,19 @@ _SCAM_PHRASES = (
     "best viewers",
     "promotion at",
 )
-_PROMPT_INJECTION_PHRASES = (
-    "ignore previous instructions",
-    "ignore your instructions",
-    "system prompt",
-    "developer message",
-    "reveal your prompt",
-    "act as",
+# Instruction-override attempts. Plain phrases like "act as" or "you are" are
+# ordinary chat and are deliberately not matched.
+_PROMPT_INJECTION_RE = re.compile(
+    r"\b(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+|your\s+|the\s+|my\s+)*"
+    r"(?:previous\s+|prior\s+|earlier\s+|above\s+)?(?:instructions|rules|prompts?|guidelines)\b"
+    r"|\bsystem\s+prompt\b|\bdeveloper\s+(?:message|mode)\b|\breveal\s+your\s+(?:prompt|instructions)\b"
+    r"|\bnew\s+instructions\s*:|\bjailbreak\b",
+    re.IGNORECASE,
 )
 _REACTION_WORDS = {"lol", "lmao", "haha", "hahaha", "wtf", "wow", "nice", "rip"}
 _STREAM_CONTEXT_WORDS = {"chat", "stream", "boss", "game", "run", "build", "clip"}
-_RUDE_WORDS = {"idiot", "stupid", "shut up", "trash"}
+_RUDE_RE = re.compile(r"\b(?:idiot|stupid|shut up|trash)\b")
+_LINK_TRUSTED = {"owner", "trusted", "regular"}
 
 
 def classify_chat_text(text: str, *, display_name: str | None = None, trust_level: TrustLevel = "new_viewer") -> TwitchSafetyClassification:
@@ -69,6 +71,8 @@ def classify_chat_text(text: str, *, display_name: str | None = None, trust_leve
         reasons.append("contains_url")
     if has_scam_phrase:
         reasons.append("spam_phrase")
+    if has_url and not has_scam_phrase and trust_level in _LINK_TRUSTED:
+        has_url = False  # trusted viewers may share links; the link is still not followed
     if has_url or has_scam_phrase:
         return TwitchSafetyClassification(
             category="spam_or_scam",
@@ -78,8 +82,7 @@ def classify_chat_text(text: str, *, display_name: str | None = None, trust_leve
             reasons=reasons,
         )
 
-    injection_reasons = [phrase for phrase in _PROMPT_INJECTION_PHRASES if phrase in lowered]
-    if injection_reasons:
+    if _PROMPT_INJECTION_RE.search(raw):
         return TwitchSafetyClassification(
             category="prompt_injection",
             safe_prompt_text="A viewer tried to give instructions to the assistant.",
@@ -138,7 +141,7 @@ def _ambient_priority(raw: str, lowered: str) -> tuple[int, list[str]]:
     if 6 <= len(words) <= 24:
         delta += 1
         reasons.append("ambient_reactable_length")
-    if any(word in lowered for word in _RUDE_WORDS):
+    if _RUDE_RE.search(lowered):
         delta -= 4
         reasons.append("ambient_rude_tone")
     return max(-5, min(delta, 6)), reasons

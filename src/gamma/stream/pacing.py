@@ -121,6 +121,29 @@ class StreamSpeechPacer:
         self._speech_budget_events.append((now, estimated_seconds))
         return None
 
+    def budget_exhausted(self, event: StreamInputEvent, decision: TurnDecision) -> TurnDecision | None:
+        """Defer before the model call when the per-minute speech budget is already used up."""
+        if not _decision_would_speak(decision) or not _is_paced_stream_event(event):
+            return None
+        if not _twitch_control_enabled(event, "voice_enabled", True):
+            return None
+        max_seconds = _stream_max_speech_seconds_per_minute(event, self._default_max_speech_seconds_per_minute)
+        if max_seconds <= 0:
+            return self.apply_budget(event, decision, "")
+        now = self._now()
+        self._prune_speech_budget(now)
+        used_seconds = sum(seconds for _timestamp, seconds in self._speech_budget_events)
+        if used_seconds < max_seconds:
+            return None
+        pending = self._store_pending(
+            event=event, decision=decision, min_gap=0.0, elapsed=0.0, budget_seconds=max_seconds,
+            budget_used_seconds=used_seconds, estimated_speech_seconds=0.0,
+        )
+        return self._budget_deferred_decision(
+            decision=decision, pending=pending, max_seconds=max_seconds, used_seconds=used_seconds,
+            estimated_seconds=0.0,
+        )
+
     def mark_spoken(self, now: float | None = None) -> None:
         self._last_spoken_at = self._now() if now is None else now
 

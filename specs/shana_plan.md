@@ -149,6 +149,13 @@ can stall its own connection and has no duplicate check.
 4. EventSub: async posting, dedupe on message ID, more subscriptions. (S)
 5. Other sites (YouTube chat, Kick) through the same event shape later.
 
+**Steps 1 and 4 done (2026-11-14):** instruction-override detection matches
+real overrides instead of any "act as"; trusted/regular viewers can share
+links; rude words match whole words; moderation escalation needs an actual
+request ("ban @x", "timeout that guy"); a spent speech budget defers before
+the model call; EventSub drops repeated message ids and posts off the event
+loop. More EventSub subscriptions need Twitch scopes on the owner's token.
+
 Whether Shana should type in Twitch chat as well as speak is an owner decision.
 
 ### W5. Discord — **Do**

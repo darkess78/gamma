@@ -7,6 +7,7 @@ import logging
 import time
 import urllib.error
 import urllib.request
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -126,6 +127,8 @@ class TwitchEventSubWorker:
         self._notification_count = 0
         self._subscriptions: list[dict[str, Any]] = []
         self._subscription_ok_count = 0
+        # Twitch delivers notifications at least once; remember recent ids to drop repeats.
+        self._seen_message_ids: deque[str] = deque(maxlen=500)
         self._subscription_error_count = 0
         self._last_token_validation_monotonic = 0.0
 
@@ -334,6 +337,12 @@ class TwitchEventSubWorker:
                 )
                 continue
             if message_type == "notification":
+                if message_id and message_id in self._seen_message_ids:
+                    log_event(self.logger, logging.INFO, "eventsub.notification.duplicate",
+                              "Dropped a repeated EventSub notification.", message_id=message_id)
+                    continue
+                if message_id:
+                    self._seen_message_ids.append(message_id)
                 event = stream_event_from_eventsub_notification(payload, twitch_controls=self.config.controls())
                 if event is not None:
                     subscription = payload.get("payload", {}).get("subscription", {})
@@ -346,7 +355,10 @@ class TwitchEventSubWorker:
                         session_id=event.session_id,
                     )
                     try:
-                        self.client.post_event(event, synthesize_speech=self.synthesize_speech, fast_mode=self.fast_mode)
+                        # Off the event loop, so a long Shana turn can't stall websocket pings.
+                        await asyncio.to_thread(
+                            self.client.post_event, event, synthesize_speech=self.synthesize_speech, fast_mode=self.fast_mode,
+                        )
                     except Exception as exc:
                         log_event(
                             self.logger,

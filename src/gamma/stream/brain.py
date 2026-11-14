@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from concurrent.futures import Future
 from concurrent.futures import ThreadPoolExecutor
@@ -167,6 +168,7 @@ class StreamBrain(PublicationReviewMixin):
             synthesize_speech = False
 
         decision = self._pacer.apply(event, decision)
+        decision = self._pacer.budget_exhausted(event, decision) or decision
         canned_response = _canned_response_from_decision(decision)
         parallel_safety = _parallel_stream_safety_enabled(event, synthesize_speech=synthesize_speech)
         if canned_response:
@@ -459,7 +461,7 @@ class StreamBrain(PublicationReviewMixin):
                 should_call_conversation=True,
                 response_mode="direct",
             )
-        if any(marker in lowered for marker in ["ban ", "timeout ", "delete message", "mod review"]):
+        if _MODERATION_REQUEST_RE.search(lowered):
             return TurnDecision(
                 decision="moderation_escalation",
                 reason="event_mentions_moderation_action",
@@ -576,3 +578,12 @@ def _speaker_label(event: StreamInputEvent) -> str | None:
     if event.kind != "chat_message" or event.actor.source.strip().lower() not in {"twitch", "discord"}:
         return None
     return str(event.metadata.get("safe_display_name") or "").strip() or safe_username_alias(event.actor.display_name)
+
+
+# A request to moderate someone, not a message that happens to contain "ban"
+# or "timeout" ("timeout error", "urban").
+_MODERATION_REQUEST_RE = re.compile(
+    r"\b(?:ban|unban|timeout|time\s+out|mute)\s+(?:@\w+|him|her|them|this\s+(?:guy|person|user|bot)|"
+    r"that\s+(?:guy|person|user|bot)|the\s+(?:spammer|bot|troll))\b"
+    r"|\bdelete\s+(?:that|this|his|her|their)\s+message\b|\bmod\s+review\b"
+)

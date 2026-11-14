@@ -1,5 +1,5 @@
 """Only respond/structured parsing/owned journal/core tool; synthetic isolated state."""
-import hashlib,json,os,sqlite3,sys
+import hashlib,json,os,sqlite3,sys,tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Event,Lock
@@ -63,7 +63,7 @@ class CoreTool(builtin.SaveCoreMemoryTool):
 @pytest.fixture(autouse=True,scope='session')
 def record_cases():
  yield
- Path(os.environ['TMPDIR'],'cancel-boundary-cases.json').write_text(json.dumps(CASES,indent=2))
+ Path(tempfile.gettempdir(),'cancel-boundary-cases.json').write_text(json.dumps(CASES,indent=2))
 
 @pytest.fixture
 def fixture(tmp_path,monkeypatch):

@@ -63,6 +63,8 @@ def test_removed_spec_names_are_not_referenced() -> None:
     references = "\n".join(
         path.read_text(encoding="utf-8")
         for path in [PROJECT_ROOT / "README.md", *SPECS_ROOT.rglob("*.md")]
+        # README.md is not shipped in every test copy; check it when present.
+        if path.exists()
     )
     stale = sorted(name for name in REMOVED_SPEC_NAMES if name in references)
     assert not stale, f"Removed specs are still referenced: {stale}"

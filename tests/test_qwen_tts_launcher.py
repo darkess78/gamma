@@ -8,8 +8,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 
+LAUNCHER_PATH = Path(__file__).resolve().parents[1] / "scripts" / "start_qwen_tts_server.py"
+
+
 def _load_launcher():
-    path = Path(__file__).resolve().parents[1] / "scripts" / "start_qwen_tts_server.py"
+    path = LAUNCHER_PATH
     spec = importlib.util.spec_from_file_location("gamma_test_qwen_tts_launcher", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -17,6 +20,7 @@ def _load_launcher():
     return module
 
 
+@unittest.skipUnless(LAUNCHER_PATH.exists(), "scripts/ is not shipped with this test copy")
 class QwenTtsLauncherTest(unittest.TestCase):
     def test_qwen_python_honors_explicit_runtime(self) -> None:
         launcher = _load_launcher()

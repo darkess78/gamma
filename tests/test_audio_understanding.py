@@ -7,7 +7,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-import torch
+import pytest
+
+torch = pytest.importorskip("torch")
+
 from gamma.config import settings
 from gamma.observability import configure_logging
 from gamma.schemas.voice import AudioEvent, SpeakerAffect, VoiceInputContext

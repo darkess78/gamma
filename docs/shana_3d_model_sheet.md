@@ -170,6 +170,19 @@ differ slightly between versions.
    emotion and speaks a line in each. Fix any expression that looks wrong in
    VRoid and re-export.
 
+### Check the export
+
+Before setting her up in Warudo or VSeeFace, run the checker on the exported
+file (on Gamma PC or anywhere Gamma's code is):
+
+```bash
+python -m gamma.performer.vrm_check shana.vrm
+```
+
+It says which `avatar3d` naming matches the file, lists any expression or bone
+Shana's adapter needs but can't find, reports whether hair and skirt have
+spring bones, and shows the licence fields set in VRoid's export dialog.
+
 ## 8. Optional extras (need Unity + UniVRM or Blender)
 
 - **Blush.** A real embarrassed look needs a blush clip. Add a custom

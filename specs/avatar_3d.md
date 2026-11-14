@@ -134,6 +134,13 @@ turn off its own face tracking so received expressions are not overridden.
 - VMC has no authentication. Keep the firewall rule limited to Gamma PC's
   address on the private network.
 
+## Checking a model
+
+`python -m gamma.performer.vrm_check model.vrm` (`performer/vrm_check.py`)
+reads the file's glTF JSON. It reports the VRM version and matching
+`avatar3d_naming`, missing expressions or humanoid bones, spring bone groups and
+licence fields. It exits 0 when everything the adapter needs is present.
+
 ## Implemented vs not
 
 Implemented:

@@ -173,6 +173,11 @@ class StatusViewsMixin:
             },
             "presence": self.presence_summary(),
             "performer": self.performer_output_status(),
+            # Home shows Shana's mood and the Discord bot next to the other services.
+            "assistant": {
+                "emotion": (local_status.get("assistant", {}).get("emotion_memory", {}) or {}).get("state", {}),
+            },
+            "discord": {"text_worker": self.discord_text_worker_status()},
         }
 
     def build_header_status(self) -> dict[str, Any]:

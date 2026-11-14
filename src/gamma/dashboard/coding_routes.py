@@ -40,6 +40,15 @@ async def create(request: GoalRequest):
         raise HTTPException(409, str(exc) if isinstance(exc,ValueError) else 'Work storage unavailable') from None
 
 
+@router.get('/work/{identifier}/proposal')
+async def proposal(identifier: str):
+    try:
+        diff = await run_in_threadpool(store.read_proposal, settings.data_dir/'coding'/'autonomous', identifier)
+    except (ValueError, OSError):
+        raise HTTPException(404, 'No proposal is available for this work') from None
+    return {'id': identifier, 'diff': diff}
+
+
 @router.post('/work/{identifier}/control')
 async def control(identifier: str, request: ControlRequest):
     try:

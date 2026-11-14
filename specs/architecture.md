@@ -35,7 +35,8 @@ or invoke memory/conversation services directly.
 
 `/dashboard/monitor` is the persistent interaction/output room and submits
 local text through the supported dashboard-to-Shana stream API boundary.
-`/dashboard/live` remains the microphone and live-voice diagnostic client.
+It also embeds the microphone and live-voice panel (`/dashboard/live` redirects there).
+The page layout is described in `dashboard.md`.
 Monitor is expected to remain open in a dedicated tab/window because ordinary
 page navigation destroys browser audio and WebSocket state.
 

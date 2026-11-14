@@ -1,4 +1,4 @@
-// Dashboard controls that are independent of the shared status renderer.
+// controls.js - Shana page actions: behaviour settings, voice profile editor and generated audio.
 (function () {
   'use strict';
 
@@ -26,12 +26,6 @@
     var payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || ('HTTP ' + response.status));
     return payload;
-  }
-
-  function toggleViewMode() {
-    var input = element('viewModeSwitch');
-    localStorage.setItem('gammaDashboardViewMode', input && input.checked ? 'json' : 'human');
-    if (window.loadStatus) window.loadStatus();
   }
 
   async function saveAssistantSettings() {
@@ -68,7 +62,8 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      setText('assistantSettingsStatus', result.detail || 'Assistant settings saved.');
+      if (window.clearSettingsDirty) window.clearSettingsDirty('behaviourForm');
+      setText('assistantSettingsStatus', result.detail || 'Behaviour saved.');
       if (window.loadStatus) window.loadStatus();
     } catch (error) {
       setText('assistantSettingsStatus', 'Save failed: ' + String(error));
@@ -101,7 +96,8 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      setText('ttsProfileEditorStatus', result.detail || 'TTS profile saved.');
+      if (window.clearSettingsDirty) window.clearSettingsDirty('ttsEditorForm');
+      setText('ttsProfileEditorStatus', result.detail || 'Voice profile saved.');
       if (window.loadStatus) window.loadStatus();
     } catch (error) {
       setText('ttsProfileEditorStatus', 'Save failed: ' + String(error));
@@ -142,31 +138,20 @@
     return element('ttsAudioEngine');
   }
 
-  function ttsPlayerLoadLatest() {
-    var status = window.gammaDashboardStatus || {};
-    var artifacts = status.recent_artifacts || [];
-    if (!artifacts.length) {
-      setText('ttsPlayerError', 'No recent audio artifact is available.');
-      return;
-    }
-    ttsPlayerLoad(artifacts[0].name);
+  function showPlayerError(text) {
+    var target = element('ttsPlayerError');
+    if (!target) return;
+    target.textContent = text || '';
+    target.hidden = !text;
   }
 
   function ttsPlayerLoad(filename) {
     var audio = ttsAudio();
     if (!audio) return;
+    showPlayerError('');
     audio.src = '/api/audio/' + encodeURIComponent(filename);
     setText('ttsPlayerTrack', filename);
-    var error = element('ttsPlayerError');
-    if (error) error.style.display = 'none';
-    element('ttsPlayerPlayBtn').disabled = false;
-    element('ttsPlayerSeek').disabled = false;
-    var download = element('ttsPlayerDownload');
-    if (download) {
-      download.href = audio.src;
-      download.download = filename;
-      download.style.display = '';
-    }
+    audio.play().catch(function () {});
   }
 
   async function ttsArtifactDelete(filename) {
@@ -175,35 +160,8 @@
       await jsonRequest('/api/audio/' + encodeURIComponent(filename), { method: 'DELETE' });
       if (window.loadStatus) window.loadStatus();
     } catch (error) {
-      var target = element('ttsPlayerError');
-      if (target) target.style.display = '';
-      setText('ttsPlayerError', 'Delete failed: ' + String(error));
+      showPlayerError('Delete failed: ' + String(error));
     }
-  }
-
-  function ttsPlayerTogglePlay() {
-    var audio = ttsAudio();
-    if (!audio || !audio.src) return;
-    if (audio.paused) audio.play();
-    else audio.pause();
-  }
-
-  function ttsPlayerSeekTo() {
-    var audio = ttsAudio();
-    var seek = element('ttsPlayerSeek');
-    if (audio && seek && isFinite(audio.duration)) audio.currentTime = audio.duration * Number(seek.value || 0) / 100;
-  }
-
-  function ttsPlayerSetVolume() {
-    var audio = ttsAudio();
-    var slider = element('ttsPlayerVol');
-    if (audio && slider) audio.volume = Number(slider.value || 0);
-    setText('ttsPlayerVolValue', Math.round(Number(slider && slider.value || 0) * 100) + '%');
-  }
-
-  function ttsPlayerSetLoop() {
-    var audio = ttsAudio();
-    if (audio) audio.loop = checked('ttsPlayerLoop');
   }
 
   function ttsPlayerClear() {
@@ -213,21 +171,15 @@
       audio.removeAttribute('src');
       audio.load();
     }
-    setText('ttsPlayerTrack', 'No file loaded');
+    setText('ttsPlayerTrack', 'No file loaded.');
   }
 
-  window.toggleViewMode = toggleViewMode;
   window.saveAssistantSettings = saveAssistantSettings;
   window.saveTtsProfile = saveTtsProfile;
   window.duplicateTtsProfile = duplicateTtsProfile;
   window.onTtsSynthesizeFileChange = onTtsSynthesizeFileChange;
   window.ttsSynthesizeFromFile = ttsSynthesizeFromFile;
-  window.ttsPlayerLoadLatest = ttsPlayerLoadLatest;
   window.ttsPlayerLoad = ttsPlayerLoad;
   window.ttsArtifactDelete = ttsArtifactDelete;
-  window.ttsPlayerTogglePlay = ttsPlayerTogglePlay;
-  window.ttsPlayerSeekTo = ttsPlayerSeekTo;
-  window.ttsPlayerSetVolume = ttsPlayerSetVolume;
-  window.ttsPlayerSetLoop = ttsPlayerSetLoop;
   window.ttsPlayerClear = ttsPlayerClear;
 })();

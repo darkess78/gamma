@@ -99,9 +99,8 @@ Start the managed applications:
 
 Then open:
 
-- `http://127.0.0.1:8001/dashboard/monitor` for persistent text and output playback
-- `http://127.0.0.1:8001/dashboard/live` for microphone/live-voice tuning
-- `http://127.0.0.1:8001/dashboard` for operations and configuration
+- `http://127.0.0.1:8001/dashboard` for presence, health and the other pages
+- `http://127.0.0.1:8001/dashboard/monitor` (Talk) for text chat, live voice and output playback
 - `http://127.0.0.1:8000/health` for Shana health
 
 For manual or development launches that are not systemd-owned, supervisor
@@ -157,8 +156,9 @@ addresses are separate settings; never use `0.0.0.0` as a public hostname.
 
 `/dashboard/monitor` is the persistent owner-facing room for performer output,
 speech playback, and local text input. Keep it open in a dedicated tab/window
-while using other dashboard pages. `/dashboard/live` remains the microphone
-and live-voice diagnostic surface. Legacy Talk URLs redirect to Monitor.
+while using other dashboard pages. It also holds the microphone and live-voice
+panel; `/dashboard/live` and legacy Talk URLs redirect to it. See
+`specs/dashboard.md` for every page and the retired URLs.
 
 The wider dashboard retains:
 

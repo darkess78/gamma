@@ -37,105 +37,118 @@ def favicon() -> FileResponse:
     return FileResponse(STATIC_DIR / "favicon.svg", media_type="image/svg+xml")
 
 
+# Dashboard pages served from the shared shell (index.html). The page name decides which
+# sections are visible and which /api/status/* endpoint the browser polls.
+DASHBOARD_PAGES = ("shana", "people", "integrations", "coding", "system")
+
 @router.get("/")
 @router.get("/dashboard")
 def dashboard(request: Request = None) -> HTMLResponse:
-    """Return main dashboard page.
-
-    Returns:
-        HTMLResponse: Dashboard index HTML with GAMMA_SHANA_BASE_URL injected.
-    """
+    """Return the Home page: presence, what Shana is doing, quick health."""
     return _dashboard_page(INDEX_PAGE, dashboard_page="dashboard", request=request)
 
 
-@router.get("/dashboard/live")
-def dashboard_live_page(request: Request = None) -> HTMLResponse:
-    """Return live dashboard page.
-
-    Returns:
-        HTMLResponse: Live view HTML with base URLs injected.
-    """
-    return _dashboard_page(INDEX_PAGE, dashboard_page="live", request=request)
+@router.get("/dashboard/shana")
+def dashboard_shana_page(request: Request = None) -> HTMLResponse:
+    """Return the Shana page: voice, providers and behaviour settings."""
+    return _dashboard_page(INDEX_PAGE, dashboard_page="shana", request=request)
 
 
-@router.get("/dashboard/talk")
-def dashboard_talk_page() -> RedirectResponse:
-    """Redirect the retired Talk client to the persistent Monitor room."""
-    return RedirectResponse(url="/dashboard/monitor", status_code=307)
+@router.get("/dashboard/people")
+def dashboard_people_page(request: Request = None) -> HTMLResponse:
+    """Return the People & Memory page."""
+    return _dashboard_page(INDEX_PAGE, dashboard_page="people", request=request)
 
 
-@router.get("/talk")
-def talk_page_redirect() -> RedirectResponse:
-    """Redirect the retired short Talk URL to Monitor."""
-    return RedirectResponse(url="/dashboard/monitor", status_code=307)
+@router.get("/dashboard/integrations")
+def dashboard_integrations_page(request: Request = None) -> HTMLResponse:
+    """Return the Integrations page: Twitch, Discord and stream outputs."""
+    return _dashboard_page(INDEX_PAGE, dashboard_page="integrations", request=request)
 
 
-@router.get("/dashboard/status")
-def dashboard_status_page(request: Request = None) -> HTMLResponse:
-    """Return dashboard status page.
-
-    Returns:
-        HTMLResponse: Status view HTML with base URLs injected.
-    """
-    return _dashboard_page(INDEX_PAGE, dashboard_page="status", request=request)
-
-
-@router.get("/dashboard/presence")
-def dashboard_presence_page(request: Request = None) -> HTMLResponse:
-    """Return dashboard presence page."""
-    return _dashboard_page(INDEX_PAGE, dashboard_page="presence", request=request)
-
-
-@router.get("/presence")
-def presence_page_redirect() -> RedirectResponse:
-    """Redirect stale short Presence links to the dashboard route."""
-    return RedirectResponse(url="/dashboard/presence", status_code=307)
-
-
-@router.get("/dashboard/stream")
-def dashboard_stream_page(request: Request = None) -> HTMLResponse:
-    """Return stream dashboard page.
-
-    Returns:
-        HTMLResponse: Stream view HTML with base URLs injected.
-    """
-    return _dashboard_page(INDEX_PAGE, dashboard_page="stream", request=request)
-
-
-@router.get("/dashboard/twitch")
-def dashboard_twitch_page() -> RedirectResponse:
-    """Redirect Twitch dashboard URL to stream page.
-
-    Returns:
-        RedirectResponse: 307 redirect to /dashboard/stream.
-    """
-    return RedirectResponse(url="/dashboard/stream", status_code=307)
-
-
-@router.get("/dashboard/memory")
-def dashboard_memory_page(request: Request = None) -> HTMLResponse:
-    """Return memory dashboard page.
-
-    Returns:
-        HTMLResponse: Memory view HTML with base URLs injected.
-    """
-    return _dashboard_page(INDEX_PAGE, dashboard_page="memory", request=request)
-
-
-@router.get("/dashboard/improvement")
-def dashboard_improvement_page(request: Request = None) -> HTMLResponse:
+@router.get("/dashboard/coding")
+def dashboard_coding_page(request: Request = None) -> HTMLResponse:
     """Return the owner-reviewed coding page."""
-    return _dashboard_page(INDEX_PAGE, dashboard_page="improvement", request=request)
+    return _dashboard_page(INDEX_PAGE, dashboard_page="coding", request=request)
 
 
-@router.get("/dashboard/settings")
-def dashboard_settings_page(request: Request = None) -> HTMLResponse:
-    """Return settings dashboard page.
+@router.get("/dashboard/system")
+def dashboard_system_page(request: Request = None) -> HTMLResponse:
+    """Return the System page: service controls, machine, diagnostics and logs."""
+    return _dashboard_page(INDEX_PAGE, dashboard_page="system", request=request)
 
-    Returns:
-        HTMLResponse: Settings view HTML with base URLs injected.
-    """
-    return _dashboard_page(INDEX_PAGE, dashboard_page="settings", request=request)
+
+def _redirect(target: str, request: Request = None) -> RedirectResponse:
+    """Redirect a retired page URL, keeping any query string (monitor links carry api_base)."""
+    query = request.url.query if request is not None else ""
+    return RedirectResponse(url=f"{target}?{query}" if query else target, status_code=307)
+
+
+# Retired page URLs. Each one redirects to the page that now holds its content.
+@router.get("/dashboard/live", include_in_schema=False)
+def dashboard_live_page(request: Request = None) -> RedirectResponse:
+    """Live voice moved into the Talk (monitor) page, which already embeds the panel."""
+    return _redirect("/dashboard/monitor", request)
+
+
+@router.get("/dashboard/talk", include_in_schema=False)
+def dashboard_talk_page(request: Request = None) -> RedirectResponse:
+    """Redirect the retired Talk client to the persistent Monitor room."""
+    return _redirect("/dashboard/monitor", request)
+
+
+@router.get("/talk", include_in_schema=False)
+def talk_page_redirect(request: Request = None) -> RedirectResponse:
+    """Redirect the retired short Talk URL to Monitor."""
+    return _redirect("/dashboard/monitor", request)
+
+
+@router.get("/dashboard/presence", include_in_schema=False)
+def dashboard_presence_page(request: Request = None) -> RedirectResponse:
+    """Presence controls now live on Home."""
+    return _redirect("/dashboard", request)
+
+
+@router.get("/presence", include_in_schema=False)
+def presence_page_redirect(request: Request = None) -> RedirectResponse:
+    """Redirect stale short Presence links to Home."""
+    return _redirect("/dashboard", request)
+
+
+@router.get("/dashboard/status", include_in_schema=False)
+def dashboard_status_page(request: Request = None) -> RedirectResponse:
+    """Status diagnostics now live on System."""
+    return _redirect("/dashboard/system", request)
+
+
+@router.get("/dashboard/stream", include_in_schema=False)
+def dashboard_stream_page(request: Request = None) -> RedirectResponse:
+    """Stream and Twitch controls now live on Integrations."""
+    return _redirect("/dashboard/integrations", request)
+
+
+@router.get("/dashboard/twitch", include_in_schema=False)
+def dashboard_twitch_page(request: Request = None) -> RedirectResponse:
+    """Redirect the old Twitch URL to Integrations."""
+    return _redirect("/dashboard/integrations", request)
+
+
+@router.get("/dashboard/memory", include_in_schema=False)
+def dashboard_memory_page(request: Request = None) -> RedirectResponse:
+    """Memory now lives on People."""
+    return _redirect("/dashboard/people", request)
+
+
+@router.get("/dashboard/improvement", include_in_schema=False)
+def dashboard_improvement_page(request: Request = None) -> RedirectResponse:
+    """The coding review queue now lives on Coding."""
+    return _redirect("/dashboard/coding", request)
+
+
+@router.get("/dashboard/settings", include_in_schema=False)
+def dashboard_settings_page(request: Request = None) -> RedirectResponse:
+    """Provider and assistant settings now live on Shana."""
+    return _redirect("/dashboard/shana", request)
 
 
 @router.get("/monitor")

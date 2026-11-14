@@ -1,5 +1,5 @@
 // Owner dashboard controls for the configured Discord bot.
-if (window.GAMMA_DASHBOARD_PAGE === 'presence') {
+if (window.GAMMA_DASHBOARD_PAGE === 'integrations') {
   const status = document.getElementById('discordBotStatus');
   const message = document.getElementById('discordBotMessage');
   const controls = document.getElementById('discordBotControls');
@@ -14,7 +14,8 @@ if (window.GAMMA_DASHBOARD_PAGE === 'presence') {
     try {
       const result = await request('/api/discord/text-worker/status');
       const connected = result.summary?.connected === true;
-      status.textContent = result.summary?.label || 'Status unverified';
+      const missing = result.configured === false ? ` Not configured (missing ${(result.missing_config || []).join(', ')}).` : '';
+      status.textContent = (result.summary?.label || 'Status unverified') + (missing ? '.' + missing : '');
       for (const button of controls.querySelectorAll('button')) {
         button.disabled = busy || (button.dataset.voiceCommand && !connected);
       }
@@ -47,5 +48,5 @@ if (window.GAMMA_DASHBOARD_PAGE === 'presence') {
     finally { busy = false; await refresh(); }
   });
   refresh();
-  setInterval(refresh, 3000);
+  setInterval(() => { if (!document.hidden) refresh(); }, 5000);
 }

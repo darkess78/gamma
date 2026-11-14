@@ -132,6 +132,20 @@ def control_job(root, identifier, action):
     return {'id': identifier, 'requested': action}
 
 
+PROPOSAL_LIMIT_BYTES = 2_000_000
+
+
+def read_proposal(root, identifier):
+    """Return the verified diff a job saved for owner review."""
+    record = read_job(root, identifier)
+    if record.get('proposal') != 'proposal.diff':
+        raise ValueError('No proposal for this work')
+    path = job_path(root, identifier) / 'proposal.diff'
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > PROPOSAL_LIMIT_BYTES:
+        raise ValueError('Proposal unavailable')
+    return path.read_text(encoding='utf-8', errors='replace')
+
+
 @contextmanager
 def execution_lock(root):
     """The OS releases this lock after process exit; uncertain work is not replayed."""

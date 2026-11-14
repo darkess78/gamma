@@ -76,6 +76,25 @@ its `gamma-coding-idle.service` unit were removed on 2026-11-13.
 The older registered-scope repository coding path (`gamma.coding.repository`,
 its Discord-status scope and dashboard panel) was removed on 2026-11-14.
 
+## Local-model workflow (2026-11-14)
+
+The owner wants self-coding to stay on local models, so Shana works the way a
+small model can succeed: in small, checked steps.
+
+- `coding/split.py` splits a goal into at most 6 tasks, each changing at most
+  3 files and naming the pytest check that proves it. The model proposes the
+  split; code enforces the rules and asks once more with the problems, or
+  returns a question for the owner.
+- `coding/task_loop.py` works one task with tools (read, search, replace,
+  write, test, done, give_up), one per step, seeing each result. Edits are
+  limited to the task's files and "done" is refused until the check passes.
+- `coding/workflow.py` runs it in a throwaway git worktree, runs each check and
+  then the full suite in the bubblewrap sandbox, and writes `proposal.diff` and
+  `report.json`. The result is always for owner review.
+
+`python -m gamma.coding.workflow --goal "..." --model qwen3.8:27b` (needs the
+GPU). Not yet wired into the Coding page; the older executor below remains.
+
 ## Owner-directed autonomous repository coding
 
 The authenticated Improvement dashboard owns `GET/POST /api/coding/work` and

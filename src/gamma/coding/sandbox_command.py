@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 
-def build_test_sandbox_command(workspace: Path, *, timeout_seconds: float) -> list[str]:
+def build_test_sandbox_command(workspace: Path, *, timeout_seconds: float, pytest_args: tuple[str, ...] = ()) -> list[str]:
     """systemd-run scope + prlimit + bwrap: no network, read-only source, private /tmp and data."""
     if os.name != "posix":
         raise RuntimeError("sandboxed test runs require Gamma's Linux sandbox host")
@@ -51,6 +51,7 @@ def build_test_sandbox_command(workspace: Path, *, timeout_seconds: float) -> li
         "--setenv", "SHANA_PROJECT_ROOT", "/workspace",
         "--", "/opt/gamma-venv/bin/python", "-m", "pytest", "-q", "-p", "no:cacheprovider",
     ))
+    command.extend(pytest_args)
     return command
 
 

@@ -12,7 +12,7 @@ from sqlalchemy.pool import NullPool
 
 from ..config import settings
 from ..schemas.response import MemoryCandidate
-from . import retrieval
+from . import retrieval, triage
 from .models import EpisodicMemory, KnownPerson, PersonIdentity, ProfileFact
 from .attribution import MemoryOrigin, prepare_candidate, source_key, merge_origin, manual_origin
 
@@ -459,6 +459,8 @@ class MemoryService:
         saved = 0
         with Session(self._engine) as session:
             for candidate in candidates:
+                if not self._worth_keeping(candidate, origin):
+                    continue
                 candidate, attribution = prepare_candidate(candidate, origin)
                 visibility = visibility_for(origin)
                 if candidate.type in {"profile", "fact", "preference", "project", "boundary"}:
@@ -469,6 +471,25 @@ class MemoryService:
                 session.flush()
             session.commit()  # Exact repeats may update rank/provenance while saved stays zero.
         return saved
+
+    _judge = None
+
+    def _worth_keeping(self, candidate: MemoryCandidate, origin: MemoryOrigin | None) -> bool:
+        """Triage automatic candidates (memory/triage.py); explicit and manual saves always pass."""
+        if origin is None or origin.source in {"tool", "manual"}:
+            return True
+        if MemoryService._judge is None:
+            MemoryService._judge = triage.KeepJudge()
+            if settings.memory_triage_judge == "model":
+                try:
+                    from ..llm.factory import build_llm_adapter
+                    MemoryService._judge = triage.ModelJudge(build_llm_adapter())
+                except Exception:
+                    pass
+        try:
+            return triage.triage(candidate.text, MemoryService._judge).keep
+        except Exception:
+            return True  # a broken judge must not lose memories
 
     def _upsert_profile_fact(self, session: Session, candidate: MemoryCandidate, *, attribution: str | None = None,
                              visibility: str = "owner_only") -> int:

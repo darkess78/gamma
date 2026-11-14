@@ -108,6 +108,18 @@ chosen by relevance with the two most important pinned. Measured with
 | previous search | 0% | 57% | 0% | 25% |
 | current search | 100% | 100% | 100% | 25% |
 
+**Choosing what becomes a memory (2026-11-14):** automatic candidates now go
+through `memory/triage.py` before storage. A cheap filter drops obvious
+non-memories (reactions, single words, Shana's own reply text, one-turn
+instructions); a pluggable judge decides the rest (`memory_triage_judge`:
+`keep` today, `model` once the GPU is free, or the CS 4700 classifier later).
+Explicit "remember this" saves skip triage. Scored with
+`python -m gamma.evals.memory_triage` against the 400-row labelled dataset in
+`research/cs4700_memory_triage`: the filter drops none of the 200 labelled
+keeps; the dataset's skip examples are subtle (facts scoped to one release or
+one attempt) and need the model judge or a trained classifier, so agreement is
+50% until then.
+
 Paraphrases ("kitty" for cat, "for a living" for job) still miss: that needs
 embeddings, which need a model download (an owner decision). Supersession,
 reflection and the FTS5 index for large histories remain.

@@ -1,441 +1,236 @@
-// api.js - Stream and Twitch API actions for Gamma dashboard
+// api.js - stream, Twitch and output actions. Renderers for stream feeds live in stream.js.
 (function () {
+  'use strict';
+
+  function element(id) {
+    return document.getElementById(id);
+  }
+
+  function setText(id, text) {
+    var target = element(id);
+    if (target) target.textContent = text;
+  }
+
+  function setHtml(id, html) {
+    var target = element(id);
+    if (target) target.innerHTML = html;
+  }
+
+  function empty(message) {
+    return window.streamEmptyHtml ? window.streamEmptyHtml(message) : message;
+  }
+
+  async function request(path, options) {
+    var response = await fetch(path, Object.assign({ cache: 'no-store' }, options || {}));
+    var payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail || ('HTTP ' + response.status));
+    return payload;
+  }
+
+  function postJson(path, body) {
+    return request(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  }
+
+  async function loadFeed(path, targets) {
+    try {
+      var payload = await request(path);
+      targets.forEach(function (entry) { setHtml(entry[0], window[entry[1]](payload)); });
+    } catch (error) {
+      targets.forEach(function (entry) { setHtml(entry[0], empty('Load failed. ' + String(error.message || error))); });
+    }
+  }
+
   async function loadStreamActivity() {
-    try {
-      var traceResponse = await fetch('/api/stream/traces/recent?limit=30', { cache: 'no-store' });
-      var tracePayload = await traceResponse.json();
-      if (!traceResponse.ok) throw new Error(tracePayload.detail || ('traces HTTP ' + traceResponse.status));
-      renderHtmlBlockIfChanged('streamTraceFeed', tracePayload, humanStreamTraces(tracePayload), 'streamTraceFeed');
-      renderHtmlBlockIfChanged('streamSafetyFeed', tracePayload, humanStreamSafety(tracePayload), 'streamSafetyFeed');
-    } catch (error) {
-      renderHtmlBlockIfChanged('streamTraceFeed', { error: String(error) }, streamEmptyHtml('Stream trace load failed. ' + String(error)), 'streamTraceFeed');
-      renderHtmlBlockIfChanged('streamSafetyFeed', { error: String(error) }, streamEmptyHtml('Safety log load failed. ' + String(error)), 'streamSafetyFeed');
-    }
-
-    try {
-      var outputResponse = await fetch('/api/stream/outputs/recent?limit=30', { cache: 'no-store' });
-      var outputPayload = await outputResponse.json();
-      if (!outputResponse.ok) throw new Error(outputPayload.detail || ('outputs HTTP ' + outputResponse.status));
-      renderHtmlBlockIfChanged('streamOutputFeed', outputPayload, humanStreamOutputs(outputPayload), 'streamOutputFeed');
-    } catch (error) {
-      renderHtmlBlockIfChanged('streamOutputFeed', { error: String(error) }, streamEmptyHtml('Stream output load failed. ' + String(error)), 'streamOutputFeed');
-    }
-
-    try {
-      var queueResponse = await fetch('/api/stream/queue', { cache: 'no-store' });
-      var queuePayload = await queueResponse.json();
-      if (!queueResponse.ok) throw new Error(queuePayload.detail || ('queue HTTP ' + queueResponse.status));
-      renderHtmlBlockIfChanged('streamQueueFeed', queuePayload, humanStreamQueue(queuePayload), 'streamQueueFeed');
-    } catch (error) {
-      renderHtmlBlockIfChanged('streamQueueFeed', { error: String(error) }, streamEmptyHtml('Stream queue load failed. ' + String(error)), 'streamQueueFeed');
-    }
-
-    try {
-      var memoryResponse = await fetch('/api/stream/temp-memory?limit=30', { cache: 'no-store' });
-      var memoryPayload = await memoryResponse.json();
-      if (!memoryResponse.ok) throw new Error(memoryPayload.detail || ('temp memory HTTP ' + memoryResponse.status));
-      renderHtmlBlockIfChanged('streamTempMemoryFeed', memoryPayload, humanStreamTempMemory(memoryPayload), 'streamTempMemoryFeed');
-    } catch (error) {
-      renderHtmlBlockIfChanged('streamTempMemoryFeed', { error: String(error) }, streamEmptyHtml('Temp memory load failed. ' + String(error)), 'streamTempMemoryFeed');
-    }
-
-    try {
-      var goalResponse = await fetch('/api/stream/self-goals?limit=30', { cache: 'no-store' });
-      var goalPayload = await goalResponse.json();
-      if (!goalResponse.ok) throw new Error(goalPayload.detail || ('self-goals HTTP ' + goalResponse.status));
-      renderHtmlBlockIfChanged('streamSelfGoalFeed', goalPayload, humanStreamSelfGoals(goalPayload), 'streamSelfGoalFeed');
-    } catch (error) {
-      renderHtmlBlockIfChanged('streamSelfGoalFeed', { error: String(error) }, streamEmptyHtml('Self-goals load failed. ' + String(error)), 'streamSelfGoalFeed');
-    }
-
+    await Promise.all([
+      loadFeed('/api/stream/traces/recent?limit=30', [['streamTraceFeed', 'humanStreamTraces'], ['streamSafetyFeed', 'humanStreamSafety']]),
+      loadFeed('/api/stream/outputs/recent?limit=30', [['streamOutputFeed', 'humanStreamOutputs']]),
+      loadFeed('/api/stream/queue', [['streamQueueFeed', 'humanStreamQueue']]),
+      loadFeed('/api/stream/temp-memory?limit=30', [['streamTempMemoryFeed', 'humanStreamTempMemory']]),
+      loadFeed('/api/stream/self-goals?limit=30', [['streamSelfGoalFeed', 'humanStreamSelfGoals']])
+    ]);
   }
 
   async function loadTwitchViewerTrust() {
     try {
-      var response = await fetch('/api/twitch/viewer-trust?limit=50', { cache: 'no-store' });
-      var payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.detail || ('HTTP ' + response.status));
-      }
-      renderBlockIfChanged('twitchViewerTrust', payload, humanTwitchViewerTrust(payload), 'twitchViewerTrust');
+      var payload = await request('/api/twitch/viewer-trust?limit=50');
+      setText('twitchViewerTrust', window.humanTwitchViewerTrust(payload));
     } catch (error) {
-      renderBlockIfChanged('twitchViewerTrust', { error: String(error) }, 'Viewer trust load failed.\n' + String(error), 'twitchViewerTrust');
+      setText('twitchViewerTrust', 'Viewer trust load failed. ' + String(error.message || error));
     }
   }
 
   async function saveTwitchViewerTrust() {
     var payload = {
       platform: 'twitch',
-      platform_user_id: document.getElementById('twitchTrustUserId').value.trim(),
-      display_name: document.getElementById('twitchTrustDisplayName').value.trim(),
-      trust_level: document.getElementById('twitchTrustLevel').value,
-      pronunciation_alias: document.getElementById('twitchTrustAlias').value.trim(),
-      notes: document.getElementById('twitchTrustNotes').value.trim()
+      platform_user_id: element('twitchTrustUserId').value.trim(),
+      display_name: element('twitchTrustDisplayName').value.trim(),
+      trust_level: element('twitchTrustLevel').value,
+      pronunciation_alias: element('twitchTrustAlias').value.trim(),
+      notes: element('twitchTrustNotes').value.trim()
     };
     try {
-      var response = await fetch('/api/twitch/viewer-trust', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      var result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.detail || ('HTTP ' + response.status));
-      }
-      renderBlockIfChanged('twitchViewerTrust', result, humanTwitchViewerTrust(result), 'twitchViewerTrust');
+      await postJson('/api/twitch/viewer-trust', payload);
+      await loadTwitchViewerTrust();
     } catch (error) {
-      renderBlockIfChanged('twitchViewerTrust', { error: String(error) }, 'Viewer trust save failed.\n' + String(error), 'twitchViewerTrust');
+      setText('twitchViewerTrust', 'Viewer trust save failed. ' + String(error.message || error));
     }
   }
 
-  async function runTwitchReplay() {
-    var payload = {
-      jsonl: document.getElementById('twitchReplayJsonl').value,
-      session_id: document.getElementById('twitchReplaySessionId').value.trim() || 'twitch-replay',
-      fast_mode: !!document.getElementById('twitchReplayFastMode').checked,
-      synthesize_speech: !!document.getElementById('twitchReplaySpeech').checked
-    };
+  async function runReplay(path, body) {
+    setText('twitchReplayResult', 'Running replay...');
     try {
-      renderBlockIfChanged('twitchReplayResult', { status: 'running' }, 'Running replay...', 'twitchReplayResult');
-      var response = await fetch('/api/twitch/replay', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      var result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.detail || ('HTTP ' + response.status));
-      }
-      renderBlockIfChanged('twitchReplayResult', result, humanTwitchReplayResult(result), 'twitchReplayResult');
-      scheduleStatusRefreshes();
+      var result = body ? await postJson(path, body) : await request(path, { method: 'POST' });
+      setText('twitchReplayResult', window.humanTwitchReplayResult(result));
     } catch (error) {
-      renderBlockIfChanged('twitchReplayResult', { error: String(error) }, 'Replay failed.\n' + String(error), 'twitchReplayResult');
+      setText('twitchReplayResult', 'Replay failed. ' + String(error.message || error));
     }
   }
 
-  async function runTwitchDryRunReplay() {
-    try {
-      renderBlockIfChanged('twitchReplayResult', { status: 'running' }, 'Running dry-run replay...', 'twitchReplayResult');
-      var response = await fetch('/api/twitch/replay/dry-run', { method: 'POST' });
-      var result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.detail || ('HTTP ' + response.status));
-      }
-      renderBlockIfChanged('twitchReplayResult', result, humanTwitchReplayResult(result), 'twitchReplayResult');
-      scheduleStatusRefreshes();
-    } catch (error) {
-      renderBlockIfChanged('twitchReplayResult', { error: String(error) }, 'Dry-run replay failed.\n' + String(error), 'twitchReplayResult');
-    }
+  function runTwitchReplay() {
+    return runReplay('/api/twitch/replay', {
+      jsonl: element('twitchReplayJsonl').value,
+      session_id: element('twitchReplaySessionId').value.trim() || 'twitch-replay',
+      fast_mode: !!element('twitchReplayFastMode').checked,
+      synthesize_speech: !!element('twitchReplaySpeech').checked
+    });
+  }
+
+  function runTwitchDryRunReplay() {
+    return runReplay('/api/twitch/replay/dry-run');
+  }
+
+  function numberValue(id) {
+    return Math.max(0, Number(element(id).value || 0));
   }
 
   async function saveTwitchSettings() {
     var payload = {
-      dry_run: !!document.getElementById('twitchDryRun').checked,
-      voice_enabled: !!document.getElementById('twitchVoiceEnabled').checked,
-      subtitles_enabled: !!document.getElementById('twitchSubtitlesEnabled').checked,
-      ambient_chat_enabled: !!document.getElementById('twitchAmbientChatEnabled').checked,
-      mention_replies_enabled: !!document.getElementById('twitchMentionRepliesEnabled').checked,
-      spam_quips_enabled: !!document.getElementById('twitchSpamQuipsEnabled').checked,
-      self_goal_proposals_enabled: !!document.getElementById('twitchSelfGoalProposalsEnabled').checked,
-      llm_safety_review_enabled: !!document.getElementById('twitchLlmSafetyReviewEnabled').checked,
-      min_speech_gap_seconds: Math.max(0, Number(document.getElementById('twitchMinSpeechGapSeconds').value || 0)),
-      max_speech_seconds_per_minute: Math.max(0, Number(document.getElementById('twitchMaxSpeechSecondsPerMinute').value || 0)),
-      spam_quip_cooldown_seconds: Math.max(0, Number(document.getElementById('twitchSpamQuipCooldownSeconds').value || 0))
+      dry_run: !!element('twitchDryRun').checked,
+      voice_enabled: !!element('twitchVoiceEnabled').checked,
+      subtitles_enabled: !!element('twitchSubtitlesEnabled').checked,
+      ambient_chat_enabled: !!element('twitchAmbientChatEnabled').checked,
+      mention_replies_enabled: !!element('twitchMentionRepliesEnabled').checked,
+      spam_quips_enabled: !!element('twitchSpamQuipsEnabled').checked,
+      self_goal_proposals_enabled: !!element('twitchSelfGoalProposalsEnabled').checked,
+      llm_safety_review_enabled: !!element('twitchLlmSafetyReviewEnabled').checked,
+      min_speech_gap_seconds: numberValue('twitchMinSpeechGapSeconds'),
+      max_speech_seconds_per_minute: numberValue('twitchMaxSpeechSecondsPerMinute'),
+      spam_quip_cooldown_seconds: numberValue('twitchSpamQuipCooldownSeconds')
     };
+    setText('twitchSettingsStatus', 'Saving...');
     try {
-      var response = await fetch('/api/twitch/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      var result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.detail || ('HTTP ' + response.status));
-      }
-      renderTwitchSettings(result.settings || payload);
-      renderBlockIfChanged('twitchSettingsStatus', result, result.detail || 'Twitch controls saved.', 'twitchSettingsStatus');
-      await loadStatus();
+      var result = await postJson('/api/twitch/settings', payload);
+      if (window.clearSettingsDirty) window.clearSettingsDirty('twitchForm');
+      if (window.renderTwitchSettings) window.renderTwitchSettings(result.settings || payload);
+      setText('twitchSettingsStatus', result.detail || 'Twitch settings saved.');
+      if (window.loadStatus) window.loadStatus();
     } catch (error) {
-      renderBlockIfChanged('twitchSettingsStatus', { error: String(error) }, 'Twitch controls save failed.\n' + String(error), 'twitchSettingsStatus');
+      setText('twitchSettingsStatus', 'Save failed. ' + String(error.message || error));
     }
   }
 
   async function stopStreamSpeech() {
+    setText('streamStopStatus', 'Stopping speech and clearing subtitles...');
     try {
-      renderBlockIfChanged('streamStopStatus', { status: 'running' }, 'Stopping speech and clearing subtitles...', 'streamStopStatus');
-      var response = await fetch('/api/stream/stop', { method: 'POST' });
-      var result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.detail || ('HTTP ' + response.status));
-      }
-      renderBlockIfChanged('streamStopStatus', result, humanStreamStopResult(result), 'streamStopStatus');
-      await loadStreamActivity();
+      var result = await request('/api/stream/stop', { method: 'POST' });
+      setText('streamStopStatus', result.detail || 'Stream speech stopped.');
+      if (element('streamActivityFold') && element('streamActivityFold').open) await loadStreamActivity();
     } catch (error) {
-      renderBlockIfChanged('streamStopStatus', { error: String(error) }, 'Stop speech failed.\n' + String(error), 'streamStopStatus');
+      setText('streamStopStatus', 'Stop speech failed. ' + String(error.message || error));
     }
   }
 
+  // Top-bar emergency stop: halt stream speech and clear every output target.
   async function stopShanaOutput() {
+    var notify = window.showActionResult || function () {};
     var targets = ['dashboard_monitor', 'stream_public', 'discord_call'];
-    var results = [];
+    var failed = [];
+    notify('Stopping output...', '');
     try {
-      renderBlockIfChanged('streamStopStatus', { status: 'running' }, 'Stopping output and clearing targets...', 'streamStopStatus');
-      var streamResponse = await fetch('/api/stream/stop', { method: 'POST' });
-      results.push({ target: 'stream_stop', ok: streamResponse.ok, status: streamResponse.status });
-      for (var i = 0; i < targets.length; i++) {
-        var target = targets[i];
-        var response = await fetch('/api/performer/targets/' + encodeURIComponent(target) + '/clear', { method: 'POST' });
-        results.push({ target: target, ok: response.ok, status: response.status });
+      var stream = await fetch('/api/stream/stop', { method: 'POST' });
+      if (!stream.ok) failed.push('stream speech');
+      for (var i = 0; i < targets.length; i += 1) {
+        var response = await fetch('/api/performer/targets/' + encodeURIComponent(targets[i]) + '/clear', { method: 'POST' });
+        if (!response.ok) failed.push(targets[i]);
       }
-      setSubtitleState({ transcript: '', reply: '', partial: '' });
-      ttsPlayerClear();
-      setTextIfChanged('overviewOutputStatus', 'cleared');
-      setTextIfChanged('overviewTurnMini', 'Cleared');
-      renderBlockIfChanged('streamStopStatus', { results: results }, humanOutputStopResult(results), 'streamStopStatus');
-      await loadStreamActivity();
-      await loadStatus();
+      if (window.ttsPlayerClear) window.ttsPlayerClear();
+      notify(failed.length ? 'Output stopped, but these did not confirm: ' + failed.join(', ') : 'Output stopped and cleared.', failed.length ? 'bad' : 'good');
+      if (window.loadStatus) window.loadStatus();
     } catch (error) {
-      renderBlockIfChanged('streamStopStatus', { error: String(error) }, 'Stop output failed.\n' + String(error), 'streamStopStatus');
-      postClientLog('stop_output_error', { error: String(error) });
+      notify('Stop output failed. ' + String(error.message || error), 'bad');
     }
   }
 
   async function clearStreamTempMemory() {
+    if (!window.confirm('Clear temporary stream memory?')) return;
     try {
-      var response = await fetch('/api/stream/temp-memory', { method: 'DELETE' });
-      var payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail || ('temp memory clear HTTP ' + response.status));
-      renderHtmlBlockIfChanged('streamTempMemoryFeed', payload, streamEmptyHtml('Temp memory cleared. Deleted: ' + (payload.deleted || 0)), 'streamTempMemoryFeed');
+      var payload = await request('/api/stream/temp-memory', { method: 'DELETE' });
+      setHtml('streamTempMemoryFeed', empty('Temp memory cleared. Deleted: ' + (payload.deleted || 0)));
       await loadStreamActivity();
     } catch (error) {
-      renderHtmlBlockIfChanged('streamTempMemoryFeed', { error: String(error) }, streamEmptyHtml('Temp memory clear failed. ' + String(error)), 'streamTempMemoryFeed');
+      setHtml('streamTempMemoryFeed', empty('Temp memory clear failed. ' + String(error.message || error)));
     }
   }
 
   async function setStreamSelfGoalStatus(actionName) {
-    var input = document.getElementById('streamSelfGoalId');
-    var goalId = input ? String(input.value || '').trim() : '';
+    var goalId = String((element('streamSelfGoalId') || {}).value || '').trim();
     if (!goalId) {
-      renderHtmlBlockIfChanged('streamSelfGoalFeed', { error: 'missing-goal-id' }, streamEmptyHtml('Enter a self-goal id first.'), 'streamSelfGoalFeed');
+      setHtml('streamSelfGoalFeed', empty('Enter a self-goal id first.'));
       return;
     }
     try {
-      var response = await fetch('/api/stream/self-goals/' + encodeURIComponent(goalId) + '/' + actionName, { method: 'POST' });
-      var payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail || ('self-goal HTTP ' + response.status));
-      renderHtmlBlockIfChanged('streamSelfGoalFeed', payload, streamEmptyHtml('Goal #' + payload.id + ' is now ' + payload.status + '.'), 'streamSelfGoalFeed');
+      await request('/api/stream/self-goals/' + encodeURIComponent(goalId) + '/' + actionName, { method: 'POST' });
       await loadStreamActivity();
     } catch (error) {
-      renderHtmlBlockIfChanged('streamSelfGoalFeed', { error: String(error) }, streamEmptyHtml('Self-goal update failed. ' + String(error)), 'streamSelfGoalFeed');
+      setHtml('streamSelfGoalFeed', empty('Self-goal update failed. ' + String(error.message || error)));
     }
   }
 
   async function clearStreamSelfGoals() {
+    if (!window.confirm('Clear all stream self-goals?')) return;
     try {
-      var response = await fetch('/api/stream/self-goals/clear', { method: 'POST' });
-      var payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail || ('self-goals clear HTTP ' + response.status));
-      renderHtmlBlockIfChanged('streamSelfGoalFeed', payload, streamEmptyHtml('Self-goals cleared. Count: ' + (payload.cleared || 0)), 'streamSelfGoalFeed');
+      await request('/api/stream/self-goals/clear', { method: 'POST' });
       await loadStreamActivity();
     } catch (error) {
-      renderHtmlBlockIfChanged('streamSelfGoalFeed', { error: String(error) }, streamEmptyHtml('Self-goals clear failed. ' + String(error)), 'streamSelfGoalFeed');
+      setHtml('streamSelfGoalFeed', empty('Self-goals clear failed. ' + String(error.message || error)));
     }
   }
 
-  async function loadRuntimeStatus() {
-    try {
-      var response = await fetch('/api/status/runtime?_=' + Date.now(), { cache: 'no-store' });
-      if (response.status === 404) {
-        runtimeStatusSupported = false;
-        await loadStatus();
-        return;
+  // Collapsed panels only fetch while they are open.
+  var activityFold = element('streamActivityFold');
+  var activityTimer = null;
+  if (activityFold) {
+    activityFold.addEventListener('toggle', function () {
+      if (activityTimer) window.clearInterval(activityTimer);
+      activityTimer = null;
+      if (activityFold.open) {
+        loadStreamActivity();
+        activityTimer = window.setInterval(function () {
+          if (!document.hidden) loadStreamActivity();
+        }, 10000);
       }
-      if (!response.ok) {
-        throw new Error('HTTP ' + response.status);
-      }
-      var runtime = await response.json();
-      latestData = latestData || {};
-      latestData.shana = Object.assign({}, latestData.shana || {}, runtime.shana || {});
-      latestData.machine = runtime.machine || {};
-      renderRuntimePanels(latestData);
-      updateStamp('Last refreshed: ' + new Date().toLocaleString());
-    } catch (error) {
-      postClientLog('runtime_load_exception', { error: String(error) });
-      updateStamp('Runtime refresh failed');
-    }
+    });
   }
-
-  function scheduleStatusRefreshes() {
-    loadStatus();
-    setTimeout(function () { loadStatus(); }, 350);
-    setTimeout(function () { loadStatus(); }, 1000);
+  var trustFold = element('viewerTrustFold');
+  if (trustFold) {
+    trustFold.addEventListener('toggle', function () {
+      if (trustFold.open) loadTwitchViewerTrust();
+    });
   }
-
-  function scheduleRuntimePoll() {
-    setTimeout(async function () {
-      if (runtimeStatusSupported) {
-        await loadRuntimeStatus();
-      } else {
-        await loadStatus();
-      }
-      scheduleRuntimePoll();
-    }, runtimePollMs);
-  }
-
-  function postClientLog(kind, detail) {
-    try {
-      fetch('/api/client-log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: kind, detail: detail })
-      });
-    } catch (error) {
-    }
-  }
-
-  function applyOptimisticActionState(path) {
-    if (!latestData) return;
-
-    latestData.provider_actions = {
-      action: path,
-      status: 'pending',
-      detail: 'Action requested. Waiting for updated state...',
-      ran_at: new Date().toISOString()
-    };
-
-    if (path === '/api/shana/start') {
-      latestData.shana = latestData.shana || {};
-      latestData.shana.process = latestData.shana.process || {};
-      latestData.shana.process.running = true;
-    } else if (path === '/api/shana/stop' || path === '/api/all/stop') {
-      latestData.shana = latestData.shana || {};
-      latestData.shana.process = latestData.shana.process || {};
-      latestData.shana.process.running = false;
-      if (path === '/api/all/stop') {
-        latestData.twitch = latestData.twitch || {};
-        latestData.twitch.worker = latestData.twitch.worker || {};
-        latestData.twitch.worker.process = latestData.twitch.worker.process || {};
-        latestData.twitch.worker.process.running = false;
-      }
-    } else if (path === '/api/shana/restart') {
-      latestData.shana = latestData.shana || {};
-      latestData.shana.process = latestData.shana.process || {};
-      latestData.shana.process.running = true;
-    } else if (path === '/api/twitch/worker/start') {
-      latestData.twitch = latestData.twitch || {};
-      latestData.twitch.worker = latestData.twitch.worker || {};
-      latestData.twitch.worker.process = latestData.twitch.worker.process || {};
-      latestData.twitch.worker.process.running = true;
-    } else if (path === '/api/twitch/worker/stop') {
-      latestData.twitch = latestData.twitch || {};
-      latestData.twitch.worker = latestData.twitch.worker || {};
-      latestData.twitch.worker.process = latestData.twitch.worker.process || {};
-      latestData.twitch.worker.process.running = false;
-    } else if (path === '/api/twitch/eventsub/start') {
-      latestData.twitch = latest.twitch || {};
-      latestData.twitch.eventsub = latestData.twitch.eventsub || {};
-      latestData.twitch.eventsub.process = latestData.twitch.eventsub.process || {};
-      latestData.twitch.eventsub.process.running = true;
-    } else if (path === '/api/twitch/eventsub/stop') {
-      latestData.twitch = latestData.twitch || {};
-      latestData.twitch.eventsub = latestData.twitch.eventsub || {};
-      latestData.twitch.eventsub.process = latestData.twitch.eventsub.process || {};
-      latestData.twitch.eventsub.process.running = false;
-    }
-
-    renderPanels(latestData);
-  }
-
-  function applyOptimisticTtsSelection(update) {
-    if (!latestData) return;
-    var providers = latestData.providers || {};
-    var tts = providers.tts || {};
-    if (typeof update.selected_provider !== 'undefined') tts.selected_provider = update.selected_provider;
-    if (typeof update.selected_profile !== 'undefined') tts.selected_profile = update.selected_profile;
-    if (typeof update.selected_profile_label !== 'undefined') tts.selected_profile_label = update.selected_profile_label;
-    if (typeof update.restart_required !== 'undefined') tts.restart_required = update.restart_required;
-    if (typeof update.editor_profile !== 'undefined') tts.editor_profile = update.editor_profile;
-    providers.tts = tts;
-    latestData.providers = providers;
-    renderPanels(latestData);
-  }
-
-  function updateStamp(text) {
-    var stamp = document.getElementById('stamp');
-    if (stamp) stamp.textContent = text;
-  }
-
-  function setTextIfChanged(elementId, value, cacheKey) {
-    var el = document.getElementById(elementId);
-    if (!el) return;
-    var key = cacheKey || elementId;
-    if (sectionHashes && sectionHashes[key] === value) {
-      return;
-    }
-    if (sectionHashes) sectionHashes[key] = value;
-    el.textContent = value;
-  }
-
-  function renderBlockIfChanged(elementId, rawValue, humanText, cacheKey) {
-    if (!document.getElementById(elementId)) return;
-    var key = cacheKey || elementId;
-    var nextKey = viewMode === 'json' ? pretty(rawValue) : humanText;
-    if (sectionHashes && sectionHashes[key] === nextKey) {
-      return;
-    }
-    if (sectionHashes) sectionHashes[key] = nextKey;
-    renderBlock(elementId, rawValue, humanText);
-  }
-
-  function renderHtmlBlockIfChanged(elementId, rawValue, humanHtml, cacheKey) {
-    var el = document.getElementById(elementId);
-    if (!el) return;
-    var key = cacheKey || elementId;
-    var nextKey = viewMode === 'json' ? pretty(rawValue) : humanHtml;
-    if (sectionHashes && sectionHashes[key] === nextKey) {
-      return;
-    }
-    if (sectionHashes) sectionHashes[key] = nextKey;
-    if (viewMode === 'json') {
-      el.classList.add('json-render');
-      el.textContent = pretty(rawValue);
-    } else {
-      el.classList.remove('json-render');
-      el.innerHTML = humanHtml;
-    }
-  }
-
-  function pretty(value) {
-    try {
-      return JSON.stringify(value, null, 2);
-    } catch (error) {
-      return String(value);
-    }
-  }
-
-  function sectionHashesValue(value) {
-    var hash = JSON.stringify(value);
-    try {
-      return JSON.stringify(hash);
-    } catch (e) {
-      return String(hash);
-    }
-  }
-
-  var runtimeStatusSupported = true;
-  var latestData = null;
-  viewMode = localStorage.getItem('gammaDashboardViewMode') || 'human';
-  sectionHashes = {};
 
   window.loadStreamActivity = loadStreamActivity;
   window.loadTwitchViewerTrust = loadTwitchViewerTrust;
-  window.runTwitchDryRunReplay = runTwitchDryRunReplay;
-  window.runTwitchReplay = runTwitchReplay;
-  window.saveTwitchSettings = saveTwitchSettings;
   window.saveTwitchViewerTrust = saveTwitchViewerTrust;
-  window.clearStreamSelfGoals = clearStreamSelfGoals;
+  window.runTwitchReplay = runTwitchReplay;
+  window.runTwitchDryRunReplay = runTwitchDryRunReplay;
+  window.saveTwitchSettings = saveTwitchSettings;
+  window.stopStreamSpeech = stopStreamSpeech;
+  window.stopShanaOutput = stopShanaOutput;
   window.clearStreamTempMemory = clearStreamTempMemory;
   window.setStreamSelfGoalStatus = setStreamSelfGoalStatus;
-  window.stopShanaOutput = stopShanaOutput;
-  window.stopStreamSpeech = stopStreamSpeech;
+  window.clearStreamSelfGoals = clearStreamSelfGoals;
 })();

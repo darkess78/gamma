@@ -52,8 +52,8 @@ fi
 
 echo ""
 echo "Live voice URLs:"
-echo "  Local:    http://localhost:8001/dashboard/live"
-echo "  Production: https://gamma.neety.me/dashboard/live"
+echo "  Local:    http://localhost:8001/dashboard/monitor"
+echo "  Production: https://gamma.neety.me/dashboard/monitor"
 
 echo ""
 echo "✅ All services started successfully!"

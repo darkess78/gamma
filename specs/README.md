@@ -48,6 +48,7 @@ in effect until revisions are implemented, verified, and approved for activation
 - `games.md`
 - `shana_presence.md`
 - `shana_output_bus.md`
+- `dashboard.md`
 - `voice_dataset.md`
 - `platform.md`
 

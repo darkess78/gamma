@@ -1,19 +1,24 @@
+// presence.mjs - Home page: presence mode controls, what Shana is doing, recent stream output.
 import { element, requestJson, setText } from './core.mjs';
 
-function modeLabel(mode) {
-  const value = String(mode || 'sleep').replace(/_/g, ' ');
-  return value.replace(/\b\w/g, (character) => character.toUpperCase());
+const MODES = {
+  sleep: { title: 'Asleep', detail: 'Quiet. No public output and Twitch is not being watched.', tone: 'off' },
+  wake: { title: 'Awake', detail: 'Talking with you privately. Stream output is muted.', tone: 'good' },
+  go_live: { title: 'Live', detail: 'Watching Twitch chat and speaking on stream.', tone: 'live' },
+  break: { title: 'On break', detail: 'Still watching chat, stream output is muted.', tone: 'warn' },
+};
+const BUTTONS = { sleep: 'presenceSleepButton', wake: 'presenceWakeButton', go_live: 'presenceGoLiveButton', break: 'presenceBreakButton' };
+
+function formatTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
 }
 
-function boolText(value) {
-  return value ? 'on' : 'off';
-}
-
-function renderAudienceOptions(payload, state) {
-  const people = Array.isArray(payload.known_people) ? payload.known_people : [];
+function renderAudienceOptions(people, state) {
   const select = element('presenceKnownPersonId');
-  if (select) {
-    const current = String((state.audience || {}).known_person_id || '');
+  if (select && document.activeElement !== select) {
+    const current = String((state.audience || {}).known_person_id || select.value || '');
     select.replaceChildren();
     people.forEach((person) => {
       const option = document.createElement('option');
@@ -24,113 +29,65 @@ function renderAudienceOptions(payload, state) {
     });
   }
   const kind = element('presenceAudienceKind');
-  if (kind) kind.value = String((state.audience || {}).kind || 'unknown');
+  if (kind && document.activeElement !== kind && !kind.dataset.touched) {
+    kind.value = String((state.audience || {}).kind || 'unknown');
+  }
   updatePresenceAudienceControls();
 }
 
 function updatePresenceAudienceControls() {
-  const known = element('presenceAudienceKind')?.value === 'known_person';
+  const kind = element('presenceAudienceKind');
   const row = element('presenceKnownPersonRow');
-  if (row) row.hidden = !known;
+  if (row) row.hidden = kind?.value !== 'known_person';
 }
 
 function selectedAudience() {
   const kind = String(element('presenceAudienceKind')?.value || 'unknown');
   if (kind !== 'known_person') return { kind };
   const knownPersonId = Number(element('presenceKnownPersonId')?.value || 0);
-  if (!knownPersonId) throw new Error('Select a known person before Wake.');
+  if (!knownPersonId) throw new Error('Pick a known person in Wake options first.');
   return { kind, known_person_id: knownPersonId };
 }
 
 function renderPresenceStatus(payload = {}) {
   const state = payload.state || {};
-  const runtime = payload.runtime || {};
-  const shana = runtime.shana || {};
-  const shanaProcess = shana.process || {};
-  const shanaHealth = shana.api_health || {};
-  const twitch = runtime.twitch || {};
-  const worker = twitch.worker || {};
-  const eventsub = twitch.eventsub || {};
-  const ready = twitch.stream_ready || {};
-  const performer = runtime.performer || {};
-  const stats = performer.stats || {};
-  const outputs = state.outputs || {};
-  const autonomy = state.autonomy || {};
-  const safety = state.safety || {};
-  const inputs = state.inputs || {};
-  const muted = Array.isArray(stats.muted_targets) ? stats.muted_targets : [];
   const mode = String(state.mode || 'sleep');
+  const info = MODES[mode] || { title: mode, detail: '', tone: 'off' };
   const audience = state.audience || {};
-  const wake = state.wake || {};
-  const scheduler = autonomy.scheduler || {};
-  const continuity = payload.continuity || {};
-  const working = continuity.working_state || {};
-  const subscribers = Array.isArray(stats.subscribers) ? stats.subscribers : [];
-  const monitorSubscribers = subscribers.filter((subscriber) => subscriber.target_policy === 'dashboard_monitor');
-  const audioReady = monitorSubscribers.filter((subscriber) => subscriber.audio_ready).length;
+  const working = (payload.continuity || {}).working_state || {};
 
-  setText('presenceModeStatus', [
-    `Mode: ${modeLabel(mode)}`,
-    state.requires_confirmation ? 'Needs confirmation before public output resumes.' : '',
-    `Desired: ${modeLabel(state.desired_mode || mode)}`,
-    `Audience: ${audience.display_name || 'Unknown'} (${audience.kind || 'unknown'})`,
-    `Updated: ${state.updated_at || 'n/a'}`
-  ].filter(Boolean).join('\n'));
+  setText('presenceModeTitle', info.title);
+  const dot = element('presenceDot');
+  if (dot) dot.className = `state-dot ${info.tone}`;
+  const detail = [info.detail];
+  if (mode !== 'sleep' && audience.kind && audience.kind !== 'unknown') {
+    detail.push(`With ${audience.display_name || audience.kind}.`);
+  }
+  if (state.requires_confirmation) detail.push('Public output needs your confirmation before it resumes.');
+  if (state.desired_mode && state.desired_mode !== mode) detail.push(`Switching to ${(MODES[state.desired_mode] || {}).title || state.desired_mode}.`);
+  setText('presenceModeDetail', detail.join(' '));
 
-  setText('presenceRuntimeStatus', [
-    `Shana process: ${shanaProcess.running ? 'running' : 'stopped'}`,
-    `Shana API: ${shanaHealth.ok ? 'healthy' : (shanaHealth.detail || 'unavailable')}`,
-    `Twitch IRC: ${(worker.process || {}).running ? 'running' : 'stopped'}`,
-    `EventSub: ${(eventsub.process || {}).running ? 'running' : 'stopped'}`,
-    `Readiness: ${ready.mode || 'unknown'}`
-  ].join('\n'));
-
-  setText('presenceOutputStatus', [
-    `Dashboard monitor: ${boolText(outputs.dashboard_monitor)}`,
-    `Stream public: ${boolText(outputs.stream_public)}`,
-    `Voice: ${boolText(outputs.voice)}`,
-    `Subtitles: ${boolText(outputs.subtitles)}`,
-    `Local mic: ${boolText(inputs.local_mic)}`,
-    `Ambient: ${boolText(autonomy.ambient_chat_enabled)}`,
-    `Proactive: ${boolText(autonomy.proactive_idle_enabled)}`,
-    `Safety review: ${boolText(safety.llm_safety_review_enabled)}`,
-    `Dry run: ${boolText(safety.dry_run)}`,
-    `Muted targets: ${muted.length ? muted.join(', ') : 'none'}`,
-    `Monitor subscribers: ${monitorSubscribers.length} (${audioReady} audio ready)`
-  ].join('\n'));
-
-  setText('presenceWakeStatus', [
-    `Opening enabled: ${boolText(wake.enabled !== false)}`,
-    `Last result: ${wake.last_status || 'none'}`,
-    `Reason: ${wake.suppression_reason || 'none'}`,
-    `Last opening: ${wake.last_opening || 'none'}`,
-    `Last Wake: ${wake.last_event_at || 'never'}`,
-    `Active topic: ${working.active_topic || 'none'}`,
-    `Objective: ${working.current_objective || 'none'}`,
-    `Next action: ${working.next_intended_action || 'none'}`
-  ].join('\n'));
-
-  setText('presenceAutonomyStatus', [
-    `Scheduler: ${scheduler.status || 'idle'}`,
-    `Reason: ${scheduler.reason || 'not checked'}`,
-    `Last check: ${scheduler.last_checked_at || 'never'}`,
-    `Next eligible check: ${scheduler.next_check_at || 'not scheduled'}`,
-    `Last emitted: ${scheduler.last_emitted_at || 'never'}`,
-    `Attempts for topic: ${scheduler.attempts_for_topic || 0}`,
-    `Last autonomous action: ${(state.activity || {}).last_autonomous_action?.occurred_at || 'none'}`
-  ].join('\n'));
-
-  renderAudienceOptions(payload, state);
-
-  ['sleep', 'wake', 'go_live', 'break'].forEach((name) => {
-    const button = element(`presence${modeLabel(name).replace(/\s+/g, '')}Button`);
+  Object.entries(BUTTONS).forEach(([name, id]) => {
+    const button = element(id);
     if (!button) return;
     button.classList.toggle('active', mode === name);
     button.setAttribute('aria-pressed', mode === name ? 'true' : 'false');
   });
 
-  setText('overviewPresenceStatus', modeLabel(mode));
-  setText('overviewPresenceMini', modeLabel(mode));
+  setText('homeTopic', working.active_topic || 'None');
+  setText('homeObjective', working.current_objective || 'None');
+  setText('homeNext', working.next_intended_action || 'None');
+
+  const last = payload.last_durable_output || null;
+  if (last && last.text) {
+    setText('homeLastSaid', last.text);
+    setText('homeLastSaidMeta', [formatTime(last.occurred_at), last.spoken ? 'spoken' : 'text only', last.status].filter(Boolean).join(' / '));
+  } else {
+    setText('homeLastSaid', 'Nothing yet.');
+    setText('homeLastSaidMeta', '');
+  }
+
+  renderAudienceOptions(Array.isArray(payload.known_people) ? payload.known_people : [], state);
 }
 
 async function loadPresence() {
@@ -139,37 +96,54 @@ async function loadPresence() {
     renderPresenceStatus(payload);
     return payload;
   } catch (error) {
-    setText('presenceModeStatus', `Presence load failed.\n${String(error)}`);
-    throw error;
+    setText('presenceModeTitle', 'Unknown');
+    setText('presenceModeDetail', `Presence could not be loaded: ${String(error.message || error)}`);
+    return null;
+  }
+}
+
+async function loadRecentOutputs() {
+  const target = element('homeRecentOutputs');
+  if (!target || !window.humanStreamOutputs) return;
+  try {
+    const payload = await requestJson('/api/stream/outputs/recent?limit=6', { cache: 'no-store' });
+    target.innerHTML = window.humanStreamOutputs(payload);
+  } catch (error) {
+    target.textContent = `Recent output could not be loaded: ${String(error.message || error)}`;
   }
 }
 
 async function setPresenceMode(mode) {
   const normalized = String(mode || '').trim();
   const body = { mode: normalized };
-  if (normalized === 'wake') {
-    body.audience = selectedAudience();
-    body.session_id = String(element('presenceSessionId')?.value || 'presence-local').trim() || 'presence-local';
-  } else {
-    body.audience = { kind: 'unknown' };
+  try {
+    if (normalized === 'wake') {
+      body.audience = selectedAudience();
+      body.session_id = String(element('presenceSessionId')?.value || 'presence-local').trim() || 'presence-local';
+    } else {
+      body.audience = { kind: 'unknown' };
+    }
+  } catch (error) {
+    setText('presenceModeDetail', String(error.message || error));
+    return null;
   }
   if (normalized === 'go_live') {
-    if (!window.confirm('Go Live enables public stream output for this Shana backend session.')) return;
+    if (!window.confirm('Go Live lets Shana speak publicly on stream. Continue?')) return null;
     body.confirm_public_output = true;
   }
-  setText('presenceModeStatus', `Setting Presence to ${modeLabel(normalized)}...`);
+  setText('presenceModeDetail', `Switching to ${(MODES[normalized] || {}).title || normalized}...`);
   try {
     const payload = await requestJson('/api/presence/mode', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
     });
     await loadPresence();
     if (window.loadStatus) window.setTimeout(window.loadStatus, 350);
     return payload;
   } catch (error) {
-    setText('presenceModeStatus', `Presence update failed.\n${String(error)}`);
-    throw error;
+    setText('presenceModeDetail', `Presence change failed: ${String(error.message || error)}`);
+    return null;
   }
 }
 
@@ -178,6 +152,13 @@ window.loadPresence = loadPresence;
 window.setPresenceMode = setPresenceMode;
 window.updatePresenceAudienceControls = updatePresenceAudienceControls;
 
-if (String(window.GAMMA_DASHBOARD_PAGE || '') === 'presence') {
-  window.setTimeout(() => loadPresence().catch(() => {}), 0);
+if (String(window.GAMMA_DASHBOARD_PAGE || '') === 'dashboard') {
+  element('presenceAudienceKind')?.addEventListener('change', (event) => { event.target.dataset.touched = '1'; });
+  const refresh = () => {
+    if (document.hidden) return;
+    loadPresence();
+    loadRecentOutputs();
+  };
+  refresh();
+  window.setInterval(refresh, 10000);
 }

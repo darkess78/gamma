@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import unittest
 import urllib.error
@@ -59,6 +60,40 @@ class _FakeUploadFile:
 
 def _upload_file(filename: str, content: bytes, content_type: str) -> _FakeUploadFile:
     return _FakeUploadFile(filename, content, content_type)
+
+
+DASHBOARD_NAV_PATHS = (
+    "/dashboard",
+    "/dashboard/monitor",
+    "/dashboard/shana",
+    "/dashboard/people",
+    "/dashboard/integrations",
+    "/dashboard/coding",
+    "/dashboard/system",
+)
+
+DASHBOARD_PAGE_ROUTES = (
+    (pages.dashboard, "dashboard"),
+    (pages.dashboard_shana_page, "shana"),
+    (pages.dashboard_people_page, "people"),
+    (pages.dashboard_integrations_page, "integrations"),
+    (pages.dashboard_coding_page, "coding"),
+    (pages.dashboard_system_page, "system"),
+)
+
+LEGACY_PAGE_REDIRECTS = (
+    "/dashboard/live",
+    "/dashboard/talk",
+    "/talk",
+    "/dashboard/presence",
+    "/presence",
+    "/dashboard/status",
+    "/dashboard/stream",
+    "/dashboard/twitch",
+    "/dashboard/memory",
+    "/dashboard/improvement",
+    "/dashboard/settings",
+)
 
 
 def _request_with_headers(headers: dict[str, str]) -> Request:
@@ -140,22 +175,19 @@ class DashboardRoutesTest(unittest.TestCase):
             performer = pages.performer_redirect()
             overlay = pages.subtitle_overlay_page()
 
+        body = dashboard.body.decode("utf-8")
         self.assertEqual(dashboard.status_code, 200)
-        self.assertIn('window.GAMMA_SHANA_BASE_URL = "http://192.168.1.50:8000"', dashboard.body.decode("utf-8"))
-        self.assertIn('window.GAMMA_DASHBOARD_BASE_URL = "http://192.168.1.50:8001"', dashboard.body.decode("utf-8"))
-        self.assertIn('window.GAMMA_DASHBOARD_PAGE = "dashboard"', dashboard.body.decode("utf-8"))
-        self.assertIn("href=\"/dashboard\"", dashboard.body.decode("utf-8"))
-        self.assertIn("href=\"/dashboard/live\"", dashboard.body.decode("utf-8"))
-        self.assertNotIn("href=\"/dashboard/talk\"", dashboard.body.decode("utf-8"))
-        self.assertIn("href=\"/dashboard/monitor\"", dashboard.body.decode("utf-8"))
-        self.assertIn("href=\"/dashboard/presence\"", dashboard.body.decode("utf-8"))
-        self.assertIn("href=\"/dashboard/status\"", dashboard.body.decode("utf-8"))
-        self.assertIn("href=\"/dashboard/stream\"", dashboard.body.decode("utf-8"))
-        self.assertIn("href=\"/dashboard/memory\"", dashboard.body.decode("utf-8"))
-        self.assertIn("href=\"/dashboard/improvement\"", dashboard.body.decode("utf-8"))
-        self.assertIn("href=\"/dashboard/settings\"", dashboard.body.decode("utf-8"))
-        self.assertIn('rel="icon" href="/static/favicon.svg"', dashboard.body.decode("utf-8"))
-        self.assertNotIn('src="/static/monitor.js', dashboard.body.decode("utf-8"))
+        self.assertIn('window.GAMMA_SHANA_BASE_URL = "http://192.168.1.50:8000"', body)
+        self.assertIn('window.GAMMA_DASHBOARD_BASE_URL = "http://192.168.1.50:8001"', body)
+        self.assertIn('window.GAMMA_DASHBOARD_PAGE = "dashboard"', body)
+        for path in DASHBOARD_NAV_PATHS:
+            with self.subTest(path=path):
+                self.assertIn(f'href="{path}"', body)
+        for path in LEGACY_PAGE_REDIRECTS:
+            with self.subTest(retired=path):
+                self.assertNotIn(f'href="{path}"', body)
+        self.assertIn('rel="icon" href="/static/favicon.svg"', body)
+        self.assertNotIn('src="/static/monitor.js', body)
         self.assertEqual(talk.status_code, 307)
         self.assertEqual(talk.headers["location"], "/dashboard/monitor")
         self.assertEqual(monitor_redirect.status_code, 307)
@@ -173,41 +205,17 @@ class DashboardRoutesTest(unittest.TestCase):
 
     def test_dashboard_app_public_page_routes_are_registered(self) -> None:
         registered_paths = {getattr(route, "path", "") for route in main.app.routes}
-        for path in [
-            "/dashboard",
-            "/dashboard/talk",
-            "/talk",
-            "/dashboard/live",
-            "/dashboard/monitor",
-            "/dashboard/presence",
-            "/presence",
-            "/dashboard/status",
-            "/dashboard/stream",
-            "/dashboard/memory",
-            "/dashboard/improvement",
-            "/dashboard/settings",
-        ]:
+        for path in [*DASHBOARD_NAV_PATHS, *LEGACY_PAGE_REDIRECTS]:
             with self.subTest(path=path):
                 self.assertIn(path, registered_paths)
 
     def test_dashboard_app_public_page_routes_return_html(self) -> None:
-        page_paths = [
-            (pages.dashboard, "dashboard"),
-            (pages.dashboard_live_page, "live"),
-            (pages.dashboard_monitor_page, "monitor"),
-            (pages.dashboard_presence_page, "presence"),
-            (pages.dashboard_status_page, "status"),
-            (pages.dashboard_stream_page, "stream"),
-            (pages.dashboard_memory_page, "memory"),
-            (pages.dashboard_improvement_page, "improvement"),
-            (pages.dashboard_settings_page, "settings"),
-        ]
         with (
             patch.object(settings, "dashboard_public_scheme", "https"),
             patch.object(settings, "dashboard_public_host", "gamma.neety.me"),
             patch.object(settings, "dashboard_public_port", 443),
         ):
-            for route_call, page_name in page_paths:
+            for route_call, page_name in DASHBOARD_PAGE_ROUTES:
                 with self.subTest(page_name=page_name):
                     response = route_call()
                     self.assertEqual(response.status_code, 200)
@@ -215,33 +223,14 @@ class DashboardRoutesTest(unittest.TestCase):
                     self.assertIn(f'window.GAMMA_DASHBOARD_PAGE = "{page_name}"', response.body.decode("utf-8"))
 
     def test_rendered_dashboard_navbar_links_are_relative(self) -> None:
-        """Navbar navbar links should use same-origin relative paths.
+        """Navbar links use same-origin relative paths so they work behind any proxy."""
+        body = pages.dashboard().body.decode("utf-8")
 
-        This ensures browser navigation never uses absolute localhost URLs
-        that would fail on production or misconfigured deployments.
-        """
-        response = pages.dashboard()
-        body = response.body.decode("utf-8")
-        
-        # All navbar links should use relative same-origin paths
-        self.assertIn('href="/dashboard"', body, "Dashboard link missing")
-        self.assertIn('href="/dashboard/live"', body, "Live link missing")
-        self.assertNotIn('href="/dashboard/talk"', body)
-        self.assertIn('href="/dashboard/status"', body, "Status link missing")
-        self.assertIn('href="/dashboard/stream"', body, "Stream link missing")
-        self.assertIn('href="/dashboard/memory"', body, "Memory link missing")
-        self.assertIn('href="/dashboard/improvement"', body, "Improvement link missing")
-        self.assertIn('href="/dashboard/settings"', body, "Settings link missing")
-        self.assertIn('href="/dashboard/monitor"', body, "Monitor link missing")
-        
-        # Should NOT contain absolute URLs for navbar routes
-        # Note: overlay/subtitles is external and gets replaced with absolute URL
-        import re
-        navbar_routes = ['dashboard', 'live', 'status', 'stream', 'memory', 'improvement', 'settings', 'monitor']
-        for route in navbar_routes:
-            self.assertNotIn(f'href="http://127.0.0.1:8001/dashboard/{route}"', body)
-        
-        # Should NOT contain https URLs in navbar
+        for path in DASHBOARD_NAV_PATHS:
+            with self.subTest(path=path):
+                self.assertIn(f'href="{path}"', body)
+                self.assertNotIn(f'href="http://127.0.0.1:8001{path}"', body)
+        # Overlay/subtitles is external and is the only link rewritten to an absolute URL.
         self.assertNotIn('href="https://', body)
 
     def test_rendered_dashboard_uses_public_https_api_base(self) -> None:
@@ -258,7 +247,7 @@ class DashboardRoutesTest(unittest.TestCase):
         )
 
     def test_rendered_dashboard_links_use_public_dashboard_base(self) -> None:
-        """Navbar links should be same-origin relative, external output views can use public base."""
+        """Navbar links stay relative; the external subtitle overlay uses the public base."""
         with (
             patch.object(settings, "dashboard_public_scheme", "https"),
             patch.object(settings, "dashboard_public_host", "gamma.neety.me"),
@@ -266,46 +255,48 @@ class DashboardRoutesTest(unittest.TestCase):
         ):
             response = pages.dashboard()
         body = response.body.decode("utf-8")
-        
-        # Navbar links should be relative same-origin paths
-        for path in [
-            "/dashboard",
-            "/dashboard/live",
-            "/dashboard/monitor",
-            "/dashboard/status",
-            "/dashboard/stream",
-            "/dashboard/memory",
-            "/dashboard/improvement",
-            "/dashboard/settings",
-        ]:
+
+        for path in DASHBOARD_NAV_PATHS:
             with self.subTest(path=path):
                 self.assertIn(f'href="{path}"', body)
-        
-        # Overlay subtitles is external output view, can use public base
         self.assertIn('href="https://gamma.neety.me/overlay/subtitles"', body)
         self.assertNotIn('href="/overlay/subtitles"', body)
 
     def test_dashboard_section_pages_are_served_with_page_config(self) -> None:
-        page_routes = {
-            "dashboard_live_page": "live",
-            "dashboard_status_page": "status",
-            "dashboard_stream_page": "stream",
-            "dashboard_memory_page": "memory",
-            "dashboard_improvement_page": "improvement",
-            "dashboard_settings_page": "settings",
-        }
-        for route_name, page_name in page_routes.items():
-            with self.subTest(route_name=route_name):
-                response = getattr(pages, route_name)()
-                self.assertEqual(response.status_code, 200)
-                body = response.body.decode("utf-8")
+        for route_call, page_name in DASHBOARD_PAGE_ROUTES:
+            with self.subTest(page_name=page_name):
+                body = route_call().body.decode("utf-8")
                 self.assertIn(f'window.GAMMA_DASHBOARD_PAGE = "{page_name}"', body)
                 self.assertIn('class="app-nav"', body)
-                self.assertIn('Stop Output', body)
+                self.assertIn("Stop Output", body)
 
-        twitch_redirect = pages.dashboard_twitch_page()
-        self.assertEqual(twitch_redirect.status_code, 307)
-        self.assertEqual(twitch_redirect.headers["location"], "/dashboard/stream")
+    def test_retired_dashboard_urls_redirect_to_their_new_pages(self) -> None:
+        redirects = {
+            pages.dashboard_live_page: "/dashboard/monitor",
+            pages.dashboard_talk_page: "/dashboard/monitor",
+            pages.talk_page_redirect: "/dashboard/monitor",
+            pages.dashboard_presence_page: "/dashboard",
+            pages.presence_page_redirect: "/dashboard",
+            pages.dashboard_status_page: "/dashboard/system",
+            pages.dashboard_stream_page: "/dashboard/integrations",
+            pages.dashboard_twitch_page: "/dashboard/integrations",
+            pages.dashboard_memory_page: "/dashboard/people",
+            pages.dashboard_improvement_page: "/dashboard/coding",
+            pages.dashboard_settings_page: "/dashboard/shana",
+        }
+        self.assertEqual(set(redirects.values()) - {"/dashboard/monitor"}, set(DASHBOARD_NAV_PATHS) - {"/dashboard/monitor"})
+        for route_call, location in redirects.items():
+            with self.subTest(route=route_call.__name__):
+                response = route_call()
+                self.assertEqual(response.status_code, 307)
+                self.assertEqual(response.headers["location"], location)
+
+        request = _request_with_headers({"host": "gamma.neety.me"})
+        request.scope["query_string"] = b"api_base=https%3A%2F%2Fgamma.neety.me"
+        self.assertEqual(
+            pages.dashboard_live_page(request).headers["location"],
+            "/dashboard/monitor?api_base=https%3A%2F%2Fgamma.neety.me",
+        )
 
     def test_talk_routes_redirect_to_monitor(self) -> None:
         response = pages.talk_page_redirect()
@@ -317,21 +308,38 @@ class DashboardRoutesTest(unittest.TestCase):
         self.assertFalse((main.STATIC_DIR / "talk.html").exists())
         self.assertFalse((main.STATIC_DIR / "talk.mjs").exists())
 
-    def test_presence_short_path_redirects_to_dashboard_presence(self) -> None:
+    def test_presence_short_path_redirects_to_home(self) -> None:
         response = pages.presence_page_redirect()
 
         self.assertEqual(response.status_code, 307)
-        self.assertEqual(response.headers["location"], "/dashboard/presence")
+        self.assertEqual(response.headers["location"], "/dashboard")
 
-    def test_live_and_monitor_pages_share_live_voice_panel_partial(self) -> None:
-        dashboard_body = pages.dashboard_live_page().body.decode("utf-8")
+    def test_monitor_page_embeds_live_voice_panel_partial(self) -> None:
         monitor_body = pages.dashboard_monitor_page().body.decode("utf-8")
+        dashboard_body = pages.dashboard().body.decode("utf-8")
         partial = pages.LIVE_VOICE_PANEL.read_text(encoding="utf-8").strip()
 
-        self.assertIn(partial, dashboard_body)
         self.assertIn(partial, monitor_body)
-        self.assertNotIn("GAMMA_LIVE_VOICE_PANEL", dashboard_body)
         self.assertNotIn("GAMMA_LIVE_VOICE_PANEL", monitor_body)
+        # Live voice moved to Talk; the dashboard shell no longer carries a second copy.
+        self.assertNotIn('id="liveVoiceButton"', dashboard_body)
+
+    def test_every_dashboard_section_belongs_to_a_page_and_every_page_has_sections(self) -> None:
+        html = pages.INDEX_PAGE.read_text(encoding="utf-8")
+        tabs = re.findall(r'data-dashboard-tab="([^"]+)"', html)
+        page_names = {name for _route, name in DASHBOARD_PAGE_ROUTES}
+        used = {tab for value in tabs for tab in value.split()}
+        self.assertEqual(used, page_names)
+
+    def test_dashboard_scripts_and_styles_exist(self) -> None:
+        html = pages.INDEX_PAGE.read_text(encoding="utf-8")
+        assets = re.findall(r'(?:src|href)="/static/([^"?]+)', html)
+        self.assertIn("dashboard.css", assets)
+        for asset in assets:
+            with self.subTest(asset=asset):
+                self.assertTrue((pages.STATIC_DIR / asset).is_file())
+        for removed in ("render.js", "providers.js", "init.js", "live.js"):
+            self.assertNotIn(f"/static/{removed}", html)
 
     def test_dashboard_pages_render_forwarded_https_public_base_urls(self) -> None:
         request = _request_with_headers(

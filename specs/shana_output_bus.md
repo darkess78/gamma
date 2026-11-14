@@ -305,38 +305,12 @@ Expected dashboard responsibilities:
 - show stream traces/output logs
 - provide a monitor/listen-only page
 
-Suggested page split:
-
-```text
-/dashboard
-  glanceable streaming overview
-
-/dashboard/live
-  mic testing and live voice testing
-
-/dashboard/monitor
-  listen-only Shana output monitor
-
-/dashboard/status
-  service status, process controls, provider health, machine metrics, logs
-
-/dashboard/stream
-  combined Stream and Twitch operations
-
-/dashboard/memory
-  memory stats, latest memories, known people, safer cleanup controls
-
-/dashboard/settings
-  central settings hub
-
-/performer
-  Stream PC OBS/browser source
-
-/overlay/subtitles
-  optional subtitle-only OBS/browser source
-```
-
-Current status: implemented as route-backed dashboard pages over the existing shared dashboard shell. `/dashboard/twitch` redirects to `/dashboard/stream`, and `/monitor` redirects to `/dashboard/monitor`.
+Page layout: see `dashboard.md`. Home (`/dashboard`), Talk (`/dashboard/monitor`),
+Shana, People, Integrations, Coding and System pages share one dashboard shell.
+Retired URLs (`/dashboard/live`, `/status`, `/stream`, `/twitch`, `/memory`,
+`/settings`, `/presence`, `/improvement`) redirect to their new pages, and
+`/monitor` redirects to `/dashboard/monitor`. Output views stay at `/performer`
+(Stream PC OBS source) and `/overlay/subtitles`.
 
 Public routing expectation: `https://gamma.neety.me/dashboard/*`, dashboard `/api/*`, and dashboard `/static/*` should be reverse-proxied to the dashboard process. The Shana API process keeps fallback redirects for `/dashboard` and valid `/dashboard/<page>` paths to `settings.dashboard_base_url` so misrouted dashboard page requests do not return JSON 404. Dashboard navbar and overview links are rendered with the configured public dashboard base URL.
 

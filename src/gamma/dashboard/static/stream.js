@@ -1,4 +1,4 @@
-// stream.js - Stream activity functions for Gamma dashboard
+// stream.js - HTML/text renderers for stream feeds, viewer trust and replay results.
 (function () {
   function streamEmptyHtml(message) {
     return '<div class="stream-empty">' + escapeHtml(message) + '</div>';
@@ -239,72 +239,6 @@
       .replace(/>/g, '&gt;');
   }
 
-  function humanTwitchWorker(worker) {
-    worker = worker || {};
-    var process = worker.process || {};
-    var controls = worker.controls || {};
-    var state = worker.state || {};
-    var lines = [
-      'Configured: ' + (worker.configured ? 'Yes' : 'No'),
-      'Running: ' + (process.running ? 'Yes' : 'No'),
-      'Channel: ' + (worker.channel || 'n/a')
-    ];
-    if (Array.isArray(worker.missing_config) && worker.missing_config.length) lines.push('Missing config: ' + worker.missing_config.join(', '));
-    if (process.pid) lines.push('PID: ' + process.pid);
-    if (state.status || state.updated_at) {
-      lines.push('');
-      lines.push('IRC State:');
-      lines.push('Status: ' + (state.status || 'n/a') + ' / connected: ' + (state.connected ? 'yes' : 'no'));
-      lines.push('Updated: ' + fmtLocalDateTime(state.updated_at));
-      if (typeof state.reconnects !== 'undefined') lines.push('Reconnects: ' + state.reconnects);
-      if (typeof state.message_count !== 'undefined') lines.push('Messages ingested: ' + state.message_count);
-      if (state.last_message_kind) lines.push('Last message kind: ' + humanizeKey(state.last_message_kind));
-      if (state.last_actor_display_name) lines.push('Last actor: ' + state.last_actor_display_name);
-      if (state.last_posted_event_kind) lines.push('Last posted event: ' + humanizeKey(state.last_posted_event_kind));
-      if (state.last_message_id) lines.push('Last message id: ' + state.last_message_id);
-      if (state.last_post_error) lines.push('Last post error: ' + state.last_post_error);
-      if (state.detail) lines.push('Detail: ' + state.detail);
-    }
-    lines.push('');
-    lines.push('Controls:');
-    lines.push('Dry run: ' + (controls.dry_run ? 'On' : 'Off'));
-    lines.push('Voice: ' + (controls.voice_enabled ? 'On' : 'Off'));
-    lines.push('Subtitles: ' + (controls.subtitles_enabled ? 'On' : 'Off'));
-    lines.push('Ambient chat: ' + (controls.ambient_chat_enabled ? 'On' : 'Off'));
-    lines.push('Mention replies: ' + (controls.mention_replies_enabled ? 'On' : 'Off'));
-    lines.push('Spam quips: ' + (controls.spam_quips_enabled ? 'On' : 'Off'));
-    lines.push('Self-goal proposals: ' + (controls.self_goal_proposals_enabled ? 'On' : 'Off'));
-    lines.push('LLM safety review: ' + (controls.llm_safety_review_enabled ? 'On' : 'Off'));
-    lines.push('Speech gap: ' + (typeof controls.min_speech_gap_seconds === 'undefined' ? 'n/a' : controls.min_speech_gap_seconds + ' sec'));
-    lines.push('Speech budget: ' + (typeof controls.max_speech_seconds_per_minute === 'undefined' ? 'n/a' : controls.max_speech_seconds_per_minute + ' sec/min'));
-    lines.push('Spam quip gap: ' + (typeof controls.spam_quip_cooldown_seconds === 'undefined' ? 'n/a' : controls.spam_quip_cooldown_seconds + ' sec'));
-    if (Array.isArray(worker.ignored_bots) && worker.ignored_bots.length) lines.push('Ignored bots: ' + worker.ignored_bots.join(', '));
-    if (worker.stdout_path) lines.push('Stdout: ' + worker.stdout_path);
-    if (worker.stderr_path) lines.push('Stderr: ' + worker.stderr_path);
-    return lines.join('\n');
-  }
-
-  function humanDiscordRuntime(runtime) {
-    var state = runtime.enabled ? 'enabled' : 'disabled';
-    var configured = runtime.configured ? 'configured' : 'not configured';
-    var running = runtime.running ? 'running' : 'stopped';
-    var output = runtime.output_enabled ? 'output on' : 'output off';
-    var counts = 'inputs ' + (runtime.input_count || 0) + ', outputs ' + (runtime.output_count || 0);
-    return state + ', ' + configured + ', ' + running + ', ' + output + ', ' + counts + (runtime.last_error ? ' / error ' + runtime.last_error : '');
-  }
-
-  function humanVTubeStudioAdapter(adapter) {
-    var state = adapter.enabled ? 'enabled' : 'disabled';
-    var configured = adapter.configured ? 'configured' : 'not configured';
-    var client = adapter.client || {};
-    var runner = adapter.runner || {};
-    var connected = client.connected ? 'connected' : 'disconnected';
-    var auth = client.authenticated ? 'auth ok' : (client.token_requested ? 'token requested' : 'auth pending');
-    var runnerState = runner.running ? 'runner on' : 'runner off';
-    var action = adapter.last_action && adapter.last_action.action_type ? ' / last ' + adapter.last_action.action_type : '';
-    var error = adapter.last_error || client.last_error || runner.last_error;
-    return state + ', ' + configured + ', ' + connected + ', ' + auth + ', ' + runnerState + action + (error ? ' / error ' + error : '');
-  }
 
   function humanTwitchViewerTrust(payload) {
     var items = payload && Array.isArray(payload.items) ? payload.items : [];
@@ -337,123 +271,6 @@
     return lines.join('\n');
   }
 
-  function humanProviderAction(action) {
-    if (!action || !action.status) {
-      return 'No provider action has been run yet.';
-    }
-    var lines = [
-      'Action: ' + humanizeKey(action.action),
-      'Status: ' + humanizeKey(action.status),
-      'Detail: ' + (action.detail || 'n/a'),
-      'Ran at: ' + fmtLocalDateTime(action.ran_at)
-    ];
-    if (action.provider) lines.push('Provider: ' + providerLabel(action.provider));
-    if (action.label) lines.push('Target: ' + action.label);
-    if (typeof action.returncode !== 'undefined') {
-      lines.push('Return code: ' + action.returncode);
-    }
-    if (typeof action.duration_ms !== 'undefined') {
-      lines.push('Duration: ' + fmtDurationMs(action.duration_ms));
-    }
-    if (action.stdout) {
-      lines.push('');
-      lines.push('Output:');
-      lines.push(action.stdout);
-    }
-    if (action.stderr) {
-      lines.push('');
-      lines.push('Error output:');
-      lines.push(action.stderr);
-    }
-    return lines.join('\n');
-  }
-
-  function outputActorLabel(actor) {
-    actor = actor || {};
-    var source = actor.source || 'unknown';
-    var name = actor.display_name || actor.platform_id || 'unknown';
-    var roles = Array.isArray(actor.roles) && actor.roles.length ? ' [' + actor.roles.join(', ') + ']' : '';
-    return source + ':' + name + roles;
-  }
-
-  function outputInputLabel(input) {
-    input = input || {};
-    var kind = input.kind || 'unknown';
-    return input.session_id ? kind + ' / ' + input.session_id : kind;
-  }
-
-  function outputRecentTargetLabel(event) {
-    if (!event) return 'none';
-    var actor = event.payload && event.payload.actor ? ' / ' + outputActorLabel(event.payload.actor) : '';
-    return '#' + (event.sequence || 'n/a') + ' / ' + (event.type || 'unknown') + ' / ' + (event.turn_id || 'n/a') + actor;
-  }
-
-  function humanPerformerBus(payload) {
-    payload = payload || {};
-    var stats = payload.stats || {};
-    var byTarget = stats.subscribers_by_target || {};
-    var mutedTargets = Array.isArray(stats.muted_targets) ? stats.muted_targets : [];
-    var subscribers = Array.isArray(stats.subscribers) ? stats.subscribers : [];
-    var recent = payload.recent_event || null;
-    var recentByTarget = payload.recent_by_target || {};
-    var adapters = payload.adapters || {};
-    var lines = [];
-    lines.push('Output bus: ' + (payload.ok ? 'reachable' : 'unreachable'));
-    lines.push('Subscribers: ' + (stats.subscriber_count || 0) + ' / history: ' + (stats.history_count || 0) + ' / seq: ' + (stats.last_sequence || 0));
-    lines.push('Targets: ' + compactCounts(byTarget));
-    lines.push('Muted targets: ' + (mutedTargets.length ? mutedTargets.join(', ') : 'none'));
-    if (adapters.vtube_studio) {
-      lines.push('VTube Studio: ' + humanVTubeStudioAdapter(adapters.vtube_studio));
-    }
-    if (adapters.discord) {
-      lines.push('Discord: ' + humanDiscordRuntime(adapters.discord));
-    }
-    if (subscribers.length) {
-      lines.push('');
-      lines.push('Connected clients:');
-      subscribers.forEach(function (subscriber) {
-        var name = humanizeKey(subscriber.client_name || 'unknown_client');
-        var target = subscriber.target_policy || 'stream_public';
-        var host = subscriber.client_host || 'unknown host';
-        lines.push('- ' + name + ' / ' + target + ' / ' + host);
-      });
-    }
-    if (recent) {
-      var recentPayload = recent.payload || {};
-      var actor = recentPayload.actor || {};
-      var input = recentPayload.input || {};
-      lines.push('');
-      lines.push('Last event: ' + (recent.type || 'unknown'));
-      lines.push('Sequence: ' + (recent.sequence || 'n/a'));
-      lines.push('Target: ' + (recent.target_policy || 'stream_public'));
-      lines.push('Turn: ' + (recent.turn_id || 'n/a'));
-      lines.push('Input: ' + outputInputLabel(input));
-      lines.push('Actor: ' + outputActorLabel(actor));
-      lines.push('At: ' + fmtLocalDateTime(recent.occurred_at));
-      outputTargetPolicies(stats, recentByTarget).forEach(function (targetPolicy) {
-        lines.push(humanizeKey(targetPolicy) + ' latest: ' + outputRecentTargetLabel(recentByTarget[targetPolicy]));
-      });
-    } else if (payload.detail) {
-      lines.push('Detail: ' + payload.detail);
-    } else {
-      lines.push('Last event: none');
-    }
-    return lines.join('\n');
-  }
-
-  function outputTargetPolicies(stats, recentByTarget) {
-    var policies = Array.isArray(stats.target_policies) ? stats.target_policies.slice() : [];
-    Object.keys(stats.subscribers_by_target || {}).forEach(function (targetPolicy) {
-      if (policies.indexOf(targetPolicy) === -1) policies.push(targetPolicy);
-    });
-    Object.keys(recentByTarget || {}).forEach(function (targetPolicy) {
-      if (policies.indexOf(targetPolicy) === -1) policies.push(targetPolicy);
-    });
-    if (!policies.length) {
-      policies = ['stream_public', 'dashboard_monitor'];
-    }
-    return policies;
-  }
 
   function compactCounts(counts) {
     var keys = Object.keys(counts || {}).sort();
@@ -479,77 +296,6 @@
       .replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
   }
 
-  function fmtDurationMs(value) {
-    var ms = Number(value);
-    if (!isFinite(ms) || ms < 0) return 'n/a';
-    if (ms < 1000) return Math.round(ms) + ' ms';
-    return (ms / 1000).toFixed(ms >= 10000 ? 1 : 2) + ' sec';
-  }
-
-  function fmtLocalDateTime(value, fallback) {
-    if (!value) return fallback || 'n/a';
-    var date = value instanceof Date ? value : new Date(value);
-    if (isNaN(date.getTime())) return String(value);
-    return date.toLocaleString([], {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      second: '2-digit'
-    });
-  }
-
-  var viewMode = localStorage.getItem('gammaDashboardViewMode') || 'human';
-  var sectionHashes = {};
-
-  function renderBlock(elementId, rawValue, humanText) {
-    var el = document.getElementById(elementId);
-    if (!el) return;
-    if (viewMode === 'json') {
-      el.textContent = pretty(rawValue);
-    } else {
-      el.innerHTML = escapeHtml(humanText);
-    }
-  }
-
-  function renderHtmlBlockIfChanged(elementId, rawValue, humanHtml, cacheKey) {
-    var el = document.getElementById(elementId);
-    if (!el) return;
-    var key = cacheKey || elementId;
-    var nextKey = viewMode === 'json' ? pretty(rawValue) : humanHtml;
-    if (sectionHashes && sectionHashes[key] === nextKey) {
-      return;
-    }
-    if (sectionHashes) sectionHashes[key] = nextKey;
-    if (viewMode === 'json') {
-      el.classList.add('json-render');
-      el.textContent = pretty(rawValue);
-    } else {
-      el.classList.remove('json-render');
-      el.innerHTML = humanHtml;
-    }
-  }
-
-  function setTextIfChanged(elementId, value, cacheKey) {
-    var el = document.getElementById(elementId);
-    if (!el) return;
-    var key = cacheKey || elementId;
-    if (sectionHashes && sectionHashes[key] === value) {
-      return;
-    }
-    if (sectionHashes) sectionHashes[key] = value;
-    el.textContent = value;
-  }
-
-  function pretty(value) {
-    try {
-      return JSON.stringify(value, null, 2);
-    } catch (error) {
-      return String(value);
-    }
-  }
-
   window.streamEmptyHtml = streamEmptyHtml;
   window.humanStreamTraces = humanStreamTraces;
   window.humanStreamSafety = humanStreamSafety;
@@ -557,10 +303,6 @@
   window.humanStreamQueue = humanStreamQueue;
   window.humanStreamTempMemory = humanStreamTempMemory;
   window.humanStreamSelfGoals = humanStreamSelfGoals;
-  window.humanTwitchWorker = humanTwitchWorker;
   window.humanTwitchViewerTrust = humanTwitchViewerTrust;
   window.humanTwitchReplayResult = humanTwitchReplayResult;
-  window.humanPerformerBus = humanPerformerBus;
-  window.humanProviderAction = humanProviderAction;
-
 })();

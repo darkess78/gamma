@@ -128,5 +128,10 @@ exec/eval, patch builtins or import test machinery.
 **Status for Shana.** `coding_status` gives only status, stage, task counts and
 whether a proposal exists; never the goal, file names or code.
 
-Not done yet: a real run on Gamma PC (needs the GPU), and an "apply proposal"
-button (today the owner applies the diff by hand).
+**Applying.** "Apply to a new branch" on a job awaiting review
+(`POST /api/coding/work/{id}/apply`, `coding/proposal.py`) checks the diff
+still applies to the current HEAD, then commits it to `shana/<job>` in a
+throwaway worktree; the running checkout is untouched. A stale diff creates
+nothing. The owner merges the branch and restarts.
+
+Not done yet: a real run on Gamma PC (needs the GPU).

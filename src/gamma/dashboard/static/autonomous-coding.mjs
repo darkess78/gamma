@@ -5,7 +5,7 @@ if (window.GAMMA_DASHBOARD_PAGE === 'coding') {
   const message = document.getElementById('autonomousCodingMessage');
   const ACTIVE = ['queued', 'running', 'deferred', 'paused'];
   const TONES = {
-    awaiting_owner_review: 'live', running: 'good', queued: 'good', deferred: 'warn', paused: 'warn',
+    awaiting_owner_review: 'live', applied: 'good', running: 'good', queued: 'good', deferred: 'warn', paused: 'warn',
     needs_owner: 'warn', blocked: 'bad', failed: 'bad', interrupted: 'bad', stopped: 'off',
   };
   const STAGES = {
@@ -92,6 +92,23 @@ if (window.GAMMA_DASHBOARD_PAGE === 'coding') {
     if (job.proposal) {
       card.append(fold(job, 'proposal', 'Proposed diff', (details) => showProposal(job, details)));
     }
+    if (job.status === 'awaiting_owner_review' && job.proposal) {
+      const row = el('div', 'button-row');
+      const button = el('button', 'small', 'Apply to a new branch');
+      button.type = 'button';
+      button.title = 'Commits the diff to a shana/ branch for you to merge. The running code is not changed.';
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        try {
+          const value = await request(`/api/coding/work/${encodeURIComponent(job.id)}/apply`, { method: 'POST' });
+          message.textContent = `Committed to ${value.branch}. Merge it when you're happy, then restart.`;
+          await refresh();
+        } catch (error) { message.textContent = error.message; button.disabled = false; }
+      });
+      row.append(button);
+      card.append(row);
+    }
+    if (job.applied_branch) card.append(el('p', 'small', `On branch ${job.applied_branch} (${String(job.applied_commit || '').slice(0, 8)})`));
     card.append(fold(job, 'raw', 'Work events (raw)', (details) => {
       if (details.querySelector('pre')) return;
       details.append(el('pre', 'log', JSON.stringify({ events: job.events, suite: job.suite, last_transport: job.last_transport }, null, 2)));

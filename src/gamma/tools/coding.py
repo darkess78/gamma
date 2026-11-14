@@ -6,8 +6,8 @@ CODING_TOOLS = {'coding_goal','coding_status','coding_control'}
 
 
 _ACTIVE = {'queued', 'running', 'deferred', 'paused'}
-_JOB_STATES = _ACTIVE | {'awaiting_owner_review', 'needs_owner', 'blocked', 'failed', 'stopped', 'interrupted'}
-_STAGES = _JOB_STATES | {'starting', 'splitting', 'working', 'suite', 'waiting_for_gpu', 'resumed'}
+_JOB_STATES = _ACTIVE | {'awaiting_owner_review', 'applied', 'needs_owner', 'blocked', 'failed', 'stopped', 'interrupted'}
+_STAGES = _JOB_STATES | {'applied', 'starting', 'splitting', 'working', 'suite', 'waiting_for_gpu', 'resumed'}
 _TASK_STATES = {'pending', 'done', 'gave_up', 'out_of_steps'}
 MAX_TASKS = 6
 
@@ -43,6 +43,8 @@ def coding_status_reply(jobs):
                 else 'it has no task list yet')
     if status == 'awaiting_owner_review':
         return f'The latest coding goal is finished: {progress}, and a proposal is waiting for your review on the Coding page.'
+    if status == 'applied':
+        return 'The latest coding goal was committed to a branch for you to merge.'
     if status == 'needs_owner':
         return 'The latest coding goal needs a decision from you before it can be split into tasks; the question is on the Coding page.'
     if status in _ACTIVE:

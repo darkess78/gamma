@@ -110,3 +110,57 @@ def test_status_for_shana_has_counts_but_not_the_goal_or_files(tmp_path):
     assert coding_status_reply([]) == "No coding goals are recorded yet."
     assert "decision" in coding_status_reply([{"status": "needs_owner"}])
     assert "can't read" in coding_status_reply([{"status": "<script>"}])
+
+
+def _git_repo(tmp_path):
+    import subprocess
+    repo = tmp_path / "repo"; (repo / "src/gamma").mkdir(parents=True)
+    git = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, text=True).stdout
+    git("init", "-q"); git("config", "user.email", "t@t"); git("config", "user.name", "t")
+    (repo / "src/gamma/calc.py").write_text("def add(a, b):\n    return a - b\n")
+    git("add", "-A"); git("commit", "-qm", "init")
+    return repo, git
+
+
+def _finished_job(tmp_path, diff):
+    root, record = _queue(tmp_path)
+    def run(goal, project, model, out_dir, **_):
+        report = _report(out_dir)
+        (out_dir / "proposal.diff").write_text(diff)
+        return report
+    return root, autonomous.execute(root, record["id"], project=tmp_path, endpoint="x", run=run, model="m")
+
+
+GOOD_DIFF = """diff --git a/src/gamma/calc.py b/src/gamma/calc.py
+--- a/src/gamma/calc.py
++++ b/src/gamma/calc.py
+@@ -1,2 +1,2 @@
+ def add(a, b):
+-    return a - b
++    return a + b
+"""
+
+
+def test_applying_a_proposal_commits_a_branch_and_leaves_the_checkout_alone(tmp_path):
+    from gamma.coding.proposal import apply_to_branch
+    repo, git = _git_repo(tmp_path)
+    root, job = _finished_job(tmp_path, GOOD_DIFF)
+    head_before = git("rev-parse", "HEAD")
+    result = apply_to_branch(repo, root, job["id"])
+    assert result["branch"].startswith("shana/")
+    assert "a + b" in git("show", f"{result['branch']}:src/gamma/calc.py")
+    assert git("rev-parse", "HEAD") == head_before and "a - b" in (repo / "src/gamma/calc.py").read_text()
+    assert git("worktree", "list").count("\n") == 1
+    assert store.read_job(root, job["id"])["status"] == "applied"
+    with pytest.raises(ValueError, match="waiting for review"):
+        apply_to_branch(repo, root, job["id"])
+
+
+def test_a_stale_proposal_creates_nothing(tmp_path):
+    from gamma.coding.proposal import apply_to_branch
+    repo, git = _git_repo(tmp_path)
+    root, job = _finished_job(tmp_path, GOOD_DIFF.replace("return a - b", "return a * b"))
+    with pytest.raises(ValueError, match="no longer applies"):
+        apply_to_branch(repo, root, job["id"])
+    assert "shana/" not in git("branch", "--list") and git("worktree", "list").count("\n") == 1
+    assert store.read_job(root, job["id"])["status"] == "awaiting_owner_review"

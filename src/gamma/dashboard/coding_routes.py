@@ -45,6 +45,19 @@ async def proposal(identifier: str):
     return {'id': identifier, 'diff': diff}
 
 
+@router.post('/work/{identifier}/apply')
+async def apply(identifier: str):
+    """Commit a reviewed proposal to a new branch; the running checkout is not touched."""
+    from ..coding.proposal import apply_to_branch
+    from ..config import PROJECT_ROOT
+    try:
+        return await run_in_threadpool(apply_to_branch, PROJECT_ROOT, settings.data_dir/'coding'/'autonomous', identifier)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from None
+    except (OSError, RuntimeError):
+        raise HTTPException(500, 'The proposal could not be committed') from None
+
+
 @router.post('/work/{identifier}/control')
 async def control(identifier: str, request: ControlRequest):
     try:

@@ -97,8 +97,9 @@
   function providerSummary(provider) {
     provider = provider || {};
     var parts = [provider.provider || 'not configured'];
-    if (provider.model) parts.push(provider.model);
-    else if (provider.profile_label || provider.selected_profile_label) parts.push(provider.profile_label || provider.selected_profile_label);
+    var profile = provider.profile_label || provider.selected_profile_label;
+    if (profile) parts.push(profile);  // a voice profile names the voice better than a model id
+    else if (provider.model) parts.push(provider.model);
     return parts.join(' / ');
   }
 

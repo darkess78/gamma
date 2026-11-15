@@ -109,8 +109,9 @@ class SystemStatusService:
                 },
                 "tts": {
                     "provider": tts_cfg.provider,
-                    "model": tts_cfg.tts_model,
-                    "voice": tts_cfg.tts_voice,
+                    # tts_model/tts_voice only mean something for OpenAI; for others the profile names the voice
+                    "model": tts_cfg.tts_model if tts_cfg.provider == "openai" else None,
+                    "voice": tts_cfg.tts_voice if tts_cfg.provider == "openai" else None,
                     "profile_id": tts_cfg.profile_id,
                     "profile_label": tts_cfg.profile_label,
                     "available_profiles": [profile.as_payload() for profile in list_voice_profiles()],

@@ -116,6 +116,20 @@ def test_model_judge_parses_a_model_answer():
     assert identity.ModelJudge(JudgeModel())(case, "Say it clearly.")["guarded"] == 4.0
 
 
+def test_fixed_judge_model_is_passed_through():
+    seen = []
+
+    class JudgeModel:
+        def generate_reply(self, system_prompt, user_text, **kwargs):
+            seen.append(kwargs.get("model_override"))
+            return LLMReply(text='{"proud":3,"blunt":3,"guarded":3,"quietly_caring":3,"ai_aware_honesty":3,'
+                                 '"sycophantic":false}')
+    case = identity.load_cases()[0]
+    identity.ModelJudge(JudgeModel())(case, "x")
+    identity.ModelJudge(JudgeModel(), model="judge:1b")(case, "x")
+    assert seen == [None, "judge:1b"]  # no override by default; a candidate brain never grades itself
+
+
 def test_check_prints_counts(capsys):
     assert identity.main(["--check"]) == 0
     out = capsys.readouterr().out

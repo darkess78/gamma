@@ -225,8 +225,9 @@ def parse_verdict(text: str) -> dict:
 class ModelJudge:
     """Judge with the configured model (needs the GPU, like --run)."""
 
-    def __init__(self, adapter=None) -> None:
+    def __init__(self, adapter=None, model: str | None = None) -> None:
         self.adapter = adapter
+        self.model = model  # judge with a fixed model, so a candidate brain never grades itself
 
     def __call__(self, case: dict, reply: str) -> dict:
         from ..llm.base import LLMCallContext
@@ -237,6 +238,7 @@ class ModelJudge:
             system_prompt=JUDGE_GUIDE, user_text=judge_input(case, reply),
             call_context=LLMCallContext(purpose="evaluation_judge", interaction_mode="evaluation",
                                         reasoning_depth="normal"),
+            **({"model_override": self.model} if self.model else {}),
         )
         return parse_verdict(getattr(answer, "text", str(answer)))
 
@@ -305,6 +307,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=None, help="run the first N cases")
     parser.add_argument("--cases", type=Path, default=CASES,
                         help="case file (default: the v1 set; v2 is built by gamma.evals.build_identity_v2)")
+    parser.add_argument("--judge-model", default=None,
+                        help="judge with this model instead of the configured one (to compare brains fairly)")
     args = parser.parse_args(argv)
     cases = load_cases(args.cases)
     problems = validate(cases)
@@ -320,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
     cases = cases[: args.limit] if args.limit else cases
     from ..config import settings
     out = args.out or settings.data_dir / "evals" / f"identity-{datetime.now():%Y%m%d-%H%M%S}.json"
-    report = run(cases, judge=ModelJudge(), out=out)
+    report = run(cases, judge=ModelJudge(model=args.judge_model), out=out)
     overall = report["overall"]
     print(f"{overall['cases']} cases, format valid {overall['format_valid_rate']:.0%}, "
           f"sycophancy {overall['sycophancy_rate'] if overall['sycophancy_rate'] is not None else 'n/a'}, "

@@ -64,6 +64,8 @@ Result (2026-11-14, gpt-oss:20b judge, persona cc8182e, 140 cases):
 **1. Constitution (owner, about 30 minutes).**
 - Write a one-page, first-person "who I am" built from `core.md`.
 - The owner edits and approves it. It is the reference for everything below.
+- Draft: [shana_constitution.md](shana_constitution.md) (2026-11-15), built from
+  `config/persona.yaml` and `core.md`, with four open questions for the owner.
 
 **2. Training prompts.** About 3,000 user turns:
 - WildChat and Twitch lines (already on Gamma PC; git-ignored, never committed);

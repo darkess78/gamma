@@ -155,6 +155,26 @@ than opening the database directly.
 - recent assistant emotion episodes and patterns in their own service
 - owner-approved permanent core memories in `data/core_memories.md`
 
+## Shana's Own Opinions
+
+Shana forms her tastes and opinions by experience instead of having them written
+into the persona (see [shana_constitution.md](shana_constitution.md)).
+
+- Stored as profile facts with `subject_type = "assistant"` (the dashboard's
+  "Shana" subject) and category `opinion`, in first person ("I like ...").
+- Written by her own turn: when she settles on a lasting opinion she adds a
+  `memory_candidates` item with `subject_type` `shana` (or `assistant`). Only
+  owner/trusted turns write memory, so stream chat and strangers cannot plant one.
+- Only the cheap reaction/fragment filter applies; the triage judge is skipped
+  because its guide is about facts on the user.
+- A changed opinion ("I dislike X" after "I like X") replaces the old one within
+  the same audience, from any channel, and the old one is kept as history ("you
+  used to think ..."). A stream turn never replaces an owner-private opinion.
+- Read into the prompt as `# My Own Opinions`, with a rule not to invent settled
+  favorites. The owner's private view sees all of them; stream and Discord only
+  see opinions formed in front of that audience.
+- Added, edited or deleted from the dashboard like any other fact.
+
 ## Conversation Continuity
 
 Ordinary session continuity is stored separately from long-term memory:

@@ -6,7 +6,9 @@ from pydantic import BaseModel, Field, model_validator
 
 
 EmotionTag = Literal["neutral", "happy", "teasing", "concerned", "excited", "embarrassed", "annoyed"]
-MemorySubjectType = Literal["primary_user", "other_person", "unknown"]
+# "assistant" is Shana herself (the dashboard's "Shana" subject); models may also write
+# "shana". Both are stored as "assistant" (memory/service.py OWN_OPINION).
+MemorySubjectType = Literal["primary_user", "other_person", "unknown", "assistant", "shana"]
 ResponseAction = Literal["reply", "acknowledge", "stay_silent", "defer", "tool_first"]
 DeliveryMode = Literal["speech", "text_only", "silent", "deferred"]
 

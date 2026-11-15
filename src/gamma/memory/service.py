@@ -21,6 +21,14 @@ from .fact_text import _canonicalize_profile_text, _episodic_signature, _fact_ke
 
 MEMORY_CANDIDATES = 2000  # newest rows considered per search
 
+# Shana's own opinions and tastes: ProfileFact rows with this subject_type (the
+# dashboard's "Shana" subject) and category "opinion", written in first person by
+# her own turn ("I like ..."). Only owner/trusted turns write memory, so chat
+# cannot plant them. Models may write subject_type "shana"; it is stored the same.
+OWN_OPINION = "assistant"
+_OWN_SUBJECTS = {OWN_OPINION, "shana"}
+OPINION_CATEGORY = "opinion"
+
 # Where a memory came from decides who may later be shown it.
 _VISIBILITY_BY_SCOPE = {"local_private": "owner_only", "public_stream": "stream", "public_discord": "discord"}
 
@@ -299,6 +307,10 @@ class MemoryService(PeopleMixin, MemoryAdminMixin):
             return by_importance[:limit]
         return retrieval.merge_pinned(by_importance[:pinned], [s.item for s in ranked], key=lambda f: f.id, limit=limit)
 
+    def own_opinions(self, query: str | None, *, visibility: set[str], limit: int = 5) -> list[ProfileFact]:
+        """Shana's current opinions most relevant to ``query``, from the audiences she may draw on."""
+        return self.get_relevant_facts(query, limit=limit, subject_type=OWN_OPINION, pinned=1, visibility=visibility)
+
     def previous_values(self, fact_ids: Iterable[int], *, limit: int = 2) -> dict[int, list[str]]:
         """Older texts each current fact replaced, newest first ("you used to...")."""
         wanted = [i for i in fact_ids if i]
@@ -357,7 +369,11 @@ class MemoryService(PeopleMixin, MemoryAdminMixin):
                     continue  # only the owner writes memories about the owner
                 candidate, attribution = prepare_candidate(candidate, origin)
                 visibility = visibility_for(origin)
-                if candidate.type in {"profile", "fact", "preference", "project", "boundary"}:
+                if candidate.subject_type in _OWN_SUBJECTS:
+                    candidate = candidate.model_copy(update={"type": OPINION_CATEGORY, "tags": [OPINION_CATEGORY],
+                                                             "subject_type": OWN_OPINION,
+                                                             "subject_name": None, "relationship_to_user": None})
+                if candidate.type in {"profile", "fact", "preference", "project", "boundary", OPINION_CATEGORY}:
                     saved += self._upsert_profile_fact(session, candidate, attribution=attribution, visibility=visibility)
                 elif candidate.type == "episodic":
                     saved += self._upsert_episodic_memory(session, candidate, session_id=session_id,
@@ -384,6 +400,10 @@ class MemoryService(PeopleMixin, MemoryAdminMixin):
         """Triage automatic candidates (memory/triage.py); explicit and manual saves always pass."""
         if origin is None or origin.source in {"tool", "manual"}:
             return True
+        if candidate.subject_type in _OWN_SUBJECTS:
+            # The judge's guide is about facts on the user and skips Shana's own words;
+            # her opinions only need the cheap filter.
+            return triage.obvious_skip(candidate.text) is None
         if MemoryService._judge is None:
             MemoryService._judge = triage.KeepJudge()
             if settings.memory_triage_judge == "model":
@@ -417,8 +437,12 @@ class MemoryService(PeopleMixin, MemoryAdminMixin):
             exact_statement = exact_statement.where(ProfileFact.subject_name == subject_name)
         else:
             exact_statement = exact_statement.where(ProfileFact.subject_name.is_(None))
-        existing_exact = next((fact for fact in session.exec(exact_statement)
-                               if source_key(fact.attribution) == source_key(attribution)), None)
+        if subject_type == OWN_OPINION:
+            exact_statement = exact_statement.where(_visible(ProfileFact, {visibility}))
+            existing_exact = session.exec(exact_statement).first()
+        else:
+            existing_exact = next((fact for fact in session.exec(exact_statement)
+                                   if source_key(fact.attribution) == source_key(attribution)), None)
         if existing_exact:
             existing_exact.importance = max(existing_exact.importance, importance)
             existing_exact.attribution = merge_origin(existing_exact.attribution, attribution)
@@ -435,9 +459,16 @@ class MemoryService(PeopleMixin, MemoryAdminMixin):
                 current = current.where(ProfileFact.subject_name == subject_name)
             else:
                 current = current.where(ProfileFact.subject_name.is_(None))
+            # Her own opinion changes wherever she changes her mind, but only within one
+            # audience, so a stream turn can never overwrite what she said in private.
+            if subject_type == OWN_OPINION:
+                def same_source(fact: ProfileFact) -> bool:
+                    return (fact.visibility or "owner_only") == visibility
+            else:
+                def same_source(fact: ProfileFact) -> bool:
+                    return source_key(fact.attribution) == source_key(attribution)
             replaced = [fact for fact in session.exec(current)
-                        if source_key(fact.attribution) == source_key(attribution)
-                        and _fact_key(fact.category, fact.fact_text) == key]
+                        if same_source(fact) and _fact_key(fact.category, fact.fact_text) == key]
 
         session.add(
             ProfileFact(

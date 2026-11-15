@@ -44,7 +44,7 @@ def _profile_slot(category: str, fact_text: str) -> str | None:
     lowered = fact_text.lower().strip()
     if category == "identity" and lowered.startswith("my name is "):
         return "identity:name"
-    if category in {"preference", "user_preference"}:
+    if category in {"preference", "user_preference", "opinion"}:
         if lowered.startswith("i do not like ") or lowered.startswith("remember that i do not like "):
             return "preference:dislike"
         if lowered.startswith("i dislike ") or lowered.startswith("remember that i dislike "):

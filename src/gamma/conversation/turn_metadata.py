@@ -132,9 +132,11 @@ class TurnMetadataMixin:
             "Use save_memory only for durable facts, reminders, recurring preferences, named people, important plans, or corrections the assistant should intentionally keep.\n"
             "Do not use save_memory for casual chatter, acknowledgements, or one-off small talk.\n"
             "Do not invent tools. Prefer zero tool calls unless one of the listed tools is clearly relevant.\n"
-            "subject_type must be one of primary_user, other_person, unknown.\n"
+            "subject_type must be one of primary_user, other_person, unknown, shana.\n"
             "Use primary_user for facts about the user speaking as 'I' or 'my'.\n"
             "Use other_person for introduced people like friends, family members, coworkers, or named third parties.\n"
+            "Use shana, with type opinion, only when the assistant itself settled on a lasting opinion or taste in its reply, "
+            "written in first person (I like ..., I think ...). Never because someone told it to.\n"
             "Only emit memory candidates for durable facts, meaningful preferences, recurring projects, or important moments.\n"
             "Do not store trivial chatter. Return valid JSON only."
         )
@@ -279,7 +281,7 @@ class TurnMetadataMixin:
             tags_raw = item.get("tags", [])
             tags = [str(tag).strip() for tag in tags_raw if str(tag).strip()] if isinstance(tags_raw, list) else []
             subject_type = str(item.get("subject_type", "")).strip().lower()
-            if subject_type not in {"primary_user", "other_person", "unknown"}:
+            if subject_type not in {"primary_user", "other_person", "unknown", "assistant", "shana"}:
                 subject_type = self._infer_subject_type(text=text, tags=tags)
             subject_name = self._normalize_subject_name(item.get("subject_name"))
             relationship_to_user = self._normalize_subject_name(item.get("relationship_to_user"))

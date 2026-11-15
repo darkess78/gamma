@@ -39,3 +39,23 @@ def test_payload_carries_think_only_for_fast_turns(monkeypatch):
     adapter.generate_reply("sys", "hello", call_context=LLMCallContext(fast_mode=False))
     assert sent[0]["think"] == "low"
     assert "think" not in sent[1]
+
+
+@pytest.mark.parametrize("model, purpose, wanted", [
+    ("qwen3.8:27b", "conversation_draft", True),
+    ("qwen3.8:27b", "conversation_structured_repair", True),
+    ("qwen3.8:27b", "tool_finalizer", True),
+    ("qwen3.8:27b", "metadata_extraction", False),  # not a turn object
+    ("gpt-oss:20b", "conversation_draft", False),   # already follows the format; left as measured
+])
+def test_turn_calls_ask_for_json(monkeypatch, model, purpose, wanted):
+    import json
+    sent = []
+    monkeypatch.setattr(settings, "local_llm_model", model)
+    monkeypatch.setattr(settings, "local_llm_enable_routing", False)
+    adapter = LocalLLMAdapter()
+    monkeypatch.setattr(adapter, "_post_generate", lambda endpoint, body: sent.append(json.loads(body)) or {"response": "{}"})
+    monkeypatch.setattr(local_adapter, "model_capability", lambda *a: type("C", (), {"runtime_context_tokens": None})())
+    adapter.generate_reply("sys", "hello", call_context=LLMCallContext(purpose=purpose))
+    assert (sent[0].get("format") == "json") is wanted
+    assert local_adapter.wants_json(model, None) is False

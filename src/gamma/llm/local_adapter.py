@@ -15,6 +15,21 @@ from .context_budget import is_context_overflow_message
 
 
 
+# Calls whose answer must be one JSON turn object (see conversation/turn_contract.py).
+JSON_PURPOSES = frozenset({"conversation_draft", "conversation_structured_repair", "tool_finalizer"})
+
+
+def wants_json(model: str, call_context: LLMCallContext | None) -> bool:
+    """Ask Ollama to constrain output to JSON for turn calls on models that don't follow the format alone.
+
+    gpt-oss already returns valid turns (~89-100%), so it is left as measured; qwen3.8:27b
+    answered in plain prose on 42 of 140 identity cases without this.
+    """
+    if call_context is None or model.startswith("gpt-oss"):
+        return False
+    return (call_context.purpose or "") in JSON_PURPOSES
+
+
 def reasoning_effort(model: str, call_context: LLMCallContext | None) -> str | None:
     """gpt-oss reasoning effort for a call, or None to keep the model default.
 
@@ -115,6 +130,8 @@ class LocalLLMAdapter(LLMAdapter):
         effort = reasoning_effort(target_model, call_context)
         if effort:
             payload["think"] = effort
+        if wants_json(target_model, call_context):
+            payload["format"] = "json"
         runtime_context_tokens = model_capability("local", target_model).runtime_context_tokens
         if runtime_context_tokens is not None:
             payload["options"] = {"num_ctx": runtime_context_tokens}

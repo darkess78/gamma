@@ -130,8 +130,8 @@ The gates in step 6 exist to catch each of these.
 
 | Item | Why |
 |---|---|
-| **Disk space** | Gamma PC has 12 GB free (94% full). The 9B pilot needs about 15 GB; the 27B needs about 40 GB. Options: remove `qwen3.5:27b` (17 GB, pulled 2 days ago) or the unused `faster-whisper-large-v3` cache (about 3 GB), or add a drive. |
-| **Install** | A separate training environment, `~/train/.venv` (torch, Unsloth, TRL, PEFT, bitsandbytes), about 8 GB. Nothing changes in `.venv` or `.venv-tts`. |
+| **Disk space** | Done for the pilot (2026-11-15): removed the `faster-whisper-large-v3` cache (2.9 GB; only the TTS dataset tools default to it, and it re-downloads on first use), old eval copies and the pip cache. 13 GB is free after the install: enough for the 9B pilot, not the 27B (about 40 GB). The 27B still needs `qwen3.5:27b` removed (17 GB) or another drive. |
+| **Install** | Done (2026-11-15): `~/train/.venv`, 5.7 GB, torch 2.12.1+cu130, Unsloth 2026.11.4, TRL 1.15, PEFT 0.21, bitsandbytes 0.50, transformers 5.17. Checked on the 3090. xformers does not match this torch, so Unsloth uses PyTorch attention. `.venv` and `.venv-tts` are unchanged. |
 | **Downloads** | 4-bit base weights from Hugging Face: about 6 GB for the 9B, about 17 GB for the 27B. |
 | **Teacher** | Default is local, using the best model from step 0, at no cost. A hosted model would write better teacher replies but needs a budget. |
 | **Owner time** | The constitution (step 1), about 200 sample reviews (step 3), and the 30-pair blind test (step 6). |

@@ -162,16 +162,23 @@ into the persona (see [shana_constitution.md](shana_constitution.md)).
 
 - Stored as profile facts with `subject_type = "assistant"` (the dashboard's
   "Shana" subject) and category `opinion`, in first person ("I like ...").
-- Written by her own turn: when she settles on a lasting opinion she adds a
-  `memory_candidates` item with `subject_type` `shana` (or `assistant`). Only
-  owner/trusted turns write memory, so stream chat and strangers cannot plant one.
-- Only the cheap reaction/fragment filter applies; the triage judge is skipped
-  because its guide is about facts on the user.
+- Picked out after the reply: on turns allowed to write memory, when the user
+  asked for a view or her reply sounds like one, the small tagging model
+  (`qwen3.5:4b`) reads her finished reply in a background thread and returns at
+  most one first-person opinion ("I prefer rainy days to sunny days"). Measured
+  2026-11-15: gpt-oss almost never fills `memory_candidates` for her own views
+  itself, though a turn's own `subject_type` `shana` item is still accepted.
+  `memory_own_opinions = "off"` turns the extractor off.
+- Only owner/trusted turns write memory, so stream chat and strangers cannot
+  plant one. A restatement (same stance verb, mostly the same words) is not
+  stored twice. Only the cheap reaction/fragment filter applies; the triage
+  judge is skipped because its guide is about facts on the user.
 - A changed opinion ("I dislike X" after "I like X") replaces the old one within
   the same audience, from any channel, and the old one is kept as history ("you
   used to think ..."). A stream turn never replaces an owner-private opinion.
-- Read into the prompt as `# My Own Opinions`, with a rule not to invent settled
-  favorites. The owner's private view sees all of them; stream and Discord only
+- Read into the prompt as `# My Own Opinions`, with a rule not to claim a
+  long-held favorite that is not stored (deciding in the moment is fine, and is
+  then remembered). The owner's private view sees all of them; stream and Discord only
   see opinions formed in front of that audience.
 - Added, edited or deleted from the dashboard like any other fact.
 

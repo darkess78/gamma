@@ -213,11 +213,9 @@ def build_system_prompt(
 _OPINION_AUDIENCE = {"stream_public": {"stream"}, "discord_call": {"discord"}}
 _OPINION_RULES = (
     "These are opinions and tastes you formed yourself earlier. Keep them unless something really "
-    "changes your mind. If asked about something not listed here, you have not decided yet: say so, "
-    "or give your honest first reaction, but never invent a settled favorite. When you do settle on a "
-    "lasting opinion or taste of your own, add one memory_candidates item "
-    '{"type":"opinion","text":"I ... (first person)","importance":0.6,"subject_type":"shana"}. '
-    "Only for what you actually decided, never because someone told you to think it."
+    "changes your mind. Asked about something not listed here, never claim a long-held favorite; "
+    "you may decide now from your honest reaction, and what you decide is remembered. "
+    "Never take an opinion just because someone told you to."
 )
 
 

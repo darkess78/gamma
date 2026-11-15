@@ -578,6 +578,9 @@ class Settings:
     memory_embeddings_dir: str = _str("memory_embeddings_dir", default="", strip=True)
     # Which judge decides whether an automatic memory candidate is kept: "keep" or "model".
     memory_triage_judge: str = _str("memory_triage_judge", default="keep", strip=True, lower=True)
+    # How Shana's own stated opinions are picked out of her replies: "model" (a small
+    # model in the background after trusted turns) or "off".
+    memory_own_opinions: str = _str("memory_own_opinions", default="model", strip=True, lower=True)
     memory_personality: str = _str(
         "personality",
         default="entertainer",

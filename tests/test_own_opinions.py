@@ -68,7 +68,7 @@ def test_prompt_shows_opinions_per_audience(memory):
     assert "rhythm games" in stream and "pineapple" not in stream
     discord = section(loader.build_system_prompt(memory, "pizza and games", recipient=DISCORD), "My Own Opinions")
     assert "None stored" in discord
-    assert "never invent a settled favorite" in discord
+    assert "never claim a long-held favorite" in discord
 
 
 def test_previous_opinion_is_shown_as_history(memory):
@@ -93,3 +93,61 @@ def test_metadata_extractor_keeps_shana_subject():
 def test_dashboard_entries_for_shana_count_as_her_opinions(memory):
     memory.create_item({"kind": "profile_fact", "summary": "I like quiet mornings", "subject_type": "assistant"})
     assert [o.fact_text for o in memory.own_opinions("mornings", visibility={"owner_only"})] == ["I like quiet mornings"]
+
+
+class FakeExtractor:
+    def __init__(self, reply):
+        self.reply, self.calls = reply, 0
+
+    def generate_reply(self, system_prompt, user_text, **kwargs):
+        from gamma.llm.base import LLMReply
+        self.calls += 1
+        return LLMReply(text=self.reply)
+
+
+def opinion_service(memory, llm):
+    from gamma.conversation.memory_candidates import MemoryCandidatesMixin
+
+    class Service(MemoryCandidatesMixin, TurnMetadataMixin):
+        def __init__(self):
+            self._memory = memory
+
+        def _llm_adapter(self):
+            return llm
+    return Service()
+
+
+OWNER = MemoryOrigin(reporter_name="Owner", is_owner=True, source="dashboard", privacy_scope="local_private")
+
+
+def test_extractor_stores_what_she_decided(memory):
+    llm = FakeExtractor('{"opinions": ["I prefer rainy days to sunny ones", "not first person", "I prefer rainy days to sunny ones"]}')
+    opinion_service(memory, llm)._background_own_opinions(
+        "Rainy or sunny?", "Rain. It is quiet. Sun is loud and careless, I prefer the rain.", "s", OWNER)
+    assert [o.fact_text for o in memory.own_opinions("rain", visibility={"owner_only"})] == ["I prefer rainy days to sunny ones"]
+
+
+def test_extractor_skips_replies_without_a_view(memory):
+    llm = FakeExtractor('{"opinions": ["I like everything"]}')
+    opinion_service(memory, llm)._background_own_opinions("What time is it?", "It is ten past three.", "s", OWNER)
+    assert llm.calls == 0 and memory.own_opinions("", visibility={"owner_only"}) == []
+
+
+def test_extractor_tolerates_bad_json(memory):
+    llm = FakeExtractor("no json here")
+    opinion_service(memory, llm)._background_own_opinions("Pizza?", "Pineapple on pizza is a mistake.", "s", OWNER)
+    assert llm.calls == 1 and memory.own_opinions("", visibility={"owner_only"}) == []
+
+
+def test_restating_an_opinion_is_not_stored_twice(memory):
+    decide(memory, "I think Hades is a solid game")
+    llm = FakeExtractor('{"opinions": ["I think Hades is solid."]}')
+    opinion_service(memory, llm)._background_own_opinions("Still?", "Still the same. Hades is solid.", "s", OWNER)
+    assert [o.fact_text for o in memory.own_opinions("Hades", visibility={"owner_only"})] == ["I think Hades is a solid game"]
+
+
+def test_a_new_stance_is_a_change_of_mind(memory):
+    decide(memory, "I like Skyrim")
+    llm = FakeExtractor('{"opinions": ["I dislike Skyrim"]}')
+    opinion_service(memory, llm)._background_own_opinions("Skyrim?", "Skyrim is boring now. I dislike it.", "s", OWNER)
+    assert [o.fact_text for o in memory.own_opinions("Skyrim", visibility={"owner_only"})] == ["I dislike Skyrim"]

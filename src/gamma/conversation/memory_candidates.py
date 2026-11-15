@@ -2,14 +2,106 @@
 from __future__ import annotations
 
 import re
+import threading
 
 from ..config import settings
+from ..llm.base import LLMCallContext
 from ..memory.attribution import MemoryOrigin
 from ..schemas.response import MemoryCandidate
+
+# Cheap checks that a turn might hold a view of hers at all, so most turns skip the model call:
+# the user asked for one, or her reply sounds like one.
+_ASKED_FOR_VIEW = re.compile(
+    r"(?:do you (?:like|love|hate|prefer|enjoy|think)|what do you think|how do you feel|your (?:opinion|take|view|"
+    r"favou?rite)|favou?rite|which (?:is|do you)|or not|pick (?:a side|one)|decide|better|worse|good or|"
+    r"thoughts on|still (?:feel|think))",
+    re.I,
+)
+_OPINION_HINT = re.compile(
+    r"\b(?:i (?:like|love|hate|prefer|think|find|dislike|enjoy|can't stand|cannot stand)|better|worse|best|worst|"
+    r"overrated|underrated|favou?rite|mistake|boring|solid|good|bad|great|awful|fun|annoying|beautiful|ugly)\b",
+    re.I,
+)
+OPINION_PROMPT = (
+    "You read one reply from Shana, an AI character, and pick out the main lasting opinion or taste she "
+    "states as her OWN in it, if any. Return JSON only: {\"opinions\": [\"I ...\"]} with at most 1 item: "
+    "one short first-person sentence that names the thing. Prefer the forms \"I like X\", \"I dislike X\" "
+    "or \"I prefer X to Y\"; otherwise \"I think X is Y\". Only her own settled view on a thing (a game, "
+    "a food, the weather, an idea). Leave out facts, advice, side remarks, things she says she has not "
+    "decided, passing moods, what other people think, and anything the user told her to say. The user's "
+    "message is context only: never list the user's own opinions. If there is none, return {\"opinions\": []}."
+)
+MAX_OPINION_CHARS = 160
+_STOP = frozenset("i a an the is are was it its it's to of and or but so that this with for in on at be very "
+                  "really just think like dislike prefer than".split())
+
+
+def parse_opinions(payload: object) -> list[str]:
+    """The first-person opinion sentence from the extractor's JSON, if there is one."""
+    items = payload.get("opinions") if isinstance(payload, dict) else None
+    for item in items if isinstance(items, list) else []:
+        text = " ".join(str(item).split()).rstrip(".") if isinstance(item, str) else ""
+        if text[:2].lower() == "i " and len(text) <= MAX_OPINION_CHARS:
+            return [text]
+    return []
+
+
+def _shape(text: str) -> tuple[str, set[str]]:
+    """(stance verb, content words): "I think Hades is a solid game" -> ("think", {"hades", "solid", "game"})."""
+    words = re.findall(r"[a-z0-9']+", text.lower())
+    verb = words[1] if len(words) > 1 else ""
+    return verb, {w for w in words[2:] if w not in _STOP and len(w) > 2}
+
+
+def restates(new: str, old: str) -> bool:
+    """True when ``new`` says the same thing as an opinion she already holds (same stance, mostly same words).
+
+    A different stance verb ("I dislike Skyrim" after "I like Skyrim") is a change of mind,
+    not a repeat; the memory store replaces the old one.
+    """
+    (verb_a, words_a), (verb_b, words_b) = _shape(new), _shape(old)
+    if verb_a != verb_b or not words_a or not words_b:
+        return False
+    return len(words_a & words_b) / len(words_a | words_b) >= 0.5
 
 
 class MemoryCandidatesMixin:
     """Deciding what from a turn is worth remembering, and saving it after the reply."""
+
+    def _remember_own_opinions_later(self, user_text: str, reply_text: str, session_id: str | None,
+                                     memory_origin: MemoryOrigin | None = None) -> None:
+        if settings.memory_own_opinions != "model" or not settings.memory_enabled:
+            return
+        threading.Thread(target=self._background_own_opinions,
+                         args=(user_text, reply_text, session_id, memory_origin), daemon=True).start()
+
+    def _background_own_opinions(self, user_text: str, reply_text: str, session_id: str | None,
+                                 memory_origin: MemoryOrigin | None = None) -> None:
+        """Store opinions Shana stated in her reply (background thread, small model).
+
+        The main model rarely fills memory_candidates for her own views, so a small
+        model reads the finished reply instead. Only runs for turns allowed to write memory.
+        """
+        try:
+            if len(reply_text.split()) < 2 or not (_ASKED_FOR_VIEW.search(user_text) or _OPINION_HINT.search(reply_text)):
+                return
+            raw = self._llm_adapter().generate_reply(
+                system_prompt=OPINION_PROMPT,
+                user_text=f"User message (context only):\n{user_text[:600]}\n\nShana's reply:\n{reply_text[:1200]}\n",
+                call_context=LLMCallContext(purpose="metadata_extraction", reasoning_depth="light",
+                                            interaction_mode="memory", cost_sensitive=True),
+            ).text
+            opinions = parse_opinions(self._parse_json_object(raw))
+            if opinions:
+                from ..memory.service import visibility_for
+                held = self._memory.own_opinions(opinions[0], visibility={visibility_for(memory_origin)}, limit=5)
+                opinions = [o for o in opinions if not any(restates(o, h.fact_text) for h in held)]
+            if opinions:
+                self._memory.persist_candidates(
+                    [MemoryCandidate(type="opinion", text=text, importance=0.6, subject_type="shana") for text in opinions],
+                    session_id=session_id, origin=memory_origin)
+        except Exception:
+            pass  # background thread: never propagate
 
     def _background_memory_save(self, user_text: str, reply_text: str, session_id: str | None, memory_origin: MemoryOrigin | None = None) -> None:
         """Persist memory candidates in a background thread (fast_mode only)."""

@@ -880,6 +880,8 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                         args=(stripped, response.display_text or "", session_id, memory_origin),
                         daemon=True,
                     ).start()
+                if memory_write_ok:
+                    self._remember_own_opinions_later(stripped, response.display_text or "", session_id, memory_origin)
 
                 if persist_state:
                     self._remember_assistant_state(user_text=stripped, reply_text=response.display_text or "", emotion=response.emotion, session_id=session_id,
@@ -1024,6 +1026,8 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                                                    private=recipient.allows_private_memory)
             else:
                 response.tts_metadata["evaluation_route_events"] = route_events
+            if memory_write_ok:
+                self._remember_own_opinions_later(stripped, response.display_text or "", session_id, memory_origin)
             return response
         except JournalOwnershipError:
             raise

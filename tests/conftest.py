@@ -18,6 +18,9 @@ from gamma.config import settings
 
 _ISOLATED_DB_DIR = Path(tempfile.mkdtemp(prefix="gamma-tests-db-"))
 settings.database_url = f"sqlite:///{_ISOLATED_DB_DIR / 'gamma.db'}"
+# The opinion extractor makes a background model call after trusted turns; tests that
+# count model calls must not see it. tests/test_own_opinions.py turns it on.
+settings.memory_own_opinions = "off"
 
 
 def pytest_sessionfinish(session, exitstatus) -> None:

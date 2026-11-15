@@ -147,6 +147,8 @@ def structured_turn_instruction(*, default_delivery: DeliveryMode) -> str:
         "shown or spoken. internal_summary must be a short safe non-reasoning summary. state_updates may contain "
         "only emotion, active_topic, current_objective, deferred_intention, and relationship_signals. "
         "Use empty final_text for stay_silent, defer, or an unfinished tool_first decision. "
+        "Your settled tastes are only those in # My Own Opinions: with none stored on a topic, never claim "
+        "a long-held favorite, but you may decide now from your honest reaction. "
         "All list fields must be JSON arrays, even when empty. Follow this exact value shape: "
         '{"action":"reply","requested_delivery":"'
         + default_delivery

@@ -132,6 +132,9 @@ class LocalLLMAdapter(LLMAdapter):
             payload["think"] = effort
         if wants_json(target_model, call_context):
             payload["format"] = "json"
+            # Ollama returns an empty answer when a thinking model (qwen3.x) is JSON-constrained
+            # while thinking; measured on qwen3.8:27b. With thinking off the turn is valid JSON.
+            payload["think"] = False
         runtime_context_tokens = model_capability("local", target_model).runtime_context_tokens
         if runtime_context_tokens is not None:
             payload["options"] = {"num_ctx": runtime_context_tokens}

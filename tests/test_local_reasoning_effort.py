@@ -58,4 +58,6 @@ def test_turn_calls_ask_for_json(monkeypatch, model, purpose, wanted):
     monkeypatch.setattr(local_adapter, "model_capability", lambda *a: type("C", (), {"runtime_context_tokens": None})())
     adapter.generate_reply("sys", "hello", call_context=LLMCallContext(purpose=purpose))
     assert (sent[0].get("format") == "json") is wanted
+    if wanted:
+        assert sent[0]["think"] is False  # a JSON-constrained thinking model answers empty
     assert local_adapter.wants_json(model, None) is False

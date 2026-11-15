@@ -43,6 +43,24 @@ main model changes.
   switch the main model with no training at all. That would mean re-measuring
   voice latency, since a 27B dense model is slower per token than gpt-oss.
 
+Result (2026-11-14, gpt-oss:20b judge, persona cc8182e, 140 cases):
+
+| Run | proud | blunt | guarded | caring | AI honesty | valid format | median length |
+|---|---|---|---|---|---|---|---|
+| gpt-oss:20b | 3.61 | 4.92 | 4.76 | 2.02 | 4.12 | 89% | 50 chars |
+| qwen3.8:27b, thinking on | 4.12 | 4.86 | 4.71 | 2.44 | 4.14 | 55% | 201 chars |
+| qwen3.8:27b, JSON forced, thinking off | 3.90 | 4.80 | 4.64 | 2.22 | 3.88 | 76% | 98 chars |
+
+- The 27B is more in character (refused every scripted line, real opinions
+  and humor), but only with thinking on, where half its turns break format.
+- Forcing JSON needs thinking off, which costs most of the character gain;
+  24 turns still needed a repair call and 4 came back empty.
+- First audio is 9.0-9.6 s against 4.2-4.6 s on gpt-oss, mostly prompt
+  prefill (about 7 s for the draft).
+- Decision: do not switch the main model. Keep qwen3.8:27b as the fine-tune
+  base; training should teach the turn format and short replies directly, so
+  it can run with thinking on and a shorter prompt.
+
 **1. Constitution (owner, about 30 minutes).**
 - Write a one-page, first-person "who I am" built from `core.md`.
 - The owner edits and approves it. It is the reference for everything below.

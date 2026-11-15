@@ -40,6 +40,7 @@ in effect until revisions are implemented, verified, and approved for activation
 - `identity_eval_sources.md` (where the identity test set v2 prompts come from, with licences)
 - `safety_review_benchmark.md` (stream safety reviewer speed and false-filter rates on real chat)
 - `live_voice_latency.md` (where live voice time goes, and the warm-worker and reasoning-effort changes)
+- `brain_finetune_plan.md` (plan to fine-tune a local model as her brain: base choice, data, gates, owner decisions)
 - `privacy.md` (how the owner's information is kept private, and the private-terms filter)
 - `deploy_rebuild.md` (proposed switch of Gamma PC to the rebuild branch, with rollback)
 - `persona.md`

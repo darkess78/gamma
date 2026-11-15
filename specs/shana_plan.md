@@ -378,6 +378,7 @@ voice steadier.
 - Needs W0 first, and the GPU.
 
 Smallest step: QLoRA on a 7–14B model, compared against the prompted 27B on W0.
+Full plan: [brain_finetune_plan.md](brain_finetune_plan.md).
 
 ### W10. The coordination core — **Do (spine)**
 

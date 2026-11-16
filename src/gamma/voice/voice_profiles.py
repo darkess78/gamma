@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from pathlib import Path
 from typing import Any
@@ -64,6 +64,10 @@ class ResolvedTTSConfig:
     denoise_enabled: bool
     denoise_strength: float
     denoise_gain: float
+    # emotion -> {"audio": path, "text": transcript}. A matching entry replaces
+    # the default reference and clones in ICL mode, so the clip's delivery
+    # carries the emotion instead of a text instruction.
+    qwen_tts_emotion_references: dict[str, Any] = field(default_factory=dict)
 
 
 def list_voice_profiles() -> list[VoiceProfile]:
@@ -225,6 +229,7 @@ def resolve_tts_config() -> ResolvedTTSConfig:
         denoise_enabled=bool(_coalesce(values.get("denoise_enabled"), False)),
         denoise_strength=float(_coalesce(values.get("denoise_strength"), 1.5)),
         denoise_gain=float(_coalesce(values.get("denoise_gain"), 1.0)),
+        qwen_tts_emotion_references=dict(values.get("qwen_tts_emotion_references") or {}),
     )
 
 

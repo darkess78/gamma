@@ -101,6 +101,85 @@ class ExpressiveTextTest(unittest.TestCase):
         self.assertEqual(excited["speed"], 0.87)
         self.assertAlmostEqual(excited["output_peak"], 0.68)
 
+    def _emotion_backend(self, tmp: str, *, text: str = "Yay, you did it!") -> QwenTTSBackend:
+        happy_clip = Path(tmp) / "happy.wav"
+        happy_clip.write_bytes(b"RIFF")
+        return QwenTTSBackend(
+            SimpleNamespace(
+                qwen_tts_endpoint="http://127.0.0.1:9882/tts",
+                qwen_tts_language="English",
+                qwen_tts_reference_audio=str(Path(tmp) / "flat.wav"),
+                qwen_tts_reference_text="flat transcript",
+                qwen_tts_speaker=None,
+                qwen_tts_instruct=None,
+                qwen_tts_timeout_seconds=5,
+                qwen_tts_extra_json={"x_vector_only_mode": True, "temperature": 0.32},
+                qwen_tts_emotion_references={
+                    "happy": {"audio": str(happy_clip), "text": text},
+                    "annoyed": {"audio": str(Path(tmp) / "missing.wav"), "text": "Ugh."},
+                },
+            )
+        )
+
+    def _sent_payload(self, backend: QwenTTSBackend, emotion: str | None) -> dict:
+        import io
+        import wave
+
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(24000)
+            wav_file.writeframes(b"\x01\x00" * 240)
+        sent: dict = {}
+
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return buffer.getvalue()
+
+        def _fake_urlopen(request, timeout=None):
+            sent.update(json.loads(request.data.decode("utf-8")))
+            return _Response()
+
+        with tempfile.TemporaryDirectory() as out_dir, \
+                patch("gamma.supervisor.voice_idle.ensure_voice_sidecar"), \
+                patch("gamma.voice.tts_qwen.urllib.request.urlopen", _fake_urlopen), \
+                patch.object(QwenTTSBackend, "_target_path", lambda self, suffix: Path(out_dir) / f"out{suffix}"):
+            result = backend.synthesize("Hello there.", emotion=emotion)
+        sent["_metadata"] = result.metadata
+        return sent
+
+    def test_qwen_emotion_reference_replaces_default_clip_in_icl_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = self._sent_payload(self._emotion_backend(tmp), "happy")
+
+        self.assertTrue(payload["ref_audio_path"].endswith("happy.wav"))
+        self.assertEqual(payload["ref_text"], "Yay, you did it!")
+        self.assertFalse(payload["extra_params"]["x_vector_only_mode"])
+        self.assertNotIn("instruct", payload)
+        self.assertTrue(payload["_metadata"]["emotion_reference"])
+
+    def test_qwen_emotion_without_reference_keeps_default_voice(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = self._emotion_backend(tmp)
+            for emotion in ("neutral", None, "annoyed"):  # annoyed's clip is missing
+                payload = self._sent_payload(backend, emotion)
+                self.assertTrue(payload["ref_audio_path"].endswith("flat.wav"), emotion)
+                self.assertEqual(payload["ref_text"], "flat transcript")
+                self.assertTrue(payload["extra_params"]["x_vector_only_mode"])
+                self.assertFalse(payload["_metadata"]["emotion_reference"])
+
+    def test_qwen_emotion_reference_needs_a_transcript(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = self._emotion_backend(tmp, text="  ")
+            self.assertIsNone(backend._emotion_reference("happy"))
+
     @_requires_qwen_server_script
     def test_qwen_server_allows_longer_generation_for_long_text(self) -> None:
         text = (

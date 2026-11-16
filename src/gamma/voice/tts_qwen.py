@@ -64,23 +64,32 @@ class QwenTTSBackend(BaseFileTTSBackend):
         if self._cfg.qwen_tts_language:
             payload["language"] = self._cfg.qwen_tts_language
 
-        if self._cfg.qwen_tts_reference_audio:
-            ref_path = Path(self._cfg.qwen_tts_reference_audio)
-            if not ref_path.is_absolute():
-                ref_path = (settings.project_root / ref_path).resolve()
-            payload["ref_audio_path"] = str(ref_path)
+        emotion_reference = self._emotion_reference(emotion)
+        reference_audio = self._cfg.qwen_tts_reference_audio
+        reference_text = self._cfg.qwen_tts_reference_text
+        if emotion_reference is not None:
+            reference_audio, reference_text = emotion_reference
 
-        if self._cfg.qwen_tts_reference_text:
-            payload["ref_text"] = self._cfg.qwen_tts_reference_text
+        if reference_audio:
+            payload["ref_audio_path"] = str(self._resolve_path(reference_audio))
+
+        if reference_text:
+            payload["ref_text"] = reference_text
 
         if self._cfg.qwen_tts_speaker:
             payload["speaker"] = self._cfg.qwen_tts_speaker
 
-        instruct = build_qwen_instruct(base_instruct=self._cfg.qwen_tts_instruct, emotion=emotion, styles=styles)
-        if instruct:
-            payload["instruct"] = instruct
+        if emotion_reference is None:
+            # The emotion clip already carries the delivery; a text instruction
+            # on top of it is what pulls the voice away from her.
+            instruct = build_qwen_instruct(base_instruct=self._cfg.qwen_tts_instruct, emotion=emotion, styles=styles)
+            if instruct:
+                payload["instruct"] = instruct
 
         extra_params = self._extra_params_for_emotion(emotion, styles=styles)
+        if emotion_reference is not None:
+            # ICL mode copies the reference clip's delivery, not just its timbre.
+            extra_params["x_vector_only_mode"] = False
         if extra_params:
             payload["extra_params"] = extra_params
 
@@ -110,8 +119,9 @@ class QwenTTSBackend(BaseFileTTSBackend):
             content_type="audio/wav",
             metadata={
                 "endpoint": self._cfg.qwen_tts_endpoint,
-                "reference_audio": self._cfg.qwen_tts_reference_audio,
-                "reference_text": self._cfg.qwen_tts_reference_text,
+                "reference_audio": reference_audio,
+                "reference_text": reference_text,
+                "emotion_reference": emotion_reference is not None,
                 "language": self._cfg.qwen_tts_language,
                 "speaker": self._cfg.qwen_tts_speaker,
                 "emotion": emotion,
@@ -121,6 +131,31 @@ class QwenTTSBackend(BaseFileTTSBackend):
                 "timings_ms": {"backend_ms": round((time.perf_counter() - started_at) * 1000, 1)},
             },
         )
+
+    @staticmethod
+    def _resolve_path(raw: str) -> Path:
+        path = Path(raw)
+        if not path.is_absolute():
+            path = (settings.project_root / path).resolve()
+        return path
+
+    def _emotion_reference(self, emotion: str | None) -> tuple[str, str] | None:
+        """Return (audio, transcript) for the emotion's reference clip, if one is usable.
+
+        An entry without a transcript or with a missing file is skipped, so a
+        bad entry falls back to the default voice instead of failing the reply.
+        """
+        if not emotion:
+            return None
+        references = getattr(self._cfg, "qwen_tts_emotion_references", None) or {}
+        entry = references.get(str(emotion).strip().lower())
+        if not isinstance(entry, dict):
+            return None
+        audio = str(entry.get("audio") or "").strip()
+        text = str(entry.get("text") or "").strip()
+        if not audio or not text or not self._resolve_path(audio).is_file():
+            return None
+        return audio, text
 
     def _extra_params_for_emotion(self, emotion: str | None, styles: list[str] | None = None) -> dict[str, Any]:
         """Get extra params for emotion-based styling.

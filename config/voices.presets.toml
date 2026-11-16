@@ -71,3 +71,15 @@ qwen_tts_reference_text = "お前たちのは違う\nそれって、これのこ
 qwen_tts_language = "English"
 qwen_tts_timeout_seconds = 120
 qwen_tts_extra_json = { x_vector_only_mode = true, temperature = 0.32, top_k = 6, top_p = 0.52, repetition_penalty = 1.0, speed = 0.84, output_peak = 0.58, speed_by_emotion = { neutral = 0.84, happy = 0.85, teasing = 0.84, concerned = 0.8, excited = 0.86, embarrassed = 0.8, annoyed = 0.82, default = 0.84 }, output_peak_by_emotion = { neutral = 0.58, happy = 0.57, teasing = 0.57, concerned = 0.54, excited = 0.58, embarrassed = 0.54, annoyed = 0.56, default = 0.58 }, max_new_tokens = 2048, min_new_tokens = 100 }
+
+[profiles.qwen_shana_dataset_xvec_soft_emotion]
+label = "Qwen3-TTS Shana XVec Soft + Emotion Clips"
+provider = "qwen-tts"
+description = "Same as qwen_shana_dataset_xvec_soft for neutral, excited and annoyed. Happy, teasing, concerned and embarrassed clone an owner-picked English clip in her voice (ICL mode), so the clip carries the emotion."
+qwen_tts_endpoint = "http://127.0.0.1:9882/tts"
+qwen_tts_reference_audio = "./assets/voice_references/shana/shana_dataset_ref_22s.wav"
+qwen_tts_reference_text = "お前たちのは違う\nそれって、これのこと?\nいつかここを出て行く時も 一緒に\nユージは強くなれるよ\nうん、美味しい\nどうすればいいか、気持ちが教えてくれる\nでももう心配ない\n私に教えるつもりがあるなら、ちゃんと勉強してから出直しなさい\nそれでもまだ残してやった方よ"
+qwen_tts_language = "English"
+qwen_tts_timeout_seconds = 120
+qwen_tts_extra_json = { x_vector_only_mode = true, temperature = 0.32, top_k = 6, top_p = 0.52, repetition_penalty = 1.0, speed = 0.84, output_peak = 0.58, speed_by_emotion = { neutral = 0.84, happy = 0.85, teasing = 0.84, concerned = 0.8, excited = 0.86, embarrassed = 0.8, annoyed = 0.82, default = 0.84 }, output_peak_by_emotion = { neutral = 0.58, happy = 0.57, teasing = 0.57, concerned = 0.54, excited = 0.58, embarrassed = 0.54, annoyed = 0.56, default = 0.58 }, max_new_tokens = 2048, min_new_tokens = 100 }
+qwen_tts_emotion_references = { happy = { audio = "./assets/voice_references/shana/shana_emotion_happy.wav", text = "Melon bread again? You know me too well. Thank you, really." }, teasing = { audio = "./assets/voice_references/shana/shana_emotion_teasing.wav", text = "Wow, three tries and you finally got it. Should I be impressed?" }, concerned = { audio = "./assets/voice_references/shana/shana_emotion_concerned.wav", text = "Hey, are you okay? You sound really tired today." }, embarrassed = { audio = "./assets/voice_references/shana/shana_emotion_embarrassed.wav", text = "Don't say that so loudly! Someone might hear you." } }

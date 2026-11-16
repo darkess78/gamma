@@ -80,12 +80,14 @@ class DiscordTextWorker:
         guild_id = str(getattr(guild, "id", "") or "")
         channel_id = str(getattr(channel, "id", "") or "")
         author_id = str(getattr(author, "id", "") or "")
+        direct_message = guild is None
 
         ignored_reason = self._ignored_reason(
             author=author,
             author_id=author_id,
             guild_id=guild_id,
             channel_id=channel_id,
+            direct_message=direct_message,
         )
         if ignored_reason:
             self._ignored_count += 1
@@ -119,10 +121,16 @@ class DiscordTextWorker:
             message_id=message_id or None,
             roles=roles,
         )
-        session_id = f"discord:{guild_id}:{channel_id}"
+        session_id = f"discord:dm:{author_id}" if direct_message else f"discord:{guild_id}:{channel_id}"
         event = self.runtime.normalize_message(discord_message, session_id=session_id)
         event.metadata.setdefault("message_id", message_id)
-        event.metadata["output_target_policy"] = "discord_call"
+        if direct_message:
+            # The API trusts this flag only on requests carrying the ingress secret, and then
+            # only for the owner's own Discord id (stream.brain._is_owner_dm_event).
+            event.metadata["discord_dm"] = True
+            event.metadata["output_target_policy"] = "dashboard_monitor"
+        else:
+            event.metadata["output_target_policy"] = "discord_call"
         context_token = bind_context(
             event_id=event.event_id,
             message_id=message_id or None,
@@ -268,6 +276,7 @@ class DiscordTextWorker:
                 voice_command=voice_command,
                 text_channel_ids=tuple(self.config.text_channel_ids),
                 typing=lambda message: message.channel.typing(),
+                owner_dm_enabled=self.config.owner_dm_enabled,
             )
         return client
 
@@ -353,12 +362,19 @@ class DiscordTextWorker:
         author_id: str,
         guild_id: str,
         channel_id: str,
+        direct_message: bool = False,
     ) -> str | None:
         if bool(getattr(author, "bot", False)):
             return "bot_author"
         client_user_id = str(getattr(getattr(self._client, "user", None), "id", "") or "")
         if client_user_id and author_id == client_user_id:
             return "self_message"
+        if direct_message:
+            if not self.config.owner_dm_enabled:
+                return "dm_disabled"
+            if not self.config.owner_user_id or author_id != self.config.owner_user_id:
+                return "dm_not_owner"
+            return None
         if guild_id != self.config.guild_id:
             return "guild_not_allowed"
         if channel_id not in self.config.text_channel_ids:

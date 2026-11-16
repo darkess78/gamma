@@ -20,6 +20,8 @@ class DiscordRuntimeConfig:
     output_enabled: bool = False
     voice_enabled: bool = False
     owner_user_id: str = ""
+    # The owner can DM Shana; those turns are private (owner-only memory). Nobody else's DMs are read.
+    owner_dm_enabled: bool = True
     extra_text_channel_ids: tuple[str, ...] = ()
     extra_voice_channel_ids: tuple[str, ...] = ()
     voice_reply_mode: str = "addressed"  # or "everyone" (see addressing.py)
@@ -47,6 +49,7 @@ class DiscordRuntimeConfig:
             output_enabled=_as_bool(config.get("discord_output_enabled", nested.get("output_enabled", False))),
             voice_enabled=_as_bool(config.get("discord_voice_enabled", nested.get("voice_enabled", False))),
             owner_user_id=str(config.get("discord_owner_user_id", nested.get("owner_user_id", "")) or ""),
+            owner_dm_enabled=_as_bool(config.get("discord_owner_dm_enabled", nested.get("owner_dm_enabled", True))),
             extra_text_channel_ids=_id_list(config.get("discord_text_channel_ids", nested.get("text_channel_ids", ()))),
             extra_voice_channel_ids=_id_list(config.get("discord_voice_channel_ids", nested.get("voice_channel_ids", ()))),
             voice_reply_mode=("everyone" if str(config.get("discord_voice_reply_mode",

@@ -280,6 +280,17 @@ def apply_presence_to_stream_event(
         from .integrations.discord.runtime import DiscordRuntimeConfig
 
         config = DiscordRuntimeConfig.from_app_config()
+        if metadata.get("discord_dm") is True:
+            # The owner's DM: private, not public output. Whether it really is the owner is
+            # checked again in the stream brain against the ingress secret and the owner's id.
+            allowed = (
+                mode in {"wake", "go_live"} and config.enabled and config.output_enabled
+                and config.owner_dm_enabled and event.kind == "chat_message" and not metadata.get("guild_id")
+            )
+            metadata["public_output"] = False
+            metadata["output_target_policy"] = "dashboard_monitor"
+            metadata["presence_suppressed"] = not allowed
+            return event.model_copy(update={"metadata": metadata}), False
         expected_channels = config.voice_channel_ids if event.kind == "mic_transcript" else {config.text_channel_id}
         allowed = (
             mode in {"wake", "go_live"} and config.enabled and config.output_enabled

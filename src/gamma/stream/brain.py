@@ -116,10 +116,13 @@ class StreamBrain(PublicationReviewMixin):
         self._self_goal_store = self_goal_store or StreamSelfGoalStore()
 
     @staticmethod
-    def _recipient_for_event(event: StreamInputEvent, *, owner_channel: bool = False) -> RecipientContext:
+    def _recipient_for_event(event: StreamInputEvent, *, owner_channel: bool = False,
+                             ingress_verified: bool = False) -> RecipientContext:
         target = str(event.metadata.get("output_target_policy") or "").strip().lower() or None
         if target not in {None, "dashboard_monitor", "stream_public", "discord_call"}:
             raise ConversationError("unknown_recipient_output_target")
+        if _is_owner_dm_event(event, ingress_verified=ingress_verified):
+            return RecipientContext(kind="owner_private", target_policy="dashboard_monitor", owner_authorized=True)
         shared = (
             target in {"stream_public", "discord_call"}
             or event.actor.source.strip().lower() in {"twitch", "discord"}
@@ -221,7 +224,8 @@ class StreamBrain(PublicationReviewMixin):
             text = (event.text or "").strip()
             if not text:
                 raise ConversationError("stream event text must not be empty for reply decisions.")
-            recipient = self._recipient_for_event(event, owner_channel=owner_channel)
+            recipient = self._recipient_for_event(event, owner_channel=owner_channel,
+                                                  ingress_verified=ingress_verified)
             owner_private = recipient.allows_private_memory
             conversation_args = {
                 "user_text": text,
@@ -241,7 +245,8 @@ class StreamBrain(PublicationReviewMixin):
                 "speech_allowed": synthesize_speech,
                 "speech_requested": synthesize_speech,
                 "recipient": recipient,
-                "owner_verified": owner_channel and event.actor.source.strip().lower() == "local_monitor",
+                "owner_verified": (owner_channel and event.actor.source.strip().lower() == "local_monitor")
+                                  or _is_owner_dm_event(event, ingress_verified=ingress_verified),
                 "speaker_label": _speaker_label(event),
                 "viewer_notes": self._viewer_notes_for(event, recipient) if ingress_verified else [],
             }
@@ -761,6 +766,25 @@ def _is_owner_private_event(event: StreamInputEvent, *, owner_channel: bool) -> 
         and event.actor.source.strip().lower() == "local_monitor"
         and event.kind in OWNER_EVENT_KINDS
     )
+
+
+def _is_owner_dm_event(event: StreamInputEvent, *, ingress_verified: bool) -> bool:
+    """The owner's direct message to Shana on Discord.
+
+    Three things must hold: the request carried the ingress secret (so it came from Gamma's
+    own Discord worker, not a body that merely says so), the worker marked it a DM, and the
+    sender's Discord id is the owner's in the identity config.
+    """
+    if not (ingress_verified and event.actor.source.strip().lower() == "discord"
+            and event.kind == "chat_message" and event.metadata.get("discord_dm") is True
+            and not event.metadata.get("guild_id")):
+        return False
+    from ..identity import IdentityResolver
+
+    platform_id = str(event.actor.platform_id or "").strip()
+    if not platform_id:
+        return False
+    return IdentityResolver().resolve(SpeakerContext(source="discord", platform_id=platform_id)).is_owner is True
 
 
 def _speaker_label(event: StreamInputEvent) -> str | None:

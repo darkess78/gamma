@@ -25,6 +25,12 @@ performer outputs. They do not call conversation internals directly.
 - Discord output stays on `discord_call`, including in Go Live; Sleep and Break suppress conversational output
 - Wake allows the configured Discord conversation without enabling Twitch or public stream output
 - credentials and guild/channel/owner identifiers stay in ignored machine-local configuration
+- owner DMs (2026-11-16, `owner_dm_enabled`, on by default): the worker reads direct messages only from the
+  configured owner id and ignores everyone else's. A DM turn is owner-private (private memory, session
+  `discord:dm:<id>`, Monitor feed) only when three things hold: the request carries the worker's ingress
+  secret, the event is marked `discord_dm`, and the sender's id resolves to the owner
+  (`stream.brain._is_owner_dm_event`). A body that only claims all this stays non-private. Sleep
+  suppresses DM replies like everything else, and the reply is sent back in the DM after output review
 
 ### Staged Discord playback reply accounting
 

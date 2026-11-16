@@ -57,6 +57,7 @@ class DiscordSession:
         voice_command=None,
         text_channel_ids=(),
         typing=None,
+        owner_dm_enabled=False,
     ):
         if not _positive_decimal(guild_id):
             raise ValueError("guild_id must be a positive decimal identifier")
@@ -68,6 +69,7 @@ class DiscordSession:
         self._guild_id = _id_text(guild_id)
         self._channel_ids = {_id_text(text_channel_id), *(_id_text(c) for c in text_channel_ids if _positive_decimal(c))}
         self._owner_id = _id_text(owner_user_id)
+        self._owner_dm_enabled = bool(owner_dm_enabled)
         self._reply_enabled = bool(reply_enabled)
         self._ingest = ingest
         self._send = send
@@ -88,7 +90,10 @@ class DiscordSession:
             if text is None or not str(text).strip():
                 return False
             guild = getattr(message, "guild", None)
-            guild_id = getattr(guild, "id", None) if guild else None
+            if guild is None:
+                # A direct message: only the owner's, and only when owner DMs are on.
+                return self._owner_dm_enabled and self._is_owner(message)
+            guild_id = getattr(guild, "id", None)
             if _id_text(guild_id) != self._guild_id:
                 return False
             channel = getattr(message, "channel", None)

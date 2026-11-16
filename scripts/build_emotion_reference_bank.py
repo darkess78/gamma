@@ -267,11 +267,14 @@ def _normalize_words(text: str) -> str:
 def stage_transcribe(args: argparse.Namespace) -> None:
     from faster_whisper import WhisperModel
 
+    sys.path.insert(0, str(ROOT / "src"))
+    from gamma.voice.stt import decode_audio  # faster-whisper's own decoder breaks on current PyAV
+
     out: Path = args.out
     manifest = _read_manifest(out)
     model = WhisperModel("small.en", device="cpu", compute_type="int8")
     for take in manifest["takes"]:
-        segments, _ = model.transcribe(str(out / take["path"]), language="en", beam_size=3)
+        segments, _ = model.transcribe(decode_audio(str(out / take["path"])), language="en", beam_size=3)
         heard = " ".join(segment.text.strip() for segment in segments).strip()
         take["asr_text"] = heard
         take["asr_match"] = round(difflib.SequenceMatcher(

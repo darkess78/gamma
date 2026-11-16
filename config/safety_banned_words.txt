@@ -9,3 +9,39 @@ should die
 nigger
 faggot
 retard
+# Major profanity (owner decision 2026-11-15): mild insults like stupid, dumb and
+# idiot are allowed; these are not. Matching is whole-word, so list the variants.
+fuck
+fucks
+fucked
+fucker
+fuckers
+fucking
+fuckin
+motherfucker
+motherfuckers
+motherfucking
+shit
+shits
+shitty
+bullshit
+horseshit
+dipshit
+bitch
+bitches
+bitchy
+son of a bitch
+cunt
+cunts
+asshole
+assholes
+dickhead
+bastard
+bastards
+cock
+cocksucker
+pussy
+twat
+wanker
+whore
+slut

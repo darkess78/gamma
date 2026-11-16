@@ -429,9 +429,15 @@ No GPU needed.
 
 ## Decisions for the owner
 
-1. Should Shana type in Twitch chat, or only speak?
-2. Which game first? (A turn-based one is easiest; it needs a small client, see games.md.)
-3. Which Discord servers/channels she should be in.
+1. Should Shana type in Twitch chat, or only speak? **Not for now (2026-11-15):**
+   she would post from Neety's account; revisit if she gets her own bot account.
+2. Which game first? **Later (2026-11-15):** other things should work properly first.
+
+Answered 2026-11-15: Discord is the Neets Gaming server only, voice channels
+Shana Voice, Streaming and Neet's Rage Cage (she joins the one Neety is in),
+text in #shana. Owner-formed opinions stay hidden from the stream. The 3D avatar
+is on hold. Streaming is rare until she is more herself, so training may use the
+3090 most of the time.
 
 Answered: self-coding uses local models only (2026-11-14). The rebuild is
 deployed on Gamma PC (2026-11-14; see [deploy_rebuild.md](deploy_rebuild.md)). A caller that names

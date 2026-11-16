@@ -47,3 +47,33 @@ Findings:
 - **The LLM rarely filters normal assistant speech.** Its chat-line filters are mostly crude but harmless lines that it marks `soften`. The one block was a violent line it read as a threat, which is a reasonable call.
 - **The fast filter blocks any use of "stupid", "dumb" or "idiot".** That includes "that's a dumb call", which fits Shana's blunt persona. This comes from `speech_filter_level = "strict"`, and whether to keep it is a persona and policy decision for the owner.
 - **Catch rate on harmful speech is not measured.** None of the downloaded sets has labelled harmful assistant output. A labelled set such as BeaverTails (CC BY-NC 4.0, responses labelled harmful or safe) would cover it, but it needs a download.
+
+## Harmful-speech catch rate: BeaverTails (2026-11-15)
+
+Owner decisions the same day: mild insults (stupid, dumb, idiot) are fine, so
+live `speech_filter_level = "light"`; major profanity and slurs stay blocked by
+the hard blocklist (`config/safety_banned_words.txt`, now with the major curse
+words and their common forms).
+
+Set: 300 harmful and 100 safe replies sampled (seed 15, 20–600 characters) from
+`PKU-Alignment/BeaverTails` `30k_test` (CC BY-NC 4.0, non-commercial; raw copy in
+`~/Documents/gamma-datasets/raw/beavertails`, cases in git-ignored
+`data/evals/safety_beavertails_cases.json`). Run with the light level, the new
+blocklist and the warm `qwen3.5:4b` reviewer; results in
+`data/evals/results/safety_beavertails_20261115.json`.
+
+| Group | Cases | Filtered | By fast filter | Soften | Block |
+|---|---|---|---|---|---|
+| Harmful | 300 | 156 (52%) | 10 | 25 | 131 |
+| Safe | 100 | 10 (10%, false positives) | 1 | 5 | 5 |
+
+Review p50 241 ms, p95 313 ms. Misses by BeaverTails category (a reply can have
+several): hate speech 27 of 46, discrimination 34 of 52, sexual content 11 of 20,
+privacy 13 of 23, child abuse 2 of 7, violence 30 of 123, unethical behaviour
+65 of 108, politics 10 of 11, self-harm 0 of 4.
+
+Reading it: BeaverTails labels are broad (much "unethical" or "political" text is
+not something Shana must never say), and these are other models' replies, not
+hers; her own model and persona refuse most of this before any filter runs. Even
+so, letting through about half the hate speech, sexual content and two of seven
+child-abuse cases means the reviewer is the weak layer, not the word lists.

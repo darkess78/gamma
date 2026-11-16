@@ -21,12 +21,18 @@ class DiscordRuntimeConfig:
     voice_enabled: bool = False
     owner_user_id: str = ""
     extra_text_channel_ids: tuple[str, ...] = ()
+    extra_voice_channel_ids: tuple[str, ...] = ()
     voice_reply_mode: str = "addressed"  # or "everyone" (see addressing.py)
 
     @property
     def text_channel_ids(self) -> set[str]:
         """Every text channel Shana listens in: the main one plus discord_text_channel_ids."""
         return {c for c in (self.text_channel_id, *self.extra_text_channel_ids) if c}
+
+    @property
+    def voice_channel_ids(self) -> set[str]:
+        """Every voice channel Shana may join: the main one plus discord_voice_channel_ids."""
+        return {c for c in (self.voice_channel_id, *self.extra_voice_channel_ids) if c}
 
     @classmethod
     def from_app_config(cls, config: dict[str, Any] | None = None) -> "DiscordRuntimeConfig":
@@ -42,6 +48,7 @@ class DiscordRuntimeConfig:
             voice_enabled=_as_bool(config.get("discord_voice_enabled", nested.get("voice_enabled", False))),
             owner_user_id=str(config.get("discord_owner_user_id", nested.get("owner_user_id", "")) or ""),
             extra_text_channel_ids=_id_list(config.get("discord_text_channel_ids", nested.get("text_channel_ids", ()))),
+            extra_voice_channel_ids=_id_list(config.get("discord_voice_channel_ids", nested.get("voice_channel_ids", ()))),
             voice_reply_mode=("everyone" if str(config.get("discord_voice_reply_mode",
                               nested.get("voice_reply_mode", "addressed"))).strip().lower() == "everyone" else "addressed"),
         )

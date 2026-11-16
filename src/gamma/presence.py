@@ -280,11 +280,11 @@ def apply_presence_to_stream_event(
         from .integrations.discord.runtime import DiscordRuntimeConfig
 
         config = DiscordRuntimeConfig.from_app_config()
-        expected_channel = config.voice_channel_id if event.kind == "mic_transcript" else config.text_channel_id
+        expected_channels = config.voice_channel_ids if event.kind == "mic_transcript" else {config.text_channel_id}
         allowed = (
             mode in {"wake", "go_live"} and config.enabled and config.output_enabled
             and metadata.get("guild_id") == config.guild_id
-            and bool(expected_channel) and metadata.get("channel_id") == expected_channel
+            and metadata.get("channel_id") in {c for c in expected_channels if c}
             and event.kind in {"chat_message", "mic_transcript"}
             and (event.kind != "mic_transcript" or config.voice_enabled)
         )

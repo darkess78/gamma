@@ -7,10 +7,13 @@ __all__ = ["VoiceSessionController"]
 class VoiceSessionController:
     _ALLOWED = frozenset({"join", "leave", "pause", "resume", "status"})
 
-    def __init__(self, client, *, guild_id, channel_id, owner_check, voice_factory, sink_factory):
+    def __init__(self, client, *, guild_id, channel_id, owner_check, voice_factory, sink_factory,
+                 allowed_channel_ids=()):
         self._client = client
         self._guild_id = self._validate_id(guild_id)
         self._channel_id = self._validate_id(channel_id)
+        self._allowed = {self._channel_id, *(self._validate_id(c) for c in allowed_channel_ids)}
+        self._active_channel_id = self._channel_id
         self._owner_check = owner_check
         self._voice_factory = voice_factory
         self._sink_factory = sink_factory
@@ -37,9 +40,14 @@ class VoiceSessionController:
         except Exception:
             return False
 
-    def _channel(self):
+    @property
+    def active_channel_id(self) -> int:
+        """The voice channel she is in, or last joined; the main channel before any join."""
+        return self._active_channel_id
+
+    def _channel(self, channel_id=None):
         try:
-            return self._client.get_channel(self._channel_id)
+            return self._client.get_channel(channel_id or self._channel_id)
         except Exception:
             return None
 
@@ -56,14 +64,14 @@ class VoiceSessionController:
         if self._voice is not None and not self._voice.is_connected():
             self._reset()
 
-    async def _handle(self, user_id, command):
+    async def _handle(self, user_id, command, channel_id=None):
         if not self._is_owner(user_id):
             return self._result(False, "owner_required")
         if command not in self._ALLOWED:
             return self._result(False, "unknown_command")
         await self._reconcile()
         if command == "join":
-            return await self._join()
+            return await self._join(channel_id)
         if command == "leave":
             return await self._leave()
         if command == "pause":
@@ -72,9 +80,10 @@ class VoiceSessionController:
             return await self._resume()
         return self._result(True)
 
-    async def handle(self, user_id, command):
+    async def handle(self, user_id, command, *, channel_id=None):
+        """``channel_id`` picks one of the allowed voice channels for a join; others fall back to the main one."""
         async with self._lock:
-            return await self._handle(user_id, command)
+            return await self._handle(user_id, command, channel_id)
 
     async def _disconnect_voice(self, voice):
         if voice is None or not voice.is_connected():
@@ -87,14 +96,30 @@ class VoiceSessionController:
         await voice.disconnect(force=True)
         self._reset()
 
-    async def _join(self):
+    async def _join(self, channel_id=None):
         if self._state == "error" and self._voice is not None:
             return self._result(False, "voice_error")
+        try:
+            target = self._validate_id(str(channel_id)) if channel_id is not None else self._channel_id
+        except ValueError:
+            target = self._channel_id
+        if target not in self._allowed:
+            target = self._channel_id
+        if self._state in {"listening", "paused"} and target != self._active_channel_id and self._voice is not None:
+            move = getattr(self._voice, "move_to", None)
+            channel = self._channel(target)
+            if move is None or channel is None:
+                return self._result(False, "channel_unavailable")
+            try:
+                await move(channel)
+            except Exception:
+                return self._result(False, "voice_error")
+            self._active_channel_id = target
         if self._state == "listening":
             return self._result(True)
         if self._state == "paused":
             return await self._resume()
-        channel = self._channel()
+        channel = self._channel(target)
         if channel is None:
             self._reset()
             return self._result(False, "channel_unavailable")
@@ -107,6 +132,7 @@ class VoiceSessionController:
             self._reset()
             return self._result(False, "voice_error")
         self._voice = voice
+        self._active_channel_id = target
         self._state = "paused"
         try:
             self._sink = self._sink_factory()

@@ -73,6 +73,7 @@ class DiscordVoiceSession:
             client, guild_id=config.guild_id, channel_id=config.voice_channel_id,
             owner_check=lambda uid: str(uid) == config.owner_user_id,
             voice_factory=voice_client_class(), sink_factory=UtteranceSink,
+            allowed_channel_ids=tuple(getattr(config, "extra_voice_channel_ids", ()) or ()),
         )
 
     def _enqueue(self, sink, item):
@@ -97,10 +98,26 @@ class DiscordVoiceSession:
             while not self.queue.empty():
                 self.queue.get_nowait()
                 self.queue.task_done()
-        result = await self.controller.handle(str(uid), command)
+        result = await self.controller.handle(
+            str(uid), command, channel_id=self._owner_voice_channel(uid) if command == "join" else None)
         if result.get("ok") and result.get("state") == "listening":
             self._ensure_tasks()
         return result
+
+    def _active_voice_channel_id(self) -> int:
+        controller = getattr(self, "controller", None)
+        active = getattr(controller, "active_channel_id", None)
+        return active if active else int(self.config.voice_channel_id)
+
+    def _owner_voice_channel(self, uid):
+        """The voice channel the owner is sitting in, if the bot can see it."""
+        try:
+            guild = self.client.get_guild(int(self.config.guild_id))
+            member = guild.get_member(int(uid)) if guild else None
+            channel = getattr(getattr(member, "voice", None), "channel", None)
+            return getattr(channel, "id", None)
+        except Exception:
+            return None
 
     def _ensure_tasks(self):
         if self.processor is None or self.processor.done():
@@ -154,7 +171,7 @@ class DiscordVoiceSession:
                 event = self.runtime.normalize_voice(DiscordVoiceUtterance(
                     transcript=text, user_id=item["user_id"],
                     display_name=getattr(member, "display_name", None),
-                    guild_id=self.config.guild_id, channel_id=self.config.voice_channel_id,
+                    guild_id=self.config.guild_id, channel_id=str(self._active_voice_channel_id()),
                     metadata={"output_target_policy": "discord_call", "public_output": True},
                 ))
                 self.stats["utterances"] += 1
@@ -180,7 +197,7 @@ class DiscordVoiceSession:
 
     def _others_in_call(self, guild) -> int:
         """People in the voice channel besides bots; unknown counts as a group call."""
-        channel = guild.get_channel(int(self.config.voice_channel_id)) if guild else None
+        channel = guild.get_channel(self._active_voice_channel_id()) if guild else None
         members = getattr(channel, "members", None)
         if members is None:
             return 2

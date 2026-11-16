@@ -11,20 +11,24 @@ from .api.deps import get_proactive_scheduler
 from .api.routes import router
 from .observability import configure_logging, install_request_logging
 from .memory.journal_lifecycle import JournalRecovery
+from .supervisor.voice_idle import VoiceIdleUnloader
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     scheduler = get_proactive_scheduler()
     recovery = JournalRecovery()
+    voice_idle = VoiceIdleUnloader()
     try:
         await recovery.start()
         await scheduler.start()
+        voice_idle.start()
         if settings.avatar3d_enabled:
             from .api.routes_performer import start_avatar3d_runner
 
             await start_avatar3d_runner()
         yield
     finally:
+        voice_idle.stop()
         if settings.avatar3d_enabled:
             from .api.deps import get_avatar3d_runner
 

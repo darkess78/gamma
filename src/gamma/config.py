@@ -472,6 +472,11 @@ class Settings:
     audio_understanding_port: int = _int("audio_understanding_port", default=9883)
     audio_understanding_request_timeout_seconds: int = _int("audio_understanding_request_timeout_seconds", default=15)
     audio_understanding_python: str | None = _raw("audio_understanding_python", default="")
+    # Stop the GPU voice sidecars (Qwen TTS, audio understanding) when nobody needs them; they
+    # restart on the next request (TTS loads in about 7 s) or when Shana is woken.
+    voice_idle_unload_enabled: bool = _bool("voice_idle_unload_enabled", default=True)
+    voice_idle_unload_minutes: int = _int("voice_idle_unload_minutes", default=20)
+    voice_sleep_unload_minutes: int = _int("voice_sleep_unload_minutes", default=5)
     audio_model_local_files_only: bool = _bool("audio_model_local_files_only", default=False)
     speaker_emotion_min_confidence: float = _float("speaker_emotion_min_confidence", default=0.65)
     speaker_emotion_requires_transcript: bool = _bool("speaker_emotion_requires_transcript", default=True)

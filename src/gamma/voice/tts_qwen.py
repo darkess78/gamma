@@ -56,6 +56,9 @@ class QwenTTSBackend(BaseFileTTSBackend):
             TTSResult: Generated audio.
         """
         started_at = time.perf_counter()
+        from ..supervisor.voice_idle import ensure_voice_sidecar
+
+        ensure_voice_sidecar("tts")
         payload: dict[str, Any] = {"text": self._normalize_text(text)}
 
         if self._cfg.qwen_tts_language:

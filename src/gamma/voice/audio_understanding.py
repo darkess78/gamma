@@ -387,6 +387,9 @@ class AudioUnderstandingService:
         raise ConfigurationError(f"Unsupported SHANA_AUDIO_EVENT_PROVIDER: {settings.audio_event_provider}")
 
     def _analyze_remote(self, path: Path, *, transcript: str) -> VoiceInputContext | None:
+        from ..supervisor.voice_idle import ensure_voice_sidecar
+
+        ensure_voice_sidecar("audio-understanding")
         started_at = time.perf_counter()
         try:
             with path.open("rb") as audio_file:

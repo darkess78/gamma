@@ -204,17 +204,18 @@ class ExpressiveTextTest(unittest.TestCase):
 
 
 class SpeechSafetyFilterTest(unittest.TestCase):
-    def test_strict_filter_blocks_harsh_content(self) -> None:
+    def test_strict_filter_softens_harsh_content(self) -> None:
         result = SpeechSafetyFilter("strict").apply("You are an idiot.")
-        self.assertTrue(result.blocked)
-        self.assertIn("safe and respectful", result.spoken_text)
+        self.assertEqual(result.action, "soften")
+        self.assertIn("put it that way", result.spoken_text)
 
     def test_light_filter_allows_mild_content_but_blocks_severe_content(self) -> None:
         mild = SpeechSafetyFilter("light").apply("That was stupid.")
         severe = SpeechSafetyFilter("light").apply("kys")
         self.assertFalse(mild.blocked)
         self.assertTrue(severe.blocked)
-        self.assertEqual(severe.action, "block")
+        self.assertEqual(severe.action, "floor_block")
+        self.assertTrue(severe.floor_blocked and severe.spoken_text == "")
         self.assertTrue(severe.layers)
 
     def test_privacy_guard_blocks_doxxing_style_requests(self) -> None:

@@ -77,3 +77,28 @@ not something Shana must never say), and these are other models' replies, not
 hers; her own model and persona refuse most of this before any filter runs. Even
 so, letting through about half the hate speech, sexual content and two of seven
 child-abuse cases means the reviewer is the weak layer, not the word lists.
+
+## Category reviewer (2026-11-16)
+
+The reviewer now names a category (`none`, `rude`, `profanity`, `hate`, `sexual`,
+`minors`, `self_harm`, `threat`, `dangerous`, `privacy`) and code maps it to a
+tier ([speech_safety.md](speech_safety.md)). Same model (`qwen3.5:4b`), same
+warm setup. A new hand-written set, `src/gamma/evals/safety_floor_cases.json`,
+holds 30 severe lines in Shana's register that the floor must stop and 20 sharp
+lines that must pass. BeaverTails labels are too noisy for that job; for
+example, "Thanks for the offer, but I'll pass" is labelled sexual.
+
+| Set | Old prompt | New prompt |
+|---|---|---|
+| Floor set, severe lines blocked | 17 of 30 (10 only softened, 3 allowed) | **30 of 30** |
+| Floor set, sharp-but-fine lines filtered | 4 of 20 | 2 of 20 |
+| Ordinary assistant replies filtered | 1 of 150 | 3 of 150 |
+| Ordinary chat lines filtered | 8 of 150 | 8 of 150 |
+| BeaverTails harmful filtered | 156 of 300 (52%) | 189 of 300 (63%) |
+| BeaverTails safe filtered | 10 of 100 | 11 of 100 |
+| Review p50 | 241 ms | 241-364 ms |
+
+Most remaining false positives are refusals and warnings that name the topic
+("stealing a car is illegal"); the prompt now says refusals are `none`, which
+recovered most of them. The remaining BeaverTails misses are mostly mild
+"unethical" or political text, which is not floor material.

@@ -27,6 +27,7 @@ class HeuristicDecision:
     """
     action: str
     matched_rules: list[str]
+    severe: bool = False  # a block pattern (doxxing, "deserve to die"), not a mild insult
 
 
 def review(*, text: str, level: str) -> HeuristicDecision:
@@ -42,7 +43,7 @@ def review(*, text: str, level: str) -> HeuristicDecision:
     normalized = " ".join((text or "").split())
     blocked = [pattern.pattern for pattern in _BLOCK_PATTERNS if pattern.search(normalized)]
     if blocked:
-        return HeuristicDecision(action="block", matched_rules=blocked)
+        return HeuristicDecision(action="block", matched_rules=blocked, severe=True)
     softened = [pattern.pattern for pattern in _LIGHT_PATTERNS if pattern.search(normalized)]
     if not softened:
         return HeuristicDecision(action="allow", matched_rules=[])

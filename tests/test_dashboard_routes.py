@@ -1042,8 +1042,11 @@ class DashboardRoutesTest(unittest.TestCase):
                 service = DashboardService()
                 result = service.save_assistant_runtime_settings(
                     {
+                        "speech_filter_hard_block_enabled": False,
                         "speech_filter_heuristic_enabled": False,
-                        "speech_filter_llm_enabled": True,
+                        "speech_filter_llm_enabled": False,
+                        "speech_filter_word_list_enabled": False,
+                        "speech_filter_extra_enabled": True,
                         "speech_filter_llm_model": "llama3.2:3b",
                         "speech_filter_llm_temperature": 0.15,
                         "stream_safety_review_timeout_seconds": 1.25,
@@ -1053,8 +1056,12 @@ class DashboardRoutesTest(unittest.TestCase):
                 saved = path.read_text(encoding="utf-8")
 
         self.assertTrue(result["ok"])
-        self.assertIn("speech_filter_heuristic_enabled = false", saved)
-        self.assertIn("speech_filter_llm_enabled = true", saved)
+        # The safety floor cannot be switched off from the dashboard.
+        self.assertNotIn("speech_filter_hard_block_enabled", saved)
+        self.assertNotIn("speech_filter_heuristic_enabled", saved)
+        self.assertNotIn("speech_filter_llm_enabled", saved)
+        self.assertIn("speech_filter_word_list_enabled = false", saved)
+        self.assertIn("speech_filter_extra_enabled = true", saved)
         self.assertIn('speech_filter_llm_model = "llama3.2:3b"', saved)
         self.assertIn("speech_filter_llm_temperature = 0.15", saved)
         self.assertIn("stream_safety_review_timeout_seconds = 1.25", saved)

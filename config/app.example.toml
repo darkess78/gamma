@@ -150,7 +150,13 @@ twitch_spam_quip_cooldown_seconds = 60
 twitch_max_speech_seconds_per_minute = 20
 twitch_chat_window_enabled = true
 speech_filter_level = "strict"
+# Safety floor (never a dashboard switch): slurs, privacy, severe reviewer categories.
 speech_filter_hard_block_enabled = true
+speech_filter_floor_words_path = "./config/safety_floor_words.txt"
+# Dashboard switches: word list bleeps listed words; extra safety softens rude replies and caps cursing.
+speech_filter_word_list_enabled = true
+speech_filter_extra_enabled = true
+speech_filter_curse_limit = 1
 speech_filter_heuristic_enabled = true
 speech_filter_llm_enabled = true
 speech_filter_llm_model = ""

@@ -31,9 +31,8 @@
   async function saveAssistantSettings() {
     var payload = {
       speech_filter_level: value('assistantSpeechFilterLevel'),
-      speech_filter_hard_block_enabled: checked('assistantHardBlockEnabled'),
-      speech_filter_heuristic_enabled: checked('assistantHeuristicEnabled'),
-      speech_filter_llm_enabled: checked('assistantLlmEnabled'),
+      speech_filter_word_list_enabled: checked('assistantWordListEnabled'),
+      speech_filter_extra_enabled: checked('assistantExtraSafetyEnabled'),
       speech_filter_auto_rewrite: checked('assistantAutoRewrite'),
       speech_filter_llm_model: value('assistantLlmModel'),
       speech_filter_llm_temperature: Number(value('assistantLlmTemperature') || 0),

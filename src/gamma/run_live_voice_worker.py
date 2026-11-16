@@ -650,7 +650,13 @@ def _run_incremental_experimental(
         for style in expressive.styles:
             if style not in response_voice_styles:
                 response_voice_styles.append(style)
-        sentence_text = speech_filter.apply(expressive.clean_text).spoken_text
+        filtered = speech_filter.apply(expressive.clean_text, source="live_voice", session_id=args.session_id)
+        if filtered.floor_blocked:
+            # Stop the reply here: nothing more is generated or spoken, and the stopped sentence
+            # never joins the reply text Shana sees (the admin floor log has it).
+            payload["safety_floor_stopped"] = True
+            break
+        sentence_text = filtered.spoken_text
 
         sentence_state = SentenceState(
             sentence_index=sentence_index,
@@ -712,6 +718,15 @@ def _run_incremental_experimental(
 
         if is_final:
             break
+
+    if not turn_state.sentences and payload.get("safety_floor_stopped"):
+        # The floor stopped the first sentence: say nothing rather than regenerate.
+        turn_state.status = "completed"
+        payload["reply_text"] = ""
+        payload["status"] = "completed"
+        payload["incremental_preview"] = _serialize_turn_state(turn_state)
+        _write_output(output_path, payload)
+        return payload
 
     if not turn_state.sentences:
         fallback_state = SentenceState(

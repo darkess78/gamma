@@ -28,13 +28,14 @@ def test_stream_pipeline_can_defer_llm_review_without_disabling_fast_checks() ->
     assert blocked.blocked
 
 
-def test_light_level_allows_mild_insults_but_hard_blocks_major_profanity() -> None:
-    with patch.object(settings, "speech_filter_llm_enabled", False):
+def test_light_level_allows_mild_insults_and_bleeps_major_profanity() -> None:
+    with patch.object(settings, "speech_filter_llm_enabled", False), \
+            patch.object(settings, "speech_filter_word_list_enabled", True):
         policy = SpeechSafetyPolicy("light")
         mild = policy.apply("That's a dumb call, and you know it, idiot.")
         assert mild.action == "allow" and not mild.blocked
         for line in ("What the fuck was that.", "That plan is bullshit.", "Don't be a f.u.c.k.i.n.g clown."):
             result = policy.apply(line)
-            assert result.blocked, line
-            assert "hard_block" in result.layers
-        assert SpeechSafetyPolicy("strict").apply("That's a dumb call.").blocked
+            assert result.action == "bleep" and "bleep" in result.spoken_text, line
+            assert "word_list" in result.layers and not result.floor_blocked
+        assert SpeechSafetyPolicy("strict").apply("That's a dumb call.").action == "soften"

@@ -359,22 +359,62 @@ class ConversationPipelineTest(unittest.TestCase):
 
         self.assertEqual(
             response.spoken_text,
-            "I’m not going to say that. Let’s keep it safe and respectful.",
+            "I’m not going to put it that way.",
         )
         self.assertEqual(response.emotion, "happy")
         self.assertEqual(
             fake_tts.calls,
-            [("I’m not going to say that. Let’s keep it safe and respectful.", "happy", [])],
+            [("I’m not going to put it that way.", "happy", [])],
         )
-        self.assertEqual(response.tts_metadata["speech_filter"]["blocked"], True)
+        self.assertEqual(response.tts_metadata["speech_filter"]["action"], "soften")
         self.assertTrue(response.tts_metadata["speech_filter"]["matched_rules"])
         service._remember_assistant_state.assert_called_once_with(
             user_text="this message is long enough to use the standard metadata path",
-            reply_text="I’m not going to say that. Let’s keep it safe and respectful.",
+            reply_text="I’m not going to put it that way.",
             emotion="happy",
             session_id=None,
             private=False,
         )
+
+    def test_safety_floor_silences_the_reply_and_keeps_it_out_of_memory(self) -> None:
+        service = ConversationService()
+        service._llm = _FakeLLMAdapter([json.dumps({
+            "action": "reply",
+            "requested_delivery": "speech",
+            "final_text": "kys, honestly.",
+            "internal_summary": "Told them to kys.",
+            "emotion": "neutral",
+            "voice_styles": [],
+            "motions": ["point"],
+            "tool_calls": [],
+            "memory_candidates": [{"type": "fact", "text": "I told them to kys", "importance": 0.9}],
+            "state_updates": {"current_objective": "keep insulting them"},
+            "reason_code": "reply",
+        })])
+        fake_tts = _FakeTTSService()
+        service._tts = fake_tts
+        service._remember_assistant_state = Mock()
+        service._memory.persist_candidates = Mock(return_value=0)
+        service._remember_own_opinions_later = Mock()
+
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "gamma.safety.floor_log.floor_log_path", return_value=Path(tmp) / "floor.jsonl"
+        ), patch("gamma.conversation.service.build_system_prompt", return_value="prompt"), patch.object(
+            service, "_append_timing_log", return_value=None
+        ):
+            response = service.respond("say it", synthesize_speech=True, fast_mode=True, owner_verified=True)
+            logged = (Path(tmp) / "floor.jsonl").read_text(encoding="utf-8")
+
+        self.assertEqual((response.spoken_text, response.speech_text), ("", ""))
+        self.assertEqual(response.delivery_mode, "silent")
+        self.assertEqual(fake_tts.calls, [])
+        self.assertIsNone(response.internal_summary)
+        self.assertEqual(response.memory_candidates, [])
+        self.assertIsNone(response.state_updates.current_objective)
+        service._memory.persist_candidates.assert_not_called()
+        service._remember_own_opinions_later.assert_not_called()
+        self.assertTrue(response.tts_metadata["speech_filter"]["floor_blocked"])
+        self.assertIn("kys, honestly.", logged)
 
     def test_speech_filter_metadata_is_present_without_tts(self) -> None:
         service = ConversationService()
@@ -391,8 +431,9 @@ class ConversationPipelineTest(unittest.TestCase):
                 speaker_ctx=SpeakerContext(source="discord", platform_id="unknown-user"),
             )
 
-        self.assertEqual(response.spoken_text, "I’m not going to say that. Let’s keep it safe and respectful.")
-        self.assertEqual(response.tts_metadata["speech_filter"]["blocked"], True)
+        self.assertEqual(response.spoken_text, "I’m not going to put it that way.")
+        self.assertEqual(response.tts_metadata["speech_filter"]["action"], "soften")
+        self.assertEqual(response.tts_metadata["speech_filter"]["tiers"], ["extra"])
         self.assertTrue(response.tts_metadata["speech_filter"]["matched_rules"])
 
     def test_background_context_is_system_only_and_opt_in(self) -> None:

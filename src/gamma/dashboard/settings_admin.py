@@ -50,6 +50,10 @@ class SettingsAdminMixin:
             "speech_filter_level": str(config.get("speech_filter_level", settings.speech_filter_level)),
             "speech_filter_hard_block_enabled": bool(config.get("speech_filter_hard_block_enabled", settings.speech_filter_hard_block_enabled)),
             "speech_filter_heuristic_enabled": bool(config.get("speech_filter_heuristic_enabled", settings.speech_filter_heuristic_enabled)),
+            "speech_filter_word_list_enabled": bool(
+                config.get("speech_filter_word_list_enabled", settings.speech_filter_word_list_enabled)
+            ),
+            "speech_filter_extra_enabled": bool(config.get("speech_filter_extra_enabled", settings.speech_filter_extra_enabled)),
             "speech_filter_llm_enabled": bool(config.get("speech_filter_llm_enabled", settings.speech_filter_llm_enabled)),
             "speech_filter_llm_model": str(config.get("speech_filter_llm_model", settings.speech_filter_llm_model)),
             "speech_filter_llm_temperature": float(
@@ -116,10 +120,11 @@ class SettingsAdminMixin:
             if level not in {"strict", "light", "none"}:
                 raise ValueError("unsupported speech_filter_level")
             updated = self._upsert_toml_string(updated, "speech_filter_level", level)
+        # The safety floor (hard block, phrase heuristics, reviewer) is not saved from here:
+        # it only changes by editing the config file. The word list and extra safety are.
         bool_keys = [
-            "speech_filter_hard_block_enabled",
-            "speech_filter_heuristic_enabled",
-            "speech_filter_llm_enabled",
+            "speech_filter_word_list_enabled",
+            "speech_filter_extra_enabled",
             "speech_filter_auto_rewrite",
             "llm_router_allow_hosted_escalation",
             "llm_router_persona_hosted_fallback_enabled",

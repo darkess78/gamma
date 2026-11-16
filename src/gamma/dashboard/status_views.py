@@ -9,6 +9,7 @@ from typing import Any
 from ..config import settings
 from ..resources.allocations import recent_sidecar_allocation_entries
 from ..resources.runtime_registry import load_resource_routing_registry
+from ..safety.floor_log import recent_floor_events
 from ..voice.voice_profiles import get_voice_profile, list_voice_profiles
 
 
@@ -104,6 +105,7 @@ class StatusViewsMixin:
             "assistant": {
                 "emotion_memory": local_status.get("assistant", {}).get("emotion_memory", {}),
                 "settings": self.assistant_runtime_settings(),
+                "floor_events": recent_floor_events(20),
             },
             "twitch": {
                 "worker": self.twitch_worker_status(),

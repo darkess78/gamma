@@ -284,6 +284,19 @@
     }).join('') : '<p class="muted">No generated audio files yet.</p>';
   }
 
+  function renderFloorEvents(events) {
+    var target = element('assistantFloorEvents');
+    if (!target) return;
+    setText('assistantFloorCount', events.length ? String(events.length) + (events.length >= 20 ? '+' : '') : '0');
+    target.innerHTML = events.length ? events.map(function (event) {
+      var when = event.at ? new Date(event.at).toLocaleString() : '';
+      return '<div class="artifact-row"><div><div>' + escapeHtml(event.text || '') + '</div>'
+        + '<span class="muted small">' + escapeHtml(when) + ' / ' + escapeHtml(event.source || 'speech')
+        + ' / ' + escapeHtml((event.layers || []).join(', ')) + ': ' + escapeHtml((event.rules || []).join(', '))
+        + '</span></div></div>';
+    }).join('') : '<p class="muted">Nothing stopped yet.</p>';
+  }
+
   function renderAssistant(data) {
     var assistant = data.assistant || {};
     var settings = assistant.settings || {};
@@ -294,9 +307,15 @@
     }
     if (!assistant.settings) return;
     setValue('assistantSpeechFilterLevel', settings.speech_filter_level || 'strict');
-    setChecked('assistantHardBlockEnabled', settings.speech_filter_hard_block_enabled);
-    setChecked('assistantHeuristicEnabled', settings.speech_filter_heuristic_enabled);
-    setChecked('assistantLlmEnabled', settings.speech_filter_llm_enabled);
+    setChecked('assistantWordListEnabled', settings.speech_filter_word_list_enabled);
+    setChecked('assistantExtraSafetyEnabled', settings.speech_filter_extra_enabled);
+    var floorOn = settings.speech_filter_hard_block_enabled !== false;
+    var reviewerOn = !!settings.speech_filter_llm_enabled;
+    setText('assistantFloorStatus', floorOn
+      ? 'Always on. Slurs, threats, sexual content, self-harm, dangerous help and private info stop the whole reply'
+        + (reviewerOn ? ', checked by word lists and the reviewer model.' : '. The reviewer model is off in the config file, so only the word lists and patterns check it.')
+      : 'OFF in the config file. Nothing stops severe speech. Set speech_filter_hard_block_enabled = true.');
+    renderFloorEvents(assistant.floor_events || []);
     setChecked('assistantAutoRewrite', settings.speech_filter_auto_rewrite);
     setValue('assistantLlmModel', settings.speech_filter_llm_model);
     setValue('assistantLlmTemperature', settings.speech_filter_llm_temperature);

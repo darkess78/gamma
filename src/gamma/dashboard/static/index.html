@@ -180,10 +180,16 @@
               <option value="none">None</option>
             </select>
           </label>
-          <label class="check"><input id="assistantHardBlockEnabled" type="checkbox"> Hard block clearly disallowed speech</label>
-          <label class="check"><input id="assistantHeuristicEnabled" type="checkbox"> Phrase heuristics</label>
-          <label class="check"><input id="assistantLlmEnabled" type="checkbox"> LLM reviewer</label>
-          <label class="check"><input id="assistantAutoRewrite" type="checkbox"> Rewrite risky replies instead of blocking</label>
+          <p class="small"><strong>Safety floor</strong>: <span id="assistantFloorStatus" class="muted">loading</span></p>
+          <label class="check"><input id="assistantWordListEnabled" type="checkbox"> Word list: bleep the words in <code>config/safety_banned_words.txt</code></label>
+          <label class="check"><input id="assistantExtraSafetyEnabled" type="checkbox"> Extra safety: soften rude replies, limit cursing</label>
+          <label class="check"><input id="assistantAutoRewrite" type="checkbox"> Rewrite softened replies instead of keeping them</label>
+          <p class="muted small">The filter level and these switches apply as soon as you save. "None" switches off the word list and extra safety, never the floor.</p>
+          <details class="fold inner">
+            <summary>Stopped by the floor (<span id="assistantFloorCount">0</span>)</summary>
+            <p class="muted small">Admin only. Shana never sees or remembers these lines.</p>
+            <div id="assistantFloorEvents"><p class="muted">Nothing stopped yet.</p></div>
+          </details>
           <details class="fold inner">
             <summary>Reviewer tuning</summary>
             <label>Reviewer model <input id="assistantLlmModel" placeholder="default"></label>

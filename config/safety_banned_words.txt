@@ -1,16 +1,7 @@
-# One case-insensitive phrase per line. Keep this list limited to speech that
-# must never reach public output. Fast heuristics and the safety reviewer cover
-# broader context-sensitive cases.
-kill yourself
-kys
-heil hitler
-go die
-should die
-nigger
-faggot
-retard
-# Major profanity (owner decision 2026-11-15): mild insults like stupid, dumb and
-# idiot are allowed; these are not. Matching is whole-word, so list the variants.
+# Word list filter: words Shana should not say when the word list is switched on in
+# the dashboard. A match is replaced with "bleep" rather than dropping the whole reply.
+# One case-insensitive phrase per line; matching is whole-word, so list the variants.
+# Slurs live in safety_floor_words.txt, which is always on.
 fuck
 fucks
 fucked

@@ -540,7 +540,18 @@ class Settings:
         )
     )
     speech_filter_level: str = _str("speech_filter_level", default="strict", strip=True, lower=True, fallback="strict")
+    # Safety floor: privacy guard, floor word list and patterns, and the reviewer's severe categories.
+    # Never offered as a dashboard switch; turning it off takes an edit to the config file.
     speech_filter_hard_block_enabled: bool = _bool("speech_filter_hard_block_enabled", default=True)
+    speech_filter_floor_words_path: str = _str(
+        "speech_filter_floor_words_path", default="./config/safety_floor_words.txt", strip=True
+    )
+    # Word list tier: bleeps the words in speech_filter_banned_words_path. Dashboard switch.
+    speech_filter_word_list_enabled: bool = _bool("speech_filter_word_list_enabled", default=True)
+    # Extra safety tier: the reviewer's "rude"/"profanity" verdicts, the heuristic filter, and a cap
+    # on how many listed curse words one reply may keep when the word list is off. Dashboard switch.
+    speech_filter_extra_enabled: bool = _bool("speech_filter_extra_enabled", default=True)
+    speech_filter_curse_limit: int = _int("speech_filter_curse_limit", default=1)
     speech_filter_heuristic_enabled: bool = _bool("speech_filter_heuristic_enabled", default=True)
     speech_filter_llm_enabled: bool = _bool("speech_filter_llm_enabled", default=False)
     speech_filter_llm_model: str = _str("speech_filter_llm_model", default="")

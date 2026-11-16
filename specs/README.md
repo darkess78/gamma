@@ -38,6 +38,7 @@ in effect until revisions are implemented, verified, and approved for activation
 ## Domain Specs
 
 - `identity_eval_sources.md` (where the identity test set v2 prompts come from, with licences)
+- `speech_safety.md` (the three speech safety tiers: never-off floor, word list, extra safety)
 - `safety_review_benchmark.md` (stream safety reviewer speed and false-filter rates on real chat)
 - `live_voice_latency.md` (where live voice time goes, and the warm-worker and reasoning-effort changes)
 - `brain_finetune_plan.md` (plan to fine-tune a local model as her brain: base choice, data, gates, owner decisions)

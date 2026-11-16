@@ -25,7 +25,7 @@ from ..persona.loader import build_system_prompt, load_persona_config
 from ..safety.privacy_guard import review_private_info_request
 from ..safety.speech_filter import SpeechFilterResult, SpeechSafetyFilter
 from ..schemas.conversation import RecipientContext, SpeakerContext
-from ..schemas.response import AssistantResponse, ConversationTurnDraft, DeliveryMode, VisionAnalysis
+from ..schemas.response import AssistantResponse, BoundedStateUpdates, ConversationTurnDraft, DeliveryMode, VisionAnalysis
 from ..tools.disclosure import disclose_tool_call
 from ..tools.registry import ToolRegistry
 from ..vision.service import VisionImage, VisionService
@@ -399,8 +399,11 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
             safe_spoken = (
                 SpeechFilterResult(spoken_text="", blocked=False, matched_rules=[], action="allow", layers=[])
                 if turn_draft.action in {"stay_silent", "defer"}
-                else self._speech_filter.apply(expressive.clean_text, include_llm=True)
+                else self._speech_filter.apply(expressive.clean_text, include_llm=True, source="presence_wake",
+                                               session_id=session_id)
             )
+            if safe_spoken.floor_blocked:
+                turn_draft = _forget_floor_blocked_draft(turn_draft)
             delivery_mode = resolve_delivery(
                 action=turn_draft.action,
                 requested=turn_draft.requested_delivery,
@@ -427,6 +430,8 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                 "matched_rules": safe_spoken.matched_rules,
                 "action": safe_spoken.action,
                 "layers": safe_spoken.layers,
+                "floor_blocked": safe_spoken.floor_blocked,
+                "tiers": safe_spoken.tiers,
             }
             if synthesize_speech and response.speech_text:
                 tts_result = self._tts_service().synthesize(
@@ -792,6 +797,21 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                 # provided and writes are allowed, save heuristic candidates in a
                 # background thread without metadata LLM extraction.
                 timing["metadata_ms"] = 0.0
+                # Filter first: a reply the safety floor stops must not leave memories behind.
+                expressive = strip_hidden_style_tags(final_reply_text, default_emotion=turn_draft.emotion)
+                safe_spoken = (
+                    SpeechFilterResult(spoken_text="", blocked=False, matched_rules=[], action="allow", layers=[])
+                    if turn_draft.action in {"stay_silent", "defer"}
+                    else self._speech_filter.apply(
+                        expressive.clean_text,
+                        include_llm=not defer_llm_safety_review,
+                        source=delivery_context,
+                        session_id=session_id,
+                    )
+                )
+                if safe_spoken.floor_blocked:
+                    memory_write_ok = False
+                    turn_draft = _forget_floor_blocked_draft(turn_draft)
                 memory_started = time.perf_counter()
                 structured_candidates = turn_draft.memory_candidates if parsed_turn.structured and memory_write_ok else []
                 saved_count = (
@@ -801,15 +821,6 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                 )
                 timing["memory_persist_ms"] = round((time.perf_counter() - memory_started) * 1000, 1)
                 timing["total_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
-                expressive = strip_hidden_style_tags(final_reply_text, default_emotion=turn_draft.emotion)
-                safe_spoken = (
-                    SpeechFilterResult(spoken_text="", blocked=False, matched_rules=[], action="allow", layers=[])
-                    if turn_draft.action in {"stay_silent", "defer"}
-                    else self._speech_filter.apply(
-                        expressive.clean_text,
-                        include_llm=not defer_llm_safety_review,
-                    )
-                )
 
                 delivery_mode = resolve_delivery(
                     action=turn_draft.action,
@@ -842,6 +853,8 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                     "matched_rules": safe_spoken.matched_rules,
                     "action": safe_spoken.action,
                     "layers": safe_spoken.layers,
+                    "floor_blocked": safe_spoken.floor_blocked,
+                    "tiers": safe_spoken.tiers,
                 }
                 response.tts_metadata["speech_filter"] = speech_filter_metadata
                 if synthesize_speech and response.speech_text:
@@ -951,9 +964,15 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                 else self._speech_filter.apply(
                     expressive.clean_text,
                     include_llm=not defer_llm_safety_review,
+                    source=delivery_context,
+                    session_id=session_id,
                 )
             )
             final_reply_text = safe_spoken.spoken_text
+            if safe_spoken.floor_blocked:
+                memory_write_ok = False
+                turn_draft = _forget_floor_blocked_draft(turn_draft)
+                extracted = {**extracted, "internal_summary": None, "motions": [], "memory_candidates": []}
 
             memory_candidates = (
                 (extracted["memory_candidates"] or self._build_memory_candidates(
@@ -998,6 +1017,8 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                 "matched_rules": safe_spoken.matched_rules,
                 "action": safe_spoken.action,
                 "layers": safe_spoken.layers,
+                "floor_blocked": safe_spoken.floor_blocked,
+                "tiers": safe_spoken.tiers,
             }
             response.tts_metadata["speech_filter"] = speech_filter_metadata
             if synthesize_speech and response.speech_text:
@@ -1124,3 +1145,22 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
         }
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+
+def _forget_floor_blocked_draft(draft: ConversationTurnDraft) -> ConversationTurnDraft:
+    """The safety floor stopped this reply: keep nothing of it that Shana could read back.
+
+    The turn becomes a silent one with no summary, memories, state changes, motions or tools. The
+    stopped line itself is only in the admin floor log (``gamma.safety.floor_log``).
+    """
+    return draft.model_copy(update={
+        "action": "stay_silent",
+        "final_text": "",
+        "internal_summary": None,
+        "memory_candidates": [],
+        "motions": [],
+        "tool_calls": [],
+        "state_updates": BoundedStateUpdates(),
+        "reason_code": "safety_floor",
+    })

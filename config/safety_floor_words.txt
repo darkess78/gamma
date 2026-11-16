@@ -1,0 +1,12 @@
+# Safety floor word list: slurs and lines that must never be said, in any filter setting.
+# One case-insensitive phrase per line, matched as whole words after undoing common
+# disguises (f.u.c.k, 1 for i, @ for a). A match stops the reply before it is spoken or
+# remembered; the event goes to the admin log only. Only change this file on purpose.
+kill yourself
+kys
+heil hitler
+go die
+should die
+nigger
+faggot
+retard

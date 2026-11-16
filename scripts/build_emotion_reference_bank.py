@@ -95,12 +95,6 @@ LINES: dict[str, list[str]] = {
     ],
 }
 
-# Wav2vec2-superb-er labels: neu, hap, ang, sad. Only a weak signal.
-EMOTION_TARGET_LABEL = {
-    "neutral": "neu", "happy": "hap", "teasing": "hap", "excited": "hap",
-    "annoyed": "ang", "concerned": "sad", "embarrassed": "sad",
-}
-
 PROBE_LINES = [
     "Okay, listen. I'll explain it once, so you'd better remember it this time.",
     "Thanks for waiting. I think we're almost done with everything now.",
@@ -296,19 +290,25 @@ def _rank(manifest: dict[str, Any], min_asr: float) -> dict[str, list[dict[str, 
     spread_ref = neutral_spread[len(neutral_spread) // 2] if neutral_spread else 1.0
     manifest["similarity_floor"] = round(floor, 4)
     ranked: dict[str, list[dict[str, Any]]] = {}
+    # The superb-er classifier hears her timbre as "angry" on every take
+    # (neutral lines included, ~0.99), so it is shown but not ranked on.
+    # Ranking uses pitch movement against her neutral takes, plus similarity.
     for take in takes:
-        label = EMOTION_TARGET_LABEL[take["emotion"]]
         take["passes"] = take["speaker_similarity"] >= floor and take.get("asr_match", 1.0) >= min_asr
         expressive = take["f0_spread_st"] / max(spread_ref, 0.5)
         if take["emotion"] == "neutral":
-            take["rank_score"] = round(take["speaker_similarity"] * 2 + take["emotion_probs"].get(label, 0.0), 4)
+            # A neutral reference should be steady: reward low pitch movement.
+            take["rank_score"] = round(10 * take["speaker_similarity"] - min(expressive, 2.0), 4)
         else:
-            take["rank_score"] = round(
-                take["speaker_similarity"] * 2 + take["emotion_probs"].get(label, 0.0) + 0.25 * min(expressive, 2.0), 4)
+            take["rank_score"] = round(10 * take["speaker_similarity"] + min(expressive, 2.0), 4)
         if take["passes"]:
             ranked.setdefault(take["emotion"], []).append(take)
-    for rows in ranked.values():
+    for emotion, rows in ranked.items():
         rows.sort(key=lambda t: t["rank_score"], reverse=True)
+        # Prefer different lines first, so the shortlist covers more deliveries.
+        seen: set[int] = set()
+        first = [t for t in rows if not (t["line"] in seen or seen.add(t["line"]))]
+        ranked[emotion] = first + [t for t in rows if t not in first]
     return ranked
 
 

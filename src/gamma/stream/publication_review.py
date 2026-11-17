@@ -13,7 +13,7 @@ from .event_rules import _is_public_stream_event, _twitch_control_enabled
 from .models import StreamInputEvent
 from .output_events import _apply_output_target_policy, _filter_stream_output_events
 from .safety_rules import _fast_stream_safety_review, _filtered_stream_response, _late_safety_override_events, _llm_review_payload, _stream_review_timeout_action
-from .safety_rules import llm_review_enabled
+from .safety_rules import llm_review_enabled, _record_stream_floor_stop
 
 
 class PublicationReviewMixin:
@@ -45,6 +45,11 @@ class PublicationReviewMixin:
         from ..safety.sensitive_terms import matches as private_terms_in
         private_hits = private_terms_in(" ".join(filter(None, {output_text, response.display_text or "", response.spoken_text or ""})))
         if private_hits:
+            _record_stream_floor_stop(text=output_text, event=event, decision={
+                "blocked": True, "layers": ["owner_sensitive_terms"],
+                "matched_rules": [f"private_term:{h}" for h in private_hits],
+                "source": "owner_sensitive_terms",
+            })
             return {
                 "action": "filtered",
                 "blocked": True,
@@ -68,6 +73,9 @@ class PublicationReviewMixin:
             }
         fast_review = _fast_stream_safety_review(output_text)
         if fast_review["blocked"]:
+            _record_stream_floor_stop(text=output_text, event=event, decision={
+                **fast_review, "source": "stream_output_gate_fast",
+            })
             return {
                 "action": "filtered",
                 "blocked": True,
@@ -98,6 +106,7 @@ class PublicationReviewMixin:
         event: StreamInputEvent,
         response: AssistantResponse,
     ) -> tuple[AssistantResponse, dict, tuple[Future, ThreadPoolExecutor] | None]:
+        reviewed_text = response.speech_text or ""
         timeout_seconds = max(0.05, float(settings.stream_safety_review_timeout_seconds or 2.0))
         started_at = time.perf_counter()
         executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="stream-safety")
@@ -133,6 +142,7 @@ class PublicationReviewMixin:
                     "playback_approved": False,
                 }, None
             decision = _llm_review_payload(review)
+            _record_stream_floor_stop(text=reviewed_text, event=event, decision=decision)
             if decision["blocked"]:
                 return _filtered_stream_response(), decision, None
             tts_result = tts_future.result()
@@ -156,6 +166,7 @@ class PublicationReviewMixin:
         turn_id: str,
         review_future: Future,
         executor: ThreadPoolExecutor,
+        reviewed_text: str = "",
     ) -> None:
         def finish_review() -> None:
             try:
@@ -168,6 +179,7 @@ class PublicationReviewMixin:
             finally:
                 executor.shutdown(wait=False, cancel_futures=True)
             decision = _llm_review_payload(review)
+            _record_stream_floor_stop(text=reviewed_text, event=event, decision=decision)
             if not decision["blocked"]:
                 return
             filtered = _filtered_stream_response()
@@ -224,6 +236,7 @@ class PublicationReviewMixin:
         finally:
             if future.done():
                 executor.shutdown(wait=False, cancel_futures=True)
+        _record_stream_floor_stop(text=text, event=event, decision=_llm_review_payload(review))
         review_ms = round((time.perf_counter() - started_at) * 1000, 1)
         if review.action != "allow":
             return {

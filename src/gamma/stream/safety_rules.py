@@ -161,3 +161,28 @@ def _stream_review_timeout_action() -> str:
     if settings.stream_safety_review_timeout_action in {"skip", "defer", "hold"}:
         return settings.stream_safety_review_timeout_action
     return "skip"
+
+
+def _record_stream_floor_stop(*, text: str, event: StreamInputEvent, decision: dict) -> None:
+    """Audit floor stops only, not optional profanity or rude verdicts."""
+    from ..safety.floor_log import record_floor_event
+    from ..safety.hard_blocklist import floor_matches
+
+    if not decision.get("blocked"):
+        return
+    layers = list(decision.get("layers") or [])
+    rules = list(decision.get("matched_rules") or [])
+    action = decision.get("filter_action")
+    if "llm" in layers:
+        is_floor = action == "block" and settings.speech_filter_hard_block_enabled
+    else:
+        floor_hits = floor_matches(text) if settings.speech_filter_hard_block_enabled else []
+        is_floor = bool(floor_hits) or "privacy_guard" in layers or "owner_sensitive_terms" in layers
+        if floor_hits:
+            rules = floor_hits
+        elif "heuristic" in layers and action == "block":
+            is_floor = settings.speech_filter_hard_block_enabled
+    if is_floor:
+        record_floor_event(text=text, rules=rules, layers=layers,
+                           source=str(decision.get("source") or "stream_output_gate"),
+                           session_id=event.session_id)

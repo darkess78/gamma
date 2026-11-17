@@ -332,6 +332,7 @@ class StreamBrain(PublicationReviewMixin):
             self._arm_late_safety_interrupt(
                 event=event,
                 turn_id=turn_id,
+                reviewed_text=response.speech_text or "" if response else "",
                 review_future=late_review[0],
                 executor=late_review[1],
             )

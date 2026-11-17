@@ -28,7 +28,9 @@ Measured results are in [safety_review_benchmark.md](safety_review_benchmark.md)
 (`stream/safety_rules.py`). There, any verdict except `allow` filters the reply,
 whatever the dashboard switches say.
 
-**Not done yet.** On the stream path, a line stopped late by the gate is not yet
-written to the floor log. The live voice worker checks each sentence only after
+Stream gate floor stops, including late LLM blocks, are written to the admin floor
+log. Optional profanity and rude verdicts are filtered without a floor entry.
+
+**Not done yet.** The live voice worker checks each sentence only after
 it is generated: generation stops at the first stopped sentence, but tokens of
 that sentence were already produced.

@@ -44,7 +44,8 @@ the complete request for each candidate. When a local model has a configured
 runtime context, the Ollama adapter sends that value explicitly as `num_ctx`;
 models without one continue to use their existing Ollama defaults.
 Persona, boundaries, privacy/safety rules, current input, and current speaker
-are mandatory; working state, summary, memories, recent turns, and background
+and the structured turn decision contract are mandatory; working state, summary,
+memories, recent turns, and background
 are compacted in priority order.
 
 Provider context-overflow responses are typed separately from availability

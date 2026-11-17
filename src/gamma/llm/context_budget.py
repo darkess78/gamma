@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from ..errors import ContextBudgetError
@@ -25,6 +26,11 @@ class BuiltPrompt:
 
 
 _KNOWN_HEADERS = (
+    "Turn Decision Contract",
+    "Shared Channel History",
+    "Recent Stream Chat",
+    "Speaking Now",
+    "How Well You Know Them",
     "Core Persona",
     "Boundaries",
     "Style",
@@ -49,6 +55,12 @@ _KNOWN_HEADERS = (
 )
 
 _POLICY: dict[str, tuple[int, bool]] = {
+    "Turn Decision Contract": (1, True),
+    "Speaking Now": (2, True),
+    "Shared Channel History": (7, False),
+    "Recent Stream Chat": (9, False),
+    "How Well You Know Them": (4, False),
+    "Viewer Self Claims": (7, False),
     "Core Persona": (1, True),
     "Boundaries": (1, True),
     "Response Rules": (1, True),
@@ -80,6 +92,8 @@ def prompt_layers_from_system_prompt(system_prompt: str) -> list[PromptLayer]:
         start = system_prompt.find(marker)
         if start >= 0:
             markers.append((start, header, marker))
+    for match in re.finditer(r"^# What [^\n]+ Has Told You Before\n", system_prompt, re.MULTILINE):
+        markers.append((match.start(), "Viewer Self Claims", match.group()))
     markers.sort()
     if not markers:
         return [PromptLayer(name="system", text=system_prompt, priority=1, required=True)]

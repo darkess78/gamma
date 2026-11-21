@@ -11,6 +11,8 @@ from difflib import SequenceMatcher
 
 from fastapi import WebSocket
 
+from .latency_trace import mark
+
 
 
 def _utc_now() -> str:
@@ -140,6 +142,8 @@ class LiveVoiceSession:
                         continue
                     if not chunk.get("audio_base64") or not chunk.get("audio_content_type"):
                         continue
+                    if chunk_index == 1:
+                        mark("dashboard_first_pickup")
                     chunk_indexes.add(chunk_index)
                     await self._send_json(
                         websocket,
@@ -365,6 +369,7 @@ class LiveVoiceSession:
                         continue
 
                     if event_type == "end_turn":
+                        mark("endpoint_received")
                         last_activity_monotonic = time.monotonic()
                         turn_open = False
                         await cancel_partial_loop()

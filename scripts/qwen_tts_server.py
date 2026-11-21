@@ -53,6 +53,7 @@ if venv_path.exists() and venv_python.exists():
 from typing import Any
 
 from dotenv import load_dotenv
+from gamma.voice.latency_trace import mark
 from gamma.system.torch_devices import resolve_torch_device
 
 logging.basicConfig(
@@ -243,7 +244,9 @@ def synthesize(body: dict[str, Any]) -> bytes:
         }
         if ref_text:
             kwargs["ref_text"] = ref_text
+        mark("clone_start")
         wavs, sr = model.generate_voice_clone(**kwargs)
+        mark("clone_end")
     elif speaker and mtype == "customvoice":
         log.info("Custom voice: speaker=%s  len(text)=%d  extra=%s", speaker, len(text), extra)
         kwargs = {

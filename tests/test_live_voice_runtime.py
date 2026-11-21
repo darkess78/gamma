@@ -6,6 +6,8 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from gamma.performer.bus import PerformerEventBus
 from gamma.run_live_voice_worker import _run_incremental_experimental, _run_simple_chunked
@@ -171,6 +173,35 @@ class LiveVoiceRuntimeTest(unittest.TestCase):
         self.assertEqual(conversation.calls[0]["kwargs"]["brief_mode"], False)
         self.assertEqual(conversation.calls[0]["kwargs"]["micro_mode"], False)
         self.assertIsNone(conversation.calls[0]["kwargs"]["background_context"])
+
+    def test_first_audio_trace_follows_the_result_write(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            result = root / "result.json"
+            audio = root / "audio.wav"
+            audio.write_bytes(b"audio")
+            stages = []
+
+            def observe(stage):
+                stages.append(stage)
+                if stage == "speaking_status_written":
+                    self.assertEqual(json.loads((root / "status.json").read_text())["status"], "speaking")
+                if stage == "first_result_written":
+                    self.assertTrue(json.loads(result.read_text())["reply_chunks"][0]["audio_base64"])
+
+            with patch("gamma.run_live_voice_worker.mark", side_effect=observe), patch(
+                "gamma.run_live_voice_worker.TTSService"
+            ) as tts:
+                tts.return_value.synthesize.return_value = SimpleNamespace(audio_path=audio, content_type="audio/wav")
+                _run_simple_chunked(
+                    started_at=0.0, args=argparse.Namespace(turn_id="turn", session_id="session"),
+                    transcript="Can you hear me?", synthesize_speech=True, conversation=_FakeConversation(),
+                    stream_brain=_FakeStreamBrain(), output_path=result, status_path=root / "status.json",
+                    status_payload={}, response_mode="simple_chunked", planner_state={},
+                    turn_state=AssistantTurnState(turn_id="turn", session_id="session", user_text="Can you hear me?",
+                                                  response_mode="simple_chunked"), audio_context={},
+                )
+            self.assertEqual(stages, ["speaking_status_written", "tts_first_start", "tts_first_end", "first_result_written"])
 
     def test_incremental_live_voice_turn_records_stream_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

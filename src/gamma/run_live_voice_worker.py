@@ -26,6 +26,7 @@ from .voice.reply_state import AssistantTurnState, SentenceState
 from .voice.sentence_generator import SentenceGenerator
 from .voice.stt import STTService
 from .voice.expressive_text import strip_hidden_style_tags
+from .voice.latency_trace import mark
 from .voice.tts import TTSService
 from .safety.speech_filter import SpeechSafetyFilter
 from .identity.profile import SpeakerProfile
@@ -499,11 +500,16 @@ def _run_simple_chunked(
             tts = TTSService()
             status_payload["status"] = "speaking"
             _write_status(status_path, status_payload)
+            mark("speaking_status_written")
             chunk_timings: list[float] = []
             for index, chunk_text in enumerate(chunks, start=1):
                 policy = chunk_policies[index - 1] if index - 1 < len(chunk_policies) else {}
                 chunk_started = time.perf_counter()
+                if index == 1:
+                    mark("tts_first_start")
                 tts_result = tts.synthesize(chunk_text, emotion=response.emotion, styles=response.voice_styles)
+                if index == 1:
+                    mark("tts_first_end")
                 chunk_tts_ms = round((time.perf_counter() - chunk_started) * 1000, 1)
                 chunk_timings.append(chunk_tts_ms)
                 audio_bytes = _read_live_tts_audio_bytes(tts_result)
@@ -534,6 +540,8 @@ def _run_simple_chunked(
                 payload["timing_ms"][f"chunk_{index}_text_words"] = len(chunk_text.split())
                 payload["status"] = "speaking" if index < len(chunks) else "completed"
                 _write_output(output_path, payload)
+                if index == 1:
+                    mark("first_result_written")
             payload["timing_ms"]["tts_ms"] = round(sum(chunk_timings), 1)
         else:
             payload["timing_ms"]["chunk_count"] = 0
@@ -821,6 +829,7 @@ def main() -> int:
     conversation = ConversationService()
     stream_brain = StreamBrain(conversation=conversation)
     if args.standby:
+        mark("standby_ready")
         job = _read_standby_job(sys.stdin)
         if job is None:
             return 0
@@ -850,6 +859,7 @@ def main() -> int:
     try:
         stt_started = time.perf_counter()
         transcript = stt.transcribe_audio(str(audio_path)).strip()
+        mark("stt_final")
         stt_ms = round((time.perf_counter() - stt_started) * 1000, 1)
         audio_context = audio_understanding.analyze_path(audio_path, transcript=transcript)
         audio_context_payload = audio_context.model_dump()

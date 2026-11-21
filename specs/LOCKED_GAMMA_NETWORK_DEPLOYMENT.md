@@ -395,3 +395,7 @@ it does not write source or restart services on its own.
 Dashboard port 8001 owns `/api/coding/work`, job controls, lesson history and
 candidate start/status/stop. The public proxy route contracts and Shana port 8000
 remain unchanged.
+
+## Owner-authorized changes
+
+- **2026-11-21: `/shana/` route added for testing the new Shana.** The owner authorized it in chat ("for testing we can do the recommended"). The port-8080 server (`deploy/nginx/gamma-proxy.conf`, installed on Gamma PC as `/etc/nginx/conf.d/gamma-npm-upstream.conf`) gains `location = /shana` (a redirect to `/shana/`) and `location /shana/`. The second proxies to the v0 dashboard at `127.0.0.1:8020` with the prefix stripped. No existing route changed. The owner installs the file with sudo. The backup is `gamma-npm-upstream.conf.bak.20261121`.

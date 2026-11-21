@@ -22,6 +22,7 @@ from ..memory.service import MemoryService
 from ..persona.assistant_state import AssistantStateStore
 from ..persona.emotion_service import EmotionMemoryService
 from ..persona.loader import build_system_prompt, load_persona_config
+from ..voice.latency_trace import mark
 from ..safety.privacy_guard import review_private_info_request
 from ..safety.speech_filter import SpeechFilterResult, SpeechSafetyFilter
 from ..schemas.conversation import RecipientContext, SpeakerContext
@@ -726,6 +727,8 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                     prompt_builder=build_conversation_prompt,
                 ),
                 )
+            if delivery_context == "direct_voice" and not owner_coding_receipt:
+                mark("draft_returned")
             timing["draft_llm_ms"] = round(
                 (time.perf_counter() - draft_llm_started) * 1000,
                 1,
@@ -809,6 +812,8 @@ class ConversationService(TurnMetadataMixin, ToolFlowMixin, MemoryCandidatesMixi
                         session_id=session_id,
                     )
                 )
+                if delivery_context == "direct_voice" and safe_spoken.spoken_text and not safe_spoken.blocked:
+                    mark("safety_approved")
                 if safe_spoken.floor_blocked:
                     memory_write_ok = False
                     turn_draft = _forget_floor_blocked_draft(turn_draft)

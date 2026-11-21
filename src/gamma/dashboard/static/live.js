@@ -175,6 +175,7 @@
     if (turnDuration >= currentMaximumTurnMs()) {
       liveTurnOpen = false;
       liveAwaitingReply = true;
+      if (window.shanaVoiceLatencyTrace) console.debug('voice_endpoint', liveLastSpeechAt, nowMs);
       liveSocket.send(JSON.stringify({ type: 'end_turn' }));
       updateLiveStatus('Maximum turn length reached. Thinking...');
       return;
@@ -187,6 +188,7 @@
     }
     liveTurnOpen = false;
     liveAwaitingReply = true;
+    if (window.shanaVoiceLatencyTrace) console.debug('voice_endpoint', liveLastSpeechAt, nowMs);
     liveSocket.send(JSON.stringify({ type: 'end_turn' }));
     updateLiveStatus('Thinking...');
   }
@@ -337,7 +339,15 @@
         finishCurrentChunkAndContinue('');
       }
     };
-    playback.play().catch(function () {
+    var started = playback.play();
+    if (window.shanaVoiceLatencyTrace && chunk.chunk_index === 1) {
+      started.then(function () {
+        console.debug('voice_first_playing', Date.now());
+      }, function () {
+        console.debug('voice_first_play_rejected', Date.now());
+      });
+    }
+    started.catch(function () {
       finishCurrentChunkAndContinue('Chunk playback rejected. Skipping to next chunk.');
     });
   }

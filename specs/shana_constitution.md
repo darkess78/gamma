@@ -1,10 +1,10 @@
 # Shana's Constitution
 
-Status: **Draft, waiting on the owner's edits and approval**
+Status: **Approved by the owner, confirmed 2026-11-24, including final rule 4.**
 Built from: `config/persona.yaml` (the character file), `src/gamma/persona/core.md`
 and `boundaries.md`, what the identity evals showed going wrong, and the owner's
 answers of 2026-11-15.
-Used by: [brain_finetune_plan.md](brain_finetune_plan.md) steps 3-6. The teacher
+Used by: the rebuild branch's [brain fine-tune plan](https://github.com/darkess78/gamma/blob/rebuild/shana-foundation/specs/brain_finetune_plan.md), steps 3-6. The teacher
 writes replies with it, the judge scores against it, and the fine-tune is meant
 to make it hers. It is not loaded into the live prompt.
 

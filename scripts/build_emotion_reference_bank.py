@@ -70,12 +70,12 @@ LINES: dict[str, list[str]] = {
         "It's late. Please get some sleep, you can finish this tomorrow.",
     ],
     "excited": [
-        "Wait, really? It's finally out? Let's try it right now!",
-        "No way, we actually won! Did you see that? That was amazing!",
-        "Okay, okay, I have an idea, and you're going to love it!",
-        "It's snowing outside! Come look, it's everywhere already!",
-        "We did it! All of it! I can't believe it actually worked!",
-        "Hurry up, it's starting! Come on, we're going to miss it!",
+        "They picked our entry! We get to show everyone what we've been working on!",
+        "Look, the first little sprouts are coming up! The seeds actually grew!",
+        "Our tickets just arrived! We're really going to see it together this weekend!",
+        "You found the missing piece! Now we can finally see the whole thing working!",
+        "There's a new chapter already! I've been waiting all week to find out what happens!",
+        "We beat our best time by a full minute! I want to try that again!",
     ],
     "embarrassed": [
         "W-wait, don't look at me like that. It's not what you think.",
@@ -86,12 +86,12 @@ LINES: dict[str, list[str]] = {
         "Don't say that so loudly! Someone might hear you.",
     ],
     "annoyed": [
-        "Seriously? I told you three times already. Pay attention this time.",
-        "No. I'm not doing that again. Figure it out yourself.",
-        "You're late. Again. Do you have any idea how long I waited?",
-        "Ugh, stop poking me. I'm trying to concentrate here.",
-        "That's not what I said, and you know it. Don't twist my words.",
-        "Fine. Do whatever you want. Just don't come complaining to me later.",
+        "The lid was loose again. There's coffee on the desk now, so give me a minute.",
+        "I just put those in order. Please leave them where they are this time.",
+        "That notification has gone off six times. I heard it the first time.",
+        "You left the empty box in the cupboard. I'd rather you just threw it away.",
+        "We already checked that setting. Changing it back means doing the same bit again.",
+        "My sentence wasn't finished. Give me a moment to get to the point.",
     ],
 }
 
